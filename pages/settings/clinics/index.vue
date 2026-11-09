@@ -146,14 +146,9 @@ async function reactivate(c: ClinicRow) {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Clinics', 'Clínicas')">
-      <button
-        type="button"
-        data-cy="clinic-add"
-        class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover"
-        @click="openAdd"
-      >
+      <UiBtn variant="primary" data-cy="clinic-add" @click="openAdd">
         {{ t('Add location', 'Añadir sede') }}
-      </button>
+      </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
@@ -195,9 +190,9 @@ async function reactivate(c: ClinicRow) {
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex flex-wrap items-center gap-2">
                 <strong class="text-[16px] text-ink-900">{{ c.name }}</strong>
-                <span v-if="c.online_booking_enabled" class="rounded-pill bg-success-bg px-2 py-0.5 text-[12px] font-bold text-success-text">{{ t('Online booking', 'Reserva online') }}</span>
-                <span v-if="c.id === fiscalId" class="rounded-pill bg-brand-tint px-2 py-0.5 text-[12px] font-bold text-brand-text" data-cy="clinic-card-fiscal" :title="t('Every factura carries this location’s legal name and NIF', 'Todas las facturas llevan la razón social y el NIF de esta sede')">{{ t('Issues facturas', 'Emite las facturas') }}</span>
-                <span v-if="c.id === fiscalId && !c.tax_id" class="rounded-pill bg-warning-bg px-2 py-0.5 text-[12px] font-bold text-warning-text" data-cy="clinic-card-missing-nif">{{ t('No tax ID', 'Falta el NIF') }}</span>
+                <UiPill tone="success" v-if="c.online_booking_enabled">{{ t('Online booking', 'Reserva online') }}</UiPill>
+                <UiPill tone="brand" v-if="c.id === fiscalId" data-cy="clinic-card-fiscal" :title="t('Every factura carries this location’s legal name and NIF', 'Todas las facturas llevan la razón social y el NIF de esta sede')">{{ t('Issues facturas', 'Emite las facturas') }}</UiPill>
+                <UiPill tone="warning" v-if="c.id === fiscalId && !c.tax_id" data-cy="clinic-card-missing-nif">{{ t('No tax ID', 'Falta el NIF') }}</UiPill>
               </div>
               <span class="truncate text-[13.5px] text-ink-500">{{ c.address ?? t('No address', 'Sin dirección') }}</span>
               <span class="text-[13px] text-ink-muted">{{ metaLine(c) }}</span>
@@ -217,15 +212,9 @@ async function reactivate(c: ClinicRow) {
                   {{ t(`Archived ${formatDay(c.archived_at!)}`, `Archivada el ${formatDay(c.archived_at!)}`) }}<template v-if="archivedCounts[c.id]"> · {{ t(`${archivedCounts[c.id].appointments} appointments and ${archivedCounts[c.id].patients} patients kept`, `${archivedCounts[c.id].appointments} citas y ${archivedCounts[c.id].patients} pacientes conservados`) }}</template>
                 </span>
               </div>
-              <button
-                type="button"
-                data-cy="clinic-reactivate"
-                class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
-                :disabled="reactivating === c.id"
-                @click="reactivate(c)"
-              >
+              <UiBtn data-cy="clinic-reactivate" :disabled="reactivating === c.id" @click="reactivate(c)">
                 {{ t('Reactivate', 'Reactivar') }}
-              </button>
+              </UiBtn>
             </div>
           </details>
 

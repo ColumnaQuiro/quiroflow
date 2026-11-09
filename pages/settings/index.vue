@@ -112,9 +112,9 @@ const groups = computed(() =>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Settings', 'Ajustes')" />
     <div class="flex-1 overflow-y-auto">
-      <div class="p-6">
+      <div class="p-4 sm:p-6">
         <p class="text-[13px] text-ink-muted2">{{ t('Manage how your clinic runs in QuiroFlow.', 'Gestiona cómo funciona tu clínica en QuiroFlow.') }}</p>
-        <div class="mt-8 max-w-[960px]">
+        <div class="mt-6 max-w-[960px] sm:mt-8">
           <IconLinkGrid :groups="groups" />
         </div>
       </div>

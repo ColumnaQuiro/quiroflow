@@ -137,7 +137,7 @@ async function anonymize() {
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' })
 const yearsAgo = (iso: string) => Math.floor((Date.now() - Date.parse(iso)) / (365.25 * 86400_000))
-const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
 
 // Modal dialogs on this screen: focus stays inside while open, Escape closes,
@@ -173,7 +173,10 @@ useFocusTrap(keepPanel, () => (keeping.value = null), () => !!keeping.value)
               <h2 class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Records past their period · ${due.length}`, `Historias fuera de plazo · ${due.length}`) }}</h2>
               <button v-if="due.length" type="button" class="text-[12.5px] font-semibold text-brand-text" @click="toggleAll">{{ allSelected ? t('Select none', 'Ninguna') : t('Select all', 'Seleccionar todas') }}</button>
             </div>
-            <p v-if="!loading && !due.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('None. Nothing is past its period.', 'Ninguna. Nada ha pasado el plazo.') }}</p>
+            <div v-if="loading" class="divide-y divide-line-row border-t border-line-row" aria-hidden="true">
+              <div v-for="i in 2" :key="i" class="flex items-center gap-3 px-[18px] py-3.5"><UiSkeleton class="h-4 w-48 rounded-ctlSm" /><UiSkeleton class="ml-auto h-4 w-20 rounded-ctlSm" /></div>
+            </div>
+            <p v-else-if="!due.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('None. Nothing is past its period.', 'Ninguna. Nada ha pasado el plazo.') }}</p>
             <div v-else class="overflow-x-auto">
               <table class="w-full min-w-[640px] border-collapse">
                 <thead><tr><th :class="th" class="w-9"><span class="sr-only">{{ t('Select', 'Elegir') }}</span></th><th :class="th">{{ t('Patient', 'Paciente') }}</th><th :class="th">{{ t('Last activity', 'Último movimiento') }}</th><th :class="th">{{ t('Holds', 'Contiene') }}</th><th :class="th">{{ t('Facturas', 'Facturas') }}</th><th :class="th"></th></tr></thead>
@@ -192,7 +195,7 @@ useFocusTrap(keepPanel, () => (keeping.value = null), () => !!keeping.value)
             <div v-if="selected.length" class="flex flex-wrap items-center gap-2 border-t border-line-row bg-surface-subtle px-[18px] py-3">
               <span class="flex-1 text-[13px] text-ink-muted">{{ t(`${selected.length} selected`, `${selected.length} elegidas`) }}</span>
               <UiBtn size="sm" data-cy="retention-keep" @click="keeping = [...selected]">{{ t(`Keep ${selected.length}`, `Conservar ${selected.length}`) }}</UiBtn>
-              <button type="button" class="h-8 rounded-ctl bg-danger-text px-3 text-[13px] font-bold text-surface" data-cy="retention-anonymize" @click="anonymizing = true">{{ t(`Anonymise ${selected.length}`, `Anonimizar ${selected.length}`) }}</button>
+              <button type="button" class="h-8 rounded-ctl bg-danger-text px-3 text-[12.5px] font-semibold text-danger-on hover:opacity-90 touch:h-10" data-cy="retention-anonymize" @click="anonymizing = true">{{ t(`Anonymise ${selected.length}`, `Anonimizar ${selected.length}`) }}</button>
             </div>
           </section>
 
@@ -211,7 +214,10 @@ useFocusTrap(keepPanel, () => (keeping.value = null), () => !!keeping.value)
               <h2 class="text-[16px] font-bold text-ink-900">{{ t('Consents about to expire', 'Consentimientos que caducan') }}</h2>
               <p class="text-[12.5px] text-ink-muted">{{ t('Within 30 days, by the validity set on each template in Settings › Docs.', 'En los próximos 30 días, según la validez de cada plantilla en Ajustes › Documentos.') }}</p>
             </div>
-            <p v-if="!loading && !expiring.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('None.', 'Ninguno.') }}</p>
+            <div v-if="loading" class="divide-y divide-line-row border-t border-line-row" aria-hidden="true">
+              <div v-for="i in 2" :key="i" class="flex items-center gap-3 px-[18px] py-3.5"><UiSkeleton class="h-4 w-48 rounded-ctlSm" /><UiSkeleton class="ml-auto h-4 w-20 rounded-ctlSm" /></div>
+            </div>
+            <p v-else-if="!expiring.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('None.', 'Ninguno.') }}</p>
             <div v-for="e in expiring" :key="e.docId" class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-2.5 text-[13.5px]" data-cy="consent-expiring">
               <span class="font-semibold">{{ e.name }}</span>
               <span class="flex-1 text-ink-700">{{ e.title }} · {{ t(`signed ${day(e.signedAt)}`, `firmado ${day(e.signedAt)}`) }}</span>

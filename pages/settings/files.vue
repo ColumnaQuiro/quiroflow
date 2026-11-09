@@ -123,17 +123,17 @@ function patientName(f: MissingFile) {
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div class="flex flex-col gap-0.5 rounded-card border border-line bg-surface px-4 py-3.5">
               <UiSkeleton v-if="loading" class="h-7 w-16 rounded-ctlSm" />
-              <strong v-else class="text-[26px] font-bold tabular-nums text-ink-900" data-cy="files-total">{{ nf.format(totalFiles) }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900" data-cy="files-total">{{ nf.format(totalFiles) }}</strong>
               <span class="text-[13px] text-ink-muted">{{ t('Files on patients', 'Archivos en pacientes') }}</span>
             </div>
             <div class="flex flex-col gap-0.5 rounded-card border border-line bg-surface px-4 py-3.5">
               <UiSkeleton v-if="loading" class="h-7 w-16 rounded-ctlSm" />
-              <strong v-else class="text-[26px] font-bold tabular-nums" :class="missingFiles ? 'text-warning-text' : 'text-ink-900'" data-cy="files-missing">{{ nf.format(missingFiles) }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold" :class="missingFiles ? 'text-warning-text' : 'text-ink-900'" data-cy="files-missing">{{ nf.format(missingFiles) }}</strong>
               <span class="text-[13px] text-ink-muted">{{ t('Name only, file missing', 'Solo el nombre, falta el archivo') }}</span>
             </div>
             <div class="flex flex-col gap-0.5 rounded-card border border-line bg-surface px-4 py-3.5">
               <UiSkeleton v-if="loading" class="h-7 w-16 rounded-ctlSm" />
-              <strong v-else class="text-[26px] font-bold tabular-nums text-ink-900" data-cy="files-uncompressed">{{ nf.format(uncompressedFiles) }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900" data-cy="files-uncompressed">{{ nf.format(uncompressedFiles) }}</strong>
               <span class="text-[13px] text-ink-muted">{{ t('Not compressed yet', 'Sin comprimir todavía') }}</span>
             </div>
           </div>

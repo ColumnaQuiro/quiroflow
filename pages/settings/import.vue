@@ -294,7 +294,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
             <!-- The steps, each saying how far it got -->
             <nav :aria-label="t('Steps', 'Pasos')" class="shrink-0 border-line py-2 max-md:border-b md:w-[280px] md:border-r">
               <div v-for="group in activeSource.groups" :key="group.key" class="pb-1">
-                <p class="px-4 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
+                <p class="px-4 pb-1 pt-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ group.label }}</p>
                 <button
                   v-for="step in group.steps"
                   :key="step.key"
@@ -312,7 +312,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                     :class="statusOf(step)?.done ? 'bg-success-bg text-success-text' : 'border-[1.5px] border-line-control'"
                     aria-hidden="true"
                   >
-                    <template v-if="statusOf(step)?.done">✓</template>
+                    <svg v-if="statusOf(step)?.done" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2l2.3 2.3 4.7-5" /></svg>
                   </span>
                   <span class="flex min-w-0 flex-1 flex-col">
                     <strong class="text-[14px] font-semibold text-ink-900">{{ step.label }}</strong>

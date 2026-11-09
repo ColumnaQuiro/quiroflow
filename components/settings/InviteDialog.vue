@@ -93,7 +93,7 @@ async function copy() {
     await navigator.clipboard.writeText(result.value.link)
     showToast(t('Link copied', 'Enlace copiado'))
   } catch {
-    showToast(t('Could not copy -- select the link and copy it by hand.', 'No se pudo copiar: selecciona el enlace y cópialo a mano.'), 'error')
+    showToast(t('Could not copy — select the link and copy it by hand.', 'No se pudo copiar: selecciona el enlace y cópialo a mano.'), 'error')
   }
 }
 
@@ -172,7 +172,7 @@ function roleLabel(name: string) {
       <p v-else class="text-[14px] text-ink-500">{{ t('Share this link with them. Whoever opens it joins with this role.', 'Comparte este enlace. Quien lo abra entra con este rol.') }}</p>
       <div class="flex gap-2">
         <input readonly :value="result.link" data-cy="invite-link" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 font-mono text-[13px] text-ink-700" @focus="($event.target as HTMLInputElement).select()" />
-        <button type="button" class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copy">{{ t('Copy', 'Copiar') }}</button>
+        <UiBtn class="shrink-0" @click="copy">{{ t('Copy', 'Copiar') }}</UiBtn>
       </div>
     </div>
   </UiConfirmDialog>

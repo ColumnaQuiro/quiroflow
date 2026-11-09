@@ -346,7 +346,7 @@ function hasDetail(row: AuditRow) {
                       </div>
                     </template>
                     <template v-else>
-                      <p class="text-[12px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ row.action === 'deleted' ? t('As it was when deleted', 'Tal como estaba al eliminarse') : t('As created', 'Tal como se creó') }}</p>
+                      <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ row.action === 'deleted' ? t('As it was when deleted', 'Tal como estaba al eliminarse') : t('As created', 'Tal como se creó') }}</p>
                       <div v-for="f in snapshotList(row)" :key="f.key" class="grid gap-1 text-[13px] sm:grid-cols-[160px_1fr]">
                         <span class="font-semibold text-ink-700">{{ fieldName(f.key) }}</span>
                         <span class="break-words text-ink-900" :class="isLong(f.value) ? 'whitespace-pre-wrap' : ''">{{ show(f.value) }}</span>
@@ -363,7 +363,7 @@ function hasDetail(row: AuditRow) {
               <div v-else class="overflow-x-auto border-t border-line-row">
                 <table class="w-full min-w-[640px] border-collapse">
                   <thead>
-                    <tr class="border-b border-line text-left text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">
+                    <tr class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                       <th class="py-2 pl-[18px] pr-3.5 font-semibold">{{ t('When', 'Cuándo') }}</th>
                       <th class="px-3.5 py-2 font-semibold">{{ t('Who', 'Quién') }}</th>
                       <th class="px-3.5 py-2 font-semibold">{{ t('What', 'Qué') }}</th>
@@ -394,7 +394,7 @@ function hasDetail(row: AuditRow) {
               <div v-else class="overflow-x-auto border-t border-line-row">
                 <table class="w-full min-w-[640px] border-collapse">
                   <thead>
-                    <tr class="border-b border-line text-left text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">
+                    <tr class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                       <th class="py-2 pl-[18px] pr-3.5 font-semibold">{{ t('When', 'Cuándo') }}</th>
                       <th class="px-3.5 py-2 font-semibold">{{ t('Who', 'Quién') }}</th>
                       <th class="px-3.5 py-2 font-semibold">{{ t('What', 'Qué') }}</th>

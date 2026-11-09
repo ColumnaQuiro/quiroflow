@@ -107,32 +107,24 @@ function describe(r: RoleRow) {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-wrap items-end gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6">
-      <div class="flex min-w-[16rem] flex-1 flex-col gap-1 sm:min-w-0">
-        <nav :aria-label="t('Breadcrumb', 'Ruta')" class="flex items-center gap-1.5 text-[13px] text-ink-muted">
-          <NuxtLink to="/settings" class="hover:underline">{{ t('Settings', 'Ajustes') }}</NuxtLink>
-        </nav>
-        <h1 class="text-[20px] font-bold text-ink-900">{{ t('Roles and permissions', 'Roles y permisos') }}</h1>
-        <span class="text-[13px] text-ink-muted">{{ t('What each person on the team can see and do.', 'Qué puede ver y hacer cada persona del equipo.') }}</span>
-      </div>
-      <div class="flex gap-2">
-        <NuxtLink
-          to="/settings/roles/compare"
-          data-cy="roles-compare"
-          class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
-        >
-          {{ t('Compare roles', 'Comparar roles') }}
-        </NuxtLink>
-        <button type="button" data-cy="roles-new" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openNew">
-          {{ t('New role', 'Nuevo rol') }}
-        </button>
-      </div>
-    </header>
+    <PageHeader :title="t('Roles and permissions', 'Roles y permisos')">
+      <NuxtLink
+        to="/settings/roles/compare"
+        data-cy="roles-compare"
+        class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11"
+      >
+        {{ t('Compare roles', 'Comparar roles') }}
+      </NuxtLink>
+      <UiBtn variant="primary" data-cy="roles-new" @click="openNew">
+        {{ t('New role', 'Nuevo rol') }}
+      </UiBtn>
+    </PageHeader>
 
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-4" data-cy="roles-page" :data-ready="ready ? 'true' : undefined">
+          <p class="text-[13.5px] text-ink-muted">{{ t('What each person on the team can see and do.', 'Qué puede ver y hacer cada persona del equipo.') }}</p>
           <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
             {{ t('A role is a set of permissions. Each person is given one from their page in', 'Un rol es un conjunto de permisos. Se asigna a cada persona desde su ficha en') }}
             <NuxtLink to="/settings/team" class="font-semibold text-brand-text hover:underline">{{ t('Team', 'Equipo') }}</NuxtLink>.
@@ -153,15 +145,15 @@ function describe(r: RoleRow) {
             >
               <div class="flex items-center gap-2.5">
                 <strong class="flex-1 text-[16px] text-ink-900" data-cy="role-card-name">{{ displayRoleName(r.name, t) }}</strong>
-                <span v-if="r.is_system" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12px] font-bold text-chip-text">{{ t('Fixed', 'Fijo') }}</span>
+                <UiPill tone="neutral" v-if="r.is_system">{{ t('Fixed', 'Fijo') }}</UiPill>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-ink-muted" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
               </div>
               <span v-if="describe(r)" class="text-[13.5px] leading-snug text-ink-500">{{ describe(r) }}</span>
               <div class="flex flex-wrap gap-1.5">
                 <template v-if="r.is_system">
-                  <span class="rounded-pill bg-brand-tint px-2.5 py-0.5 text-[12px] font-bold text-brand-text">{{ t('Everything', 'Todo') }}</span>
+                  <UiPill tone="brand">{{ t('Everything', 'Todo') }}</UiPill>
                 </template>
-                <span v-for="chip in summaryChips(r.permissions, t)" v-else :key="chip" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12px] font-bold text-chip-text">{{ chip }}</span>
+                <UiPill tone="neutral" v-for="chip in summaryChips(r.permissions, t)" v-else :key="chip">{{ chip }}</UiPill>
               </div>
               <div class="flex items-center gap-2" data-cy="role-card-people">
                 <div class="flex gap-1">

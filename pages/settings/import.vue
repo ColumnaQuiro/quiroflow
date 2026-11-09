@@ -185,13 +185,45 @@ function selectSource(key: string) {
 
 const counts = ref<Record<string, number>>({})
 const countsLoaded = ref(false)
-async function loadCounts() {
-  countsLoaded.value = false
+// quiet: keep showing the numbers already there while the new ones load,
+// rather than blanking every step to "…" each time an import finishes.
+async function loadCounts(opts: { quiet?: boolean } = {}) {
+  if (!opts.quiet) countsLoaded.value = false
+  const source = sourceKey.value
   const steps = activeSource.value.groups.flatMap((g) => g.steps).filter((s) => s.count)
   const results = await Promise.all(steps.map((s) => s.count!()))
+  // Switched source while counting: these numbers belong to the other one.
+  if (source !== sourceKey.value) return
   counts.value = Object.fromEntries(steps.map((s, i) => [s.key, results[i]?.count ?? 0]))
   countsLoaded.value = true
 }
+
+// While the open step writes, re-count just that step every few seconds so its
+// number climbs as records land; when it stops (done, error or stopped), count
+// every step once more. See useImportWriting.
+const LIVE_COUNT_MS = 3000
+let liveTimer: ReturnType<typeof setInterval> | null = null
+function stopLiveCount() {
+  if (liveTimer) clearInterval(liveTimer)
+  liveTimer = null
+}
+async function countStep(source: string, step: Step) {
+  const { count } = await step.count!()
+  if (source !== sourceKey.value || count == null) return
+  counts.value = { ...counts.value, [step.key]: count }
+}
+provideImportWriting((writing) => {
+  stopLiveCount()
+  if (!writing) {
+    loadCounts({ quiet: true })
+    return
+  }
+  const source = sourceKey.value
+  const step = activeStep.value
+  if (!step.count) return
+  liveTimer = setInterval(() => { countStep(source, step).catch(() => {}) }, LIVE_COUNT_MS)
+})
+onBeforeUnmount(stopLiveCount)
 
 onMounted(() => {
   loadSavedPracticeHubConnection()
@@ -200,7 +232,7 @@ onMounted(() => {
   loadCounts()
 })
 // Each source counts its own steps.
-watch(sourceKey, loadCounts)
+watch(sourceKey, () => loadCounts())
 
 const nf = new Intl.NumberFormat('es-ES')
 function statusOf(step: Step): { text: string; done: boolean } | null {

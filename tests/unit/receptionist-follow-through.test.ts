@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asksWhetherToCancel, cancelQuestionDue, chosenOfferedTime, chosenTimeNote, isVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
+import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, isVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
 import { BASE_BEHAVIOUR, BASE_ESCALATIONS } from '../../utils/receptionistBaseRules'
 import { CONFIRM_BEFORE_BOOKING, phoneSharersSection } from '../../utils/receptionistTypes'
 
@@ -125,5 +125,35 @@ describe('phoneSharersSection', () => {
 
   it('is left out when nobody shares it', () => {
     expect(phoneSharersSection([], 'Europe/Madrid', { sendsItself: false })).toBe('')
+  })
+})
+
+// The daily review of 7 Nov 2026, kept as cases so a fix that is already in
+// does not quietly come back.
+describe('7 Nov 2026 review', () => {
+  // A recall answered "Sí, por favor", two times offered, "Lunes 16" chosen --
+  // and then "¿Te confirmo el lunes 16…?" again before booking.
+  it('reads "Lunes 16" as the one time chosen', () => {
+    const offer = 'Te propongo lunes 16 a las 16:30 o martes 17 a las 09:30, ambos con Jordana. ¿Cuál prefieres?'
+    expect(chosenOfferedTime(offer, 'Lunes 16')).toMatchObject({ weekday: 'lunes', dayOfMonth: 16, time: '16:30' })
+  })
+
+  // "Cambiar cita", then "la semana que viene no puedo": other times offered,
+  // no answer, and the visit they could not come to stayed booked.
+  it('knows a change request and a pending offer of times', () => {
+    expect(asksToChangeVisit('Cambiar cita')).toBe(true)
+    expect(asksToChangeVisit('La semana que viene no puedo 🫤')).toBe(true)
+    expect(asksToChangeVisit('No podré ir el martes')).toBe(true)
+    expect(asksToChangeVisit('Confirmar')).toBe(false)
+    expect(asksToChangeVisit('Hay algun hueco lunes o miercoles por la tarde?')).toBe(false)
+    expect(offersTimes('El lunes 16 no queda hueco libre. El miércoles 18 por la tarde tengo las 16:30 o las 17:45, ¿te viene bien alguna?')).toBe(true)
+    expect(offersTimes('Listo: tu cita queda reservada para el lunes 16 de noviembre a las 16:30.')).toBe(false)
+    expect(offersTimes('¿Qué día y franja te vendría mejor?')).toBe(false)
+  })
+
+  it('asks whether to cancel the visit meanwhile, in words the hand-over reads', () => {
+    expect(BASE_BEHAVIOUR.some((line) => line.includes('cancel the one they have meanwhile'))).toBe(true)
+    expect(asksWhetherToCancel('El martes 17 tengo las 15:00. ¿Te quito mientras tanto la cita del martes 10 a las 9:30?')).toBe(true)
+    expect(asksWhetherToCancel('¿Te quito la del martes 10?')).toBe(true)
   })
 })

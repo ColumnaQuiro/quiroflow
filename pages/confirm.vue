@@ -2,6 +2,7 @@
 definePageMeta({ layout: false })
 
 const user = useSupabaseUser()
+const t = useT()
 
 watch(
   user,
@@ -18,7 +19,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
-    <p class="text-sm text-ink-500">Confirming your email…</p>
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4 py-10" role="status">
+    <BookingResult tone="pending" :title="t('Confirming your email…', 'Confirmando tu correo…')" />
   </div>
 </template>

@@ -27,20 +27,20 @@ const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.pric
     <div class="mt-3 space-y-3 text-sm">
       <div v-if="clinic">
         <p class="font-medium text-ink-900">{{ clinic.name }}</p>
-        <p v-if="clinic.address" class="text-ink-muted">{{ clinic.address }}</p>
+        <p v-if="clinic.address" class="whitespace-pre-line text-ink-muted">{{ clinic.address }}</p>
       </div>
-      <div v-if="appointmentType" class="flex items-center justify-between border-t border-line-divider pt-3">
+      <div v-if="appointmentType" class="flex items-baseline justify-between gap-3 border-t border-line-divider pt-3">
         <span class="text-ink-700">{{ appointmentType.name }}</span>
-        <span class="font-medium text-ink-900">{{ formatPrice(priceCents) }}</span>
+        <span class="shrink-0 font-mono font-medium text-ink-900">{{ formatPrice(priceCents) }}</span>
       </div>
       <div v-if="appointmentType && onlinePaymentRequired !== undefined" class="space-y-1 border-t border-line-divider pt-3 text-xs">
         <div class="flex items-center justify-between">
           <span class="text-ink-muted">{{ say({ es: 'Pagar ahora', en: 'Pay now', fr: 'À payer maintenant' }) }}</span>
-          <span class="font-medium text-ink-900">{{ formatPrice(dueNowCents) }}</span>
+          <span class="font-mono font-medium text-ink-900">{{ formatPrice(dueNowCents) }}</span>
         </div>
         <div class="flex items-center justify-between">
           <span class="text-ink-muted">{{ say({ es: 'Pagar en la consulta', en: 'Pay at the clinic', fr: 'À payer au cabinet' }) }}</span>
-          <span class="font-medium text-ink-900">{{ formatPrice(dueAtVisitCents) }}</span>
+          <span class="font-mono font-medium text-ink-900">{{ formatPrice(dueAtVisitCents) }}</span>
         </div>
       </div>
       <div v-if="teamMember" class="border-t border-line-divider pt-3 text-ink-700">

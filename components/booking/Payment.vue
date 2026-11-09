@@ -15,6 +15,9 @@ const emit = defineEmits<{ paid: [] }>()
 const { lang, say } = useBookingLang()
 
 const loading = ref(true)
+// Stripe's fields mounted. Until then, and for good if they failed to load,
+// there is nothing for "Pagar y confirmar" to submit.
+const ready = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const mountEl = ref<HTMLElement | null>(null)
@@ -37,6 +40,7 @@ onMounted(async () => {
     elements = stripe.elements({ clientSecret, locale: lang.value })
     paymentElement = elements.create('payment')
     paymentElement.mount(mountEl.value)
+    ready.value = true
   } catch (err: any) {
     // create-payment-intent's refusals are English sentences for a developer
     // ("Invoice not found"), and Stripe failing to load is no better. The
@@ -74,17 +78,27 @@ async function submit() {
   <div class="rounded-card border border-line bg-surface p-6 shadow-card">
     <div class="flex items-center justify-between">
       <span class="text-sm text-ink-700">{{ say({ es: 'Importe a pagar ahora', en: 'Amount to pay now', fr: 'Montant à payer maintenant' }) }}</span>
-      <span class="text-lg font-semibold text-ink-900">{{ formatPrice(amountCents) }}</span>
+      <span class="font-mono text-lg font-semibold text-ink-900">{{ formatPrice(amountCents) }}</span>
     </div>
 
-    <div v-if="loading" class="mt-6 text-sm text-ink-faint">{{ say({ es: 'Preparando el pago…', en: 'Preparing the payment…', fr: 'Préparation du paiement…' }) }}</div>
+    <!-- Roughly the card form Stripe is about to draw, so the panel does not
+         sit empty under a line of grey text while its script loads. -->
+    <div v-if="loading" class="mt-4 space-y-3" role="status">
+      <span class="sr-only">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</span>
+      <UiSkeleton class="h-11 rounded-ctl" />
+      <div class="grid grid-cols-2 gap-3">
+        <UiSkeleton class="h-11 rounded-ctl" />
+        <UiSkeleton class="h-11 rounded-ctl" />
+      </div>
+      <UiSkeleton class="mt-2 h-9 rounded-ctl touch:h-11" />
+    </div>
     <form v-show="!loading" class="mt-4" @submit.prevent="submit">
       <div ref="mountEl"></div>
       <p v-if="error" role="alert" class="mt-3 text-sm text-danger-text">{{ error }}</p>
       <!-- The appointment is booked before this step and stays booked
            whether or not it is paid (create_public_booking), so the button
            says what it does: pay, not "confirm". -->
-      <UiBtn type="submit" variant="primary" class="mt-5 w-full" :disabled="submitting">
+      <UiBtn v-if="ready" type="submit" variant="primary" class="mt-5 w-full" :disabled="submitting">
         {{ submitting ? say({ es: 'Procesando el pago…', en: 'Processing payment…', fr: 'Paiement en cours…' }) : say({ es: `Pagar ${formatPrice(amountCents)}`, en: `Pay ${formatPrice(amountCents)}`, fr: `Payer ${formatPrice(amountCents)}` }) }}
       </UiBtn>
     </form>

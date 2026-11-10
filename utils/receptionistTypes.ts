@@ -647,7 +647,7 @@ export const REPEAT_CHANGE_LIMIT = 2
 /** How far back a change still counts. */
 export const REPEAT_CHANGE_WINDOW_DAYS = 60
 
-/** One change the receptionist made to a visit, as audit_logs holds it. */
+/** One change to a visit, as audit_logs holds it. */
 export interface DiaryChange {
   at: string
   changes: { starts_at?: { from?: string | null; to?: string | null }; status?: { from?: string | null; to?: string | null } } | null
@@ -655,13 +655,13 @@ export interface DiaryChange {
 
 /**
  * How many times their visits were changed without them coming: the days on
- * which the receptionist moved one to another day, or cancelled one, since
- * they last came. Only what the receptionist did -- it acts on what the
- * person asked, while a move by staff may be the clinic's own doing, and
- * nobody is told "ya la hemos cambiado dos veces" for that.
+ * which one was moved to another day, or cancelled, since they last came.
+ * Which changes count -- the receptionist's and the staff's -- is the
+ * caller's (loadChangesWithoutComing).
  *
  * Counted by day, so "mejor el jueves... no, el viernes" in one conversation
- * is one change; a new time the same day is none.
+ * is one change, and so is a whole series cancelled at once; a new time the
+ * same day is none.
  */
 export function changesWithoutComing(rows: DiaryChange[], lastCameAt: string | null, timeZone: string): number {
   const cameAt = lastCameAt ? new Date(lastCameAt).getTime() : 0
@@ -694,7 +694,7 @@ export function repeatChangeSection(changes: number, opts: { canBook?: boolean; 
   if (changes < REPEAT_CHANGE_LIMIT) return ''
   return [
     `# They have changed their visit ${timesInWords(changes)} without coming`,
-    `Their visit has already been changed or cancelled ${timesInWords(changes)} at their request, and they have not come since. This comes before everything under "Moving a visit they already have" and before any time you could offer them:`,
+    `Their visit has already been changed or cancelled ${timesInWords(changes)}, and they have not come since. This comes before everything under "Moving a visit they already have" and before any time you could offer them:`,
     `- If they ask to change the day or time of a visit again, or to book a new one for themselves, do not offer times${opts.canBook ? ' and do not call book_appointment for it' : ''}. Tell them, kindly and without reproach, that the visit has already been changed ${vecesInWords(changes)} without them having been able to come, that you are passing it to your colleague to look at, and that this time their place cannot be guaranteed -- for example: "Veo que ya hemos cambiado tu cita ${vecesInWords(changes)} y todavía no has podido venir. Se lo paso a mi compañera para que lo revise, pero esta vez no podemos garantizarte el hueco." If they have not said which day or time suits them, ask in that same reply, so your colleague has it.${opts.sendsItself ? ' Then call hand_over_to_colleague with the visit, the day and time they want, and that it is their next change after these.' : ''}`,
     `- A visit they already have stands until your colleague changes it, and you say so. If they say they cannot come to it at all, ${opts.canBook ? 'cancel it with cancel_appointment as usual' : 'say your colleague will cancel it'}, so the time is not lost -- and a new day is still your colleague's.`,
     `- Say it once. If you already told them in this conversation, do not repeat it: your colleague will answer.`,

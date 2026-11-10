@@ -511,8 +511,11 @@ export async function loadBookedVisits(
 
 /**
  * How many times this person's visits were changed without them coming
- * (changesWithoutComing): what the receptionist itself moved or cancelled, read
- * from the audit trail, since their last visit.
+ * (changesWithoutComing): what the receptionist or someone at the clinic moved
+ * or cancelled, read from the audit trail, since their last visit. Staff
+ * changes count too -- most are a patient who phoned or wrote to a person --
+ * though a few are the clinic's own doing, which the trail cannot tell apart.
+ * Imports, crons and the patient's own app do not.
  *
  * "Came" is a completed visit, or one whose time has passed and nobody
  * marked: a clinic slow to mark its visits must not have a patient who came
@@ -544,7 +547,7 @@ export async function loadChangesWithoutComing(supabase: SupabaseClient<Database
       .eq('patient_id', patientId)
       .eq('entity_type', 'appointment')
       .eq('action', 'updated')
-      .eq('actor', 'receptionist')
+      .in('actor', ['receptionist', 'staff'])
       .gte('created_at', since)
       .order('created_at', { ascending: false })
       .limit(100),

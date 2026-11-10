@@ -37,8 +37,14 @@ const examRef = ref<{
 } | null>(null)
 const listingsRef = ref<{ setAll: (l: Listings) => void } | null>(null)
 const store = useAccountStore()
-const { can } = usePermission()
+const { can, restricted } = usePermission()
 const canEditNotes = computed(() => can('visit_notes_edit'))
+// A read-only calendar changes no appointment, its own visits included: the
+// "staff update appointments" policy refuses it outright. So for that role the
+// button signs the note and leaves completing the visit to someone who can,
+// rather than offering "complete" and failing every time it is pressed.
+const readOnlyCalendar = computed(() => restricted('calendar_read_only'))
+const signLabel = computed(() => (signing.value ? t('Signing…', 'Firmando…') : readOnlyCalendar.value ? t('Sign note', 'Firmar nota') : t('Sign & complete', 'Firmar y completar')))
 
 // The listing beside the note writes itself into Action as one line, kept in
 // step as segments are tapped (utils/spinalListings).
@@ -108,10 +114,35 @@ async function signAndComplete() {
   // Selected back: an update RLS refuses changes no row and reports no error,
   // and the button used to finish as if it had worked, the visit still
   // "Booked" and nothing on screen to say so. The note is saved either way.
+  //
+  // The two failures are told apart, because "try again" is only true of one
+  // of them: an error is the request failing, and retrying can work; no row
+  // changed is the database refusing this person, and retrying never will.
   try {
+    if (readOnlyCalendar.value) {
+      await examRef.value?.save()
+      showToast(
+        t(
+          'Note signed. Your role has a read-only calendar, so the front desk marks the visit complete. To change that: Settings › Roles & Permissions.',
+          'Nota firmada. Tu rol tiene el calendario en solo lectura, así que la visita la marca como completada recepción. Para cambiarlo: Ajustes › Roles y permisos.',
+        ),
+        'info',
+        8000,
+      )
+      return
+    }
     const { data: changed, error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointment.id).select('id')
     await examRef.value?.save()
-    if (error || !changed?.length) showToast(t("The note is saved, but the visit couldn't be marked complete. Try again.", 'La nota está guardada, pero no se ha podido completar la visita. Inténtalo de nuevo.'), 'error', 6000)
+    if (error) showToast(t("The note is saved, but the visit couldn't be marked complete. Try again.", 'La nota está guardada, pero no se ha podido completar la visita. Inténtalo de nuevo.'), 'error', 6000)
+    else if (!changed?.length)
+      showToast(
+        t(
+          "The note is saved, but your role can't change this appointment, so the visit wasn't marked complete. Ask the front desk to complete it.",
+          'La nota está guardada, pero tu rol no tiene permiso para cambiar esta cita, así que la visita no se ha completado. Pide a recepción que la complete.',
+        ),
+        'error',
+        8000,
+      )
   } finally {
     signing.value = false
     emit('charted')
@@ -160,7 +191,7 @@ function bring(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note',
         </div>
         <div class="ml-auto hidden shrink-0 items-center gap-2 py-2 pl-3 sm:flex">
           <UiBtn variant="secondary" size="sm" @click="copyLastNote">{{ t('Copy last note', 'Copiar última nota') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" :disabled="signing" data-cy="myday-sign" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="signing" data-cy="myday-sign" @click="signAndComplete">{{ signLabel }}</UiBtn>
         </div>
       </div>
     </div>
@@ -248,7 +279,7 @@ function bring(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note',
     screen, where a thumb reaches them. -->
     <div class="sticky bottom-0 z-10 flex gap-2 border-t border-line bg-surface p-3 sm:hidden">
       <UiBtn variant="secondary" size="lg" @click="copyLastNote">{{ t('Copy last', 'Copiar última') }}</UiBtn>
-      <UiBtn variant="primary" size="lg" class="flex-1" :disabled="signing" data-cy="myday-sign-phone" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
+      <UiBtn variant="primary" size="lg" class="flex-1" :disabled="signing" data-cy="myday-sign-phone" @click="signAndComplete">{{ signLabel }}</UiBtn>
     </div>
   </div>
 </template>

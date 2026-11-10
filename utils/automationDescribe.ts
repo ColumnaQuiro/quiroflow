@@ -32,6 +32,10 @@ export interface NameLookup {
   templates: { name: string; language: string; bodyText: string }[]
   /** Forms, with their questions, for conditions on an answer. */
   docTemplates?: { id: string; title: string; fields: { id: string; label: string }[] }[]
+  /** Patient types, exercise programmes and schedules, for the steps and conditions on them. */
+  patientTypes?: { id: string; name: string }[]
+  exercisePrograms?: { id: string; name: string }[]
+  exerciseSchedules?: { id: string; name: string }[]
 }
 
 export const emptyLookup = (): NameLookup => ({ appointmentTypes: [], practitioners: [], members: [], roles: [], clinics: [], memberships: [], templates: [], docTemplates: [] })
@@ -81,6 +85,16 @@ export function stepTitle(t: Translate, step: DraftStep, lookup: NameLookup): st
       return c.mode === 'remove'
         ? t(`Remove tag "${c.tag ?? ''}"`, `Quitar etiqueta «${c.tag ?? ''}»`)
         : t(`Add tag "${c.tag ?? ''}"`, `Añadir etiqueta «${c.tag ?? ''}»`)
+    case 'patient_type': {
+      const name = lookup.patientTypes?.find((x) => x.id === c.type_id)?.name ?? '…'
+      return c.mode === 'remove' ? t(`Take away the type "${name}"`, `Quitar el tipo «${name}»`) : t(`Give the type "${name}"`, `Poner el tipo «${name}»`)
+    }
+    case 'assign_exercises': {
+      const name = c.schedule_id
+        ? lookup.exerciseSchedules?.find((x) => x.id === c.schedule_id)?.name
+        : lookup.exercisePrograms?.find((x) => x.id === c.program_id)?.name
+      return name ? t(`Assign "${name}"`, `Asignar «${name}»`) : t('Assign exercises', 'Asignar ejercicios')
+    }
     case 'notify': {
       const to = c.to ?? {}
       const who = to.role_id
@@ -124,7 +138,7 @@ export function conditionText(t: Translate, cond: { field?: string; op?: string;
   }
   if (!VALUELESS_OPS.includes(String(cond.op))) {
     if (def.value === 'multi') {
-      const list = def.options === 'appointment_types' ? lookup.appointmentTypes : def.options === 'practitioners' ? lookup.practitioners : []
+      const list = def.options === 'appointment_types' ? lookup.appointmentTypes : def.options === 'practitioners' ? lookup.practitioners : def.options === 'patient_types' ? (lookup.patientTypes ?? []) : []
       value = list.length
         ? names(cond.value, list)
         : (Array.isArray(cond.value) ? cond.value : [])
@@ -168,6 +182,10 @@ export function stepDetail(t: Translate, step: DraftStep, lookup: NameLookup, ru
     }
     case 'tag':
       return t("On the patient's record", 'En la ficha del paciente')
+    case 'patient_type':
+      return c.mode === 'remove' ? t('Ends what the type brought', 'Finaliza lo que trajo el tipo') : t('Brings its exercises', 'Trae sus ejercicios')
+    case 'assign_exercises':
+      return c.schedule_id ? t('Schedule by visit', 'Pauta por visita') : t('Programme', 'Programa')
     case 'notify':
       return String(c.title ?? '')
     case 'lead_stage':

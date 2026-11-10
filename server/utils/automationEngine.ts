@@ -34,6 +34,7 @@ import { automationFieldValue, type MergeContext } from '~/utils/automationField
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
+import { exerciseCount, fireTypeTriggers, notifyExerciseGroups, type ExerciseGroup, type TypeChange } from '~/server/utils/exerciseBulk'
 
 // The automation engine: walks one run of a rule through its steps.
 //
@@ -942,6 +943,67 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
         return { status: 'applied', detail: remove ? `Removed the tag "${tag}".` : `Added the tag "${tag}".` }
       }
 
+      case 'patient_type': {
+        // The same function the record and the Patients list use: a type
+        // given brings its exercises and schedule, one taken away ends them.
+        if (subject.kind !== 'patient') return { status: 'skipped', detail: 'Patient types apply to patients, not leads.' }
+        const typeId = String(config.type_id ?? '')
+        if (!typeId) return { status: 'failed', detail: 'The patient type step has no type.' }
+        const remove = config.mode === 'remove'
+        if (rule.dry_run) return testMode(`the patient type was not ${remove ? 'taken away' : 'given'}.`)
+        const { data, error } = await supabase.rpc('set_patient_types', {
+          p_account_id: run.account_id,
+          p_patient_ids: [subject.patient.id],
+          p_filters: null,
+          p_clinic_id: null,
+          p_add: remove ? [] : [typeId],
+          p_remove: remove ? [typeId] : [],
+          p_end_type_exercises: true,
+        })
+        if (error) return { status: 'failed', detail: `Could not change the patient type: ${error.message}` }
+        const r = data as { added: TypeChange[]; removed: TypeChange[]; exercises: ExerciseGroup[] }
+        await notifyExerciseGroups(supabase, r.exercises)
+        // Other automations that start on this type; never this one again.
+        await fireTypeTriggers(supabase, run.account_id, { added: r.added, removed: r.removed }, origin, { skipRuleId: rule.id })
+        const changed = (remove ? r.removed : r.added).length > 0
+        const given = exerciseCount(r.exercises)
+        return {
+          status: 'applied',
+          detail: remove
+            ? changed ? 'Took the patient type away.' : 'Did not have the patient type.'
+            : changed ? `Gave the patient type${given ? ` and ${given} exercise(s)` : ''}.` : 'Already had the patient type.',
+        }
+      }
+
+      case 'assign_exercises': {
+        if (subject.kind !== 'patient') return { status: 'skipped', detail: 'Exercises are for patients, not leads.' }
+        const programId = config.program_id ? String(config.program_id) : null
+        const scheduleId = config.schedule_id ? String(config.schedule_id) : null
+        if (!programId && !scheduleId) return { status: 'failed', detail: 'The step has no programme or schedule.' }
+        if (rule.dry_run) return testMode('no exercises were assigned.')
+        let items: unknown = []
+        if (!scheduleId && programId) {
+          const { data: list, error: listError } = await supabase.rpc('exercise_program_item_list', { p_program_id: programId })
+          if (listError) return { status: 'failed', detail: `Could not read the programme: ${listError.message}` }
+          items = list ?? []
+          if (!Array.isArray(items) || items.length === 0) return { status: 'skipped', detail: 'The programme is empty or no longer exists.' }
+        }
+        const { data, error } = await supabase.rpc('assign_exercises_to_patients', {
+          p_account_id: run.account_id,
+          p_patient_ids: [subject.patient.id],
+          p_filters: null,
+          p_clinic_id: null,
+          p_items: items,
+          p_schedule_id: scheduleId,
+        })
+        if (error) return { status: 'failed', detail: `Could not assign the exercises: ${error.message}` }
+        const r = data as { added: ExerciseGroup[]; started: number; skipped: number }
+        await notifyExerciseGroups(supabase, r.added)
+        if (scheduleId) return { status: 'applied', detail: r.started ? 'Started the schedule.' : 'Already following a schedule; left as it is.' }
+        const n = exerciseCount(r.added)
+        return { status: 'applied', detail: n ? `Assigned ${n} exercise(s).` : 'Already had every exercise in the programme.' }
+      }
+
       case 'notify': {
         // A push to the chosen team members' devices (web and app), and --
         // unless the step says `create_task: false` -- a task in their Mi día,
@@ -1171,6 +1233,10 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
     const p = subject.patient
     const { data: fresh } = await supabase.from('patients').select('tags, marketing_channels, email').eq('id', p.id).maybeSingle()
     if (used.has('tags')) facts.tags = fresh?.tags ?? []
+    if (used.has('patient_type_ids')) {
+      const { data: types } = await supabase.from('patient_type_members').select('type_id').eq('patient_id', p.id)
+      facts.patient_type_ids = ((types ?? []) as { type_id: string }[]).map((x) => x.type_id)
+    }
     if (used.has('marketing_channels')) facts.marketing_channels = fresh?.marketing_channels ?? []
     if (used.has('has_email')) facts.has_email = Boolean(fresh?.email)
     if (used.has('has_phone')) {

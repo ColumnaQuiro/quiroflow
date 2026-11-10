@@ -110,6 +110,7 @@ function remove(i: number) {
 function multiOptions(def: ConditionFieldDef) {
   if (def.options === 'appointment_types') return b.lookup.value.appointmentTypes.map((x) => ({ value: x.id, label: x.name }))
   if (def.options === 'practitioners') return b.lookup.value.practitioners.map((x) => ({ value: x.id, label: x.full_name }))
+  if (def.options === 'patient_types') return (b.lookup.value.patientTypes ?? []).map((x) => ({ value: x.id, label: x.name }))
   if (def.options === 'lead_stages') return LEAD_STAGE_OPTIONS.map((x) => ({ value: x.value, label: say(t, x.label) }))
   if (def.options === 'lead_channels') return LEAD_CHANNEL_OPTIONS.map((x) => ({ value: x.value, label: say(t, x.label) }))
   return []

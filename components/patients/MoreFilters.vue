@@ -27,6 +27,14 @@ function toggleTag(tag: string) {
   props.form.tags = tags.includes(tag) ? tags.filter((x) => x !== tag) : [...tags, tag]
 }
 
+// Patient types (Settings > Patient types): any of the ones picked.
+const patientTypes = usePatientTypes()
+onMounted(patientTypes.load)
+function toggleType(id: string) {
+  const ids = props.form.types
+  props.form.types = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
+}
+
 const currentClinicName = computed(() => store.currentClinic?.name ?? t('this clinic', 'esta clínica'))
 
 const fieldClass = 'h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
@@ -55,6 +63,24 @@ const labelClass = 'text-[11px] font-[640] uppercase tracking-[.07em] text-ink-f
           {{ tag }}
         </button>
         <span v-if="tagOptions.length === 0" class="text-[12.5px] text-ink-faint">{{ t('No patient has a tag yet.', 'Ningún paciente tiene etiquetas todavía.') }}</span>
+      </div>
+    </fieldset>
+
+    <fieldset v-if="patientTypes.types.value.length" class="flex flex-col gap-1.5 sm:col-span-2 xl:col-span-3">
+      <legend :class="labelClass" class="mb-1.5">{{ t('Patient type (any of)', 'Tipo de paciente (cualquiera)') }}</legend>
+      <div class="flex flex-wrap gap-1.5">
+        <button
+          v-for="ty in patientTypes.types.value"
+          :key="ty.id"
+          type="button"
+          data-cy="type-option"
+          :aria-pressed="form.types.includes(ty.id)"
+          class="flex h-7 items-center gap-1.5 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
+          :class="form.types.includes(ty.id) ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+          @click="toggleType(ty.id)"
+        >
+          <span class="h-2 w-2 rounded-full" :style="{ background: PATIENT_TYPE_DOT[ty.color] }" aria-hidden="true" />{{ ty.name }}
+        </button>
       </div>
     </fieldset>
 

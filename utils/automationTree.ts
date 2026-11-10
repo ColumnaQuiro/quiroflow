@@ -320,6 +320,14 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
       case 'tag':
         if (!String(c.tag ?? '').trim()) add(step.id, 'A tag step has no tag.', 'Un paso de etiqueta no tiene etiqueta.')
         break
+      case 'patient_type':
+        if (!c.type_id) add(step.id, 'A patient type step has no type.', 'Un paso de tipo de paciente no tiene tipo.')
+        if (isLeadTrigger(rule.trigger_event)) add(step.id, 'Patient types apply to patients, not leads.', 'Los tipos de paciente son de pacientes, no de leads.')
+        break
+      case 'assign_exercises':
+        if (!c.program_id && !c.schedule_id) add(step.id, 'An assign-exercises step has no programme or schedule.', 'Un paso de asignar ejercicios no tiene programa ni pauta.')
+        if (isLeadTrigger(rule.trigger_event)) add(step.id, 'Exercises are for patients, not leads.', 'Los ejercicios son de pacientes, no de leads.')
+        break
       case 'notify': {
         const to = c.to ?? {}
         if (!to.team_member_id && !to.role_id && !to.practitioner_of_appointment && !to.patients_practitioner) add(step.id, 'A notify step does not say who to tell.', 'Un aviso no dice a quién avisar.')

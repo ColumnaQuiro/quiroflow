@@ -19,6 +19,12 @@ export function triggerTagMatches(filters: Filters, tag: string): boolean {
   return !want || want === norm(tag)
 }
 
+/** patient.type_added / patient.type_removed: the type, or any when none is chosen. */
+export function triggerTypeMatches(filters: Filters, typeId: string): boolean {
+  const want = filters?.trigger_type_id
+  return typeof want !== 'string' || !want || want === typeId
+}
+
 /** satisfaction.answered: 'high' is 4-5, 'low' is 1-3, anything else any score. */
 export function triggerScoreMatches(filters: Filters, score: number): boolean {
   if (filters?.trigger_score === 'high') return score >= 4

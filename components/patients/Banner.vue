@@ -361,6 +361,9 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           :can-contact="canContact && !patient.do_not_contact"
         />
       </template>
+      <!-- Patient types (Joven, Mayor de 65...): what the clinic groups them
+           by, and what brings them their default exercises. -->
+      <PatientsTypesInline :patient-id="patient.id" :can-edit="canEdit" />
     </div>
 
     <!-- Phone: the three things a thumb reaches for, at 46px. -->

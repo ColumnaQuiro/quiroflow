@@ -16,6 +16,7 @@ import {
 } from '~/utils/patientFilters'
 import { usePatientSegments, type PatientSegment } from '~/composables/usePatientSegments'
 import { listFilters as filtersOfList, usePatientLists, type PatientList } from '~/composables/usePatientLists'
+import type { PatientSelection } from '~/composables/usePatientTypes'
 import type { AudienceView } from '~/components/patients/AudienceTabs.vue'
 import type { AudienceRow } from '~/components/patients/AudienceTable.vue'
 
@@ -518,6 +519,20 @@ function clearSelection() {
 const manageableLists = computed(() => lists.value.filter(canManageList))
 const addingToList = ref(false)
 const bulkBusy = ref(false)
+// Patient types: the filter's names, and the bulk actions that give types and
+// exercises to the selection (the same dialogs as the Exercises section).
+const patientTypes = usePatientTypes()
+onMounted(patientTypes.load)
+const bulkDialog = ref<'' | 'type' | 'exercises'>('')
+const bulkSelection = computed<PatientSelection>(() =>
+  allMatchingSelected.value ? { filters: listFilters.value as Record<string, unknown>, clinicId: store.currentClinicId ?? null } : { patientIds: [...selectedIds.value] },
+)
+function onBulkDone(summary: string) {
+  bulkDialog.value = ''
+  clearSelection()
+  showToast(summary)
+  loadPatients()
+}
 
 async function onAddToList(target: { listId: string } | { newName: string; shared: boolean }) {
   bulkBusy.value = true
@@ -579,6 +594,7 @@ function filterSummary(f: PatientFilters): string {
   if (f.q) parts.push(`"${f.q}"`)
   if (f.status) parts.push(f.status === 'inactive' ? t('Archived', 'Archivado') : t('Any status', 'Cualquier estado'))
   for (const tag of f.tags ?? []) parts.push(`#${tag}`)
+  for (const id of f.types ?? []) parts.push(patientTypes.byId.value.get(id)?.name ?? t('Patient type', 'Tipo de paciente'))
   if (f.list) parts.push(t(`On ${listName(f.list)}`, `En ${listName(f.list)}`))
   if (f.notList) parts.push(t(`Not on ${listName(f.notList)}`, `No en ${listName(f.notList)}`))
   if (f.family) parts.push(FAMILY_LABELS.value[f.family]!)
@@ -759,6 +775,10 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   for (const tag of form.tags) {
     out.push({ key: `tag:${tag}`, label: `#${tag}`, clear: () => (form.tags = form.tags.filter((x) => x !== tag)) })
   }
+  for (const id of form.types) {
+    const name = patientTypes.byId.value.get(id)?.name ?? t('Patient type', 'Tipo de paciente')
+    out.push({ key: `type:${id}`, label: name, clear: () => (form.types = form.types.filter((x) => x !== id)) })
+  }
   // With one clinic there is nothing to choose between; a list opens in
   // "every clinic" and saying so would only be noise.
   if (form.clinic && store.clinics.length > 1) {
@@ -811,7 +831,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
 // How many of the panel's filters are on, for its button.
 const moreFiltersCount = computed(() => {
   const f = currentFilters.value
-  return [f.tags, store.clinics.length > 1 && f.clinic, f.lastVisitFrom || f.lastVisitTo, f.futureAppointment, f.bono, f.createdFrom || f.createdTo, f.app, f.birthdayThisMonth, f.notList, f.family, f.familyBono, f.marketing].filter(Boolean).length
+  return [f.tags, f.types, store.clinics.length > 1 && f.clinic, f.lastVisitFrom || f.lastVisitTo, f.futureAppointment, f.bono, f.createdFrom || f.createdTo, f.app, f.birthdayThisMonth, f.notList, f.family, f.familyBono, f.marketing].filter(Boolean).length
 })
 
 // "1 Oct 2026 – 31 Oct 2026", "from 1 Oct 2026", "until 31 Oct 2026". Built
@@ -942,6 +962,9 @@ function tagTone(tag: string) {
         {{ t('Only the list goes. Its patients stay as they are, and anything aimed at the list stops reaching them.', 'Solo se elimina la lista. Sus pacientes siguen igual, y lo que iba dirigido a la lista deja de llegarles.') }}
       </p>
     </UiConfirmDialog>
+
+    <PatientsTypeAssignDialog v-if="bulkDialog === 'type'" :selection="bulkSelection" :count="selectionCount" @done="onBulkDone" @cancel="bulkDialog = ''" />
+    <ExercisesBulkAssignDialog v-if="bulkDialog === 'exercises'" :selection="bulkSelection" :count="selectionCount" @done="onBulkDone" @cancel="bulkDialog = ''" />
 
     <PatientsAddToListDialog
       v-if="addingToList"
@@ -1191,6 +1214,8 @@ function tagTone(tag: string) {
           {{ t(`Select all ${totalCount} that match`, `Seleccionar los ${totalCount} que coinciden`) }}
         </button>
         <div class="ml-auto flex items-center gap-1.5">
+          <UiBtn v-if="can('patients_edit') && patientTypes.active.value.length" variant="secondary" size="sm" data-cy="bulk-patient-type" :disabled="bulkBusy" @click="bulkDialog = 'type'">{{ t('Patient type', 'Tipo de paciente') }}</UiBtn>
+          <UiBtn v-if="can('exercises_manage')" variant="secondary" size="sm" data-cy="bulk-assign-exercises" :disabled="bulkBusy" @click="bulkDialog = 'exercises'">{{ t('Assign exercises', 'Asignar ejercicios') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="bulk-add-to-list" :disabled="bulkBusy" @click="addingToList = true">{{ t('Add to list', 'Añadir a lista') }}</UiBtn>
           <UiBtn v-if="activeList && canManageList(activeList)" variant="secondary" size="sm" data-cy="bulk-remove-from-list" :disabled="bulkBusy" @click="removeSelectionFromList">
             {{ t('Remove from this list', 'Quitar de esta lista') }}

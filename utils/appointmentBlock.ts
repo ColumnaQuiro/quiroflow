@@ -7,6 +7,14 @@ import type { AppointmentStage } from './appointmentStage'
 // cannot fit, so the details are ranked and the lowest-ranked go first:
 //
 //   1 name              always (week: initial + surname)
+//   1½ practitioner     whole-clinic tab only: their initials in their
+//                       colour. On that tab "whose visit is this" is the
+//                       first question, and the block had no other place
+//                       that answered it at every size. Before the name;
+//                       on a two-line week block, before the time instead,
+//                       which gives way to it (the grid's axis has the
+//                       time) -- at 71px, a week column split into rooms,
+//                       the badge beside the name cut "P. Mateu" to "P. Ma…"
 //   2 stage             always -- the border; the label only where it fits
 //   2½ re-exam visit    always -- an icon beside the name; the care plan's
 //                       review is what the visit IS, so it outranks the money
@@ -39,6 +47,10 @@ export interface LadderInput {
   forms?: boolean
   /** A care plan's re-exam visit. */
   marker?: boolean
+  /** The practitioner badge's initials, when the block draws one (the
+   *  whole-clinic tab). Where it goes, and what gives way to it, is the
+   *  ladder's call: see Ladder.badge. */
+  badgeText?: string
   /** The stage label as it will print, for sizing the pill. */
   pillText: string
   /** The patient's name as it will print. The name outranks the label, so
@@ -62,12 +74,22 @@ export interface Ladder {
   moved: boolean
   noNext: boolean
   marker: boolean
+  /** Where the practitioner badge goes: before the name, or leading the
+   *  detail line (two-line week blocks). Never dropped for room once asked
+   *  for: on the whole-clinic tab it is what the block is read for. */
+  badge: 'none' | 'name' | 'meta'
   /** Tall enough that the detail row may wrap instead of dropping anything. */
   wrap: boolean
 }
 
 /** Below this a block is a single line. */
 export const COMPACT_BELOW_PX = 40
+/** A week block with a practitioner badge keeps two lines down to this:
+ *  a 30-minute visit at the narrowest week scale (81px an hour) is 38.5px,
+ *  and fits the name line (13.2px) over the 14px badge in its 28.5px. One
+ *  line would put the badge beside the name, which then lost half its
+ *  letters on most of a work week split into rooms. */
+export const WEEK_BADGE_TWO_LINES_FROM_PX = 38
 /** At or above this the detail row wraps onto a third line rather than dropping items. */
 export const WRAP_FROM_PX = 76
 /** Narrower than this, a day block's stage pill shows its icon only. */
@@ -91,15 +113,22 @@ const MARKER_PX = 14
 const MOVED_PX = 26
 const NO_NEXT_PX = 82
 const GAP_PX = 6
+// A circle for one letter (14px in week view, 18px in day), a pill a letter
+// wider for two. 16 splits the difference; the template still ellipsises.
+const badgePx = (text: string | undefined) => (text ? 16 + Math.max(0, text.length - 1) * 7 : 0)
+// The week detail line: the type square and its gap, then "09:30".
+const WEEK_SQUARE_PX = 14
+const WEEK_TIME_PX = 31
 
 export function blockLadder(input: LadderInput): Ladder {
-  const compact = input.height < COMPACT_BELOW_PX
   const week = input.density === 'week'
+  const compact = input.height < (week && input.badgeText ? WEEK_BADGE_TWO_LINES_FROM_PX : COMPACT_BELOW_PX)
   // Completed needs no label: the muted fill already says so, and a pill on
   // every past visit is the noise this redesign exists to remove. Confirmed in
   // week view the same way -- it is the default, the other stages stand out
   // against it.
   const pillHidden = input.stage === 'completed' || (week && input.stage === 'confirmed')
+  const badgeRoom = input.badgeText ? badgePx(input.badgeText) + GAP_PX : 0
 
   if (week) {
     // The short name is rank 1, so the forms icon only goes where it would
@@ -111,24 +140,29 @@ export function blockLadder(input: LadderInput): Ladder {
       WEEK_INNER_PAD_PX -
       Math.ceil((input.nameText?.length ?? 8) * WEEK_NAME_CHAR_PX) -
       (pillHidden ? 0 : 18 + GAP_PX) -
-      (input.marker ? MARKER_PX + GAP_PX : 0)
+      (input.marker ? MARKER_PX + GAP_PX : 0) -
+      (compact ? badgeRoom : 0)
+    // Two lines: the badge leads the second, and the time keeps its place
+    // beside it only where both fit.
+    const timeFits = !input.badgeText || input.width - WEEK_INNER_PAD_PX - badgeRoom - WEEK_SQUARE_PX >= WEEK_TIME_PX
     return {
       compact,
       shortName: true,
       pill: pillHidden ? 'none' : 'icon',
       owes: input.owes ? 'dot' : 'none',
-      meta: compact ? 'none' : 'time',
+      meta: compact || !timeFits ? 'none' : 'time',
       forms: !!input.forms && room >= FORMS_PX,
       note: false,
       bono: false,
       moved: false,
       noNext: false,
       marker: !!input.marker,
+      badge: !input.badgeText ? 'none' : compact ? 'name' : 'meta',
       wrap: false,
     }
   }
 
-  const inner = input.width - 20 // padding + border
+  const inner = input.width - 20 - badgeRoom // padding + border, and the badge before the name
   const owesPx = input.owes ? textPx(input.owesText ?? 'Debe 00,00 €', 14) : 0
   // Rank 1 before rank 2: the label is shown only if the whole name still
   // fits beside it (and beside the money, on a one-line block). Spanish
@@ -151,14 +185,14 @@ export function blockLadder(input: LadderInput): Ladder {
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext: false, marker, wrap: false }
+    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext: false, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
   // Line two, filled in rank order until it runs out: the money first (rank
   // 3), then enough of the time/type/practitioner text to be worth showing,
   // then the optional chips.
-  let line2 = inner - 14 // the type square and its gap
+  let line2 = inner + badgeRoom - 14 // the type square and its gap; the badge is line one's only
   if (input.owes) line2 -= owesPx + GAP_PX
   const meta: Ladder['meta'] = wrap || line2 >= META_MIN_PX ? 'full' : 'none'
   if (meta === 'full') line2 -= META_MIN_PX
@@ -180,7 +214,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const moved = take(input.moved > 0, MOVED_PX)
   const noNext = take(input.noNext, NO_NEXT_PX)
 
-  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, wrap }
+  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap }
 }
 
 /** "Laura Gómez" -> "L. Gómez", for week view's narrow columns. */
@@ -190,4 +224,25 @@ export function shortPatientName(first: string | null | undefined, last: string 
   if (!l) return f
   if (!f) return l
   return `${f[0]}. ${l.split(/\s+/)[0]}`
+}
+
+/**
+ * The shortest initials that still tell a clinic's practitioners apart, for
+ * the calendar's practitioner badge: "L" when Léa is the only L, "LM" and
+ * "LS" when there are two. A badge is 16px, so one letter is the goal; the
+ * second letter is only spent where the first would be ambiguous. Two people
+ * whose two letters still match keep them, and their colours tell them apart.
+ */
+export function practitionerBadgeLabels(members: { id: string; full_name: string | null }[]): Map<string, string> {
+  const words = (name: string | null) => (name ?? '').trim().split(/\s+/).filter(Boolean)
+  const first = (name: string | null) => (words(name)[0]?.[0] ?? '?').toLocaleUpperCase('es')
+  const two = (name: string | null) => {
+    const w = words(name)
+    return w.length > 1 ? `${w[0][0]}${w[w.length - 1][0]}`.toLocaleUpperCase('es') : first(name)
+  }
+  // Á and A are one letter for this: "Á" beside "A" at 16px is no help.
+  const key = (name: string | null) => first(name).normalize('NFD').replace(/\p{M}/gu, '')
+  const count = new Map<string, number>()
+  for (const m of members) count.set(key(m.full_name), (count.get(key(m.full_name)) ?? 0) + 1)
+  return new Map(members.map((m) => [m.id, (count.get(key(m.full_name)) ?? 0) > 1 ? two(m.full_name) : first(m.full_name)]))
 }

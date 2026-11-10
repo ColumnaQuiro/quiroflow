@@ -32,6 +32,16 @@ export interface VisitMarkerView {
   expectedTypeName: string | null
 }
 
+/** Whose visit it is, drawn on the whole-clinic tab only (PractitionerBadge). */
+export interface PractitionerBadgeView {
+  /** practitionerBadgeLabels: "L", or "LM" where L alone is ambiguous. */
+  initials: string
+  /** team_members.color; null when the visit has no practitioner. */
+  color: string | null
+  /** The full name; null when the visit has no practitioner. */
+  name: string | null
+}
+
 export interface BlockView {
   id: string
   name: string
@@ -59,6 +69,9 @@ export interface BlockView {
   movedCount: number
   noNext: boolean
   marker?: VisitMarkerView | null
+  /** Set on the whole-clinic tab only: one practitioner's own tab has no
+   *  need to say whose each visit is. */
+  practitioner?: PractitionerBadgeView | null
 }
 
 const props = withDefaults(
@@ -109,6 +122,7 @@ const ladder = computed(() =>
     moved: props.view.movedCount,
     noNext: props.view.noNext,
     marker: !!props.view.marker,
+    badgeText: props.view.practitioner ? props.view.practitioner.initials || '?' : undefined,
     pillText: pillText.value,
     nameText: props.density === 'week' ? props.view.shortName : props.view.name,
     owesText: owesText.value,
@@ -161,7 +175,9 @@ const struck = computed(() => props.view.stage === 'noshow' || props.view.stage 
 
 const metaText = computed(() => {
   if (ladder.value.meta === 'time') return props.view.timeLabel
-  return [props.view.timeLabel, props.view.typeName, props.view.practitionerName].filter(Boolean).join(' · ')
+  // The badge already says whose visit it is; the name would repeat it in
+  // the line the bono and the other chips compete for.
+  return [props.view.timeLabel, props.view.typeName, props.view.practitioner ? null : props.view.practitionerName].filter(Boolean).join(' · ')
 })
 
 const markerText = computed(() => {
@@ -174,6 +190,7 @@ const markerText = computed(() => {
 const ariaLabel = computed(() =>
   [
     props.view.name,
+    props.view.practitioner ? (props.view.practitioner.name ?? t('No practitioner', 'Sin profesional')) : null,
     props.view.timeLabel,
     props.view.typeName,
     markerText.value || null,
@@ -203,6 +220,14 @@ const ariaLabel = computed(() =>
     :aria-label="ariaLabel"
   >
     <div class="flex min-w-0 items-center gap-[5px]">
+      <CalendarPractitionerBadge
+        v-if="ladder.badge === 'name' && view.practitioner"
+        :initials="view.practitioner.initials"
+        :color="view.practitioner.color"
+        :name="view.practitioner.name"
+        :size="week ? 'sm' : 'md'"
+        :class="view.stage === 'completed' || struck ? 'opacity-70' : ''"
+      />
       <span
         class="min-w-0 shrink truncate font-semibold leading-[1.2]"
         :class="[
@@ -249,7 +274,14 @@ const ariaLabel = computed(() =>
       <span v-if="ladder.owes === 'inline'" class="shrink-0 whitespace-nowrap rounded-[5px] border border-danger-border bg-danger-bg px-1.5 py-0.5 text-[11px] font-bold text-danger-text" data-cy="appt-block-owes">{{ owesText }}</span>
     </div>
 
-    <div v-if="ladder.meta !== 'none' || ladder.owes === 'meta'" class="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-muted" :class="ladder.wrap ? 'flex-wrap' : ''">
+    <div v-if="ladder.meta !== 'none' || ladder.owes === 'meta' || ladder.badge === 'meta'" class="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-muted" :class="ladder.wrap ? 'flex-wrap' : ''">
+      <CalendarPractitionerBadge
+        v-if="ladder.badge === 'meta' && view.practitioner"
+        :initials="view.practitioner.initials"
+        :color="view.practitioner.color"
+        :name="view.practitioner.name"
+        :class="view.stage === 'completed' || struck ? 'opacity-70' : ''"
+      />
       <span class="h-2 w-2 shrink-0 rounded-[2px]" :class="view.stage === 'completed' ? 'opacity-70' : ''" :style="{ background: typeColor }" />
       <span v-if="ladder.meta !== 'none'" class="min-w-0 shrink truncate">{{ metaText }}</span>
       <span class="grow" />

@@ -31,8 +31,8 @@ async function confirm() {
     const r = await assign(props.selection, mode.value === 'add' ? { add: chosen.value } : { remove: chosen.value, endTypeExercises: endExercises.value })
     const parts = [
       mode.value === 'add'
-        ? t(`Type given to ${r.added === 1 ? '1 patient' : `${r.added} patients`}`, `Tipo puesto a ${r.added === 1 ? '1 paciente' : `${r.added} pacientes`}`)
-        : t(`Type taken from ${r.removed === 1 ? '1 patient' : `${r.removed} patients`}`, `Tipo quitado a ${r.removed === 1 ? '1 paciente' : `${r.removed} pacientes`}`),
+        ? t(`Type given to ${r.added} patients`, `Tipo puesto a ${r.added} pacientes`)
+        : t(`Type taken from ${r.removed} patients`, `Tipo quitado a ${r.removed} pacientes`),
     ]
     if (r.exercises) parts.push(t(`${r.exercises} exercises assigned`, `${r.exercises} ejercicios asignados`))
     emit('done', parts.join(' · '))

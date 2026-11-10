@@ -92,6 +92,7 @@ const sources = computed<Source[]>(() => [
           { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries.', 'Entradas del historial.'), count: counted('contact_log', 'PH-log-') },
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders.', 'Recordatorios de recepción.') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form.', 'También crea una plantilla de documento por formulario.'), count: counted('patient_docs', 'PH-form-') },
+          { key: 'signed_forms', label: t('Signed forms', 'Formularios firmados'), hint: t('Each form’s signed original as a PDF, with its signature and drawings. Runs on the server; needs Form responses first.', 'El original firmado de cada formulario en PDF, con su firma y sus dibujos. Funciona en el servidor; requiere antes Respuestas de formularios.'), count: counted('patient_files', 'PH-form-pdf-') },
           { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs, straight from PracticeHub’s API. Skips every file already here.', 'Escaneos, fotos y PDF, directo desde la API de PracticeHub. Se salta los que ya están aquí.'), count: () => counted('patient_files')().not('storage_path', 'is', null) },
         ],
       },
@@ -402,6 +403,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportPracticeHubClinicalNotesImporter v-else-if="activeStep.key === 'treatment_notes'" />
                 <ImportPracticeHubCarePlansImporter v-else-if="activeStep.key === 'care_plans'" />
                 <ImportPracticeHubCustomFormResponsesImporter v-else-if="activeStep.key === 'custom_form_responses'" />
+                <ImportPracticeHubSignedForms v-else-if="activeStep.key === 'signed_forms'" />
                 <ImportPracticeHubFilesImporter v-else-if="activeStep.key === 'file_attachments'" />
               </template>
               <template v-else-if="sourceKey === 'quirocitas'">

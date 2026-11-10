@@ -1,6 +1,7 @@
 import { orderTypes } from './appointmentTypes'
 import { FAMILY_RELATIONS } from './familyRelations'
 import { cameFromAd, type LeadOrigin } from './receptionistLeadOrigin'
+import { clinicDateOf } from './clinicClock'
 
 // Which appointment types the AI receptionist may offer.
 //
@@ -630,6 +631,75 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+/**
+ * Someone who keeps changing a visit and never comes. A handful of patients
+ * moved or cancelled the same visit two and three times through the
+ * receptionist without attending in between (seen 10 Nov 2026): each change
+ * was granted on the spot, so the time they left went unused and the one they
+ * took was kept from somebody else, again and again.
+ *
+ * From the third change on, it is a person's: the receptionist says so, says
+ * the place cannot be guaranteed, and hands it over.
+ */
+export const REPEAT_CHANGE_LIMIT = 2
+/** How far back a change still counts. */
+export const REPEAT_CHANGE_WINDOW_DAYS = 60
+
+/** One change the receptionist made to a visit, as audit_logs holds it. */
+export interface DiaryChange {
+  at: string
+  changes: { starts_at?: { from?: string | null; to?: string | null }; status?: { from?: string | null; to?: string | null } } | null
+}
+
+/**
+ * How many times their visits were changed without them coming: the days on
+ * which the receptionist moved one to another day, or cancelled one, since
+ * they last came. Only what the receptionist did -- it acts on what the
+ * person asked, while a move by staff may be the clinic's own doing, and
+ * nobody is told "ya la hemos cambiado dos veces" for that.
+ *
+ * Counted by day, so "mejor el jueves... no, el viernes" in one conversation
+ * is one change; a new time the same day is none.
+ */
+export function changesWithoutComing(rows: DiaryChange[], lastCameAt: string | null, timeZone: string): number {
+  const cameAt = lastCameAt ? new Date(lastCameAt).getTime() : 0
+  const days = new Set<string>()
+  for (const row of rows) {
+    const at = new Date(row.at)
+    if (!(at.getTime() > cameAt)) continue
+    const moved = row.changes?.starts_at
+    const otherDay = Boolean(moved?.from && moved?.to) && clinicDateOf(new Date(moved!.from!), timeZone) !== clinicDateOf(new Date(moved!.to!), timeZone)
+    const cancelled = row.changes?.status?.to === 'cancelled'
+    if (otherDay || cancelled) days.add(clinicDateOf(at, timeZone))
+  }
+  return days.size
+}
+
+const timesInWords = (n: number) => (n === 2 ? 'twice' : `${n} times`)
+const vecesInWords = (n: number) => (n === 2 ? 'dos veces' : n === 3 ? 'tres veces' : `${n} veces`)
+
+/** What book_appointment answers for their own visit once the limit is reached. */
+export function repeatChangeRefusal(changes: number): string {
+  return `Their visit has already been changed or cancelled ${timesInWords(changes)} without them coming, so this one is not yours to book or move. Do not offer times and do not say anything is booked or moved. Call hand_over_to_colleague with the visit and the day and time they want, and tell them, kindly, that it has already been changed ${vecesInWords(changes)} without them having come, that you are passing it to your colleague, and that their place cannot be guaranteed.`
+}
+
+/**
+ * The same, in the prompt, so it is said before any time is offered. On its
+ * own section rather than inside rescheduleSection: someone who cancelled
+ * twice has no visit booked, and asks for a new one.
+ */
+export function repeatChangeSection(changes: number, opts: { canBook?: boolean; sendsItself?: boolean }): string {
+  if (changes < REPEAT_CHANGE_LIMIT) return ''
+  return [
+    `# They have changed their visit ${timesInWords(changes)} without coming`,
+    `Their visit has already been changed or cancelled ${timesInWords(changes)} at their request, and they have not come since. This comes before everything under "Moving a visit they already have" and before any time you could offer them:`,
+    `- If they ask to change the day or time of a visit again, or to book a new one for themselves, do not offer times${opts.canBook ? ' and do not call book_appointment for it' : ''}. Tell them, kindly and without reproach, that the visit has already been changed ${vecesInWords(changes)} without them having been able to come, that you are passing it to your colleague to look at, and that this time their place cannot be guaranteed -- for example: "Veo que ya hemos cambiado tu cita ${vecesInWords(changes)} y todavía no has podido venir. Se lo paso a mi compañera para que lo revise, pero esta vez no podemos garantizarte el hueco." If they have not said which day or time suits them, ask in that same reply, so your colleague has it.${opts.sendsItself ? ' Then call hand_over_to_colleague with the visit, the day and time they want, and that it is their next change after these.' : ''}`,
+    `- A visit they already have stands until your colleague changes it, and you say so. If they say they cannot come to it at all, ${opts.canBook ? 'cancel it with cancel_appointment as usual' : 'say your colleague will cancel it'}, so the time is not lost -- and a new day is still your colleague's.`,
+    `- Say it once. If you already told them in this conversation, do not repeat it: your colleague will answer.`,
+    `- This is about their own visits. A visit for their child, a relative or someone they bring is booked as usual.`,
+  ].join('\n')
 }
 
 /**

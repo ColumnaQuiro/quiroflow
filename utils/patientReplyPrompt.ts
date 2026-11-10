@@ -5,7 +5,7 @@ import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { clinicDetailsSection, teamSection, type PromptClinic } from './receptionistClinic'
-import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, phoneSharersSection, type PhoneSharer, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
+import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, phoneSharersSection, type PhoneSharer, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, repeatChangeSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -318,6 +318,8 @@ export function buildPatientReplyPrompt(
     searchTool?: boolean
     /** Their booked visits, whose types they can be offered new times for. */
     bookedVisits?: BookedVisit[]
+    /** Times their visit was changed without them coming (loadChangesWithoutComing). */
+    changesWithoutComing?: number
     /** Sent without a person reading it first; see buildSystemPrompt's sendsItself. */
     sendsItself?: boolean
     /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
@@ -414,6 +416,7 @@ export function buildPatientReplyPrompt(
     returningPatientSection(opts.facts, { reactivationType: opts.reactivationType, now: opts.calendar.now }),
     // Listed under "What you already know", so not again here.
     rescheduleSection(booked, opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { listVisits: false, canBook: opts.canBook }),
+    repeatChangeSection(opts.changesWithoutComing ?? 0, { canBook: opts.canBook, sendsItself: opts.sendsItself }),
     hasTimes
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',

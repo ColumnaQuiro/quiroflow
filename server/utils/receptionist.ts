@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { baseBehaviourSection, escalationSection } from '~/utils/receptionistBaseRules'
 import type { Database } from '~/types/database.types'
 import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
-import { CONFIRM_BEFORE_BOOKING, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, repeatChangeSection, changesWithoutComing, REPEAT_CHANGE_WINDOW_DAYS, type DiaryChange, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -509,6 +509,54 @@ export async function loadBookedVisits(
   }
 }
 
+/**
+ * How many times this person's visits were changed without them coming
+ * (changesWithoutComing): what the receptionist itself moved or cancelled, read
+ * from the audit trail, since their last visit.
+ *
+ * "Came" is a completed visit, or one whose time has passed and nobody
+ * marked: a clinic slow to mark its visits must not have a patient who came
+ * yesterday told they never did. A no-show is not coming.
+ *
+ * Any failure reads as none: the rule is a courtesy to the clinic, and
+ * refusing to move a visit because a query failed would be the worse error.
+ */
+export async function loadChangesWithoutComing(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null, timeZone: string): Promise<number> {
+  if (!patientId) return 0
+  const now = Date.now()
+  const since = new Date(now - REPEAT_CHANGE_WINDOW_DAYS * 86_400_000).toISOString()
+  const [came, changed] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('starts_at')
+      .eq('account_id', accountId)
+      .eq('patient_id', patientId)
+      .in('status', ['completed', 'booked'])
+      .is('deleted_at', null)
+      .gte('starts_at', since)
+      .lt('starts_at', new Date(now - 3600_000).toISOString())
+      .order('starts_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('audit_logs')
+      .select('created_at, changes')
+      .eq('account_id', accountId)
+      .eq('patient_id', patientId)
+      .eq('entity_type', 'appointment')
+      .eq('action', 'updated')
+      .eq('actor', 'receptionist')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ])
+  if (came.error || changed.error) {
+    console.error('[receptionist] could not read their changes:', (came.error ?? changed.error)!.message)
+    return 0
+  }
+  const rows = (changed.data ?? []).map((row) => ({ at: row.created_at, changes: row.changes as DiaryChange['changes'] }))
+  return changesWithoutComing(rows, came.data?.[0]?.starts_at ?? null, timeZone)
+}
+
 /** A booked visit as the booking tool needs it: what to move, and its type and practitioner. */
 export interface BookedAppointment {
   id: string
@@ -827,6 +875,8 @@ export function buildSystemPrompt(
     canWaitlist?: boolean
     /** Visits they already have, which they may want to move. */
     bookedVisits?: BookedVisit[]
+    /** Times their visit was changed without them coming (loadChangesWithoutComing). */
+    changesWithoutComing?: number
     /** A real draft for staff to send, to this person (not Try Alba). */
     draft?: { personName: string | null }
     /** What the lead already holds, so a new patient is not asked for it again. */
@@ -954,6 +1004,7 @@ export function buildSystemPrompt(
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
     opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, referred: opts.bringsSomeone.referred, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
+    repeatChangeSection(opts.changesWithoutComing ?? 0, { canBook: opts.canBook, sendsItself: opts.sendsItself }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model
     // asks when suits and a colleague picks the time (#691): a model told to

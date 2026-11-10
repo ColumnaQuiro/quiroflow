@@ -15,7 +15,7 @@ import { applyPatientLeft } from '~/server/utils/recallReplies'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
-import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
+import { BROUGHT_RELATIONS, MINOR_AGE, REPEAT_CHANGE_LIMIT, repeatChangeRefusal, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -175,6 +175,12 @@ export interface BookingContext {
   types: OfferedType[]
   /** Their booked visits, and those visits' types (which a move keeps). */
   booked: { appointments: BookedAppointment[]; types: OfferedType[] }
+  /**
+   * Times their own visit was changed without them coming
+   * (loadChangesWithoutComing). From REPEAT_CHANGE_LIMIT on, book_appointment
+   * refuses a visit of their own, moved or new: it is a person's.
+   */
+  changesWithoutComing?: number
   /** A returning patient's own practitioner(s); null for anyone. */
   practitionerIds: string[] | null
   person: { kind: 'lead'; leadId: string; patientId: string | null } | { kind: 'patient'; patientId: string }
@@ -285,6 +291,13 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // reply -- while two children, or them and their partner, may be.
     const whom = brought ? `brought:${brought.e164}` : relative ? `relative:${relative.id}` : child ? (child.existing ? `child:${child.existing.id}` : `new-child:${child.name.toLowerCase()}`) : 'self'
     if (used.has(whom)) return { content: 'You have already booked or moved a visit for this person in this reply. Do not book them again: tell them what was booked.', isError: true }
+
+    // Changed twice already without coming: the next one is a person's, said
+    // here too in case the prompt's own section was not followed. Their own
+    // visits only -- a child's or a relative's is not theirs to answer for.
+    if (whom === 'self' && (ctx.changesWithoutComing ?? 0) >= REPEAT_CHANGE_LIMIT) {
+      return { content: repeatChangeRefusal(ctx.changesWithoutComing!), isError: true }
+    }
 
     // What is being booked: a move keeps the visit's type and is found by
     // when it is now; a new booking is one of the types this person may have

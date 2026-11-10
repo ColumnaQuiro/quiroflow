@@ -60,13 +60,47 @@ async function save() {
   apiKey.value = ''
   v3ApiKey.value = ''
   checkResult.value = null
+  classicCheck.value = null
+  classicCheckError.value = ''
+  // Lists held from earlier steps were read through the old connection.
+  usePracticeHubReads().forget()
 
   // The composable's in-memory ref is what every importer tab's connect
   // form actually reads -- refresh it now so every step picks up the change
   // immediately, not just after a reload.
   const conn = usePracticeHubConnection()
   conn.value = baseUrl.value.trim() && hasStoredKey.value ? { baseUrl: baseUrl.value.trim().replace(/\/$/, ''), apiKey: '', appDetails: `QuiroFlow=${contactEmail.value.trim()}` } : null
+  // Tested at once, so a wrong key or address is named here, beside the
+  // field it was typed in, not by the first step that tries to read.
+  if (conn.value) checkClassic()
 }
+
+// "Test connection" for the Classic key, which every step reads with: what
+// the saved address and key reach, in numbers the clinic recognises. A key
+// for another clinic, or one pasted with a character missing, shows itself
+// before a step is run.
+const classicCheck = ref<{ patients: number | null; appointments: number | null; practitioners: string[] } | null>(null)
+const classicCheckError = ref('')
+const checkingClassic = ref(false)
+const nf = new Intl.NumberFormat('es-ES')
+async function checkClassic() {
+  checkingClassic.value = true
+  classicCheckError.value = ''
+  try {
+    classicCheck.value = await useStaffFetch('/api/import/practicehub-check')
+  } catch (e: any) {
+    classicCheck.value = null
+    classicCheckError.value = importErrorText(e, t, { en: 'Could not reach PracticeHub with this address and key.', es: 'No se pudo conectar con PracticeHub con esta dirección y clave.' })
+  } finally {
+    checkingClassic.value = false
+  }
+}
+const classicCheckText = computed(() => {
+  const c = classicCheck.value
+  if (!c) return ''
+  const counts = t(`${nf.format(c.patients ?? 0)} patients · ${nf.format(c.appointments ?? 0)} appointments`, `${nf.format(c.patients ?? 0)} pacientes · ${nf.format(c.appointments ?? 0)} citas`)
+  return c.practitioners.length ? `${counts} · ${c.practitioners.join(', ')}` : counts
+})
 
 // "Test connection" for the 2.0 key: which account it reaches and how much is
 // there, so a key for the wrong clinic shows itself before anything moves.
@@ -103,7 +137,10 @@ async function disconnect() {
   hasStoredKey.value = false
   hasStoredV3Key.value = false
   checkResult.value = null
+  classicCheck.value = null
+  classicCheckError.value = ''
   usePracticeHubConnection().value = null
+  usePracticeHubReads().forget()
   showToast(t('Disconnected', 'Desconectado'))
 }
 
@@ -148,6 +185,13 @@ const fieldId = useId()
           :placeholder="hasStoredKey ? '••••••••••••••••••••' : t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
+        <div v-if="hasStoredKey" class="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" class="rounded-md border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-50" :disabled="checkingClassic" data-cy="ph-check" @click="checkClassic">
+            {{ checkingClassic ? t('Checking…', 'Comprobando…') : t('Test connection', 'Probar conexión') }}
+          </button>
+          <span v-if="classicCheck" class="text-sm text-success-text" data-cy="ph-check-result">{{ classicCheckText }}</span>
+          <span v-else-if="classicCheckError" class="text-sm text-danger-text" data-cy="ph-check-error">{{ classicCheckError }}</span>
+        </div>
         <p class="mt-1 text-xs text-ink-muted2">{{ hasStoredKey ? t('A key is saved. Leave this empty to keep it, or paste a new one to replace it. This is the Classic key, which every step uses; a key starting with phk_ goes in the 2.0 field below.', 'Hay una clave guardada. Déjalo vacío para conservarla, o pega una nueva para sustituirla. Es la clave Classic, la que usan todos los pasos; una clave que empieza por phk_ va en el campo 2.0 de abajo.') : t('The Classic key, which every step uses. It does not start with phk_: that one goes in the 2.0 field below.', 'La clave Classic, la que usan todos los pasos. No empieza por phk_: esa va en el campo 2.0 de abajo.') }}</p>
       </div>
       <div>

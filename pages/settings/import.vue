@@ -92,7 +92,7 @@ const sources = computed<Source[]>(() => [
           { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries.', 'Entradas del historial.'), count: counted('contact_log', 'PH-log-') },
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders.', 'Recordatorios de recepción.') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form.', 'También crea una plantilla de documento por formulario.'), count: counted('patient_docs', 'PH-form-') },
-          { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs, straight from PracticeHub’s API. Skips every file already here.', 'Escaneos, fotos y PDF, directo desde la API de PracticeHub. Se salta los que ya están aquí.'), count: () => counted('patient_files')().not('storage_path', 'is', null) },
+          { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, PDFs and each patient’s profile photo, straight from PracticeHub’s API. Skips everything already here.', 'Escaneos, PDF y la foto de perfil de cada paciente, directo desde la API de PracticeHub. Se salta lo que ya está aquí.'), count: () => counted('patient_files')().not('storage_path', 'is', null) },
         ],
       },
       {

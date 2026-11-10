@@ -1,3 +1,6 @@
+import { wallClockToUtc } from './clinicClock'
+import type { ReceptionistAvailability } from './receptionistSlots'
+
 // The rules for offering an earlier time to someone whose first visit is
 // days away (earlier_visit_offers, 20261110194512). Pure, so the sweep that
 // makes the offer (server/utils/earlierVisitOffers.ts), the webhook that reads
@@ -84,6 +87,31 @@ export function firstFreeCandidate(
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
       .find((c) => c.startsAt >= window.from && c.startsAt <= window.to && !onOffer.some((o) => o.startsAt < c.endsAt && o.endsAt > c.startsAt)) ?? null
   )
+}
+
+/**
+ * The free starts the receptionist's diary lists for one type at one clinic,
+ * as instants with the visit's length. Asked for a single type, every list is
+ * that type's -- a list names its types by name and length, never by id, so
+ * it is chosen by clinic alone.
+ */
+export function earlierCandidates(
+  availability: ReceptionistAvailability | null,
+  clinicId: string,
+  timeZone: string,
+  durationMinutes: number,
+): { startsAt: Date; endsAt: Date }[] {
+  const out: { startsAt: Date; endsAt: Date }[] = []
+  for (const group of availability?.groups ?? []) {
+    if (group.clinicId !== clinicId) continue
+    for (const day of group.days) {
+      for (const time of day.times) {
+        const startsAt = new Date(wallClockToUtc(day.date, time, timeZone))
+        out.push({ startsAt, endsAt: new Date(startsAt.getTime() + durationMinutes * 60000) })
+      }
+    }
+  }
+  return out
 }
 
 function plain(text: string): string {

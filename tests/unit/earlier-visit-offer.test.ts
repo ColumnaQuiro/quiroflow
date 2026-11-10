@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EARLIER_VISIT_BUTTONS,
   EARLIER_VISIT_MAX_OFFERS,
+  earlierCandidates,
   earlierOfferExpiresAt,
   earlierOfferReply,
   earlierSearchWindow,
@@ -13,6 +14,7 @@ import {
   mayOfferToday,
 } from '../../utils/earlierVisitOffer'
 import { automationFieldValue } from '../../utils/automationFields'
+import { receptionistSlotGroups } from '../../utils/receptionistSlots'
 
 const HOUR = 60 * 60 * 1000
 const MINUTE = 60 * 1000
@@ -157,5 +159,38 @@ describe('earlierVisitPromptSection', () => {
 
   it('is empty with nothing to say', () => {
     expect(earlierVisitPromptSection(null, TZ, {})).toBe('')
+  })
+})
+
+describe('earlierCandidates', () => {
+  // The diary as the receptionist computes it (receptionistSlotGroups), for
+  // one first-visit type: a list names its types by name and length, never
+  // by id, so matching on an id there found nothing at all (CI, 10 Nov 2026).
+  const ALL_DAY: [string, string][] = [['09:00', '20:00']]
+  const hours = { mon: ALL_DAY, tue: ALL_DAY, wed: ALL_DAY, thu: ALL_DAY, fri: ALL_DAY, sat: ALL_DAY, sun: ALL_DAY }
+  const availability = receptionistSlotGroups({
+    now,
+    clinics: [{ id: 'clinic-1', name: 'Clínica Demo', timeZone: TZ, businessHours: hours }],
+    practitioners: [{ id: 'p-1', businessHours: hours, clinicIds: ['clinic-1'] }],
+    types: [{ id: 'type-1', name: 'Primera visita oferta', durationMinutes: 45 }],
+    // Busy from 13:00 to 14:00 Madrid today.
+    appointments: [{ practitionerId: 'p-1', starts_at: '2026-11-10T12:00:00Z', ends_at: '2026-11-10T13:00:00Z' }],
+    blocks: [],
+    bookingWindowDays: 3,
+    minimumNoticeMinutes: 180,
+  })
+
+  it('turns the listed times into instants with the visit\'s length', () => {
+    const candidates = earlierCandidates(availability, 'clinic-1', TZ, 45)
+    expect(candidates.length).toBeGreaterThan(0)
+    const first = candidates[0]!
+    // Three hours' notice from 10:00 Madrid, and 13:00-14:00 is taken.
+    expect(first.startsAt.getTime()).toBeGreaterThanOrEqual(now.getTime() + 3 * HOUR)
+    expect(candidates.some((c) => c.startsAt < new Date('2026-11-10T13:00:00Z') && c.endsAt > new Date('2026-11-10T12:00:00Z'))).toBe(false)
+    expect(first.endsAt.getTime() - first.startsAt.getTime()).toBe(45 * MINUTE)
+  })
+
+  it('finds nothing at another clinic', () => {
+    expect(earlierCandidates(availability, 'clinic-2', TZ, 45)).toEqual([])
   })
 })

@@ -5,7 +5,7 @@ import { noteInConversation, sendAsReceptionist } from '~/server/utils/reception
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { runActionsList, type ActionRow, type PatientForAction } from '~/server/utils/runAutomationActions'
 import { clinicOpenAt } from '~/utils/receptionistAutoReply'
-import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE, wallClockToUtc } from '~/utils/clinicClock'
+import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import {
   EARLIER_VISIT_MIN_NOTICE_HOURS,
@@ -15,6 +15,7 @@ import {
   earlierSearchWindow,
   earlierVisitLanguage,
   earlierVisitReplyText,
+  earlierCandidates,
   earlierVisitWhen,
   firstFreeCandidate,
   mayOfferToday,
@@ -201,16 +202,7 @@ async function earliestFreeTime(
   const config = { ...base, minimumNoticeMinutes: Math.max(base.minimumNoticeMinutes, EARLIER_VISIT_MIN_NOTICE_HOURS * 60) }
   const days = Math.max(1, Math.ceil((window.to.getTime() - window.from.getTime()) / 86400000))
   const calendar = await loadReceptionistCalendar(service, accountId, config, [type], now, { from: window.from, days, maxTimesPerList: 1000 }, [appt.practitioner_id])
-  const candidates: { startsAt: Date; endsAt: Date }[] = []
-  for (const group of calendar.availability?.groups ?? []) {
-    if (group.clinicId !== appt.clinic_id || !group.types.some((t) => (t as { id?: string }).id === type.id)) continue
-    for (const day of group.days) {
-      for (const time of day.times) {
-        const startsAt = new Date(wallClockToUtc(day.date, time, timeZone))
-        candidates.push({ startsAt, endsAt: new Date(startsAt.getTime() + durationMinutes * 60000) })
-      }
-    }
-  }
+  const candidates = earlierCandidates(calendar.availability, appt.clinic_id, timeZone, durationMinutes)
   if (candidates.length === 0) return null
 
   // Times already promised to somebody else and not yet answered: another

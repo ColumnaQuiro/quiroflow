@@ -222,6 +222,30 @@ describe('Permissions that are enforced', () => {
     })
   })
 
+  it('calendar_read_only on My Day: signs the note, says why the visit stays open, and does not offer to complete it', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Practitioner', patch: { calendar_scope: 'own', calendar_read_only: true, visit_notes_access: true, visit_notes_edit: true } })
+      member(account, 'Practitioner', 'Paula Lectura', true).then((me) => {
+        patient(account, 'Olga', 'Firma').then((p) => {
+          appointment(account, p.id, me.teamMemberId, todayAt(11, 0)).then((appt) => {
+            cy.intercept({ url: '**/rest/v1/appointments*', method: 'PATCH' }).as('appointmentWrite')
+            cy.login(me.email, PASSWORD)
+            cy.visit('/practitioner')
+            cy.contains('li:not([data-cy=needs-confirming-row])', 'Olga Firma', { timeout: 20000 }).click()
+            cy.get('[data-cy=soap-subjective]').type('Pain 2/10.')
+            cy.get('[data-cy=myday-sign]').should('have.text', 'Sign note').click()
+            cy.contains('read-only calendar, so the front desk marks the visit complete').should('be.visible')
+            cy.contains("couldn't be marked complete").should('not.exist')
+            cy.task<{ body: string }[]>('db:selectRows', { table: 'visit_notes', columns: 'body', match: { appointment_id: appt.id } }).its('0.body').should('include', 'Pain 2/10.')
+            cy.task('db:appointmentById', { appointmentId: appt.id }).its('status').should('eq', 'booked')
+            // No write the database was always going to refuse.
+            cy.get('@appointmentWrite.all').should('have.length', 0)
+          })
+        })
+      })
+    })
+  })
+
   it('appointments_delete: the panel\'s delete needs it, and so does the database', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Practitioner', patch: { calendar_scope: 'all', patients_scope: 'all', appointments_delete: false } })

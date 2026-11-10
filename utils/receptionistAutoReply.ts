@@ -81,6 +81,20 @@ export function autoReplyHeldBack(messages: ConversationMessage[], now: Date): '
 }
 
 /**
+ * When the hold on a conversation a person from the clinic is in ends: an
+ * hour after the last thing they wrote (PERSON_ACTIVE_MINUTES), or null when
+ * no person has written. A reply held back for it is picked up again from
+ * then (resumeHeldReplies), not left as a draft nobody looks at.
+ */
+export function personActiveUntil(messages: ConversationMessage[]): Date | null {
+  const last = messages.filter(byAPerson).reduce<number | null>((max, m) => {
+    const at = new Date(m.createdAt).getTime()
+    return max === null || at > max ? at : max
+  }, null)
+  return last === null ? null : new Date(last + PERSON_ACTIVE_MINUTES * 60_000)
+}
+
+/**
  * Whether a person has written in the conversation since `since` -- what
  * lifts a handover: the receptionist passed it on, and only once somebody
  * from the clinic has picked it up does it answer there again.

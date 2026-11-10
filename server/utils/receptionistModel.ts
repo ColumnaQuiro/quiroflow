@@ -9,6 +9,7 @@ import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
+import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
@@ -47,6 +48,17 @@ const FIND_FREE_TIMES: Anthropic.Tool = {
     required: ['from_date'],
     additionalProperties: false,
   },
+}
+
+/** What one reply came to, and what writing it took. */
+export interface ReceptionistRun {
+  text: string
+  refused: boolean
+  handedOver: string | null
+  toolUses: ReceptionistToolUse[]
+  /** The checks in code that fired, in order (receptionist_reply_traces.checks). */
+  checks: string[]
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
 }
 
 /** One tool call the model made while writing a reply. */
@@ -98,7 +110,8 @@ export function freeTimesLookup(
       whose = found
     }
 
-    const chosen = query.typeName ? whose.types.filter((type) => type.name.toLowerCase() === query.typeName!.toLowerCase()) : whose.types
+    const named = query.typeName ? findTypeByName(whose.types, query.typeName) : null
+    const chosen = query.typeName ? (named ? [named] : []) : whose.types
     if (chosen.length === 0) {
       return { content: `"${query.typeName}" is not a type you can offer${forName ? ` ${forName}` : ''}. Use one of: ${whose.types.map((type) => type.name).join(', ')}.`, isError: true }
     }
@@ -180,8 +193,13 @@ export async function runReceptionistModel(
     /** Names the conversation in the log when a draft is withheld; never its content. */
     logLabel: string
   },
-): Promise<{ text: string; refused: boolean; handedOver: string | null; toolUses: ReceptionistToolUse[] }> {
+): Promise<ReceptionistRun> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
+  // What the checks in code did to this reply, and what it cost, for its
+  // record (receptionist_reply_traces).
+  const checks: string[] = []
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
+  const run = (text: string, refused: boolean): ReceptionistRun => ({ text, refused, handedOver, toolUses, checks, usage })
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
   const toolUses: ReceptionistToolUse[] = []
@@ -233,10 +251,18 @@ export async function runReceptionistModel(
       messages,
       ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })
+    usage.rounds++
+    usage.inputTokens += message.usage?.input_tokens ?? 0
+    usage.outputTokens += message.usage?.output_tokens ?? 0
+    usage.cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0
+    usage.cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.
-    if (message.stop_reason === 'refusal') return { text: '', refused: true, handedOver, toolUses }
+    if (message.stop_reason === 'refusal') {
+      checks.push('model_refused')
+      return run('', true)
+    }
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
     if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
@@ -249,6 +275,7 @@ export async function runReceptionistModel(
       const offered = opts.maxTimesPerReply && !booked && !rewritten ? offeredTimeCount(text) : 0
       if (opts.maxTimesPerReply && offered > opts.maxTimesPerReply) {
         rewritten = true
+        checks.push('times_rewritten')
         messages.push({ role: 'assistant', content: message.content })
         messages.push({ role: 'user', content: tooManyTimesNote(offered, opts.maxTimesPerReply) })
         continue
@@ -259,9 +286,11 @@ export async function runReceptionistModel(
         // attempt goes to a person instead (refused, so handed over).
         if (claimRewritten) {
           console.warn(`[receptionist] withheld a reply for ${opts.logLabel}: it states a booking it did not make`)
-          return { text: '', refused: true, handedOver, toolUses }
+          checks.push('claim_withheld')
+          return run('', true)
         }
         claimRewritten = true
+        checks.push('claim_rewritten')
         messages.push({ role: 'assistant', content: message.content })
         messages.push({ role: 'user', content: unbookedClaimNote(claim) })
         continue
@@ -272,6 +301,7 @@ export async function runReceptionistModel(
       const needsWords = text ? styleProblems(text, opts.teamNames).filter((problem) => !FIXED_IN_CODE.includes(problem)) : []
       if (needsWords.length && !styleRewritten && !booked) {
         styleRewritten = true
+        checks.push('style_rewritten')
         messages.push({ role: 'assistant', content: message.content })
         messages.push({ role: 'user', content: styleNote(needsWords) })
         continue
@@ -280,9 +310,10 @@ export async function runReceptionistModel(
       const leak = reply ? briefingLeak(reply, opts.internalNotes) : null
       if (leak) {
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
-        return { text: '', refused: true, handedOver, toolUses }
+        checks.push('briefing_withheld')
+        return run('', true)
       }
-      return { text: reply, refused: false, handedOver, toolUses }
+      return run(reply, false)
     }
 
     // The whole turn goes back, thinking blocks included and unchanged, and

@@ -71,6 +71,14 @@ describe('Which patient a referral names', () => {
     expect(matchReferrer([ana, other], 'Ana Pérez')).toBe(other)
   })
 
+  it('reads a compound first name as a first name, not as a surname', () => {
+    const joseLuis = { firstName: 'José Luis', lastName: 'Pérez Sanz' }
+    expect(matchReferrer([joseLuis], 'José Luis Pérez')).toBe(joseLuis)
+    expect(matchReferrer([joseLuis], 'Jose Luis Sanz')).toBe(joseLuis)
+    // Both words are first names: still no surname.
+    expect(matchReferrer([joseLuis], 'José Luis')).toBe('need_surname')
+  })
+
   it('is nobody for a surname that is not theirs', () => {
     expect(matchReferrer([ana], 'Ana Martín')).toBeNull()
   })

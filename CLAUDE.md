@@ -429,6 +429,24 @@ grep -o "from '\(sharp\|pdfkit\|pdf-lib\|stripe\|@anthropic-ai/sdk\|qrcode\)'" .
 
 It prints nothing when the chunk is clean.
 
+## The AI receptionist: run the evals before changing what it is told
+
+Every receptionist incident so far was fixed with one more line in its
+prompt, and the unit tests only pin that the line is there. Whether the model
+still does the right thing with a real conversation is checked by
+`npm run eval:receptionist` (`tests/evals/receptionist`): conversations shaped
+on real incidents, with invented people, through the real prompt builders and
+model loop. Run it before changing the prompt, the base rules, the tools or the
+model, and add a case for each new incident. It is not in CI -- it costs money
+and the model is not deterministic -- and it needs a non-production key in
+`~/.quiroflow-eval-anthropic-key` or `ANTHROPIC_API_KEY`.
+
+What each reply in production did is in `receptionist_reply_traces`: its outcome
+(sent, drafted, held and why, refused, failed), the tools it called with
+their dates, times and types, which checks in code rewrote or withheld it,
+and its tokens. Count from there, not from impressions, when asking whether
+a change made it better.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

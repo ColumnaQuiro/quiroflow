@@ -15,7 +15,7 @@ import { applyPatientLeft } from '~/server/utils/recallReplies'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
-import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
+import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -293,21 +293,16 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     let type: OfferedType | undefined
     if (brought) {
       const allowed = ctx.bringsSomeone!.types
-      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
-      if (!type) return { content: `For ${brought.firstName}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+      type = findTypeByName(allowed, value.appointment_type)
+      if (!type) return { content: typeRefusal(allowed, `For ${brought.firstName}, `), isError: true }
     } else if (relative) {
       const allowed = relative.hasBeenBefore ? ctx.family!.forReturning : ctx.family!.forNew
-      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
-      if (!type) return { content: `For ${relative.firstName}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+      type = findTypeByName(allowed, value.appointment_type)
+      if (!type) return { content: typeRefusal(allowed, `For ${relative.firstName}, `), isError: true }
     } else if (child) {
       const allowed = child.existing?.hasBeenBefore ? ctx.minors!.forReturningChild : ctx.minors!.forNewChild
-      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
-      if (!type) {
-        return { content: `For ${child.existing?.hasBeenBefore ? 'a child who has been before' : 'a child who has not been yet'}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
-      }
+      type = findTypeByName(allowed, value.appointment_type)
+      if (!type) return { content: typeRefusal(allowed, `For ${child.existing?.hasBeenBefore ? 'a child who has been before' : 'a child who has not been yet'}, `), isError: true }
     } else if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) {
       const wanted = value.move_visit_on.trim().replace('T', ' ')
       moving = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
@@ -318,13 +313,13 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       type = ctx.booked.types.find((t) => t.id === moving!.typeId)
       if (!type) return { content: 'That visit cannot be moved by you. Call hand_over_to_colleague.', isError: true }
     } else {
-      // The referral visit is theirs only with the patient who referred them.
-      const own = [...ctx.types, ...(ctx.referral?.types ?? []).filter((t) => !ctx.types.includes(t))]
-      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-      type = own.find((t) => t.name.toLowerCase() === name) ?? (!name && ctx.types.length === 1 ? ctx.types[0] : undefined)
-      if (!type) {
-        return { content: `Say which type, exactly as named: ${ctx.types.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
-      }
+      // The referral visit is theirs only with the patient who referred them,
+      // and only by its own name: "Primera visita" must not turn into the
+      // referral visit because its name contains it.
+      const referralOnly = (ctx.referral?.types ?? []).filter((t) => !ctx.types.includes(t))
+      const named = typeof value.appointment_type === 'string' && value.appointment_type.trim() !== ''
+      type = findTypeByName(ctx.types, value.appointment_type) ?? (named ? findTypeByName(referralOnly, value.appointment_type) : undefined)
+      if (!type) return { content: typeRefusal(ctx.types, ''), isError: true }
       if (type.forReferrals && !referrer) {
         return { content: `${type.name} is only for someone a patient referred. Ask the first name and surname of the patient who referred them and book with referred_by; if no patient referred them, offer ${ctx.types.map((t) => t.name).join(', ') || 'what a colleague arranges'} instead. Do not say it is booked.`, isError: true }
       }
@@ -429,7 +424,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
               status: 'booked',
               source: 'receptionist',
             },
-        { checkOverlap: true },
+        { checkOverlap: true, checkBlocks: true },
       )
     } catch (err) {
       used.delete(whom)
@@ -487,6 +482,18 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       isError: false,
     }
   }
+}
+
+/**
+ * The answer when the type named is not one they may have. It used to end
+ * there, and the model took it as a dead end and handed the patient to a
+ * person (4 Nov 2026); it is a wrong word, so it says to call again.
+ */
+function typeRefusal(allowed: OfferedType[], forWhom: string): string {
+  const text = !allowed.length
+    ? `${forWhom}none can be booked by you: call hand_over_to_colleague. Do not say it is booked.`
+    : `${forWhom}name the type exactly as one of: ${allowed.map((t) => t.name).join(', ')}. Call the tool again now with the one that fits what they asked for. A wrong name is not a reason to hand over, and do not say it is booked yet.`
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -790,9 +797,9 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
     const value = (input ?? {}) as { appointment_type?: unknown; preference?: unknown; full_name?: unknown; email?: unknown; phone?: unknown }
     const preference = typeof value.preference === 'string' ? value.preference.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
     if (!preference) return { content: 'Say when they can come (preference).', isError: true }
-    const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-    const type = ctx.types.find((t) => t.name.toLowerCase() === name) ?? (!name && ctx.types.length === 1 ? ctx.types[0] : undefined) ?? (!name ? ctx.booked.types[0] : undefined)
-    if (!type) return { content: `Say which type, exactly as named: ${ctx.types.map((t) => t.name).join(', ')}.`, isError: true }
+    const named = typeof value.appointment_type === 'string' && value.appointment_type.trim() !== ''
+    const type = findTypeByName(ctx.types, value.appointment_type) ?? (!named ? ctx.booked.types[0] : undefined)
+    if (!type) return { content: typeRefusal(ctx.types, ''), isError: true }
 
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
     const patient = await ensurePatient(ctx, writer, ctx.practitionerIds?.[0] ?? null, { ...newPatientDetails(value.full_name, value.email), phone: value.phone })

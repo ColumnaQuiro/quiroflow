@@ -5,6 +5,7 @@ import { clinicOpenAt } from '~/utils/receptionistAutoReply'
 import { handoverReminderBody, handoverReminderDecision } from '~/utils/handoverReminder'
 import type { BusinessHours } from '~/utils/businessHours'
 import { handOverUnansweredCancelQuestions } from '~/server/utils/receptionistPendingCancel'
+import { resumeHeldReplies } from '~/server/utils/receptionistHeld'
 
 // One more push for a handover nobody has answered.
 //
@@ -47,6 +48,14 @@ export default defineEventHandler(async (event) => {
     return [] as string[]
   })
 
+  // Replies held back while a person was in the conversation, whose hold has
+  // ended with nobody having answered: answered again, or a person told
+  // (receptionistHeld.ts).
+  const heldReplies = await resumeHeldReplies(supabase, { url: `${getRequestURL(event).origin}/api/automations/receptionist-reply`, secret: runtimeConfig.cronSecret, now }).catch((err) => {
+    console.error('[handover-reminder-cron] could not resume held replies:', (err as Error)?.message ?? err)
+    return [] as { key: string; outcome: string }[]
+  })
+
   const { data: tasks, error } = await supabase
     .from('staff_tasks')
     .select('id, account_id, patient_id, lead_id, title, created_at, due_at')
@@ -62,7 +71,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Could not read handover tasks' })
   }
   const rows = tasks ?? []
-  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[], cancelQuestions }
+  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[], cancelQuestions, heldReplies }
 
   const accountIds = [...new Set(rows.map((t) => t.account_id))]
   const since = rows.reduce((min, t) => (t.created_at < min ? t.created_at : min), rows[0]!.created_at)
@@ -104,7 +113,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // The ids, not just counts: a background job nobody watches.
-  return { reminded, answered, cancelQuestions }
+  return { reminded, answered, cancelQuestions, heldReplies }
 })
 
 /**

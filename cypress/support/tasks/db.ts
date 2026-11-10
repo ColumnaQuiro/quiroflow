@@ -3545,6 +3545,9 @@ let practiceHubStub: import('node:http').Server | null = null
 // The key the last request to the stub carried, so a spec can tell which one
 // the proxy sent without the stub checking keys itself.
 let practiceHubStubLastKey = ''
+// How many times each Classic path was asked for, so a spec can tell that a
+// step reused the list an earlier step read rather than reading it again.
+let practiceHubStubHits: Record<string, number> = {}
 
 /** What the legacy accounts column holds: nothing, once a key is saved as a secret. */
 async function practiceHubKeyColumnOf(opts: { accountId: string }) {
@@ -3554,11 +3557,17 @@ async function practiceHubKeyColumnOf(opts: { accountId: string }) {
 async function practiceHubStubLastKeyOf() {
   return practiceHubStubLastKey
 }
+async function practiceHubStubHitsOf() {
+  return practiceHubStubHits
+}
 
 // `routes` answers each Classic endpoint (`/patients`, `/appointments`, ...)
 // with its own records, in one page; any other path gets the `emails` list.
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number; routes?: Record<string, unknown[]> }) {
+// `refuse` answers everything the way PracticeHub does to a wrong key (403)
+// or a wrong address (404).
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number; routes?: Record<string, unknown[]>; refuse?: 'key' | 'address' }) {
   await stopPracticeHubStub()
+  practiceHubStubHits = {}
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
   const server = createServer(async (req, res) => {
@@ -3568,6 +3577,19 @@ async function startPracticeHubStub(opts: { totalEntries?: number; emails?: stri
     if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
     const url = new URL(req.url ?? '/', 'http://stub')
+    const stubPath = url.pathname.replace(/^\/api/, '')
+    practiceHubStubHits[stubPath] = (practiceHubStubHits[stubPath] ?? 0) + 1
+    if (opts.refuse === 'key') {
+      res.statusCode = 403
+      res.end(JSON.stringify({ message: 'Forbidden' }))
+      return
+    }
+    if (opts.refuse === 'address') {
+      res.statusCode = 404
+      res.setHeader('content-type', 'text/html')
+      res.end('<html><body>Not Found</body></html>')
+      return
+    }
     const routed = opts.routes?.[url.pathname.replace(/^\/api/, '')]
     if (routed) {
       // One page holds everything; a later page is empty, as PracticeHub's is.
@@ -4508,6 +4530,7 @@ export const dbTasks = {
   'db:setNewLeadNotify': setNewLeadNotify,
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:startPracticeHubStub': startPracticeHubStub,
+  'db:practiceHubStubHits': practiceHubStubHitsOf,
   'db:stopPracticeHubStub': stopPracticeHubStub,
   'db:startWebhookReceiver': startWebhookReceiver,
   'db:webhookReceiverHits': webhookReceiverHits,

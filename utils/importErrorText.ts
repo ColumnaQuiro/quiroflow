@@ -39,6 +39,28 @@ const KNOWN: { starts: string; en: string; es: string }[] = [
     en: 'No PracticeHub connection is saved. Save it in the Connection step first.',
     es: 'No hay ninguna conexión de PracticeHub guardada. Guárdala antes en el paso Conexión.',
   },
+  // server/utils/practicehubClassic.ts, which puts PracticeHub's own refusals
+  // into words: a 403 is a wrong key, a 404 or no answer is a wrong address.
+  {
+    starts: 'PracticeHub refused the API key',
+    en: 'PracticeHub refused the API key. Check it under Developers → API Keys in PracticeHub and save it again in the Connection step.',
+    es: 'PracticeHub rechazó la clave API. Compruébala en Developers → API Keys de PracticeHub y guárdala otra vez en el paso Conexión.',
+  },
+  {
+    starts: 'Nothing answers at',
+    en: 'Nothing answers at that address. Check the PracticeHub URL in the Connection step.',
+    es: 'Nada responde en esa dirección. Comprueba la URL de PracticeHub en el paso Conexión.',
+  },
+  {
+    starts: 'PracticeHub did not answer',
+    en: 'PracticeHub did not answer. Check the address in the Connection step, or try again in a minute.',
+    es: 'PracticeHub no respondió. Comprueba la dirección en el paso Conexión o vuelve a intentarlo en un minuto.',
+  },
+  {
+    starts: 'PracticeHub is rate-limiting',
+    en: 'PracticeHub is limiting how fast it answers. Wait a minute and try again.',
+    es: 'PracticeHub está limitando la velocidad a la que responde. Espera un minuto y vuelve a intentarlo.',
+  },
   {
     starts: 'No PracticeHub 2.0 connection is saved',
     en: 'No PracticeHub 2.0 key is saved. Add the phk_ key in the Connection step first.',

@@ -686,6 +686,7 @@ const fieldId = useId()
           {{ loadingFromApi ? t('Reading…', 'Leyendo…') : t('Read appointments', 'Leer citas') }}
         </button>
       </div>
+      <ImportPracticeHubReadsNote />
       <div
         class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center"
         :class="dragOver ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"

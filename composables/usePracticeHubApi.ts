@@ -1,3 +1,5 @@
+import { forgetPracticeHubReads, practiceHubReadsHeld, recallPracticeHubRead, rememberPracticeHubRead } from '~/utils/practicehubReadCache'
+
 export interface PracticeHubConnection {
   baseUrl: string
   apiKey: string
@@ -11,6 +13,30 @@ interface PracticeHubPage<T> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Bumped whenever a list is held or dropped, so the import steps can say
+// that the next read will be reused, and offer to read afresh. The lists
+// themselves live in utils/practicehubReadCache, which is plain enough to
+// unit-test.
+const readsVersion = ref(0)
+
+/**
+ * Whether the saved connection has lists held from earlier steps, and a way
+ * to drop them. For the connect forms: a clinic that corrected a record in
+ * PracticeHub a minute ago expects the next read to see it.
+ */
+export function usePracticeHubReads() {
+  const connection = usePracticeHubConnection()
+  const held = computed(() => {
+    void readsVersion.value
+    return connection.value ? practiceHubReadsHeld(connection.value.baseUrl) > 0 : false
+  })
+  function forget() {
+    forgetPracticeHubReads()
+    readsVersion.value++
+  }
+  return { held, forget }
 }
 
 // PracticeHub's own API caps page_size at 100 regardless of what's
@@ -56,7 +82,18 @@ export function usePracticeHubApi(conn: PracticeHubConnection) {
   // Rows are keyed by id where the endpoint returns one (all of them do so
   // far); anything without an id is kept as-is rather than guessed at, which
   // at worst leaves the duplicates that were there before.
+  //
+  // A list read earlier in this page session comes back from
+  // utils/practicehubReadCache instead, within its time limit: the steps
+  // write to QuiroFlow, not to PracticeHub, so the list a step read is the
+  // one the next step would read again.
   async function fetchAll<T>(path: string, onProgress?: (fetched: number, total: number) => void): Promise<T[]> {
+    const heldRead = recallPracticeHubRead<T>(conn.baseUrl, path)
+    if (heldRead) {
+      onProgress?.(heldRead.rows.length, heldRead.rows.length)
+      return heldRead.rows
+    }
+
     const byId = new Map<unknown, T>()
     const withoutId: T[] = []
 
@@ -83,7 +120,10 @@ export function usePracticeHubApi(conn: PracticeHubConnection) {
       }
     }
 
-    return [...byId.values(), ...withoutId]
+    const rows = [...byId.values(), ...withoutId]
+    rememberPracticeHubRead(conn.baseUrl, path, rows)
+    readsVersion.value++
+    return rows
   }
 
   return { fetchPage, fetchAll }

@@ -91,7 +91,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phPayments.value = await api.fetchAll<PHPayment>('/payments', (done, total) => (progress.value = { done, total }))
     stage.value = 'ready'
   } catch (err) {
-    runError.value = err instanceof Error ? err.message : String(err)
+    runError.value = importErrorText(err, t, { en: 'Could not read PracticeHub. Nothing was written; try again.', es: 'No se pudo leer PracticeHub. No se escribió nada; vuelve a intentarlo.' })
     stage.value = 'error'
   }
 }

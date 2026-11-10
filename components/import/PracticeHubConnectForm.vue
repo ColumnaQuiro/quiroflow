@@ -53,6 +53,7 @@ const fieldId = useId()
         {{ t('Use another key', 'Usar otra clave') }}
       </button>
     </div>
+    <ImportPracticeHubReadsNote />
   </div>
   <form v-else class="space-y-4" @submit.prevent="submit">
     <div>

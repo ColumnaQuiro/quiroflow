@@ -83,7 +83,10 @@ export function parsePracticeHubFormSubmissions(answer: unknown): PracticeHubFor
   const html = String((answer as { forms?: unknown } | null)?.forms ?? '')
   const found: PracticeHubFormSubmission[] = []
   const seen = new Set<string>()
-  for (const block of html.split(/(?=<div[^>]*class="[^"]*\bform-submission\b)/).slice(1)) {
+  // Cut before each block. Whatever precedes the first one (the patient's
+  // form links) has neither a PDF link nor a delete button and drops out
+  // below; it is not assumed to be there, because for some patients it is not.
+  for (const block of html.split(/(?=<div[^>]*class="[^"]*\bform-submission\b)/)) {
     const href = block.match(/href="([^"]*custom_form\.php\?[^"]*)"/)?.[1]?.replace(/&amp;/g, '&')
     const responseId =
       block.match(/delete-form-response[^>]*\bdata-id="(\d+)"/)?.[1] ?? block.match(/\bdata-id="(\d+)"[^>]*delete-form-response/)?.[1]

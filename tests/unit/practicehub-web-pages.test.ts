@@ -60,6 +60,10 @@ describe("PracticeHub's website, as the signed-forms import reads it", () => {
       ])
     })
 
+    it('keeps the first form when nothing comes before it', () => {
+      expect(parsePracticeHubFormSubmissions({ forms: submission(228, 'A') + submission(999, 'B') }).map((s) => s.responseId)).toEqual(['228', '999'])
+    })
+
     it('is empty for a patient who has only form links, or an answer that is not the fragment', () => {
       expect(parsePracticeHubFormSubmissions({ forms: links })).toEqual([])
       expect(parsePracticeHubFormSubmissions(null)).toEqual([])

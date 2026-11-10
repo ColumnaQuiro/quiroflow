@@ -2,7 +2,8 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
@@ -328,6 +329,12 @@ export async function draftPatientReply(
     return { status: 'sent', text: VOICE_NOTE_REPLY, handedOver: true }
   }
 
+  // Earlier times for a first visit days away (earlierVisitOffers.ts), at a
+  // clinic that offers them: an offer open now, or that they are on the list.
+  const { data: earlierAccount } = await service.from('accounts').select('earlier_first_visit_offers').eq('id', accountId).maybeSingle()
+  const earlierOn = Boolean((earlierAccount as { earlier_first_visit_offers?: boolean } | null)?.earlier_first_visit_offers)
+  const earlierVisit = earlierOn ? await loadEarlierVisitFacts(service, accountId, patientId) : null
+
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
   const actions: BookingContext | null =
@@ -347,12 +354,14 @@ export async function draftPatientReply(
           family,
           bringsSomeone,
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
+          earlierTimeOffers: earlierOn,
         }
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
+  const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // Taking someone who has left off the recalls needs no calendar, only that
   // the reply is sent on its own: a draft waits for a person anyway.
   const stopFollowUps = sends && opts.send && channel ? stopFollowUpsTool({ event: opts.send.event, accountId, patientId }) : null
@@ -372,7 +381,7 @@ export async function draftPatientReply(
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers })),
+    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -381,6 +390,7 @@ export async function draftPatientReply(
     cancel,
     give,
     stopFollowUps,
+    stopEarlier,
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),

@@ -11,6 +11,7 @@ import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '
 import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { applyRecallReply } from '~/server/utils/recallReplies'
 import { declinesOnlyARecall, recallReplyIntent } from '~/utils/recallReply'
+import { answerEarlierVisitTap } from '~/server/utils/earlierVisitOffers'
 import { appointmentReplyIntent } from '~/utils/appointmentReply'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
@@ -569,7 +570,12 @@ export default defineEventHandler(async (event) => {
         // "No, gracias" only when it answers a recall: said to the
         // receptionist or the desk it answers them (utils/recallReply.ts).
         const reply = replyText(msg)
-        const recallIntent = patientId
+        // "Sí, adelantar" / "No, me quedo con la mía" on the offer of an
+        // earlier first visit (earlierVisitOffers.ts), answered there. Read
+        // as nothing else: its "Sí" is not the reminder's Confirmar, and its
+        // "No" not a recall's decline.
+        const earlierAnswered = patientId ? await answerEarlierVisitTap(event, supabase, account.id, patientId, reply, msg.context?.id ?? null) : false
+        const recallIntent = patientId && !earlierAnswered
           ? recallReplyIntent(reply, declinesOnlyARecall(reply) ? await answersRecall(supabase, patientIds, msg) : true)
           : null
         if (recallIntent && patientId) {
@@ -584,7 +590,7 @@ export default defineEventHandler(async (event) => {
         }
 
         const intent = appointmentReplyIntent(replyText(msg), { button: isButtonReply(msg) })
-        if (intent && patientIds.length > 0) {
+        if (intent && patientIds.length > 0 && !earlierAnswered) {
           const appt = await resolveRepliedAppointment(supabase, patientIds, msg.context?.id ?? null)
           // An answer already on record is only overturned by another
           // deliberate tap, never by a later sentence we merely read an

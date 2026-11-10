@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, pendingFormsFlag, stageCounts, trackIndex, type StageInput } from '../../utils/appointmentStage'
-import { blockLadder, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
+import { blockLadder, practitionerBadgeLabels, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
 import { mergeWindows, unionWorkingWindows } from '../../utils/businessHours'
 import { bonoForVisit } from '../../utils/visitPayment'
 
@@ -244,6 +244,75 @@ describe('Block ladder', () => {
   it('shortens a name to initial and first surname', () => {
     expect(shortPatientName('Laura', 'Gómez Pardo')).to.equal('L. Gómez')
     expect(shortPatientName('Laura', null)).to.equal('Laura')
+  })
+
+  it('always draws the practitioner badge it is given, and nothing without one', () => {
+    expect(blockLadder(base).badge, 'not the whole-clinic tab').to.equal('none')
+    expect(blockLadder({ ...base, badgeText: 'L' }).badge).to.equal('name')
+    expect(blockLadder({ ...base, badgeText: 'L', height: 26 }).badge, 'one-line block').to.equal('name')
+    expect(blockLadder({ ...base, badgeText: 'L', density: 'week', width: 60, height: 26 }).badge, 'one-line week block').to.equal('name')
+  })
+
+  it('takes the badge out of the name line, not the detail line', () => {
+    // At 300px "Online · sin confirmar" fits beside "Sergio Navarro" only
+    // without a badge taking 22px of the same line.
+    const online = { ...base, width: 300, stage: 'online' as const, owes: false, note: false, pillText: 'Online · sin confirmar', nameText: 'Sergio Navarro' }
+    expect(blockLadder(online).pill).to.equal('label')
+    expect(blockLadder({ ...online, badgeText: 'L' }).pill, 'the name keeps its room').to.equal('icon')
+    // Line two is untouched: everything that fitted there still does.
+    const plain = blockLadder({ ...base, width: 260 })
+    const badged = blockLadder({ ...base, width: 260, badgeText: 'LM' })
+    expect([badged.meta, badged.bono, badged.moved]).to.deep.equal([plain.meta, plain.bono, plain.moved])
+  })
+
+  it('leads a two-line week block\'s time with the badge, so the short name keeps its room', () => {
+    // 71px: a work week split into three rooms and "Sin asignar" at 1440px.
+    const week = { ...base, density: 'week' as const, height: 59, nameText: 'P. Mateu', stage: 'confirmed' as const }
+    expect(blockLadder({ ...week, width: 71 }).meta, 'no badge: the time as before').to.equal('time')
+    const narrow = blockLadder({ ...week, width: 71, badgeText: 'S' })
+    expect(narrow.badge).to.equal('meta')
+    expect(narrow.meta, 'the axis has the time').to.equal('none')
+    expect(blockLadder({ ...week, width: 120, badgeText: 'S' }).meta, 'room for both').to.equal('time')
+  })
+
+  it('keeps a 30-minute week visit on two lines when it carries a badge', () => {
+    const week = { ...base, density: 'week' as const, height: 38, width: 71, nameText: 'P. Mateu', stage: 'confirmed' as const }
+    expect(blockLadder(week).compact, 'no badge: one line, as before').to.equal(true)
+    const badged = blockLadder({ ...week, badgeText: 'S' })
+    expect(badged.compact).to.equal(false)
+    expect(badged.badge, 'beside the time, not the name').to.equal('meta')
+    expect(blockLadder({ ...week, height: 20, badgeText: 'S' }).badge, 'a 15-minute visit: one line, the badge first').to.equal('name')
+  })
+
+  it('makes room for the badge before the forms icon only on a one-line week block', () => {
+    const week = { ...base, density: 'week' as const, height: 26, forms: true, nameText: 'L. Gómez', stage: 'confirmed' as const }
+    expect(blockLadder({ ...week, width: 82 }).forms).to.equal(true)
+    expect(blockLadder({ ...week, width: 82, badgeText: 'L' }).forms, 'the badge outranks the forms').to.equal(false)
+    expect(blockLadder({ ...week, width: 82, height: 59, badgeText: 'L' }).forms, 'two lines: the badge is not on the name line').to.equal(true)
+  })
+})
+
+describe('Practitioner badge initials', () => {
+  it('uses one letter where it is enough, two only where it is not', () => {
+    const labels = practitionerBadgeLabels([
+      { id: 'a', full_name: 'Léa Martin' },
+      { id: 'b', full_name: 'Raúl Catalán Luis' },
+      { id: 'c', full_name: 'Lucía Sanz' },
+    ])
+    expect(labels.get('a')).to.equal('LM')
+    expect(labels.get('c')).to.equal('LS')
+    expect(labels.get('b'), 'the only R').to.equal('R')
+  })
+
+  it('reads an accented letter as the same letter, and copes with a single name, extra spaces and lower case', () => {
+    const labels = practitionerBadgeLabels([
+      { id: 'a', full_name: '  ana ' },
+      { id: 'b', full_name: 'álvaro  pérez' },
+      { id: 'c', full_name: null },
+    ])
+    expect(labels.get('a')).to.equal('A')
+    expect(labels.get('b')).to.equal('ÁP')
+    expect(labels.get('c')).to.equal('?')
   })
 })
 

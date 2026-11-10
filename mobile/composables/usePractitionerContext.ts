@@ -30,6 +30,11 @@ export interface PractitionerContext {
    * report pages ask before showing a Growth figure.
    */
   hasGrowth: boolean
+  /**
+   * Whether the plan includes Personal (staffSectionIncluded): the web
+   * store's hasStaffSection. Solo owners get the gate instead.
+   */
+  hasStaffSection: boolean
 }
 
 type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null }
@@ -142,6 +147,7 @@ export function usePractitionerContext() {
       permissions: ((boot as { permissions?: Record<string, unknown> } | null)?.permissions ?? {}) as Record<string, unknown>,
       hasReceptionist: receptionistFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
       hasGrowth: growthFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
+      hasStaffSection: staffSectionIncluded((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription ?? null),
     }
     loading.value = false
   }

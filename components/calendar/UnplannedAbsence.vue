@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatPhoneDisplay } from '~/utils/phone'
+import { formatPhoneDisplay } from '../../utils/phone'
 
 // "Ausencia imprevista": a practitioner is off (ill, an emergency) for a day
 // or a few, and every visit they had has to go somewhere -- in one go rather

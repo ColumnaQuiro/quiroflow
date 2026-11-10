@@ -7,7 +7,7 @@ import { recentImages, withImages, type StoredImage } from '~/server/utils/recep
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
-import { unmarkedPastVisits, loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -260,6 +260,9 @@ export async function draftPatientReply(
   // new or not, so the times offered for the move are hers.
   const own = visitsHad > 0 ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
   const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
+  // Changed twice already without coming: the next change is a person's
+  // (repeatChangeSection).
+  const changesWithoutComing = await loadChangesWithoutComing(service as never, accountId, patientId, calendar.timeZone)
   // A child's or a relative's times, by name: with their own practitioner,
   // for the types they may have.
   const forWhom: FreeTimesForWhom = (name) => {
@@ -337,6 +340,7 @@ export async function draftPatientReply(
           timeZone: calendar.timeZone,
           types: [...types, ...adOnly],
           booked: { appointments: booked.appointments, types: booked.types },
+          changesWithoutComing,
           practitionerIds,
           person: { kind: 'patient', patientId },
           minors,
@@ -368,7 +372,7 @@ export async function draftPatientReply(
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers })),
+    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers })),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

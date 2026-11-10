@@ -1,7 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { deleteAccountSecret, getAccountSecret, setAccountSecret } from '~/server/utils/accountSecrets'
-import { PracticeHubWebClient, PracticeHubWebError, practiceHubWebClientFor } from '~/server/utils/practicehubWeb'
+import { PracticeHubCodeNeeded, PracticeHubWebClient, PracticeHubWebError, practiceHubWebClientFor } from '~/server/utils/practicehubWeb'
+import { syncPracticeHubTemplates } from '~/server/utils/practicehubFormTemplates'
 import { EMPTY_FORMS_JOB, formPdfCounts, kickFormsJob, loadFormsJob, saveFormsJob } from '~/server/utils/practicehubFormPdfs'
 import type { PracticeHubLoginOutcome } from '~/utils/practicehubWebPages'
 
@@ -18,6 +19,8 @@ import type { PracticeHubLoginOutcome } from '~/utils/practicehubWebPages'
 //   start    start (or carry on) bringing the originals
 //   stop     stop after the run in flight
 //   forget   remove the saved sign-in and session
+//   templates  rebuild the imported form templates from PracticeHub's form
+//              editor, a few per call; `after` is where the last call stopped
 //
 // The password is never returned. PracticeHub's address is the one saved
 // under Connection, never one from the body, so the saved password cannot be
@@ -30,6 +33,7 @@ type Body =
   | { op: 'start' }
   | { op: 'stop' }
   | { op: 'forget' }
+  | { op: 'templates'; after?: number }
 
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requireSettingsPermission(event, 'data_admin')
@@ -145,6 +149,20 @@ export default defineEventHandler(async (event) => {
           await deleteAccountSecret(admin, accountId, name)
         }
         return await status()
+      }
+
+      case 'templates': {
+        const client = await practiceHubWebClientFor(admin, accountId)
+        if (!client) throw createError({ statusCode: 409, statusMessage: 'Save the PracticeHub sign-in first.' })
+        try {
+          const after = Number.isInteger(body.after) && Number(body.after) > 0 ? Number(body.after) : 0
+          return { ...(await status()), templates: await syncPracticeHubTemplates(admin, accountId, client, after) }
+        } catch (e) {
+          // The session ran out and PracticeHub wants a code to start another: ask for it on the page.
+          if (!(e instanceof PracticeHubCodeNeeded)) throw e
+          await record(e.outcome)
+          return { ...(await status()), templates: null }
+        }
       }
 
       default:

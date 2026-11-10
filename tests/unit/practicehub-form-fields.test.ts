@@ -40,14 +40,38 @@ describe('PracticeHub form responses as document blocks', () => {
     expect(blocks).toEqual([{ id: expect.any(String), type: 'text', label: 'Si el firmante es menor de edad, firma su tutor.', value: null }])
   })
 
-  it('says a signature or a drawing was there, since the API carries only the widget id', () => {
+  it('keeps a signature and a drawing the type they were, saying where the image is', () => {
     const blocks = practiceHubFormBlocks(
       [row('signature-signature-1602515975456', 'signature-signature-1602515975456', 'Firma'), row('sketchpad-drawableimage-1661983485759', 'sketchpad-drawableimage-1661983485759')],
       { newId },
     )
     expect(blocks.map((b) => [b.type, b.label, b.value])).toEqual([
-      ['text', 'Firma: signed (via PracticeHub)', null],
-      ['text', "Diagram: drawing captured (not available via PracticeHub's API)", null],
+      ['signature', 'Firma (signed in PracticeHub)', null],
+      ['drawable_image', 'Diagram (drawn in PracticeHub)', null],
+    ])
+  })
+
+  it('leaves the template a signature and a drawing to fill in', () => {
+    const blocks = practiceHubFormBlocks(
+      [row('signature-signature-1602515975456', 'signature-signature-1602515975456', 'Firma'), row('sketchpad-drawableimage-1661983485759', 'sketchpad-drawableimage-1661983485759', '¿Dónde te duele?')],
+      { newId, blank: true },
+    )
+    expect(blocks.map((b) => [b.type, b.label, b.value])).toEqual([
+      ['signature', 'Firma', null],
+      ['drawable_image', '¿Dónde te duele?', null],
+    ])
+  })
+
+  it('keeps a radio group or a dropdown as one choice, with every answer seen as its options', () => {
+    const responses = [
+      { data: [row('radio-group-1724673536957', 'Diestro', 'Mano dominante')] },
+      { data: [row('radio-group-1724673536957', 'Zurdo', 'Mano dominante'), row('select-1711200461409', 'Sí', '¿Fumas?')] },
+    ]
+    const options = practiceHubFormOptions(responses)
+    const blocks = practiceHubFormBlocks(responses[1]!.data, { newId, options })
+    expect(blocks.map((b) => [b.type, b.label, b.multiple, b.options, b.value])).toEqual([
+      ['choice', 'Mano dominante', false, ['Diestro', 'Zurdo'], 'Zurdo'],
+      ['choice', '¿Fumas?', false, ['Sí'], 'Sí'],
     ])
   })
 
@@ -56,7 +80,7 @@ describe('PracticeHub form responses as document blocks', () => {
       [row('checkbox-group-1[]', 'Yoga', 'Por tu cuenta'), row('date-1', '2026-11-10', 'Fecha'), row('radio-group-1', '7', '¿Cómo puntuarías tu salud hoy?')],
       { blank: true, newId },
     )
-    expect(blocks.map((b) => [b.type, b.value])).toEqual([['choice', []], ['date', null], ['short_text', null]])
+    expect(blocks.map((b) => [b.type, b.value])).toEqual([['choice', []], ['date', null], ['choice', null]])
     expect(blocks[0]!.options).toEqual(['Yoga'])
   })
 })

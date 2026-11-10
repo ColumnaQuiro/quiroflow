@@ -3576,6 +3576,8 @@ interface PracticeHubWebStub {
   password: string
   code?: string
   patients: { webId: string; responseIds: number[] }[]
+  /** Forms as Settings > Forms lists them, each with the builder data its editor page carries. */
+  forms?: { id: string; name: string; active?: boolean; sections: unknown[][]; titles?: string[] }[]
 }
 
 async function answerPracticeHubWeb(web: PracticeHubWebStub, req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, url: URL) {
@@ -3628,6 +3630,25 @@ async function answerPracticeHubWeb(web: PracticeHubWebStub, req: import('node:h
   if (url.pathname === '/config/scripts/pdf_downloads/custom_form.php') {
     res.setHeader('content-type', 'application/pdf')
     return res.end(Buffer.from(`%PDF-1.4\n% signed original of ${url.searchParams.get('form_id')}\n%%EOF\n`))
+  }
+  if (url.pathname === '/settings/forms') {
+    const rows = (web.forms ?? [])
+      .map(
+        (f) =>
+          `<tr class="tr-${f.id}"><td>${f.name}</td><td>Patient</td><td><span class="label">${f.active === false ? 'Inactive' : 'Active'}</span></td><td><a href="/settings/forms/form?action=update&amp;id=${f.id}">Edit</a><a href="#/" data-form-id="${f.id}">Duplicate</a></td></tr>`,
+      )
+      .join('')
+    res.setHeader('content-type', 'text/html')
+    return res.end(`<html><body><a href="/settings/forms/form?action=create&amp;type=patient">New</a><table><tr><th>Name</th><th>Type</th><th>Status</th><th>Action</th></tr>${rows}</table></body></html>`)
+  }
+  if (url.pathname === '/settings/forms/form') {
+    const form = (web.forms ?? []).find((f) => f.id === url.searchParams.get('id'))
+    res.setHeader('content-type', 'text/html')
+    if (!form) return res.end('<html><body>No form</body></html>')
+    // As the editor writes it: the live assignment, then an older one left commented out.
+    return res.end(
+      `<html><body><script>jQuery(document).ready(function($) { saved_data = ${JSON.stringify(form.sections)}; //var saved_data = [{"type":"paragraph","label":"old"}];\n saved_section_titles = ${JSON.stringify(form.titles ?? ['Section 1'])}; });</script></body></html>`,
+    )
   }
   res.statusCode = 404
   return res.end('File not found.')

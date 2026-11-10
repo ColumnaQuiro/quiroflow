@@ -309,6 +309,14 @@ async function saveAsProgram() {
 }
 
 const dose = (pe: Parameters<typeof exerciseDoseLabel>[0]) => exerciseDoseLabel(pe, t)
+function origin(pe: AssignedExercise): string {
+  if (pe.source_type_id && pe.patient_types?.name) return t(`From the type ${pe.patient_types.name}`, `Del tipo ${pe.patient_types.name}`)
+  if (pe.patient_schedule_id) return ''
+  if (pe.team_members?.full_name) return t(`Added by ${pe.team_members.full_name}`, `Añadido por ${pe.team_members.full_name}`)
+  return ''
+}
+// Programmes are the clinic's library: saving one needs exercises_manage.
+const { can } = usePermission()
 const daysDone = (pe: AssignedExercise) => exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))
 
 const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
@@ -349,6 +357,9 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
           <p v-if="dose(pe) || pe.patient_schedule_id" class="text-[12.5px] text-ink-muted" data-cy="exercise-row-dose">
             {{ dose(pe) }}<span v-if="pe.patient_schedule_id" class="ml-1 rounded-full bg-brand-tint px-1.5 py-px text-[11px] font-medium text-brand-text" data-cy="exercise-row-scheduled">{{ t('By visit', 'Por visitas') }}</span>
           </p>
+          <!-- Where it came from: a patient type, or someone on the team. Removing
+               one a type gave is remembered, so updating the type does not put it back. -->
+          <p v-if="origin(pe)" class="text-[11.5px] text-ink-faint" data-cy="exercise-row-origin">{{ origin(pe) }}</p>
           <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
             <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold" :class="d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
             <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${daysDone(pe).filter((d) => d.done).length} of 7 days`, `${daysDone(pe).filter((d) => d.done).length} de 7 días`) }}</span>
@@ -371,7 +382,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
     />
 
     <p v-if="notice" class="mt-1.5 text-[12.5px] text-success-text" data-cy="exercises-notice">{{ notice }}</p>
-    <div v-if="!loading && !open && assigned.length >= 2" class="mt-1">
+    <div v-if="!loading && !open && assigned.length >= 2 && can('exercises_manage')" class="mt-1">
       <button v-if="!savingAs" type="button" class="text-[12px] font-medium text-ink-muted hover:text-brand-text" data-cy="exercises-save-as-program" @click="savingAs = true; notice = ''">{{ t('Save these as a programme…', 'Guardar como programa…') }}</button>
       <form v-else class="mt-1.5 flex flex-wrap gap-2" @submit.prevent="saveAsProgram">
         <input v-model="programName" :class="[input, 'min-w-0 flex-1']" :placeholder="t('Programme name, e.g. Low back basics', 'Nombre, p. ej. Lumbalgia básica')" data-cy="exercises-program-name" />

@@ -217,6 +217,25 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'patient.type_added',
+    label: ['Patient type given', 'Se pone un tipo de paciente'],
+    sentence: ['A patient is given a patient type', 'Se le pone un tipo a un paciente'],
+    description: [
+      "When someone on the team, or an automation, gives the patient a type (Settings > Patient types). Use it to send that type's forms or welcome.",
+      'Cuando alguien del equipo, o una automatización, le pone un tipo al paciente (Ajustes › Tipos de paciente). Sirve para enviar los formularios o la bienvenida de ese tipo.',
+    ],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'patient.type_removed',
+    label: ['Patient type taken away', 'Se quita un tipo de paciente'],
+    sentence: ['A patient type is taken away', 'Se le quita un tipo a un paciente'],
+    description: ["When someone on the team, or an automation, takes the type off the patient's record.", 'Cuando alguien del equipo, o una automatización, quita el tipo de la ficha del paciente.'],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
     value: 'doc.completed',
     label: ['Form completed', 'Formulario completado'],
     sentence: ['A patient completes a form', 'Un paciente completa un formulario'],
@@ -337,6 +356,10 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
     const tag = String(filters!.trigger_tag).trim()
     return event === 'patient.tag_added' ? t(`Tagged "${tag}"`, `Etiquetado «${tag}»`) : t(`"${tag}" removed`, `Quitada «${tag}»`)
   }
+  if ((event === 'patient.type_added' || event === 'patient.type_removed') && typeof filters?.trigger_type_name === 'string' && filters.trigger_type_name) {
+    const name = filters.trigger_type_name
+    return event === 'patient.type_added' ? t(`Given the type "${name}"`, `Se pone el tipo «${name}»`) : t(`Type "${name}" taken away`, `Se quita el tipo «${name}»`)
+  }
   if (event === 'satisfaction.answered' && (filters?.trigger_score === 'high' || filters?.trigger_score === 'low')) {
     return filters.trigger_score === 'high' ? t('Rated the visit 4-5', 'Valoró la visita con 4-5') : t('Rated the visit 1-3', 'Valoró la visita con 1-3')
   }
@@ -382,6 +405,8 @@ export type StepType =
   | 'notify'
   | 'lead_stage'
   | 'lead_assign'
+  | 'patient_type'
+  | 'assign_exercises'
 
 export type StepKind = 'message' | 'wait' | 'condition' | 'action'
 
@@ -404,6 +429,8 @@ export const STEP_TYPES: StepDef[] = [
   { type: 'wait_until', label: ['Wait until…', 'Esperar hasta que…'], hint: ['They book, reply, pay or open the email · with a limit', 'Reserve, responda, pague o abra el email · con límite'], group: 'time', kind: 'wait', outlets: ['met', 'timeout'] },
   { type: 'branch', label: ['If / else', 'Si / si no'], hint: ['Two paths depending on their details', 'Dos caminos según sus datos'], group: 'logic', kind: 'condition', outlets: ['yes', 'no'] },
   { type: 'tag', label: ['Add or remove a tag', 'Añadir o quitar etiqueta'], hint: ["On the patient's record", 'En la ficha del paciente'], group: 'actions', kind: 'action' },
+  { type: 'patient_type', label: ['Give or take a patient type', 'Poner o quitar tipo de paciente'], hint: ['Brings the exercises the type has', 'Trae los ejercicios que tenga el tipo'], group: 'actions', kind: 'action' },
+  { type: 'assign_exercises', label: ['Assign exercises', 'Asignar ejercicios'], hint: ['A programme or a schedule by visit', 'Un programa o una pauta por visita'], group: 'actions', kind: 'action' },
   { type: 'notify', label: ['Notify someone on the team', 'Avisar a alguien del equipo'], hint: ['A notification on their phone and in the app', 'Un aviso en su móvil y en la app'], group: 'actions', kind: 'action' },
   { type: 'webhook', label: ['Webhook', 'Webhook'], hint: ['Send the data to another app', 'Envía los datos a otra aplicación'], group: 'actions', kind: 'action' },
   { type: 'lead_stage', label: ['Change lead stage', 'Cambiar etapa del lead'], hint: ['New, contacted, booked, lost…', 'Nuevo, contactado, cita, perdido…'], group: 'leads', kind: 'action', leadOnly: true },
@@ -516,7 +543,7 @@ export function quietHoursText(t: Translate, q: { from: string; to: string; days
 // ------------------------------------------------------------------ conditions
 
 export type ValueKind = 'none' | 'text' | 'number' | 'multi' | 'balance' | 'channel' | 'doc_answer'
-export type OptionSource = 'appointment_types' | 'practitioners' | 'lead_stages' | 'lead_channels' | 'clinics' | 'memberships'
+export type OptionSource = 'appointment_types' | 'practitioners' | 'lead_stages' | 'lead_channels' | 'clinics' | 'memberships' | 'patient_types'
 
 export interface ConditionFieldDef {
   field: string
@@ -566,6 +593,7 @@ export const BRANCH_FIELDS: ConditionFieldDef[] = [
     value: 'text',
     subject: 'patient',
   },
+  { field: 'patient_type_ids', label: ['Patient type', 'Tipo de paciente'], ops: [{ op: 'in', label: ['is one of', 'es alguno de'] }, { op: 'not_in', label: ['is none of', 'no es ninguno de'] }], value: 'multi', options: 'patient_types', subject: 'patient' },
   { field: 'balance_cents', label: ['Balance', 'Saldo'], ops: [{ op: 'balance', label: ['is', 'es'] }], value: 'balance', subject: 'patient' },
   { field: 'membership_active', label: ['Active membership', 'Membresía activa'], ops: BOOL_OPS, value: 'none', subject: 'patient' },
   { field: 'appointment_type_id', label: ['Appointment type', 'Tipo de cita'], ops: IN_OPS, value: 'multi', options: 'appointment_types', subject: 'patient', appointment: true },

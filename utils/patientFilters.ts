@@ -22,6 +22,8 @@ export interface PatientFilters {
   status?: 'inactive' | 'any'
   q?: string
   tags?: string[]
+  /** Patient types (patient_type_members), any of these ids. */
+  types?: string[]
   practitioner?: string
   clinic?: string
   lastVisitFrom?: string
@@ -53,6 +55,7 @@ export interface PatientFilterForm {
   status: 'active' | 'inactive' | 'any'
   q: string
   tags: string[]
+  types: string[]
   practitioner: string
   clinic: string
   lastVisitFrom: string
@@ -81,6 +84,7 @@ export function emptyFilterForm(): PatientFilterForm {
     status: 'active',
     q: '',
     tags: [],
+    types: [],
     practitioner: '',
     clinic: '',
     lastVisitFrom: '',
@@ -135,6 +139,9 @@ export function normalizeFilters(input: Record<string, unknown>): PatientFilters
   const rawTags = Array.isArray(input.tags) ? input.tags : typeof input.tags === 'string' ? input.tags.split(',') : []
   const tags = [...new Set(rawTags.filter((t): t is string => typeof t === 'string').map((t) => t.trim()).filter(Boolean))].sort()
   if (tags.length) out.tags = tags
+  const rawTypes = Array.isArray(input.types) ? input.types : typeof input.types === 'string' ? input.types.split(',') : []
+  const types = [...new Set(rawTypes.map((x) => uuid(typeof x === 'string' ? x.trim() : x)).filter((x): x is string => !!x))].sort()
+  if (types.length) out.types = types
   const practitioner = uuid(input.practitioner)
   if (practitioner) out.practitioner = practitioner
   const clinic = input.clinic === 'all' ? 'all' : uuid(input.clinic)
@@ -187,6 +194,7 @@ export function filtersToForm(filters: PatientFilters): PatientFilterForm {
     ...f,
     status: f.status ?? 'active',
     tags: f.tags ?? [],
+    types: f.types ?? [],
     bonoSessionsMax: f.bonoSessionsMax === undefined ? '' : String(f.bonoSessionsMax),
     birthdayThisMonth: !!f.birthdayThisMonth,
     doNotContact: !!f.doNotContact,
@@ -224,6 +232,7 @@ export function sameFilters(a: PatientFilters, b: PatientFilters): boolean {
 /** The keys edited in the "More filters" panel rather than on the toolbar. */
 export const MORE_FILTER_KEYS: (keyof PatientFilters)[] = [
   'tags',
+  'types',
   'clinic',
   'lastVisitFrom',
   'lastVisitTo',

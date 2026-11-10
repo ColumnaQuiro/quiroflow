@@ -170,6 +170,8 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
     label: t('Patients', 'Pacientes'),
     items: [
       { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
+      // Everyone's home exercises in one place, and assigning them to many at once.
+      { label: t('Exercises', 'Ejercicios'), to: '/exercises', perm: () => can('exercises_manage'), icon: 'M2 8h2M12 8h2M4 5.5v5M12 5.5v5M5.5 6.8v2.4M10.5 6.8v2.4M5.5 8h5' },
       { label: t('Recalls', 'Recordatorios'), to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
       // Reuses recalls_access rather than a new permission key -- both are
       // patient-outreach lists with the same "who should staff be allowed to

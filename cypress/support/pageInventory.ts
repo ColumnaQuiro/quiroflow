@@ -22,7 +22,7 @@ export const SETTINGS_PAGES = [
   '/settings/messages',
   '/settings/developers',
   '/settings/docs',
-  '/settings/exercises',
+  '/settings/patient-types',
   '/settings/education',
   '/settings/care-plans',
   '/settings/files',
@@ -59,6 +59,7 @@ export const APP_PAGES = [
   '/calendar',
   '/automations',
   '/care-plan-alerts',
+  '/exercises',
   '/setup',
   // The sweep sees the locked/upgrade state, which is what an account
   // without the tier gets. Both states are asserted in growth/growth-dashboard.cy.ts.
@@ -170,6 +171,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/settings/compress-files': 'now a section of /settings/files and redirects there; asserted in settings/data-settings.cy.ts',
   '/print/desk-sign': 'printable sign opened from /settings/app, no app layout; asserted in settings/app-store-links.cy.ts',
   '/print/check-in-sign': 'printable check-in QR opened from /settings/app, no app layout; asserted in patients/self-check-in.cy.ts',
+  '/settings/exercises': 'redirects to /exercises?section=library (keeping ?tab); asserted in exercises/exercises-section.cy.ts',
   '/settings/practitioners': 'redirects to /settings/team#importados; asserted in settings/team.cy.ts',
   '/portal': 'patient portal -- separate app with its own auth, not the staff sidebar',
   '/portal/login': 'patient portal -- separate app with its own auth',

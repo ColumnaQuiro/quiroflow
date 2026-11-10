@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
-import { triggerTagMatches } from '~/utils/automationTriggerMatch'
+import { triggerTagMatches, triggerTypeMatches } from '~/utils/automationTriggerMatch'
 
 // Fires every enabled automation_rule matching a trigger event -- called
 // from the client right after the underlying action already happened (a
@@ -23,6 +23,8 @@ interface FireBody {
   membershipId?: string
   /** patient.tag_added / patient.tag_removed: which tag. */
   tag?: string
+  /** patient.type_added / patient.type_removed: which type. Raised by /api/patient-types/assign itself; accepted here too. */
+  typeId?: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -69,8 +71,10 @@ export default defineEventHandler(async (event) => {
 
   let fired = 0
   const isTagEvent = body.triggerEvent === 'patient.tag_added' || body.triggerEvent === 'patient.tag_removed'
+  const isTypeEvent = body.triggerEvent === 'patient.type_added' || body.triggerEvent === 'patient.type_removed'
   for (const rule of rules) {
     if (isTagEvent && !triggerTagMatches(rule.filters as Record<string, unknown>, String(body.tag ?? ''))) continue
+    if (isTypeEvent && !triggerTypeMatches(rule.filters as Record<string, unknown>, String(body.typeId ?? ''))) continue
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, body.appointmentId))) continue
     await dispatchPatientRule(supabase, service, accountId, rule.id, patient, origin, body.appointmentId, body)
     fired += 1

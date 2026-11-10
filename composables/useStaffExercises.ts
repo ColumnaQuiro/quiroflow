@@ -24,6 +24,11 @@ export interface AssignedExercise {
   created_at: string
   /** Given by the patient's schedule by visit (ExercisesPatientSchedule), not by hand. */
   patient_schedule_id?: string | null
+  /** Given by a patient type (usePatientTypes): its name says where it came from. */
+  source_type_id?: string | null
+  patient_types?: { name: string } | null
+  assigned_by?: string | null
+  team_members?: { full_name: string } | null
   exercises: ExerciseRow | null
   patient_exercise_logs: { done_on: string }[]
 }
@@ -56,7 +61,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     const [{ data, error: readError }, { data: lib }] = await Promise.all([
       supabase
         .from('patient_exercises')
-        .select('id, sets, reps, frequency, notes, progressive, created_at, patient_schedule_id, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
+        .select('id, sets, reps, frequency, notes, progressive, created_at, patient_schedule_id, source_type_id, assigned_by, patient_types!patient_exercises_source_type_id_fkey(name), team_members!patient_exercises_assigned_by_fkey(full_name), exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
         .eq('patient_id', opts.patientId())
         .is('ended_at', null)
         .gte('patient_exercise_logs.done_on', weekAgo)
@@ -156,5 +161,9 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
   }
 
   watch(opts.patientId, (id) => id && load(), { immediate: true })
+  // A patient type given or taken on the record's banner (PatientsTypesInline)
+  // brings or ends exercises; the list here catches up.
+  const bump = useState<number>('patientExercisesBump', () => 0)
+  watch(bump, () => opts.patientId() && load())
   return { assigned, library, loading, loadError, saving, error, load, assign, assignProgram, end }
 }

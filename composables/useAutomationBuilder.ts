@@ -88,6 +88,10 @@ export function defaultConfig(type: string): Record<string, any> {
       return { title: '', match: 'all', conditions: [] }
     case 'tag':
       return { mode: 'add', tag: '' }
+    case 'patient_type':
+      return { mode: 'add', type_id: null }
+    case 'assign_exercises':
+      return { kind: 'program', program_id: null, schedule_id: null }
     case 'notify':
       return { to: {}, title: '' }
     case 'lead_stage':
@@ -219,7 +223,7 @@ export function useAutomationBuilder() {
 
   // ------------------------------------------------------------ loading
   async function loadLookups() {
-    const [types, members, roles, memberships, docs, forms] = await Promise.all([
+    const [types, members, roles, memberships, docs, forms, patientTypes, programs, schedules] = await Promise.all([
       supabase.from('appointment_types').select('id, name, archived_at').order('name'),
       supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
       supabase.from('account_roles').select('id, name').order('name'),
@@ -230,6 +234,11 @@ export function useAutomationBuilder() {
       // Recent form submissions are enough to know which questions the
       // clinic's forms ask; there is no catalogue of them anywhere else.
       supabase.from('lead_events').select('body').eq('account_id', store.accountId ?? '').eq('kind', 'qualification').order('occurred_at', { ascending: false }).limit(300),
+      // Patient types and exercises, for the type trigger, the type and
+      // exercise steps, and the "patient type" condition.
+      supabase.from('patient_types').select('id, name').is('archived_at', null).order('name'),
+      supabase.from('exercise_programs').select('id, name').order('name'),
+      supabase.from('exercise_schedules').select('id, name').order('name'),
     ])
     lookup.value = {
       ...lookup.value,
@@ -239,6 +248,9 @@ export function useAutomationBuilder() {
       roles: (roles.data ?? []) as { id: string; name: string }[],
       memberships: (memberships.data ?? []) as { id: string; name: string }[],
       clinics: store.clinics.map((c) => ({ id: c.id, name: c.name })),
+      patientTypes: (patientTypes.data ?? []) as { id: string; name: string }[],
+      exercisePrograms: (programs.data ?? []) as { id: string; name: string }[],
+      exerciseSchedules: (schedules.data ?? []) as { id: string; name: string }[],
     }
     docTemplates.value = ((docs.data ?? []) as { id: string; title: string; fields: unknown }[]).map((d) => ({ ...d, fields: Array.isArray(d.fields) ? (d.fields as DocField[]) : [] }))
     lookup.value = { ...lookup.value, docTemplates: docTemplates.value }

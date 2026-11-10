@@ -4,7 +4,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
-import { shortPatientName } from '~/utils/appointmentBlock'
+import { practitionerBadgeLabels, shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
@@ -1270,6 +1270,19 @@ function firstName(full: string | null | undefined) {
   return (full ?? '').trim().split(/\s+/)[0] || null
 }
 
+// On the whole-clinic tab each block carries its practitioner's initials in
+// their colour, and each tab carries the same badge, so the tab bar is the
+// grid's legend. The initials are the shortest that tell THIS clinic's team
+// apart: "L" unless two people start with L.
+const badgeLabels = computed(() => practitionerBadgeLabels(clinicTeamMembers.value))
+function practitionerBadgeFor(id: string | null, member: { full_name: string; color: string } | null) {
+  if (!id || !member) return { initials: '', color: null, name: null }
+  // Someone not on this clinic's team (they moved clinic since) still gets
+  // initials, worked out against the team they are being read beside.
+  const initials = badgeLabels.value.get(id) ?? practitionerBadgeLabels([...clinicTeamMembers.value, { id, full_name: member.full_name }]).get(id) ?? '?'
+  return { initials, color: member.color || null, name: member.full_name }
+}
+
 // Built once per appointment per change, not on every render: a fresh object
 // each time re-rendered every block on the grid whenever anything on the
 // page moved -- the pointer crossing a slot was enough.
@@ -1304,6 +1317,7 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     movedCount: movedCountById.value[appt.id] ?? 0,
     noNext: needsNextBookingFlag(stage, appt.starts_at, hasFutureAppointment(appt), now.value),
     marker: visitMarkerById.value[appt.id] ?? null,
+    practitioner: practitionerFilter.value === ALL_PRACTITIONERS ? practitionerBadgeFor(appt.practitioner_id, appt.team_members) : null,
   }
 }
 
@@ -2717,6 +2731,7 @@ function showNowLineOn(day: Date) {
         :aria-pressed="practitionerFilter === m.id"
         @click="practitionerFilter = m.id"
       >
+        <CalendarPractitionerBadge :initials="badgeLabels.get(m.id) ?? ''" :color="m.color || null" :name="m.full_name" :class="practitionerFilter === m.id ? 'ring-1 ring-brand-on' : ''" />
         {{ m.full_name }}
       </button>
       <button

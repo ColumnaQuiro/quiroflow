@@ -68,12 +68,29 @@ describe('Importing from PracticeHub without exporting anything', () => {
           expect(patient.marketing_channels).to.deep.eq(['sms'])
         })
 
-        cy.visit('/settings/import?source=practicehub&step=appointments&type=appointments')
+        // On to the next step from the panel itself, not by hunting through
+        // the step list: Patients -> Appointment types -> Appointments. A
+        // step that has just written gets the primary button.
+        cy.get('[data-cy=import-next-step]').should('have.class', 'bg-brand').click()
+        cy.get('[data-cy=import-panel] h2').should('have.text', 'Appointment types')
+        cy.get('[data-cy=import-next-step]').should('not.have.class', 'bg-brand').click()
+        cy.get('[data-cy=import-panel] h2').should('have.text', 'Appointments')
+        cy.location('search').should('contain', 'type=appointments')
+        // Patients read the patient list a moment ago, so this step says it
+        // will reuse it...
+        cy.get('[data-cy=ph-reads-held]').should('be.visible')
         cy.get('[data-cy=ph-appointments-from-api]').should('not.be.disabled').click()
         cy.contains('button', /^(Continue|Continuar)$/).click()
         cy.contains('button', /^(Import 1, update 0|Importar 1, actualizar 0)$/).click()
         cy.contains('a', /View calendar|Ver calendario/).should('exist')
         cy.get('[data-cy=import-step][data-step=appointments] [data-cy=import-step-status]').should('have.text', '1 imported')
+        // ...and did: PracticeHub was asked for its patients and
+        // practitioners once, by Patients, not again by Appointments.
+        cy.task<Record<string, number>>('db:practiceHubStubHits').then((hits) => {
+          expect(hits['/patients']).to.eq(1)
+          expect(hits['/practitioners']).to.eq(1)
+          expect(hits['/appointments']).to.eq(1)
+        })
 
         cy.task<{ starts_at: string; practitioner_name: string; status: string }[]>('db:selectRows', {
           table: 'appointments',
@@ -85,6 +102,30 @@ describe('Importing from PracticeHub without exporting anything', () => {
           expect(appointment.practitioner_name).to.eq('Marta Ruiz')
           expect(appointment.status).to.eq('completed')
         })
+      })
+    })
+  })
+
+  it('says in the Connection step what the saved key reaches, and names a refused key', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { routes }).then(({ baseUrl }) => {
+        cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+        cy.login(account.email, account.password)
+        cy.visit('/settings/import?source=practicehub&type=general')
+        cy.get('[data-cy=ph-check]').click()
+        cy.get('[data-cy=ph-check-result]').should('have.text', '1 patients · 1 appointments · Marta Ruiz')
+      })
+      // The same connection, once PracticeHub refuses its key: the Connection
+      // step says so in words, and so does a step that tries to read, rather
+      // than "PracticeHub API request failed" in both.
+      cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { routes, refuse: 'key' }).then(({ baseUrl }) => {
+        cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+        cy.visit('/settings/import?source=practicehub&type=general')
+        cy.get('[data-cy=ph-check]').click()
+        cy.get('[data-cy=ph-check-error]').should('contain.text', 'PracticeHub refused the API key')
+        cy.get('[data-cy=import-next-step]').click()
+        cy.get('[data-cy=ph-patients-from-api]').click()
+        cy.contains('PracticeHub refused the API key').should('be.visible')
       })
     })
   })

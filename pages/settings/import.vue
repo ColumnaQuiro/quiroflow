@@ -172,6 +172,28 @@ const stepKey = ref(typeof route.query.type === 'string' ? route.query.type : 'g
 // An address naming a step that does not exist opens the first one, rather
 // than a blank panel.
 const activeStep = computed(() => allSteps.value.find((s) => s.key === stepKey.value) ?? allSteps.value[0]!)
+// The steps are ordered the way a migration runs, so the step after this one
+// is the one to open next. Each importer ends with "View patients" or "Start
+// again" and left the clinic to find the next step in the list; a dozen
+// times over a migration, that is the navigation.
+const stepIndex = computed(() => allSteps.value.findIndex((s) => s.key === activeStep.value.key))
+const previousStep = computed(() => (stepIndex.value > 0 ? allSteps.value[stepIndex.value - 1] : null))
+const nextStep = computed(() => allSteps.value[stepIndex.value + 1] ?? null)
+// Whether the open step has written since it was opened: the moment the next
+// step becomes the thing to do, so its button turns primary.
+const stepHasWritten = ref(false)
+watch(() => activeStep.value.key, () => {
+  stepHasWritten.value = false
+  // Opened from the footer, at the bottom of a long step, the new step would
+  // otherwise appear with its top out of sight.
+  nextTick(() => {
+    const node = panel.value
+    const box = scroller.value
+    if (node && box && node.getBoundingClientRect().top < box.getBoundingClientRect().top) {
+      node.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }
+  })
+})
 
 watch([sourceKey, () => activeStep.value.key], ([source, type]) => {
   router.replace({ query: { ...route.query, source, type } })
@@ -212,14 +234,20 @@ async function countStep(source: string, step: Step) {
   if (source !== sourceKey.value || count == null) return
   counts.value = { ...counts.value, [step.key]: count }
 }
+// Which step was writing: a step left while it writes reports it has stopped
+// as it unmounts, when the active step is already the next one.
+let writingStep: string | null = null
 provideImportWriting((writing) => {
   stopLiveCount()
   if (!writing) {
+    if (writingStep === activeStep.value.key) stepHasWritten.value = true
+    writingStep = null
     loadCounts({ quiet: true })
     return
   }
   const source = sourceKey.value
   const step = activeStep.value
+  writingStep = step.key
   if (!step.count) return
   liveTimer = setInterval(() => { countStep(source, step).catch(() => {}) }, LIVE_COUNT_MS)
 })
@@ -382,6 +410,22 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportQuirocitasStep v-else :kind="activeStep.key as QuirocitasStepKind" />
               </template>
               <ImportGenericCsvPatientsImporter v-else />
+              <div v-if="previousStep || nextStep" class="flex flex-wrap items-center justify-between gap-3 border-t border-line-divider pt-4" data-cy="import-step-nav">
+                <button v-if="previousStep" type="button" class="text-[13px] font-medium text-ink-600 hover:underline" data-cy="import-previous-step" @click="stepKey = previousStep.key">
+                  ← {{ previousStep.label }}
+                </button>
+                <span v-else />
+                <button
+                  v-if="nextStep"
+                  type="button"
+                  class="rounded-md px-4 py-2 text-sm font-medium"
+                  :class="stepHasWritten ? 'bg-brand text-brand-on hover:bg-brand-hover' : 'border border-line-control text-ink-700 hover:bg-surface-subtle'"
+                  data-cy="import-next-step"
+                  @click="stepKey = nextStep.key"
+                >
+                  {{ t(`Next step: ${nextStep.label}`, `Siguiente paso: ${nextStep.label}`) }} →
+                </button>
+              </div>
             </div>
           </section>
         </div>

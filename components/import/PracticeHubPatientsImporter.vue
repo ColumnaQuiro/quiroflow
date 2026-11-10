@@ -2,6 +2,8 @@
 import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
+import { shrinkImageForUpload } from '~/utils/imageShrink'
+import { planProfilePhotos, practiceHubPhotoPath, sniffImageType, type PracticeHubPhotoSource } from '~/utils/practicehubProfilePhotos'
 import { practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
 
 const supabase = useSupabaseClient()
@@ -29,6 +31,18 @@ const countryLookupState = ref<'idle' | 'loading' | 'ready' | 'unavailable'>('id
 // which is which; a CSV row is stored under the number it maps to.
 const patientNumberFor = ref(new Map<string, string>())
 
+// Each patient's profile photo, as PracticeHub's patient list links to it.
+// Read with the same list as the phone countries, so it is there whether the
+// patients came from the API or from a CSV with the connection saved. The
+// photos are fetched after the patients are written: see bringPhotos.
+const photoSources = ref<PracticeHubPhotoSource[]>([])
+// How many of those photos this run will fetch: every one whose patient has
+// no photo here yet, including the patients it is about to create.
+const photosToBring = ref(0)
+const photoProgress = ref<{ done: number; total: number } | null>(null)
+const photosImported = ref(0)
+const photosNotImages = ref(0)
+
 function countryKey(patientNumber: string, number: string) {
   return `${patientNumber.trim()}|${number.trim()}`
 }
@@ -46,6 +60,7 @@ function readNumberCountries(patients: PHApiPatient[]) {
   }
   numberCountries.value = map
   patientNumberFor.value = practiceHubPatientNumberMap(patients)
+  photoSources.value = patients.filter((p) => p.profile_image).map((p) => ({ id: p.id, patient_number: p.patient_number, profile_image: p.profile_image }))
   countryLookupState.value = 'ready'
 }
 
@@ -178,6 +193,7 @@ interface ExistingPatient {
   default_practitioner_id: string | null
   created_at: string
   balance_cents: number
+  photo_storage_path: string | null
 }
 
 interface FieldDiff { field: string; from: string; to: string }
@@ -421,7 +437,7 @@ async function computeDiff() {
     const { data: existing } = await supabase
       .from('patients')
       .select(
-        'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents',
+        'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path',
       )
       .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const p of existing ?? []) {
@@ -431,6 +447,7 @@ async function computeDiff() {
     }
     if (!existing || existing.length < PAGE_SIZE) break
   }
+  photosToBring.value = photoSources.value.length - planProfilePhotos(photoSources.value, [...byRef.values()]).alreadyHere
 
   skippedDuplicate.value = 0
   skippedDeleted.value = 0
@@ -653,6 +670,8 @@ async function runImport() {
       })
     }
 
+    await bringPhotos()
+
     importing.value = false
     stage.value = 'done'
     showToast(
@@ -666,6 +685,69 @@ async function runImport() {
     importing.value = false
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
+  }
+}
+
+// Stores each patient's PracticeHub profile photo as their photo here. Runs
+// once the patients exist, and only for those with no photo: one taken in
+// QuiroFlow is never replaced, and a second run fetches nothing twice.
+//
+// A photo that fails does not fail the import. The patients are written by
+// then, and running the step again picks up whatever is still missing.
+async function bringPhotos() {
+  photosImported.value = 0
+  photosNotImages.value = 0
+  photoProgress.value = null
+  if (photoSources.value.length === 0) return
+
+  try {
+    const ours: { id: string; external_reference: string | null; photo_storage_path: string | null }[] = []
+    const PAGE_SIZE = 1000
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, external_reference, photo_storage_path')
+        .not('external_reference', 'is', null)
+        .order('id').range(from, from + PAGE_SIZE - 1)
+      if (error) throw new Error(error.message)
+      ours.push(...(data ?? []))
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    const { queue } = planProfilePhotos(photoSources.value, ours)
+    if (queue.length === 0) return
+    photoProgress.value = { done: 0, total: queue.length }
+    let failed = 0
+    await runWithConcurrency(queue, 6, async (item) => {
+      try {
+        // Through our server: PracticeHub's bucket sends no CORS headers.
+        const blob = await $fetch<Blob>('/api/import/practicehub-file', { method: 'POST', body: { url: item.url }, responseType: 'blob' })
+        // What PracticeHub holds as the photo is not always a picture (one
+        // was a 2 MB PDF), so the bytes decide.
+        const image = sniffImageType(new Uint8Array(await blob.slice(0, 16).arrayBuffer()))
+        if (!image) {
+          photosNotImages.value++
+          return
+        }
+        // PracticeHub keeps what the camera took: 3 MB a photo at one clinic,
+        // for a picture drawn as a small circle. Same shrink a team photo gets.
+        const photo = await shrinkImageForUpload(new File([blob], `photo.${image.extension}`, { type: image.contentType }), 'photo')
+        const shrunk = photo.type === 'image/jpeg' || photo.type === 'image/png' ? { contentType: photo.type, extension: photo.type === 'image/png' ? 'png' : 'jpg' } : image
+        const path = practiceHubPhotoPath(store.accountId!, item.patientId, shrunk.extension)
+        const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, photo, { contentType: shrunk.contentType, upsert: true })
+        if (uploadError) throw new Error(uploadError.message)
+        const { error: updateError } = await supabase.from('patients').update({ photo_storage_path: path }).eq('id', item.patientId).is('photo_storage_path', null)
+        if (updateError) throw new Error(updateError.message)
+        photosImported.value++
+      } catch {
+        failed++
+      } finally {
+        if (photoProgress.value) photoProgress.value = { done: photoProgress.value.done + 1, total: queue.length }
+      }
+    })
+    if (failed > 0) importErrors.value.push(t(`Profile photos not copied: ${failed}. Run this step again to retry them.`, `Fotos de perfil sin copiar: ${failed}. Vuelve a ejecutar este paso para reintentarlas.`))
+  } catch (err) {
+    importErrors.value.push(t(`The profile photos were not copied: ${err instanceof Error ? err.message : String(err)}. Run this step again to retry them.`, `No se copiaron las fotos de perfil: ${err instanceof Error ? err.message : String(err)}. Vuelve a ejecutar este paso para reintentarlas.`))
   }
 }
 
@@ -759,6 +841,9 @@ const fieldId = useId()
         <!-- The CSV has no country for a phone number; PracticeHub's API
              does. Say which of the two answered, because the fallback makes
              every number Spanish and that is exactly the bug this replaced. -->
+        <p v-if="photosToBring > 0" class="mt-3 text-[12.5px] text-ink-700" data-cy="ph-patients-photos">
+          {{ t(`Profile photos to bring over from PracticeHub: ${photosToBring}`, `Fotos de perfil por traer de PracticeHub: ${photosToBring}`) }}
+        </p>
         <p v-if="countryLookupState === 'ready'" class="mt-3 text-[12.5px] text-ink-muted2">
           {{ t(
             `Phone countries read from PracticeHub · ${foreignNumberCount} ${foreignNumberCount === 1 ? 'number' : 'numbers'} outside ${defaultCountryName}`,
@@ -855,7 +940,7 @@ const fieldId = useId()
       <div class="flex gap-3">
         <button
           type="button"
-          :disabled="toImport.length === 0 && toUpdate.length === 0"
+          :disabled="toImport.length === 0 && toUpdate.length === 0 && photosToBring === 0"
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
@@ -868,7 +953,10 @@ const fieldId = useId()
     </div>
 
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
-      <p class="text-sm text-ink-600">
+      <p v-if="photoProgress" class="text-sm text-ink-600" data-cy="ph-patients-photo-progress">
+        {{ t(`Bringing profile photos… ${photoProgress.done} / ${photoProgress.total}`, `Trayendo fotos de perfil… ${photoProgress.done} / ${photoProgress.total}`) }}
+      </p>
+      <p v-else class="text-sm text-ink-600">
         {{
           t(
             `Importing… ${importedCount + updatedCount} / ${toImport.length + toUpdate.length}`,
@@ -890,6 +978,12 @@ const fieldId = useId()
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
+      <p v-if="photosImported > 0 || photosNotImages > 0" class="text-[12.5px] text-ink-700" data-cy="ph-patients-photos-done">
+        {{ t(`Profile photos brought over: ${photosImported}.`, `Fotos de perfil traídas: ${photosImported}.`) }}
+        <template v-if="photosNotImages > 0">
+          {{ t(`Left out because PracticeHub holds a PDF or other document there, not a picture: ${photosNotImages}.`, `No traídas porque en PracticeHub hay un PDF u otro documento, no una imagen: ${photosNotImages}.`) }}
+        </template>
+      </p>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

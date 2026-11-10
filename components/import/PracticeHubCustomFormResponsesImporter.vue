@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DocField } from '~/utils/docFields'
+import { practiceHubFormBlocks, practiceHubFormOptions } from '~/utils/practicehubFormFields'
 import type { Json } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -42,61 +43,15 @@ const newTemplates = ref<TemplateCandidate[]>([])
 // Templates that already exist here, keyed by PracticeHub form_id -- filled
 // during the scan and topped up with the ones apply() creates.
 const existingTemplateIdByFormId = ref(new Map<string, string>())
+// Each form's checkbox questions with every option seen ticked for them, so a
+// document lists the options the patient left unticked too. Keyed by form_id.
+let optionsByFormId = new Map<string, Map<string, string[]>>()
 const skippedDuplicate = ref(0)
 const skippedUnmatched = ref(0)
 
 const importedCount = ref(0)
 const templatesCreated = ref(0)
 const importErrors = ref<string[]>([])
-
-function stripHtml(value: string): string {
-  return value.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
-}
-
-// PracticeHub's custom form export gives raw {name, value, label} rows with
-// no explicit type -- these were originally captured via a form builder, so
-// we infer the block type from the field's internal name and shape it into
-// our own DocField format. There's no real signature image in this data
-// (just an internal widget id), so a signature field becomes a text note
-// recording that it was signed, rather than a fake filled-in pad.
-//
-// blank=true produces the TEMPLATE's copy of this field (see
-// buildTemplateFields below): same label/type, but with any actual answer
-// stripped out, since a template is what gets reused for a patient who
-// never answered anything. Static content (headings, legal paragraphs,
-// the signature/sketchpad notes) already carries no real answer in `value`
-// either way, so blank only changes date/checkbox/text-answer fields.
-function mapField(f: PHFormField, blank = false): DocField {
-  const key = f.name.toLowerCase()
-  const text = stripHtml(f.value ?? '')
-
-  if (key.includes('signature')) {
-    return { id: crypto.randomUUID(), type: 'text', label: `${f.label || 'Signature'}: signed (via PracticeHub)`, value: null }
-  }
-  if (key.includes('sketchpad') || key.includes('drawableimage') || key.includes('image')) {
-    return { id: crypto.randomUUID(), type: 'text', label: `${f.label || 'Diagram'}: drawing captured (not available via PracticeHub's API)`, value: null }
-  }
-  if (key.includes('date')) {
-    return { id: crypto.randomUUID(), type: 'date', label: f.label || 'Date', value: blank ? null : f.value || null }
-  }
-  if (key.includes('checkbox')) {
-    return { id: crypto.randomUUID(), type: 'checkbox', label: f.label || text || 'Consent', value: blank ? false : !!f.value }
-  }
-  if (!f.label && text.length > 120) {
-    // Static legal/informational paragraph, not an actual answer.
-    return { id: crypto.randomUUID(), type: 'text', label: text, value: null }
-  }
-  return {
-    id: crypto.randomUUID(),
-    type: text.length > 80 ? 'long_text' : 'short_text',
-    label: f.label || 'Answer',
-    value: blank ? null : text || null,
-  }
-}
-
-function buildTemplateFields(data: PHFormField[]): DocField[] {
-  return (data ?? []).map((f) => mapField(f, true))
-}
 
 function formatDate(value: string): string {
   const d = new Date(value)
@@ -187,13 +142,18 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const { data: existingTemplates } = await supabase.from('doc_templates').select('id, external_reference').not('external_reference', 'is', null)
     const templateIdByRef = new Map((existingTemplates ?? []).map((tpl) => [tpl.external_reference as string, tpl.id]))
     const firstResponseByFormId = new Map<string, PHFormResponse>()
-    for (const r of responses) if (!firstResponseByFormId.has(r.form_id)) firstResponseByFormId.set(r.form_id, r)
+    const responsesByFormId = new Map<string, PHFormResponse[]>()
+    for (const r of responses) {
+      if (!firstResponseByFormId.has(r.form_id)) firstResponseByFormId.set(r.form_id, r)
+      responsesByFormId.set(r.form_id, [...(responsesByFormId.get(r.form_id) ?? []), r])
+    }
+    optionsByFormId = new Map([...responsesByFormId].map(([formId, list]) => [formId, practiceHubFormOptions(list)]))
 
     const plannedTemplates: TemplateCandidate[] = []
     for (const [formId, sample] of firstResponseByFormId) {
       const existingId = templateIdByRef.get(`PH-form-template-${formId}`)
       if (existingId) existingTemplateIdByFormId.value.set(formId, existingId)
-      else plannedTemplates.push({ formId, formName: sample.form_name, fields: buildTemplateFields(sample.data) })
+      else plannedTemplates.push({ formId, formName: sample.form_name, fields: practiceHubFormBlocks(sample.data, { blank: true, options: optionsByFormId.get(formId) }) })
     }
 
     const planned: FormCandidate[] = []
@@ -259,7 +219,7 @@ async function apply() {
         patient_id: c.patientId,
         template_id: templateIdByFormId.get(c.response.form_id) ?? null,
         title: c.response.form_name,
-        fields: (c.response.data ?? []).map((f) => mapField(f)) as unknown as Json,
+        fields: practiceHubFormBlocks(c.response.data, { options: optionsByFormId.get(c.response.form_id) }) as unknown as Json,
         completed_at: c.response.created,
         external_reference: c.externalRef,
         created_at: c.response.created,

@@ -43,6 +43,8 @@ export interface PHApiPatient {
   default_practitioners?: { practitioner_id: number | string }[] | null
   referral_source_type?: string | null
   referral_source_id?: number | string | null
+  /** A signed S3 link to the profile photo, or null. See utils/practicehubProfilePhotos.ts. */
+  profile_image?: string | null
 }
 
 /** A Classic /appointments record, as far as the import reads it. */

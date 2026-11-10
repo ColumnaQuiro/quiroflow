@@ -33,6 +33,18 @@ export type AccountSecretName =
   | 'quirocitas_session'
   /** Where the cash ledger's month-by-month walk got to: the form to submit next. */
   | 'quirocitas_ledger_cursor'
+  /**
+   * PracticeHub's website, as distinct from its API: the signed original of a
+   * submitted form exists only as a PDF its pages render for a signed-in
+   * member of staff (server/utils/practicehubWeb.ts). The email and password
+   * are kept because the session runs out and a code step asks for them again.
+   */
+  | 'practicehub_web_email'
+  | 'practicehub_web_password'
+  /** The signed-in session's cookies, including the trusted-device one that spares a code each time. */
+  | 'practicehub_web_session'
+  /** Where the signed-forms job got to (server/utils/practicehubFormPdfs.ts). Not a secret; kept here because only the server reads it. */
+  | 'practicehub_forms_job'
 
 // The secrets that once had a column on `accounts`. practicehub_v3_api_key
 // arrived after the move and never did: selecting or clearing it there is a
@@ -144,4 +156,10 @@ export async function withMessagingTokens<T extends Record<string, any> | null |
   const { data } = await serviceClient().from('account_secrets').select('name, value').eq('account_id', accountId).in('name', wanted)
   for (const secret of data ?? []) (row as Record<string, unknown>)[secret.name as MessagingToken] = secret.value
   return row
+}
+
+/** Removes a secret. For disconnecting something whose credentials should not outlive it. */
+export async function deleteAccountSecret(supabase: SupabaseClient<Database>, accountId: string, name: AccountSecretName): Promise<void> {
+  const { error } = await supabase.from('account_secrets').delete().eq('account_id', accountId).eq('name', name)
+  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 }

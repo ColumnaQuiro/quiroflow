@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { DocField } from '~/utils/docFields'
+import { openWhenReady } from '~/utils/openWhenReady'
+import { practiceHubFormPdfReferenceForDoc } from '~/utils/practicehubWebPages'
 
 // One of a patient's forms, answers only, on a page of its own -- so it can
 // sit in a browser tab beside the patient's record while a practitioner
@@ -23,6 +25,7 @@ interface DocRow {
   completed_at: string | null
   updated_at: string
   patient_id: string
+  external_reference: string | null
   patients: { first_name: string | null; last_name: string | null } | null
 }
 const doc = ref<DocRow | null>(null)
@@ -35,13 +38,36 @@ useHead({ title: computed(() => (doc.value ? `${doc.value.title} · ${patientNam
 onMounted(async () => {
   const { data } = await supabase
     .from('patient_docs')
-    .select('id, title, fields, completed_at, updated_at, patient_id, patients(first_name, last_name)')
+    .select('id, title, fields, completed_at, updated_at, patient_id, external_reference, patients(first_name, last_name)')
     .eq('id', docId)
     .maybeSingle()
   doc.value = (data as unknown as DocRow) ?? null
   loading.value = false
   if (doc.value) logAccess('file_viewed', doc.value.patient_id, { doc: doc.value.title })
+  await findOriginal()
 })
+
+// A form imported from PracticeHub shows its answers here, but a signature or
+// a drawing is not among them: PracticeHub's API never hands the image over.
+// Settings > Import > Signed forms files the signed PDF with the patient, and
+// this is the way to it from the form it belongs to. Absent until that step
+// has run, and for anyone whose role cannot see the patient's files.
+const original = ref<{ storage_path: string; file_name: string } | null>(null)
+async function findOriginal() {
+  const reference = practiceHubFormPdfReferenceForDoc(doc.value?.external_reference)
+  if (!reference) return
+  const { data } = await supabase.from('patient_files').select('storage_path, file_name').eq('external_reference', reference).not('storage_path', 'is', null).maybeSingle()
+  original.value = data?.storage_path ? { storage_path: data.storage_path, file_name: data.file_name } : null
+}
+function openOriginal() {
+  const file = original.value
+  if (!file || !doc.value) return
+  logAccess('file_viewed', doc.value.patient_id, { file: file.file_name })
+  openWhenReady(async () => {
+    const { data } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 60 * 5)
+    return data?.signedUrl
+  })
+}
 
 const meta = computed(() => {
   if (!doc.value) return ''
@@ -55,6 +81,9 @@ const meta = computed(() => {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="doc?.title ?? t('Form', 'Formulario')" :meta="meta">
+      <UiBtn v-if="original" variant="secondary" data-cy="doc-signed-original" @click="openOriginal">
+        {{ t('Signed original (PDF)', 'Original firmado (PDF)') }}
+      </UiBtn>
       <!-- A link (it goes somewhere, and opens in a new tab on request),
            drawn as UiBtn's secondary button like the header actions elsewhere. -->
       <NuxtLink

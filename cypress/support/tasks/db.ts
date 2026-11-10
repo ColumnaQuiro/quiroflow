@@ -3565,7 +3565,75 @@ async function practiceHubStubHitsOf() {
 // with its own records, in one page; any other path gets the `emails` list.
 // `refuse` answers everything the way PracticeHub does to a wrong key (403)
 // or a wrong address (404).
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number; routes?: Record<string, unknown[]>; refuse?: 'key' | 'address' }) {
+/**
+ * PracticeHub's WEBSITE, as distinct from its API: the sign-in its login page
+ * posts to, and the three pages the signed-forms import reads behind it.
+ * `code` makes sign-in ask for a verification code first, as PracticeHub does
+ * for a device it has not seen.
+ */
+interface PracticeHubWebStub {
+  email: string
+  password: string
+  code?: string
+  patients: { webId: string; responseIds: number[] }[]
+}
+
+async function answerPracticeHubWeb(web: PracticeHubWebStub, req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, url: URL) {
+  const signedIn = /(?:^|; )phsess=in(?:;|$)/.test(String(req.headers.cookie ?? ''))
+  const json = (body: unknown) => {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify(body))
+  }
+  if (url.pathname === '/config/scripts/users/login.php' && req.method === 'POST') {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
+    if (form.get('email') !== web.email || form.get('password') !== web.password) return json({ result: 'error', message: 'Invalid email or password' })
+    if (form.get('step') === 'verify_email_code') {
+      if (form.get('code') !== web.code) return json({ result: 'error', message: 'That code is not right' })
+    } else if (web.code) {
+      return json({ step: 'show_two_step_auth', auth_type: 'email', phone_available: false })
+    }
+    res.setHeader('set-cookie', 'phsess=in; Path=/; HttpOnly')
+    return json({ step: 'enter', url: 'calendar' })
+  }
+  if (url.pathname === '/') {
+    res.setHeader('set-cookie', 'phvisit=1; Path=/')
+    res.setHeader('content-type', 'text/html')
+    return res.end('<html><body>Account Login</body></html>')
+  }
+  // Everything else needs the session, and without one PracticeHub redirects to its sign-in page.
+  if (!signedIn) {
+    res.statusCode = 302
+    res.setHeader('location', '/v2/public/login/STUB')
+    return res.end()
+  }
+  if (url.pathname === '/config/scripts/patients/patientsList.php') {
+    return json({
+      iTotalRecords: String(web.patients.length),
+      iTotalDisplayRecords: String(web.patients.length),
+      aaData: web.patients.map((p) => ({ name: `<div class="status hidden">active</div>Paciente<div class="hidden patient-id">${p.webId}</div>`, dob: 'N/A' })),
+    })
+  }
+  if (url.pathname === '/config/scripts/patients/get_patient/files.php') {
+    const patient = web.patients.find((p) => p.webId === url.searchParams.get('id'))
+    const forms = (patient?.responseIds ?? [])
+      .map(
+        (id) =>
+          `<div class="form-submission"><div class="pull-left"><strong>Form</strong></div><div class="pull-right"><a class="btn btn-xs btn-primary" href="/config/scripts/pdf_downloads/custom_form.php?form_id=F${id}&amp;clientID=C1&amp;patientID=P1">PDF</a><a class="btn btn-xs btn-danger delete-form-response" data-id="${id}" href="#">Delete</a></div></div>`,
+      )
+      .join('')
+    return json({ files: '', forms })
+  }
+  if (url.pathname === '/config/scripts/pdf_downloads/custom_form.php') {
+    res.setHeader('content-type', 'application/pdf')
+    return res.end(Buffer.from(`%PDF-1.4\n% signed original of ${url.searchParams.get('form_id')}\n%%EOF\n`))
+  }
+  res.statusCode = 404
+  return res.end('File not found.')
+}
+
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number; routes?: Record<string, unknown[]>; refuse?: 'key' | 'address'; web?: PracticeHubWebStub }) {
   await stopPracticeHubStub()
   practiceHubStubHits = {}
   const { createServer } = await import('node:http')
@@ -3575,10 +3643,11 @@ async function startPracticeHubStub(opts: { totalEntries?: number; emails?: stri
     // A slow PracticeHub holds a run inside its pre-send check, which is
     // what widens a race between two processes walking the same run.
     if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
-    res.setHeader('content-type', 'application/json')
     const url = new URL(req.url ?? '/', 'http://stub')
     const stubPath = url.pathname.replace(/^\/api/, '')
     practiceHubStubHits[stubPath] = (practiceHubStubHits[stubPath] ?? 0) + 1
+    if (opts.web && !url.pathname.startsWith('/api/')) return answerPracticeHubWeb(opts.web, req, res, url)
+    res.setHeader('content-type', 'application/json')
     if (opts.refuse === 'key') {
       res.statusCode = 403
       res.end(JSON.stringify({ message: 'Forbidden' }))

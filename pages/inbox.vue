@@ -1282,7 +1282,7 @@ async function snoozeKey(key: string, at: string | null) {
     snoozeNotice.value = t("Couldn't snooze it. Try again.", 'No se ha podido posponer. Inténtalo de nuevo.')
   } else {
     snoozeNotice.value = at
-      ? t(`Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`, `Pospuesta hasta el ${new Date(at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`)
+      ? t(`Snoozed until ${new Date(at).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`, `Pospuesta hasta el ${new Date(at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`)
       : t('Back in your Inbox.', 'De vuelta en tu bandeja.')
     if (at && selectedKey.value === key) selectedKey.value = null
   }

@@ -150,7 +150,27 @@ async function answersRecall(
 async function resolveRepliedAppointment(
   supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
   patientIds: string[],
+  // The message they replied to, when Meta says: a button tap always carries
+  // it. On a phone shared by a family, two reminders arrive minutes apart; a
+  // tap on Tuesday's "Cancelar" anchored on whichever was sent LAST and
+  // cancelled the other visit. The quoted reminder is the visit they meant.
+  quotedWamid?: string | null,
 ): Promise<{ id: string; patient_id: string; confirmation_status: string | null } | null> {
+  if (quotedWamid) {
+    const { data: quoted } = await supabase.from('whatsapp_messages').select('appointment_id').eq('wamid', quotedWamid).limit(1).maybeSingle()
+    if (quoted?.appointment_id) {
+      const { data: meant } = await supabase
+        .from('appointments')
+        .select('id, patient_id, status, confirmation_status')
+        .eq('id', quoted.appointment_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      // A reminder for a visit already cancelled or had is answered by nobody
+      // here: never fall through to another visit of theirs.
+      if (!meant || meant.status !== 'booked' || !patientIds.includes(meant.patient_id)) return null
+      return { id: meant.id, patient_id: meant.patient_id, confirmation_status: meant.confirmation_status }
+    }
+  }
   const { data: lastOutbound } = await supabase
     .from('whatsapp_messages')
     .select('appointment_id')
@@ -456,12 +476,12 @@ export default defineEventHandler(async (event) => {
             insert.media_storage_path = path
             insert.media_mime_type = mimeType
             insert.media_filename = media.filename ?? null
-            insert.body_preview = media.caption?.slice(0, 200) ?? null
+            insert.body_preview = media.caption?.slice(0, 2000) ?? null
           } catch {
             // Best-effort -- still record that a media message arrived even
             // if the download failed, rather than dropping it silently.
             insert.media_type = mediaKind
-            insert.body_preview = media.caption?.slice(0, 200) ?? '(media download failed)'
+            insert.body_preview = media.caption?.slice(0, 2000) ?? '(media download failed)'
           }
         } else {
           // Text and buttons; otherwise a reaction, a location, a contact or
@@ -563,9 +583,9 @@ export default defineEventHandler(async (event) => {
           await automationEvent(supabase, account.id, patientId ? { patientId } : { leadId }, 'whatsapp.replied', getRequestURL(event).origin)
         }
 
-        const intent = appointmentReplyIntent(replyText(msg))
+        const intent = appointmentReplyIntent(replyText(msg), { button: isButtonReply(msg) })
         if (intent && patientIds.length > 0) {
-          const appt = await resolveRepliedAppointment(supabase, patientIds)
+          const appt = await resolveRepliedAppointment(supabase, patientIds, msg.context?.id ?? null)
           // An answer already on record is only overturned by another
           // deliberate tap, never by a later sentence we merely read an
           // intent out of. Patients carry on writing after they answer --

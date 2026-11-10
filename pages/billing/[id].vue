@@ -285,7 +285,7 @@ function backToBilling() {
 // In the staff member's language: these were fixed to en-GB, and a Spanish
 // receipt read "Emitida el 1 Nov 2026".
 const { preference: lang } = useLang()
-const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const dateLocale = computed(() => uiLocaleTag(lang.value))
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocale.value, { day: 'numeric', month: 'short', year: 'numeric' })
 }

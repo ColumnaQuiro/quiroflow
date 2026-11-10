@@ -20,7 +20,7 @@ const TONES = [
   { value: 'formal', label: t('Formal (usted)', 'Formal (usted)') },
 ]
 
-const languages = computed(() => Object.entries(RECEPTIONIST_LANGUAGES).map(([code, names]) => ({ code, label: preference.value === 'es' ? names.es : names.en })))
+const languages = computed(() => Object.entries(RECEPTIONIST_LANGUAGES).map(([code, names]) => ({ code, label: t(names.en, names.es) })))
 
 // Languages were shown and not editable, while the prompt read them: a
 // clinic in Barcelona could not add Catalan. At least one stays on, because

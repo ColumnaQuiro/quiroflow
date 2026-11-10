@@ -198,17 +198,36 @@ describe('Posture assessment', () => {
         cy.get('[data-cy=posture-overlay] circle').should('have.length', 10)
         // Dragging a point shows the magnifier, and the point moves with the
         // pointer from where it was grabbed. Pointer 1 is the mouse, the one
-        // setPointerCapture accepts from a synthetic event.
+        // setPointerCapture accepts from a synthetic event. The press picks the
+        // point nearest its coordinates, so nothing may scroll between measuring
+        // and pressing: scrolled into view first, then no trigger scrolls again.
+        const ev = { pointerId: 1, force: true, scrollBehavior: false as const }
+        cy.get('[data-cy=posture-overlay]').scrollIntoView()
         cy.get('[data-cy=posture-point-hipR]').then(($c) => {
           const r = $c[0]!.getBoundingClientRect()
           const x = r.left + r.width / 2
           const y = r.top + r.height / 2
-          cy.wrap($c).trigger('pointerdown', { pointerId: 1, clientX: x, clientY: y })
-          cy.get('[data-cy=posture-overlay]').trigger('pointermove', { pointerId: 1, clientX: x + 20, clientY: y - 10, force: true })
+          cy.wrap($c).trigger('pointerdown', { ...ev, clientX: x, clientY: y })
+          cy.get('[data-cy=posture-overlay]').trigger('pointermove', { ...ev, clientX: x + 20, clientY: y - 10 })
           cy.get('[data-cy=posture-loupe]').should('have.attr', 'data-point', 'hipR')
-          cy.get('[data-cy=posture-overlay]').trigger('pointerup', { pointerId: 1, force: true })
+          cy.get('[data-cy=posture-overlay]').trigger('pointerup', ev)
           cy.get('[data-cy=posture-loupe]').should('not.exist')
           cy.get('[data-cy=posture-point-hipR]').should(($m) => expect($m[0]!.getBoundingClientRect().left).to.be.closeTo(r.left + 20, 1.5))
+        })
+        // A finger landing beside a point, off its circle, still grabs it: on an
+        // iPad the circle is under half a fingertip. A mouse that far off does not.
+        cy.get('[data-cy=posture-point-kneeR]').then(($c) => {
+          const r = $c[0]!.getBoundingClientRect()
+          const x = r.left - 10
+          const y = r.top + r.height / 2
+          cy.get('[data-cy=posture-overlay]').trigger('pointerdown', { ...ev, pointerType: 'mouse', clientX: x, clientY: y })
+          cy.get('[data-cy=posture-loupe]').should('not.exist')
+          cy.get('[data-cy=posture-overlay]').trigger('pointerup', ev)
+          cy.get('[data-cy=posture-overlay]').trigger('pointerdown', { ...ev, pointerType: 'touch', clientX: x, clientY: y })
+          cy.get('[data-cy=posture-overlay]').trigger('pointermove', { ...ev, clientX: x, clientY: y - 15 })
+          cy.get('[data-cy=posture-loupe]').should('have.attr', 'data-point', 'kneeR')
+          cy.get('[data-cy=posture-overlay]').trigger('pointerup', ev)
+          cy.get('[data-cy=posture-point-kneeR]').should(($m) => expect($m[0]!.getBoundingClientRect().top).to.be.closeTo(r.top - 15, 1.5))
         })
       })
     })

@@ -1,6 +1,8 @@
 import type { Ref } from 'vue'
+import { isUiLanguage, languageFromAcceptLanguage, type UiLanguage } from '../utils/uiLanguage'
+import { isCatalogLanguage, isUiCatalogLoaded, loadUiCatalog } from '../utils/uiCatalog'
 
-export type LanguagePreference = 'en' | 'es'
+export type LanguagePreference = UiLanguage
 
 const STORAGE_KEY = 'quiroflow-lang'
 // The stored choice is mirrored into a cookie of the same name, because the
@@ -11,6 +13,9 @@ const STATE_KEY = 'lang-preference'
 const REQUEST_STATE_KEY = 'lang-request-default'
 const DEFAULT: LanguagePreference = 'en'
 let initialized = false
+// The language most recently asked for, so that a catalog arriving late
+// cannot switch back to a language someone has already moved on from.
+let lastRequested: LanguagePreference | null = null
 
 // The preference lives in useState, not in a ref at file scope. On the
 // server this module is loaded once per process and shared by every request
@@ -59,7 +64,7 @@ function requestDefaultState(): Ref<LanguagePreference | null> {
 // the header built from the same list navigator.languages reads).
 function requestLanguage(): LanguagePreference {
   const stored = useCookie<string | null>(COOKIE_KEY, { readonly: true }).value
-  if (stored === 'en' || stored === 'es') return stored
+  if (isUiLanguage(stored)) return stored
   return languageFromAcceptLanguage(useRequestHeader('accept-language'))
 }
 
@@ -97,7 +102,7 @@ function initFromStorage(fallback?: LanguagePreference) {
   } catch {
     // Storage can be unavailable (private mode, blocked site data).
   }
-  if (stored === 'en' || stored === 'es') {
+  if (isUiLanguage(stored)) {
     state.value = stored
     writeCookie(stored)
   } else {
@@ -133,9 +138,20 @@ export function useLang() {
   const state = preferenceState()
   const requestDefault = requestDefaultState()
 
+  // A language with a catalog (Portuguese, German) switches once its
+  // catalog has loaded, so the screen goes straight from one language to the
+  // other instead of passing through English. Anything that is not a
+  // language at all is ignored.
   function setPreference(pref: LanguagePreference) {
-    state.value = pref
-    if (!import.meta.server) writeStorage(pref)
+    if (!isUiLanguage(pref)) return
+    lastRequested = pref
+    const apply = () => {
+      if (lastRequested !== pref) return
+      state.value = pref
+      if (!import.meta.server) writeStorage(pref)
+    }
+    if (isCatalogLanguage(pref) && !isUiCatalogLoaded(pref)) void loadUiCatalog(pref).then(apply)
+    else apply()
   }
 
   return {

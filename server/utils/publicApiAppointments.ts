@@ -113,13 +113,17 @@ export async function saveAppointmentIfFree(
   accountId: string,
   appointmentId: string | null,
   values: Record<string, unknown>,
-  opts: { checkOverlap: boolean },
+  // `checkBlocks`: refuse a time inside a block too (availability_blocks), in
+  // the same transaction. The receptionist checks the free times just before
+  // writing, but a block added in between used to be booked over.
+  opts: { checkOverlap: boolean; checkBlocks?: boolean },
 ): Promise<string> {
   const { data, error } = await (supabase as any).rpc('save_appointment_if_free', {
     p_account_id: accountId,
     p_appointment_id: appointmentId,
     p_values: values,
     p_check_overlap: opts.checkOverlap,
+    ...(opts.checkBlocks ? { p_check_blocks: true } : {}),
   })
   if (error) {
     if (error.message === 'appointment_overlap') {

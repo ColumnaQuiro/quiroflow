@@ -70,9 +70,9 @@ const usedDays = computed(() => absences.value.filter((a) => a.status === 'appro
 const left = computed(() => allowance.value - usedDays.value)
 const absenceOn = (date: string) => absences.value.find((a) => a.status === 'approved' && a.starts_on <= date && a.ends_on >= date) ?? null
 const shiftOn = (date: string) => (member.value ? shiftForDay(date, member.value, clinicHours.value, overrides.value.get(date)) : null)
-const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
+const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
 const dates = (a: Absence) => {
-  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'short', timeZone: 'UTC' })
   if (isOpenEndedAbsence(a.ends_on)) return t(`From ${f(a.starts_on)}, no return date yet`, `Desde el ${f(a.starts_on)}, sin fecha de vuelta`)
   return a.starts_on === a.ends_on ? `${f(a.starts_on)}${a.half_day ? t(' (half day)', ' (medio día)') : ''}` : `${f(a.starts_on)} – ${f(a.ends_on)}`
 }

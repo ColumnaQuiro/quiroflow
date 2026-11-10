@@ -10,7 +10,6 @@ import { PREVIEW_PLACEHOLDERS, previewSlug } from './previewFixtures'
 const props = defineProps<{ practice: string; location: string; countryCode: string }>()
 
 const t = useT()
-const lang = useLang()
 
 const practice = ref(props.practice)
 const location = ref(props.location)
@@ -29,10 +28,10 @@ watch(
 onBeforeUnmount(() => clearTimeout(timer))
 
 const practiceLabel = computed(
-  () => practice.value.trim() || PREVIEW_PLACEHOLDERS.practice[lang.preference.value],
+  () => practice.value.trim() || t(PREVIEW_PLACEHOLDERS.practice.en, PREVIEW_PLACEHOLDERS.practice.es),
 )
 const locationLabel = computed(
-  () => location.value.trim() || PREVIEW_PLACEHOLDERS.location[lang.preference.value],
+  () => location.value.trim() || t(PREVIEW_PLACEHOLDERS.location.en, PREVIEW_PLACEHOLDERS.location.es),
 )
 const initials = computed(() =>
   practiceLabel.value

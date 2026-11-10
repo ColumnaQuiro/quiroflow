@@ -69,7 +69,7 @@ export function useGrowthDashboardView(payload: () => GrowthDashboardPayload | n
   const { preference } = useLang()
   return computed<GrowthDashboardData | null>(() => {
     const p = payload()
-    return p ? growthDashboardView(p, t, preference.value === 'es' ? 'es' : 'en') : null
+    return p ? growthDashboardView(p, t, preference.value) : null
   })
 }
 

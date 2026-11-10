@@ -57,8 +57,8 @@ async function save() {
     const fixes = unreadable.map((k) => {
       const [en, es] = GOAL_LABELS[k]
       return k === 'collected_cents'
-        ? t(`${en}: enter an amount in euros, such as 9000 or 9000,50.`, `${es}: escribe un importe en euros, como 9000 o 9000,50.`)
-        : t(`${en}: enter a whole number.`, `${es}: escribe un número entero.`)
+        ? t(`${t(en, es)}: enter an amount in euros, such as 9000 or 9000,50.`, `${es}: escribe un importe en euros, como 9000 o 9000,50.`)
+        : t(`${t(en, es)}: enter a whole number.`, `${es}: escribe un número entero.`)
     })
     error.value = [...fixes, t('Leave a field empty for no goal.', 'Deja un campo vacío para no tener objetivo.')].join(' ')
     return

@@ -369,6 +369,37 @@ Confirming is a statement about the AEAT, so do the AEAT side first:
 A 4112 after confirming means one of those steps is missing or used the wrong
 procedure code. It does not mean the certificate is broken.
 
+## Interface languages: English and Spanish inline, Portuguese and German from a catalog
+
+Staff and patients can use the app in English, Spanish, Portuguese (Portugal)
+or German (Settings › Account › Language, the sign-in toggle, the app's
+Profile). Strings are still written as `t('English', 'Español')` at their call
+site. Portuguese and German are looked up in `i18n/pt.json` and `i18n/de.json`,
+**keyed by the English** (`utils/uiCatalog.ts`), and anything missing shows in
+English.
+
+So **a new or reworded English string needs a Portuguese and a German entry**,
+or `npm run check:i18n` (part of `preflight`) fails and lists it.
+`npm run i18n:todo` writes what is missing, with the Spanish and the file, to
+`i18n-todo.json`. `npm run i18n:prune` drops entries nothing uses any more.
+Rewording the English orphans the old key, so the pruned entry has to be
+re-added under the new one.
+
+Template literals are keyed with their `${…}` numbered: ``t(`Hello ${name}`, …)``
+is `"Hello {0}"`. A value that is itself an English word
+(`${n === 1 ? 'visit' : 'visits'}`) is translated with a word list,
+`{1|visit=consulta|visits=consultas}`. `[en, es]` pairs and `{ en, es }`
+objects are collected too, because they reach `t()` as `t(pair[0], pair[1])`.
+Code that picks a language by hand (`lang === 'en' ? a : b`) shows Spanish to
+Portuguese and German readers, so go through `t()`. Use `uiLocaleTag(lang)`, or
+`t('en-GB', 'es-ES')`, for Intl.
+
+Deliberately English/Spanish only: the legal pages (not machine-translated),
+and everything a clinic **sends** — emails, WhatsApp and automation templates,
+PDFs, the receptionist. Those follow `patients.preferred_language`, not the
+interface. The public booking page has its own es/en/fr set
+(`utils/bookingLanguage.ts`) for the same reason.
+
 ## A top-level import in `server/utils` runs on every cold start
 
 Nitro bundles every module under `server/utils` into the one chunk the
@@ -397,6 +428,24 @@ grep -o "from '\(sharp\|pdfkit\|pdf-lib\|stripe\|@anthropic-ai/sdk\|qrcode\)'" .
 ```
 
 It prints nothing when the chunk is clean.
+
+## The AI receptionist: run the evals before changing what it is told
+
+Every receptionist incident so far was fixed with one more line in its
+prompt, and the unit tests only pin that the line is there. Whether the model
+still does the right thing with a real conversation is checked by
+`npm run eval:receptionist` (`tests/evals/receptionist`): conversations shaped
+on real incidents, with invented people, through the real prompt builders and
+model loop. Run it before changing the prompt, the base rules, the tools or the
+model, and add a case for each new incident. It is not in CI -- it costs money
+and the model is not deterministic -- and it needs a non-production key in
+`~/.quiroflow-eval-anthropic-key` or `ANTHROPIC_API_KEY`.
+
+What each reply in production did is in `receptionist_reply_traces`: its outcome
+(sent, drafted, held and why, refused, failed), the tools it called with
+their dates, times and types, which checks in code rewrote or withheld it,
+and its tokens. Count from there, not from impressions, when asking whether
+a change made it better.
 
 ## Deploying — a published release, via GitHub Actions
 

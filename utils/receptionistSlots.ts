@@ -11,7 +11,7 @@
 // its build `~` resolves to mobile/.
 import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange } from './bookingSlots'
 import type { BusinessHours } from './businessHours'
-import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate } from './clinicClock'
+import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from './clinicClock'
 import type { PromptType } from './receptionistTypes'
 
 export interface SlotClinic {
@@ -156,8 +156,14 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
       return [p.id, { starts: new Set(own.map((a) => new Date(a.starts_at).getTime())), ends: new Set(own.map((a) => new Date(a.ends_at).getTime())) }]
     }))
 
+    // Every day listed is listed whole. The window used to end at this
+    // moment's clock time on its last day, so that day showed only its
+    // morning -- while the prompt says a day's missing afternoon is taken,
+    // and the model does not look up a day it already has (9 Nov 2026).
+    const lastDate = clinicDateOf(new Date(notAfter.getTime() - 1), timeZone)
+    const windowEnd = startOfLocalDate(nextDate(lastDate), timeZone)
     const dates: string[] = []
-    for (let date = clinicDateOf(start, timeZone), last = clinicDateOf(notAfter, timeZone); date <= last; date = nextDate(date)) dates.push(date)
+    for (let date = clinicDateOf(start, timeZone); date <= lastDate; date = nextDate(date)) dates.push(date)
     // Nobody works on any day of the window: hours not set up, not booked solid.
     const anyHours = dates.some((date) => staff.some((p) => bookingWindowsFor(date, clinic.businessHours, p.businessHours).length > 0))
     if (!anyHours) continue
@@ -181,7 +187,7 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
             durationMinutes,
             busy: busy.get(p.id) ?? [],
             notBefore,
-            notAfter,
+            notAfter: windowEnd,
           })
           for (const at of slots) {
             starts.add(at.getTime())

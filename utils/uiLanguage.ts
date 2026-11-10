@@ -1,5 +1,5 @@
-// Which of the two languages the interface speaks (English or Spanish) suits
-// a visitor who has not chosen one, judged from their browser's language.
+// Which language the interface speaks to a visitor who has not chosen one,
+// judged from their browser's language.
 //
 // Two views of the same thing, and they have to agree. The client asks
 // navigator.languages (plugins/lang.client.ts); the server, rendering the
@@ -8,11 +8,40 @@
 // rendered in one language and switches to the other as it hydrates -- which
 // is what a Spanish-speaking patient opening a booking or portal link saw on
 // every first visit, when the server simply assumed English.
-export type UiLanguage = 'en' | 'es'
+//
+// English and Spanish are written at every call site, as t('English',
+// 'Español'); Portuguese (Portugal) and German come from the catalogs in
+// i18n/, keyed by the English (utils/uiCatalog.ts).
+export const UI_LANGUAGES = [
+  { value: 'es', label: 'Español', short: 'ES', flag: 'ES', locale: 'es-ES' },
+  { value: 'en', label: 'English', short: 'EN', flag: 'GB', locale: 'en-GB' },
+  { value: 'pt', label: 'Português', short: 'PT', flag: 'PT', locale: 'pt-PT' },
+  { value: 'de', label: 'Deutsch', short: 'DE', flag: 'DE', locale: 'de-DE' },
+] as const
 
-// Spanish for any Spanish tag (es, es-ES, es-419, ...); English otherwise.
+export type UiLanguage = (typeof UI_LANGUAGES)[number]['value']
+
+export function isUiLanguage(value: unknown): value is UiLanguage {
+  return UI_LANGUAGES.some((l) => l.value === value)
+}
+
+// The BCP 47 tag dates and numbers are formatted with in this language.
+export function uiLocaleTag(lang: UiLanguage): string {
+  return UI_LANGUAGES.find((l) => l.value === lang)?.locale ?? 'en-GB'
+}
+
+// One letter per weekday, Monday first, for a week strip.
+export function weekdayInitials(lang: UiLanguage): string {
+  return { en: 'MTWTFSS', es: 'LMXJVSD', pt: 'STQQSSD', de: 'MDMDFSS' }[lang]
+}
+
+// The interface language for a browser or phone language tag: Spanish for
+// es, es-ES, es-419..., Portuguese for any pt (Brazil's included -- pt-PT is
+// what there is, and closer than English), German for any de; English for
+// anything else.
 export function languageOfTag(tag: string | null | undefined): UiLanguage {
-  return (tag ?? '').trim().toLowerCase().startsWith('es') ? 'es' : 'en'
+  const primary = (tag ?? '').trim().toLowerCase().split(/[-_]/)[0]
+  return primary === 'es' || primary === 'pt' || primary === 'de' ? primary : 'en'
 }
 
 // The browser's first choice from an Accept-Language header -- the server's

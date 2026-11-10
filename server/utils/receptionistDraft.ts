@@ -5,9 +5,10 @@ import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_
 import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
-import { autoReplyHeldBack, isNoReply, isNoReplyMessage, replyActed } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
+import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
+import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { freeTimesLookup, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -105,6 +106,7 @@ export async function draftLeadReply(
   // What everything below is read as of: anything the team does after this,
   // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
   const readAt = new Date().toISOString()
+  const startedAt = Date.now()
   const { data: lead } = await supabase
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
@@ -190,7 +192,11 @@ export async function draftLeadReply(
   // Which appointment this person is after: a first visit -- the ad's offer
   // when they came from the ad -- unless the lead is somebody who has been
   // to the clinic before, who is never offered a first visit again.
-  const audience: ReceptionistAudience = (await hasBeenBefore(supabase, accountId, lead.patient_id))
+  // Came, for the referral rules: a completed visit. Had a visit, for who
+  // they are: a completed one, or at a clinic that does not mark them, one
+  // whose time is over (unmarkedPastVisits).
+  const cameBefore = await hasBeenBefore(supabase, accountId, lead.patient_id)
+  const audience: ReceptionistAudience = cameBefore || (await unmarkedPastVisits(supabase, accountId, lead.patient_id)) > 0
     ? 'existing'
     : cameFromAd(leadOrigin)
       ? 'new_from_ad'
@@ -207,7 +213,7 @@ export async function draftLeadReply(
   // and someone new may have the referral visit themselves, once they name
   // the patient who referred them (referralSection).
   // Only someone who has been to the clinic refers the person they bring.
-  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, audience === 'existing'), referred: audience === 'existing' }
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, cameBefore), referred: cameBefore }
   // What comes after a first visit, for "¿y luego cuánto?" -- from the types
   // and the clinic's bonos, not from a card kept in step by hand.
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
@@ -239,21 +245,27 @@ export async function draftLeadReply(
   // the conversation itself.
   const lastInbound = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound') as { channel?: string | null } | undefined
   const replyChannel = lastInbound?.channel ?? 'whatsapp'
-  const sends =
-    Boolean(opts.send) &&
-    AUTO_SEND_CHANNELS.includes(replyChannel) &&
-    autoReplyHeldBack(
-      ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), createdAt: m.created_at })),
-      new Date(),
-    ) === null
+  const asTurns = ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), createdAt: m.created_at }))
+  const mayAutoSend = Boolean(opts.send) && AUTO_SEND_CHANNELS.includes(replyChannel)
+  // Why it would not send although it may: somebody from the clinic is in
+  // the conversation, or the day's limit is reached.
+  const hold = mayAutoSend ? autoReplyHeldBack(asTurns, new Date()) : null
+  const sends = mayAutoSend && hold === null
+  // Its record (receptionist_reply_traces), at whichever exit it leaves by.
+  const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
+    recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
 
   // A voice note since the clinic last wrote: always a person's, decided
   // here rather than by the model (utils/receptionistFollowThrough.ts).
   if (ordered.slice(lastOutbound + 1).some((m: { direction: string; media_type?: string | null }) => m.direction === 'inbound' && isVoiceNote(m.media_type))) {
     await supabase.from('leads').update({ ai_draft_body: VOICE_NOTE_REPLY, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
-    if (!sends || !opts.send) return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    if (!sends || !opts.send) {
+      await record('voice_note', null)
+      return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    }
     const target = { kind: 'lead' as const, leadId, channel: replyChannel }
     const name = lead.full_name ?? 'Lead'
+    await record('voice_note', null, { handedOver: true })
     await handToPerson(supabase, accountId, leadId)
     try {
       await sendAsReceptionist(opts.send.event, supabase, accountId, target, VOICE_NOTE_REPLY)
@@ -304,7 +316,7 @@ export async function draftLeadReply(
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
-  const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
+  const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
@@ -321,9 +333,13 @@ export async function draftLeadReply(
     teamNames: team,
     logLabel: `lead ${leadId}`,
   })
+  const { text: draft, refused, handedOver, toolUses } = run
 
   // The model judged that nothing needs saying (a thanks the list missed).
-  if (!refused && draft && isNoReply(draft)) return leaveAlone()
+  if (!refused && draft && isNoReply(draft)) {
+    await record('no_reply', run)
+    return leaveAlone()
+  }
 
   // Counted for the monthly allowance: every reply it writes, sent or left as
   // a draft -- writing it is what cost money, whatever happens to it next.
@@ -338,6 +354,7 @@ export async function draftLeadReply(
     // Nothing to send: the lead still has a question nobody answers, so it
     // goes to a person now rather than waiting for the next tick to fail too.
     if (refused || !draft) {
+      await record('refused', run, { handedOver: true })
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
       return { status: 'refused' }
@@ -355,12 +372,19 @@ export async function draftLeadReply(
     // They wrote again meanwhile: answered whole on the next tick, which sees
     // a message newer than ai_drafted_through_at and no draft in the way.
     if (heldBack === 'newer_message') {
+      await record('superseded', run)
       await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
       return { status: 'nothing_to_answer' }
     }
     if (heldBack === 'past_time') {
+      await record('held_past_time', run, { handedOver: true })
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, PAST_TIME_REASON)
+    }
+    // A person is on it ('person', 'diary'): a draft for them, picked up again
+    // once the hold ends if nobody has answered by then (resumeHeldReplies).
+    if (heldBack === 'person' || heldBack === 'diary') {
+      await record(heldBack === 'person' ? 'held_person' : 'held_diary', run, { heldUntil: new Date(Date.now() + PERSON_ACTIVE_MINUTES * 60_000) })
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
@@ -369,12 +393,14 @@ export async function draftLeadReply(
       // Refused by WhatsApp (the window closed, a bad number): it stays a
       // draft, so a person still sees what it would have said.
       console.error(`[receptionist] could not send to lead ${leadId}:`, (err as Error)?.message ?? err)
+      await record('send_failed', run, { handedOver: true })
       // And a person is told, rather than finding the draft by chance.
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, sendFailedReason(err))
       return { status: 'drafted', draft }
     }
     // Sent: no draft waiting any more.
+    await record('sent', run)
     await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
     // It answers leads on 'none' too (the ones in the Inbox before it was
     // switched on), but only 'handling' wears the "AI handling" chip -- so
@@ -388,9 +414,10 @@ export async function draftLeadReply(
     return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
   }
 
-  if (refused) return { status: 'refused' }
-
-  if (!draft) return { status: 'refused' }
+  if (refused || !draft) {
+    await record('refused', run)
+    return { status: 'refused' }
+  }
 
   await supabase
     .from('leads')
@@ -404,6 +431,11 @@ export async function draftLeadReply(
     .eq('id', leadId)
     .eq('account_id', accountId)
 
+  // Held back although it may send on its own: a person is in the
+  // conversation (picked up again once the hold ends), or the day's limit.
+  if (hold === 'person') await record('held_person', run, { heldUntil: personActiveUntil(asTurns) })
+  else if (hold === 'limit') await record('held_limit', run)
+  else await record('drafted', run)
   return { status: 'drafted', draft }
 }
 

@@ -17,6 +17,21 @@ describe('Bringing signed form originals from PracticeHub', () => {
       { webId: 'abCDe1fgHi23jKL4', responseIds: [228, 999] },
       { webId: 'zzCDe1fgHi23jKL9', responseIds: [] },
     ],
+    forms: [
+      {
+        id: '7',
+        name: 'Consentimiento informado',
+        sections: [
+          [
+            { type: 'paragraph', label: 'Autorizo el tratamiento.' },
+            { type: 'radio-group', required: true, label: '¿Aceptas?', name: 'radio-group-1', values: [{ label: 'Sí', value: 'Sí' }, { label: 'No', value: 'No' }] },
+            { type: 'drawableimage', label: '¿Dónde te duele?', name: 'drawableimage-1', form_image_id: 0 },
+            { type: 'signature', required: true, label: 'Firmado', name: 'signature-1' },
+          ],
+        ],
+      },
+      { id: '8', name: 'Formulario retirado', active: false, sections: [[{ type: 'text', label: 'Nombre', name: 'text-1' }]] },
+    ],
   }
 
   afterEach(() => {
@@ -30,6 +45,11 @@ describe('Bringing signed form originals from PracticeHub', () => {
           table: 'patient_docs',
           rows: [{ account_id: account.accountId, patient_id: patient.id, title: 'Consentimiento informado', fields: [], completed_at: '2026-03-05T09:15:00Z', external_reference: 'PH-form-228' }],
         }).then(([doc]) => {
+          // What the Form responses step left: a template guessed from an answer.
+          cy.task('db:insertRows', {
+            table: 'doc_templates',
+            rows: [{ account_id: account.accountId, title: 'Consentimiento informado', fields: [{ id: 'a', type: 'text', label: 'Firmado: guessed', value: null }], external_reference: 'PH-form-template-7' }],
+          })
           cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { web }).then(({ baseUrl }) => {
             cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
             cy.login(account.email, account.password)
@@ -77,6 +97,26 @@ describe('Bringing signed form originals from PracticeHub', () => {
             // The password went to the server's secrets and nowhere a member of staff can read.
             cy.task<Record<string, unknown>[]>('db:selectRows', { table: 'accounts', columns: '*', match: { id: account.accountId } }).then(([row]) => {
               expect(JSON.stringify(row)).not.to.contain(web.password)
+            })
+
+            // The template the import guessed from one patient's answers is
+            // rebuilt as PracticeHub's editor has the form: a signature and a
+            // drawable image are those blocks, not a line of text.
+            cy.get('[data-cy=ph-templates-sync]').click()
+            cy.get('[data-cy=ph-templates-done]', { timeout: 30000 }).should('contain', '1')
+            cy.task<{ title: string; external_reference: string; fields: { type: string; label: string; required?: boolean; options?: string[] }[] }[]>('db:selectRows', {
+              table: 'doc_templates',
+              columns: 'title, external_reference, fields',
+              match: { account_id: account.accountId },
+            }).then((templates) => {
+              // The inactive form had no template here, so it is not given one.
+              expect(templates).to.have.length(1)
+              expect(templates[0].external_reference).to.eq('PH-form-template-7')
+              expect(templates[0].fields.map((f) => f.type)).to.deep.eq(['text', 'choice', 'drawable_image', 'signature'])
+              expect(templates[0].fields[1].options).to.deep.eq(['Sí', 'No'])
+              expect(templates[0].fields[3].required).to.eq(true)
+              // The guessed line of text is gone.
+              expect(JSON.stringify(templates[0].fields)).not.to.contain('guessed')
             })
 
             // And from the form itself, the way to its signed original.

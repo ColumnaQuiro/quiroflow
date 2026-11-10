@@ -19,8 +19,6 @@
 // resumable by construction: a file already carrying a storage_path is skipped,
 // so closing the tab and coming back loses only the batch in flight.
 import type { TablesInsert } from '~/types/database.types'
-import { forgetPracticeHubReads } from '~/utils/practicehubReadCache'
-import { planProfilePhotos, practiceHubPhotoPath, sniffImageType } from '~/utils/practicehubProfilePhotos'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -47,18 +45,7 @@ interface PHFile {
 interface PHPatient {
   id: number
   patient_number: string | number | null
-  // The patient's profile photo, as a signed link like a file's. See
-  // utils/practicehubProfilePhotos.ts.
-  profile_image?: string | null
 }
-
-// One thing to fetch: an attached file, or a patient's profile photo. They
-// share the queue, the batches and the progress bar because they are the same
-// work -- signed S3 bytes fetched through our server -- and a clinic should
-// not have to run two steps to arrive with what it had.
-type QueueItem =
-  | { kind: 'file'; ph: PHFile; patientId: string }
-  | { kind: 'photo'; phPatientId: number; patientId: string; url: string }
 
 type Phase = 'idle' | 'listing' | 'ready' | 'working' | 'done'
 const phase = ref<Phase>('idle')
@@ -66,14 +53,7 @@ useImportWriting(() => phase.value === 'working')
 const error = ref('')
 
 const totalInPracticeHub = ref(0)
-const queue = ref<QueueItem[]>([])
-const filesQueued = computed(() => queue.value.filter((item) => item.kind === 'file').length)
-const photosQueued = computed(() => queue.value.filter((item) => item.kind === 'photo').length)
-// Patients whose PracticeHub photo is not needed: they already have one here.
-const photosAlreadyHere = ref(0)
-// "Photos" that turned out to be something else (a PDF uploaded as the
-// profile picture). Counted apart from failures: retrying changes nothing.
-const photosNotImages = ref(0)
+const queue = ref<{ ph: PHFile; patientId: string }[]>([])
 const alreadyHere = ref(0)
 // Three different reasons, counted separately. They were one bucket called
 // "No patient match", which then reported 688 of 2,624 and told the clinic to
@@ -164,8 +144,6 @@ async function buildList() {
   patientDeletedInPh.value = 0
   noDownloadUrl.value = 0
   notPatientFiles.value = 0
-  photosAlreadyHere.value = 0
-  photosNotImages.value = 0
   unmatchedPhPatients.value = []
   done.value = 0
   failed.value = []
@@ -196,10 +174,10 @@ async function buildList() {
       if (ref) numberByPhId.set(p.id, ref)
     }
 
-    const ourPatients = await readAll<{ id: string; external_reference: string; photo_storage_path: string | null }>((from, to) =>
+    const ourPatients = await readAll<{ id: string; external_reference: string }>((from, to) =>
       supabase
         .from('patients')
-        .select('id, external_reference, photo_storage_path')
+        .select('id, external_reference')
         .eq('account_id', store.accountId!)
         .not('external_reference', 'is', null)
         .order('id').range(from, to),
@@ -251,15 +229,8 @@ async function buildList() {
         noDownloadUrl.value++
         continue
       }
-      queue.value.push({ kind: 'file', ph: f, patientId })
+      queue.value.push({ ph: f, patientId })
     }
-
-    // Photos go first: there are few of them, they are small, and their links
-    // were signed with the patient list, so they should not sit behind hours
-    // of x-rays waiting to expire.
-    const photos = planProfilePhotos(phPatients, ourPatients)
-    photosAlreadyHere.value = photos.alreadyHere
-    queue.value.unshift(...photos.queue.map((photo) => ({ kind: 'photo' as const, ...photo })))
 
     phase.value = 'ready'
   } catch (err: any) {
@@ -271,37 +242,7 @@ async function buildList() {
   }
 }
 
-// Stores a patient's PracticeHub photo as their photo here.
-async function importPhoto(item: Extract<QueueItem, { kind: 'photo' }>) {
-  const blob = await $fetch<Blob>('/api/import/practicehub-file', {
-    method: 'POST',
-    body: { url: item.url },
-    responseType: 'blob',
-  })
-  const image = sniffImageType(new Uint8Array(await blob.slice(0, 16).arrayBuffer()))
-  if (!image) {
-    photosNotImages.value++
-    return
-  }
-
-  const path = practiceHubPhotoPath(store.accountId!, item.patientId, image.extension)
-  const { error: uploadError } = await supabase.storage
-    .from('patient-photos')
-    .upload(path, blob, { contentType: image.contentType, upsert: true })
-  if (uploadError) throw new Error(uploadError.message)
-
-  // Only onto a patient who still has none. The list was read a while ago,
-  // and a photo taken at the desk since then is the one to keep.
-  const { error: updateError } = await supabase
-    .from('patients')
-    .update({ photo_storage_path: path })
-    .eq('id', item.patientId)
-    .is('photo_storage_path', null)
-  if (updateError) throw new Error(updateError.message)
-}
-
-async function importOne(item: QueueItem) {
-  if (item.kind === 'photo') return importPhoto(item)
+async function importOne(item: { ph: PHFile; patientId: string }) {
   const fileName = item.ph.file_name?.trim() || `practicehub-${item.ph.id}`
 
   // The bytes come back through our own server: PracticeHub's S3 bucket sends
@@ -395,21 +336,9 @@ async function refreshLinks() {
   if (!connection.value) return
   refreshingLinks.value = true
   try {
-    const api = usePracticeHubApi(connection.value)
-    const phFiles = await api.fetchAll<PHFile>('/files')
+    const phFiles = await usePracticeHubApi(connection.value).fetchAll<PHFile>('/files')
     const urlById = new Map(phFiles.map((f) => [f.id, f.url]))
-    // A photo's link comes from the patient list, which is held between steps
-    // -- and a held copy would hand the expired links straight back.
-    const photoUrlById = new Map<number, string>()
-    if (queue.value.slice(done.value).some((item) => item.kind === 'photo')) {
-      forgetPracticeHubReads()
-      for (const p of await api.fetchAll<PHPatient>('/patients')) if (p.profile_image) photoUrlById.set(p.id, p.profile_image)
-    }
     for (const item of queue.value) {
-      if (item.kind === 'photo') {
-        item.url = photoUrlById.get(item.phPatientId) ?? item.url
-        continue
-      }
       const url = urlById.get(item.ph.id)
       if (url) item.ph.url = url
     }
@@ -418,11 +347,8 @@ async function refreshLinks() {
   }
 }
 
-function failureText(item: QueueItem, reason: any): string {
-  const name =
-    item.kind === 'photo'
-      ? t(`Photo of PracticeHub patient ${item.phPatientId}`, `Foto del paciente ${item.phPatientId} de PracticeHub`)
-      : (item.ph.file_name ?? `#${item.ph.id}`)
+function failureText(item: { ph: PHFile }, reason: any): string {
+  const name = item.ph.file_name ?? `#${item.ph.id}`
   // responseType 'blob' leaves an error's body as a Blob, so the server's
   // statusMessage never reaches data; the status on the error does.
   const status = reason?.statusCode ?? reason?.response?.status
@@ -485,7 +411,7 @@ async function run() {
     <template v-else>
       <div v-if="phase === 'idle'" class="rounded-card border border-line bg-surface p-4">
         <p class="text-[13px] text-ink-700">
-          {{ t('Reads every file and profile photo from PracticeHub and stores it against the right patient here.', 'Lee todos los archivos y fotos de perfil de PracticeHub y los guarda en el paciente correspondiente aquí.') }}
+          {{ t('Reads every file from PracticeHub and stores it against the right patient here.', 'Lee todos los archivos de PracticeHub y los guarda en el paciente correspondiente aquí.') }}
         </p>
         <p class="mt-1 text-[12.5px] text-ink-muted2">
           {{ t('Safe to run more than once: anything already stored is skipped.', 'Se puede ejecutar varias veces: se omite lo que ya esté guardado.') }}
@@ -514,7 +440,7 @@ async function run() {
             </div>
             <div>
               <dt class="text-ink-faint">{{ t('To bring over', 'Por traer') }}</dt>
-              <dd class="mt-0.5 font-mono text-[15px] text-ink-900" data-cy="ph-files-queued">{{ filesQueued }}</dd>
+              <dd class="mt-0.5 font-mono text-[15px] text-ink-900">{{ queue.length }}</dd>
             </div>
             <div>
               <dt class="text-ink-faint">{{ t('Already here', 'Ya están') }}</dt>
@@ -525,12 +451,6 @@ async function run() {
               <dd class="mt-0.5 font-mono text-[15px]" :class="noPatientMatch > 0 ? 'text-warning-text' : 'text-ink-700'">{{ noPatientMatch }}</dd>
             </div>
           </dl>
-          <p v-if="photosQueued > 0 || photosAlreadyHere > 0" class="mt-2 text-[12px] text-ink-700" data-cy="ph-photos-summary">
-            {{ t(`Profile photos: ${photosQueued} to bring over, ${photosAlreadyHere} already here.`, `Fotos de perfil: ${photosQueued} por traer, ${photosAlreadyHere} ya están aquí.`) }}
-          </p>
-          <p v-if="photosNotImages > 0" class="mt-1 text-[12px] text-ink-faint">
-            {{ t(`Profile photos left out because PracticeHub holds a PDF or other document there, not a picture: ${photosNotImages}.`, `Fotos de perfil que no se han traído porque en PracticeHub hay un PDF u otro documento, no una imagen: ${photosNotImages}.`) }}
-          </p>
           <p v-if="notPatientFiles > 0" class="mt-2 text-[12px] text-ink-faint">
             {{ t(`${notPatientFiles} ${notPatientFiles === 1 ? 'file' : 'files'} in PracticeHub belong to something other than a patient (reports and data exports) and are left alone.`, `${notPatientFiles} ${notPatientFiles === 1 ? 'archivo' : 'archivos'} de PracticeHub no son de un paciente (informes y exportaciones) y se dejan como están.`) }}
           </p>
@@ -576,7 +496,7 @@ async function run() {
 
         <div class="flex flex-wrap gap-2">
           <UiBtn v-if="phase === 'ready' && queue.length > 0" variant="primary" @click="run">
-            {{ done > 0 ? t('Continue', 'Continuar') : filesQueued === 0 ? t('Bring the photos over', 'Traer las fotos') : photosQueued === 0 ? t('Bring the files over', 'Traer los archivos') : t('Bring the files and photos over', 'Traer los archivos y las fotos') }}
+            {{ done > 0 ? t('Continue', 'Continuar') : t('Bring the files over', 'Traer los archivos') }}
           </UiBtn>
           <UiBtn v-if="phase === 'working'" variant="secondary" @click="stopRequested = true">
             {{ t('Stop after this batch', 'Parar tras este lote') }}
@@ -585,7 +505,7 @@ async function run() {
         </div>
 
         <div v-if="phase === 'done'" class="rounded-ctl border border-line bg-surface-subtle p-3 text-[12.5px] text-ink-muted2">
-          {{ t('Finished. Run it again any time: files and photos already stored are skipped.', 'Terminado. Puedes ejecutarlo cuando quieras: se omiten los archivos y fotos ya guardados.') }}
+          {{ t('Finished. Run it again any time: files already stored are skipped.', 'Terminado. Puedes ejecutarlo cuando quieras: se omiten los archivos ya guardados.') }}
         </div>
 
         <div v-if="failed.length > 0" class="rounded-ctl border border-danger-border bg-danger-bg p-3 text-[12.5px] text-danger-text">

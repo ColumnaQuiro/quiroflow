@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { planProfilePhotos, practiceHubPhotoPath, sniffImageType } from '../../utils/practicehubProfilePhotos'
 
-// Settings › Import › Files brings each patient's PracticeHub profile photo
-// across. PracticeHub's patient list had carried the link all along; nothing
+// Settings › Import › Patients brings each patient's PracticeHub profile
+// photo across. PracticeHub's patient list had carried the link all along; nothing
 // read it, so imported clinics showed initials where their photos had been.
 describe('PracticeHub profile photos', () => {
   const link = 'https://phub-production.s3.amazonaws.com/1/patient/1/abc/?Signature=x'

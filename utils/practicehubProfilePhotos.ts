@@ -3,14 +3,15 @@
 // GET /api/patients carries `profile_image` on every patient: a pre-signed S3
 // link like the ones /api/files hands out, or null. No import step read it,
 // so every clinic that moved over arrived with initials where its photos had
-// been -- 172 of 1,535 patients on the account this was measured against.
+// been -- 172 of 1,535 patients on one account, 1,087 of 1,574 on another.
+// The Patients step brings them now, after it has written the patients.
 //
 // The link is to whatever was uploaded as the photo, which is not always a
 // picture: one of those 172 is a 2 MB PDF, served as application/pdf. So the
 // bytes decide, not the link and not the Content-Type S3 reports.
 
 export interface PracticeHubPhotoSource {
-  id: number
+  id: number | string
   patient_number: string | number | null
   profile_image?: string | null
 }
@@ -23,7 +24,7 @@ export interface PhotoTargetPatient {
 
 export interface ProfilePhotoPlan {
   /** Photos to fetch, each for a patient here that has none. */
-  queue: { phPatientId: number; patientId: string; url: string }[]
+  queue: { phPatientId: number | string; patientId: string; url: string }[]
   /** Patients with a photo in PracticeHub who already have one here. */
   alreadyHere: number
 }

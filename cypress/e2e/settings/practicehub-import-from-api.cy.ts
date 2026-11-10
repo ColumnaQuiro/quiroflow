@@ -108,26 +108,19 @@ describe('Importing from PracticeHub without exporting anything', () => {
 
   // PracticeHub's patient list carries a signed link to each profile photo.
   // No step read it, so a clinic arrived with initials where its photos had
-  // been. Files brings them across now, onto patients who have none here.
-  it('brings each patient’s profile photo across with the files', () => {
+  // been. Patients brings them across now, once the patients are written.
+  it('brings each patient’s profile photo across with the patient', () => {
     const photoLink = 'https://phub-production.s3.amazonaws.com/1/patient/1/photo/?Signature=stub'
     const pdfLink = 'https://phub-production.s3.amazonaws.com/1/patient/2/photo/?Signature=stub'
     const second = { ...routes['/patients'][0], id: 2, patient_number: '202400008', custom_reference: null, first_name: 'Andrés', email: 'andres.ferrer@example.test' }
     const withPhotos = {
       ...routes,
       '/patients': [{ ...routes['/patients'][0], profile_image: photoLink }, { ...second, profile_image: pdfLink }],
-      '/files': [],
     }
     cy.seedStaffAccount().then((account) => {
       cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { routes: withPhotos }).then(({ baseUrl }) => {
         cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
         cy.login(account.email, account.password)
-
-        cy.visit('/settings/import?source=practicehub&step=patients&type=patients')
-        cy.get('[data-cy=import-settings][data-ready=true]')
-        cy.get('[data-cy=ph-patients-from-api]').should('not.be.disabled').click()
-        cy.contains('button', /^(Import 2, update 0|Importar 2, actualizar 0)$/).click()
-        cy.contains('a', /View patients|Ver pacientes/).should('exist')
 
         // The bucket is PracticeHub's, so its answers are stood in for here:
         // a JPEG for one patient, and for the other the PDF somebody once
@@ -136,16 +129,15 @@ describe('Importing from PracticeHub without exporting anything', () => {
           const pdf = req.body.url === pdfLink
           const bytes = pdf ? [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37] : [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]
           req.reply({ statusCode: 200, headers: { 'content-type': pdf ? 'application/pdf' : 'image/jpeg' }, body: new Uint8Array(bytes).buffer })
-        }).as('photoBytes')
+        })
 
-        cy.visit('/settings/import?source=practicehub&step=file_attachments&type=file_attachments')
+        cy.visit('/settings/import?source=practicehub&step=patients&type=patients')
         cy.get('[data-cy=import-settings][data-ready=true]')
-        cy.contains('button', /Check PracticeHub|Comprobar PracticeHub/).click()
-        cy.get('[data-cy=ph-photos-summary]').should('contain', '2')
-        cy.get('[data-cy=ph-files-queued]').should('have.text', '0')
-        cy.contains('button', /Bring the photos over|Traer las fotos/).click()
-        cy.contains(/Finished\. Run it again|Terminado\. Puedes ejecutarlo/).should('be.visible')
-        cy.contains(/not a picture: 1|no una imagen: 1/).should('be.visible')
+        cy.get('[data-cy=ph-patients-from-api]').should('not.be.disabled').click()
+        cy.get('[data-cy=ph-patients-photos]').should('contain', '2')
+        cy.contains('button', /^(Import 2, update 0|Importar 2, actualizar 0)$/).click()
+        cy.contains('a', /View patients|Ver pacientes/).should('exist')
+        cy.get('[data-cy=ph-patients-photos-done]').invoke('text').should('match', /(brought over|traídas): 1\./).and('match', /(not a picture|no una imagen): 1\./)
 
         cy.task<{ email: string; photo_storage_path: string | null }[]>('db:selectRows', {
           table: 'patients',
@@ -156,10 +148,6 @@ describe('Importing from PracticeHub without exporting anything', () => {
           expect(byEmail['lucia.ferrer@example.test']).to.match(/\/practicehub\.jpg$/)
           expect(byEmail['andres.ferrer@example.test']).to.eq(null)
         })
-
-        // Run again: the photo that arrived is not fetched a second time.
-        cy.contains('button', /Check again|Volver a comprobar/).click()
-        cy.get('[data-cy=ph-photos-summary]').invoke('text').should('match', /1 already here|1 ya están aquí/)
       })
     })
   })

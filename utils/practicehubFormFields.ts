@@ -19,7 +19,11 @@ import type { DocField } from '~/utils/docFields'
 //   one imported as a question called "Answer" with the paragraph as its reply.
 // - A signature or a drawing arrives as the widget's own id and nothing else.
 //   The image is not in the API at all, only in the PDF PracticeHub's website
-//   renders for a signed-in user, so those become a line saying so.
+//   renders for a signed-in user. They were imported as a line of text saying
+//   so, which left a template nobody could sign: the block is the type the
+//   field was, a signature or a drawable image, empty. On a filled-in form
+//   the label says where the signature is; the Signed forms step files that
+//   PDF with the form.
 
 export interface PracticeHubFormField {
   name: string
@@ -36,8 +40,13 @@ function isOptionRow(field: PracticeHubFormField): boolean {
   return field.name.endsWith('[]')
 }
 
+/** A question with one answer picked from a list: PracticeHub's radio group or dropdown. */
+function isSingleChoice(field: PracticeHubFormField): boolean {
+  return /^(radio-group|select)-/i.test(field.name)
+}
+
 /**
- * Every option seen ticked for each checkbox question, across all the
+ * Every option seen chosen for each checkbox, radio or dropdown question, across all the
  * responses to one form, in first-seen order. A single response only names
  * the options that patient ticked; together they are as close to the
  * question's full list as the API gets.
@@ -46,7 +55,7 @@ export function practiceHubFormOptions(responses: { data: PracticeHubFormField[]
   const options = new Map<string, string[]>()
   for (const response of responses) {
     for (const field of response.data ?? []) {
-      if (!isOptionRow(field)) continue
+      if (!isOptionRow(field) && !isSingleChoice(field)) continue
       const text = stripHtml(field.value ?? '')
       if (!text) continue
       const seen = options.get(field.name) ?? []
@@ -98,10 +107,23 @@ export function practiceHubFormBlocks(
       continue
     }
 
+    if (isSingleChoice(f)) {
+      const known = opts.options?.get(f.name) ?? []
+      blocks.push({
+        id: newId(),
+        type: 'choice',
+        label: label || 'Options',
+        multiple: false,
+        options: text && !known.includes(text) ? [...known, text] : known,
+        value: blank ? null : text || null,
+      })
+      continue
+    }
+
     if (key.includes('signature')) {
-      blocks.push({ id: newId(), type: 'text', label: `${label || 'Signature'}: signed (via PracticeHub)`, value: null })
+      blocks.push({ id: newId(), type: 'signature', label: blank ? label || 'Signature' : `${label || 'Signature'} (signed in PracticeHub)`, value: null })
     } else if (key.includes('sketchpad') || key.includes('drawableimage') || key.includes('image')) {
-      blocks.push({ id: newId(), type: 'text', label: `${label || 'Diagram'}: drawing captured (not available via PracticeHub's API)`, value: null })
+      blocks.push({ id: newId(), type: 'drawable_image', label: blank ? label || 'Diagram' : `${label || 'Diagram'} (drawn in PracticeHub)`, value: null })
     } else if (/^\d+$/.test(f.name) || (!label && text.length > 120)) {
       // Fixed text the form shows, not something the patient answered.
       if (text) blocks.push({ id: newId(), type: 'text', label: text, value: null })

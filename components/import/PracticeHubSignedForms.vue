@@ -73,6 +73,45 @@ async function forget() {
   }
 }
 
+// The templates the Form responses step left behind were guessed from one
+// patient's answers. PracticeHub's form editor has each form exactly, so with
+// the sign-in saved the server can rebuild them: a real signature block, the
+// drawable image with its picture, every option. A few forms per call.
+interface TemplateSync {
+  total: number
+  next: number | null
+  updated: number
+  created: number
+  skipped: number
+  failed: string[]
+}
+const templatesBusy = ref(false)
+const templatesDone = ref<{ updated: number; created: number; failed: string[] } | null>(null)
+
+async function rebuildTemplates() {
+  templatesBusy.value = true
+  templatesDone.value = null
+  error.value = ''
+  const sum = { updated: 0, created: 0, failed: [] as string[] }
+  try {
+    for (let after: number | null = 0; after !== null; ) {
+      const answer: Status & { templates: TemplateSync | null } = await useStaffFetch<Status & { templates: TemplateSync | null }>('/api/import/practicehub-web', { method: 'POST', body: { op: 'templates', after } })
+      status.value = answer
+      // PracticeHub asked for a code instead: the prompt above takes over.
+      if (!answer.templates) return
+      sum.updated += answer.templates.updated
+      sum.created += answer.templates.created
+      sum.failed.push(...answer.templates.failed)
+      after = answer.templates.next
+    }
+    templatesDone.value = sum
+  } catch (e: any) {
+    error.value = e?.data?.statusMessage ?? e?.statusMessage ?? e?.message ?? String(e)
+  } finally {
+    templatesBusy.value = false
+  }
+}
+
 const running = computed(() => status.value?.job.status === 'running')
 const pct = computed(() => {
   const job = status.value?.job
@@ -215,6 +254,24 @@ const introNotes = computed(() => [
             {{ status.job.status === 'idle' ? t('Bring the signed originals', 'Traer los originales firmados') : t('Run again', 'Ejecutar de nuevo') }}
           </UiBtn>
           <UiBtn v-else variant="secondary" :disabled="busy" @click="act({ op: 'stop' })">{{ t('Stop', 'Parar') }}</UiBtn>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface p-4" data-cy="ph-templates">
+          <p class="text-[13px] font-medium text-ink-900">{{ t('Form templates', 'Plantillas de formulario') }}</p>
+          <p class="mt-1 text-[12.5px] text-ink-700">
+            {{ t('Rebuilds the templates imported from PracticeHub exactly as its form editor has them: a signature where the form had one, the image to draw on, every option of every question and what was required. It replaces the questions of those templates, so changes made to them in QuiroFlow since are lost. Forms patients already filled in are not touched.', 'Rehace las plantillas importadas de PracticeHub tal como están en su editor de formularios: una firma donde el formulario la tenía, la imagen para dibujar, todas las opciones de cada pregunta y lo que era obligatorio. Sustituye las preguntas de esas plantillas, así que se pierden los cambios hechos en QuiroFlow desde entonces. Los formularios que los pacientes ya rellenaron no se tocan.') }}
+          </p>
+          <div class="mt-3 flex flex-wrap items-center gap-3">
+            <UiBtn variant="secondary" :disabled="busy || templatesBusy || Boolean(status.code)" data-cy="ph-templates-sync" @click="rebuildTemplates">
+              {{ templatesBusy ? t('Rebuilding…', 'Rehaciendo…') : t('Rebuild templates from PracticeHub', 'Rehacer plantillas desde PracticeHub') }}
+            </UiBtn>
+            <p v-if="templatesDone" class="text-[12.5px] text-ink-700" data-cy="ph-templates-done">
+              {{ t(`Templates rebuilt: ${templatesDone.updated}. New: ${templatesDone.created}.`, `Plantillas rehechas: ${templatesDone.updated}. Nuevas: ${templatesDone.created}.`) }}
+            </p>
+          </div>
+          <p v-if="templatesDone && templatesDone.failed.length > 0" class="mt-2 text-[12.5px] text-warning-text">
+            {{ t(`Could not be rebuilt: ${templatesDone.failed.join(', ')}. Try again.`, `No se pudieron rehacer: ${templatesDone.failed.join(', ')}. Inténtalo de nuevo.`) }}
+          </p>
         </div>
       </div>
 

@@ -33,6 +33,7 @@ import {
   type PracticeHubFormSubmission,
   type PracticeHubLoginOutcome,
 } from '~/utils/practicehubWebPages'
+import { parsePracticeHubFormDefinition, parsePracticeHubFormList, type PracticeHubFormDefinition, type PracticeHubFormListing } from '~/utils/practicehubFormDefinition'
 
 const LOGIN = '/config/scripts/users/login.php'
 // One answer holds every patient: PracticeHub returned 1,535 in 0.2 s. The
@@ -188,6 +189,22 @@ export class PracticeHubWebClient {
   /** One patient's submitted forms. */
   async patientForms(patientWebId: string): Promise<PracticeHubFormSubmission[]> {
     return parsePracticeHubFormSubmissions(await this.json(`/config/scripts/patients/get_patient/files.php?id=${encodeURIComponent(patientWebId)}`))
+  }
+
+  /** The forms the clinic has built, as Settings > Forms lists them. */
+  async formList(): Promise<PracticeHubFormListing[]> {
+    // The page links to its own "new form" editor whether or not any form exists.
+    const html = await this.get('/settings/forms', (bytes) => bytes.includes('/settings/forms/form'))
+    return parsePracticeHubFormList(html.toString('utf8'))
+  }
+
+  /** One form as its editor describes it: every field, with its type. */
+  async formDefinition(formId: string): Promise<PracticeHubFormDefinition> {
+    const path = `/settings/forms/form?action=update&id=${encodeURIComponent(formId)}`
+    const html = await this.get(path, (bytes) => bytes.includes('saved_data'))
+    const definition = parsePracticeHubFormDefinition(html.toString('utf8'))
+    if (!definition) throw new PracticeHubWebError(`PracticeHub's editor for form ${formId} did not hold the form.`)
+    return definition
   }
 
   /** One form's signed original. */

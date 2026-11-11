@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
@@ -282,6 +282,11 @@ export async function draftLeadReply(
     return { status: 'sent', text: VOICE_NOTE_REPLY, handedOver: true }
   }
 
+  // A clinic offering earlier times for first visits (earlierVisitOffers.ts):
+  // a lead who books one far ahead is told, and may say they would rather not.
+  const { data: earlierAccount } = await calendarClient.from('accounts').select('earlier_first_visit_offers').eq('id', accountId).maybeSingle()
+  const earlierOn = Boolean((earlierAccount as { earlier_first_visit_offers?: boolean } | null)?.earlier_first_visit_offers)
+
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
   const actions: BookingContext | null =
@@ -301,12 +306,14 @@ export async function draftLeadReply(
           bringsSomeone,
           referral,
           onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
+          earlierTimeOffers: earlierOn,
         }
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
+  const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
@@ -331,6 +338,7 @@ export async function draftLeadReply(
     waitlist,
     cancel,
     give,
+    stopEarlier,
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),

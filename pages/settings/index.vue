@@ -85,7 +85,7 @@ const allGroups = computed(() => [
       { to: '/settings/docs', label: t('Docs', 'Documentos'), description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
       { to: '/settings/letters', label: t('Letters', 'Cartas'), description: t('Templates for the letters you write about a patient, printed on your letterhead.', 'Plantillas de las cartas que escribís sobre un paciente, impresas con vuestro membrete.'), icon: ICONS.documentText },
       { to: '/settings/leads', label: t('Leads', 'Leads'), description: t('How leads move through the pipeline, what they are worth, and who is told when one arrives.', 'Cómo avanzan los leads por el embudo, cuánto valen y a quién se avisa cuando llega uno.'), icon: ICONS.bolt },
-      { to: '/settings/recalls', label: t('Recalls', 'Recordatorios'), description: t('Who follows up a new recall, and the reasons patients stop coming that Reports › Retention counts.', 'Quién hace el seguimiento de un recordatorio nuevo, y los motivos por los que dejan de venir que cuenta Informes › Retención.'), icon: ICONS.bookmark },
+      { to: '/settings/recalls', label: t('Recalls', 'Recuperaciones'), description: t('Who follows up a new recall, and the reasons patients stop coming that Reports › Retention counts.', 'Quién hace el seguimiento de una recuperación nueva, y los motivos por los que dejan de venir que cuenta Informes › Retención.'), icon: ICONS.bookmark },
     ],
   },
   {

@@ -109,7 +109,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Team', 'Equipo')">
+    <PageHeader :title="t('Team chat', 'Chat de equipo')">
       <InboxTeamSwitch current="team" />
     </PageHeader>
     <div class="flex flex-1 overflow-hidden">

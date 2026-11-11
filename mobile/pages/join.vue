@@ -19,6 +19,8 @@ async function onSubmit() {
     return
   }
   clinic.remember(slug)
+  // The clinic's own look, before the sign-in screen it leads to.
+  await useClinicBrand().load(slug)
   await navigateTo('/login')
 }
 

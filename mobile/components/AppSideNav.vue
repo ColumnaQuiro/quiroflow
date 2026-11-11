@@ -4,7 +4,9 @@
 // width, in CSS). Same sections, from composables/useAppNav.ts.
 import type { AppNavItem } from '../composables/useAppNav'
 
-defineProps<{ items: AppNavItem[]; isActive: (to: string) => boolean; title: string; subtitle?: string }>()
+// `logo` is the clinic's own, on the patient side when it has one
+// (useClinicBrand); the staff side and every other clinic get QuiroFlow's mark.
+defineProps<{ items: AppNavItem[]; isActive: (to: string) => boolean; title: string; subtitle?: string; logo?: string | null }>()
 const t = useT()
 </script>
 
@@ -15,7 +17,7 @@ const t = useT()
     data-test="app-side-nav"
   >
     <div class="mb-3 flex items-center gap-2.5 px-2 pb-1">
-      <img src="/logo/quiroflow-mark.svg" alt="" class="h-7 w-7" />
+      <img :src="logo || '/logo/quiroflow-mark.svg'" alt="" class="h-7 w-7 shrink-0 rounded-ctlSm object-contain" />
       <div class="min-w-0">
         <p class="truncate text-[14px] font-semibold text-ink-900">{{ title }}</p>
         <p v-if="subtitle" class="truncate text-[11.5px] text-ink-muted">{{ subtitle }}</p>

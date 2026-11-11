@@ -36,6 +36,7 @@ watch(
 // width), headed by the patient's clinic.
 const { items, isActive } = usePatientNav()
 const { settings } = usePatientAppInfo()
+const { brand } = useClinicBrand()
 const t = useT()
 // Family accounts (composables/useFamily.ts): whose record every patient
 // screen shows. The banner says it on each one; the screens re-mount per
@@ -56,7 +57,8 @@ const locked = computed(() => !family.canSeeClinical.value && CLINICAL.some((p) 
       class="hidden md:flex"
       :items="items"
       :is-active="isActive"
-      :title="settings.clinicName ?? t('Your clinic', 'Tu clínica')"
+      :title="brand?.name ?? settings.clinicName ?? t('Your clinic', 'Tu clínica')"
+      :logo="brand?.logoUrl"
       :subtitle="t('Patient', 'Paciente')"
     />
     <!-- A flex column, and the keyed wrapper fills what the banner leaves:

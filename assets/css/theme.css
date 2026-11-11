@@ -144,6 +144,10 @@
      (brand is a pale indigo that white text only reached 3:1 against,
      success-accent a mint it reached 1.6:1 against). */
   --color-on-fill: 255 255 255;
+  /* Text on bg-brand. The same as every other fill unless a clinic's own
+     colour is in use (utils/clinicBrandPalette.ts), which sets it for both
+     themes. Declared once: it follows --color-on-fill into the dark palette. */
+  --color-brand-on: var(--color-on-fill);
 
   --color-surface-page: 247 248 250;
   --color-surface-sidebar: 251 251 252;

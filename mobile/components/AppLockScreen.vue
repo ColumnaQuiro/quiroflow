@@ -9,6 +9,9 @@ const t = useT()
 const lock = useAppLock()
 const supabase = useSupabaseClient()
 const failed = ref(false)
+// A patient's lock screen is their clinic's when it has its own look
+// (useClinicBrand); the staff's, and everyone else's, is QuiroFlow's.
+const { brand } = useClinicBrand()
 
 async function tryUnlock() {
   failed.value = !(await lock.unlock())
@@ -37,8 +40,9 @@ async function usePassword() {
 
 <template>
   <div v-if="lock.locked.value" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-surface-page px-8 text-center" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" role="dialog" aria-modal="true" data-cy="app-lock">
-    <img src="/logo/quiroflow-app-icon.svg" alt="" class="h-16 w-16 rounded-[18px]" />
-    <p class="mt-5 text-[19px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</p>
+    <img v-if="brand?.logoUrl" :src="brand.logoUrl" alt="" class="h-16 w-16 rounded-[18px] object-contain" data-cy="app-lock-clinic-logo" />
+    <img v-else src="/logo/quiroflow-app-icon.svg" alt="" class="h-16 w-16 rounded-[18px]" />
+    <p class="mt-5 text-[19px] font-[640] tracking-tightTitle text-ink-900">{{ brand?.name ?? 'QuiroFlow' }}</p>
     <p class="mt-1.5 text-[13.5px] text-ink-muted">{{ t(`Unlock with ${lock.label.value} to continue.`, `Desbloquea con ${lock.label.value} para continuar.`) }}</p>
     <AppButton variant="primary" class="mt-7 w-full max-w-xs" data-cy="app-lock-unlock" @click="tryUnlock">
       {{ t(`Use ${lock.label.value}`, `Usar ${lock.label.value}`) }}

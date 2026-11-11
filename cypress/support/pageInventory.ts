@@ -17,6 +17,7 @@ export const SETTINGS_PAGES = [
   '/settings/activity',
   '/settings/app',
   '/settings/appointment-types',
+  '/settings/branding',
   '/settings/clinics',
   '/settings/custom-fields',
   '/settings/messages',

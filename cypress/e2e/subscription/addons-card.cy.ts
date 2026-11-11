@@ -69,4 +69,45 @@ describe('The Add-ons card', () => {
       cy.get('[data-cy=subscription-addon-growth-add], [data-cy=subscription-addon-receptionist-add]').should('not.exist')
     })
   })
+
+  // The clinic's own brand in the patient app: a third row, on its own. It is
+  // named in the request only when it is the thing changing, so the server
+  // leaves it alone on every other change.
+  it('adds the brand add-on, and only then names it in the request', () => {
+    seedActiveSubscriber().then(() => {
+      cy.intercept('POST', '/api/billing/preview', { statusCode: 200, body: { previewable: true, amountDueCents: 1210, taxCents: 210, currency: 'eur' } }).as('preview')
+      cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
+      cy.visit('/subscription')
+
+      cy.get('[data-cy=subscription-addon-branding]', { timeout: 20000 }).scrollIntoView()
+      cy.get('[data-cy=subscription-addon-branding-state]').should('have.text', 'Not added')
+      cy.get('[data-cy=subscription-addon-branding]').should('contain', '15,00')
+      cy.get('[data-cy=subscription-addon-branding-add]').click()
+
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false, branding: true })
+      cy.get('[data-cy=subscription-addon-preview]').should('contain', '12,10')
+      cy.get('[data-cy=subscription-addon-confirm]').click()
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false, branding: true })
+    })
+  })
+
+  it('opens the brand confirmation when arriving from Settings > Brand', () => {
+    seedActiveSubscriber().then(() => {
+      cy.intercept('POST', '/api/billing/preview', { statusCode: 200, body: { previewable: true, amountDueCents: 1210, taxCents: 210, currency: 'eur' } }).as('preview')
+      cy.visit('/subscription?addon=branding')
+      cy.wait('@preview', { timeout: 20000 }).its('request.body.branding').should('eq', true)
+      cy.get('[data-cy=subscription-addon-branding-confirm]').should('be.visible')
+    })
+  })
+
+  it('shows the brand add-on as bought, removable, and in what the clinic pays for', () => {
+    seedActiveSubscriber().then((account) => {
+      cy.task('db:updateRows', { table: 'subscriptions', values: { branding_addon: true }, match: { account_id: account.accountId } })
+      cy.intercept('POST', '/api/billing/preview', { statusCode: 200, body: { previewable: true, amountDueCents: 0, taxCents: 0, currency: 'eur' } }).as('preview')
+      cy.visit('/subscription')
+      cy.get('[data-cy=subscription-addon-branding-state]', { timeout: 20000 }).should('have.text', 'Active')
+      cy.get('[data-cy=subscription-addon-branding-remove]').click()
+      cy.wait('@preview').its('request.body.branding').should('eq', false)
+    })
+  })
 })

@@ -18,6 +18,8 @@ const { unregister: unregisterPush } = usePushNotifications()
 const { ask, notify } = useAppConfirm()
 const authedFetch = useAuthedFetch()
 const { settings } = usePatientAppInfo()
+// The clinic's own name for the app, when it has one (useClinicBrand).
+const { brand } = useClinicBrand()
 // The login itself, not whoever the family switcher is showing.
 const { me: patient, teamMember } = useIdentity()
 
@@ -82,7 +84,7 @@ async function deleteAccount() {
         </span>
         <div class="min-w-0">
           <p class="truncate text-[14px] font-medium text-ink-900">{{ fullName || t('Patient', 'Paciente') }}</p>
-          <p v-if="settings.clinicName" class="truncate text-[12.5px] text-ink-muted">{{ settings.clinicName }}</p>
+          <p v-if="brand?.name ?? settings.clinicName" class="truncate text-[12.5px] text-ink-muted">{{ brand?.name ?? settings.clinicName }}</p>
         </div>
       </div>
     </PatientCard>
@@ -116,5 +118,12 @@ async function deleteAccount() {
         {{ deletingAccount ? t('Deleting…', 'Eliminando…') : t('Delete account', 'Eliminar cuenta') }}
       </button>
     </div>
+
+    <!-- Under a clinic's own look the app no longer says whose it is anywhere
+         else; a patient looking for it in the store needs the name. -->
+    <p v-if="brand" class="mt-4 flex items-center justify-center gap-1.5 text-[11.5px] text-ink-faint" data-cy="powered-by">
+      <img src="/logo/quiroflow-mark.svg" alt="" class="h-3.5 w-3.5 opacity-70" />
+      {{ t('Powered by QuiroFlow', 'Con tecnología de QuiroFlow') }}
+    </p>
   </PatientScreen>
 </template>

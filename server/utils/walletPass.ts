@@ -1,7 +1,9 @@
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { normalizeBrandColor } from '~/utils/clinicBrandPalette'
+import { hasClinicBranding } from '~/server/utils/requireGrowth'
 import { walletLinkTokenWith, walletLinkValidWith, walletSigningFromPem, type BonoPassData, type WalletSigning } from '~/server/utils/walletPkpass'
 
-/** The brand indigo (--color-brand, 79 70 229) every wallet pass is drawn in. */
+/** The brand indigo (--color-brand, 79 70 229) a wallet pass is drawn in unless the clinic has its own look. */
 const QUIROFLOW_PASS_COLOR = '#4F46E5'
 
 // A bono in Apple Wallet: the configuration (the pass type certificate and
@@ -44,7 +46,7 @@ export function walletLinkValid(purchaseId: string, expires: number, token: stri
 export async function loadBonoPass(service: Service, purchaseId: string, opts: { logoBytes?: boolean } = {}): Promise<(BonoPassData & { logoUrl: string | null }) | null> {
   const { data: pp } = await service
     .from('package_purchases')
-    .select('id, account_id, patient_id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name, clinic_id, anonymized_at), accounts(name)')
+    .select('id, account_id, patient_id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name, clinic_id, anonymized_at), accounts(name, patient_app_brand_name, patient_app_brand_color, patient_app_brand_logo_path, subscriptions(status, comped, branding_addon))')
     .eq('id', purchaseId)
     .maybeSingle()
   if (!pp || pp.patients?.anonymized_at) return null
@@ -66,14 +68,22 @@ export async function loadBonoPass(service: Service, purchaseId: string, opts: {
     .order('starts_at')
     .limit(1)
     .maybeSingle()
+  // The clinic's own look for the patient app (Settings > Brand), when it has
+  // the add-on: its colour, the name it goes by and its brand logo, on the
+  // pass as in the app. Otherwise the pass is as it always was.
+  const subscription = Array.isArray(pp.accounts?.subscriptions) ? pp.accounts.subscriptions[0] : pp.accounts?.subscriptions
+  const branded = hasClinicBranding(subscription ?? null)
+  const brandColor = (branded && normalizeBrandColor(pp.accounts?.patient_app_brand_color)) || QUIROFLOW_PASS_COLOR
+  const brandName = (branded && pp.accounts?.patient_app_brand_name?.trim()) || null
+  const logoPath: string | null = (branded && pp.accounts?.patient_app_brand_logo_path) || clinic?.logo_storage_path || null
   let logo: Uint8Array | null = null
-  if (clinic?.logo_storage_path && opts.logoBytes !== false) {
-    const { data: blob } = await service.storage.from('clinic-logos').download(clinic.logo_storage_path)
-    if (blob && /png/i.test(blob.type || clinic.logo_storage_path)) logo = new Uint8Array(await blob.arrayBuffer())
+  if (logoPath && opts.logoBytes !== false) {
+    const { data: blob } = await service.storage.from('clinic-logos').download(logoPath)
+    if (blob && /png/i.test(blob.type || logoPath)) logo = new Uint8Array(await blob.arrayBuffer())
   }
   // clinic-logos is a public bucket (0096_clinic_logo.sql). Google Wallet
   // takes PNG and JPEG, not SVG.
-  const logoUrl = clinic?.logo_storage_path && /\.(png|jpe?g)$/i.test(clinic.logo_storage_path) ? service.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : null
+  const logoUrl = logoPath && /\.(png|jpe?g)$/i.test(logoPath) ? service.storage.from('clinic-logos').getPublicUrl(logoPath).data.publicUrl : null
   return {
     purchaseId: pp.id,
     patientId: pp.patient_id,
@@ -82,16 +92,17 @@ export async function loadBonoPass(service: Service, purchaseId: string, opts: {
     total: pp.sessions_total ?? 0,
     used: pp.sessions_used ?? 0,
     closed: !!pp.is_closed,
-    accountName: pp.accounts?.name ?? 'Clínica',
-    clinicName: clinic?.name ?? pp.accounts?.name ?? 'Clínica',
+    accountName: brandName ?? pp.accounts?.name ?? 'Clínica',
+    clinicName: brandName ?? clinic?.name ?? pp.accounts?.name ?? 'Clínica',
     clinicPhone: clinic?.phone ?? null,
     clinicAddress: clinic?.address ?? null,
     timezone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
-    // QuiroFlow's indigo on every pass, Apple and Google, not the clinic's
-    // online-booking colour. That colour is chosen for a booking page; on the
-    // pass it sat under the QuiroFlow mark (the logo when a clinic has none)
-    // and read as somebody else's card -- one clinic's green pass on 18 Oct.
-    brandColor: QUIROFLOW_PASS_COLOR,
+    // QuiroFlow's indigo, Apple and Google, unless the clinic chose a colour
+    // for the patient app. Never the online-booking colour: that one is
+    // chosen for a booking page; on the pass it sat under the QuiroFlow mark
+    // (the logo when a clinic has none) and read as somebody else's card --
+    // one clinic's green pass on 18 Oct.
+    brandColor,
     logo,
     logoUrl,
     nextVisit: next ? { startsAt: next.starts_at, what: next.appointment_types?.name ?? null, who: next.team_members?.full_name ?? null } : null,

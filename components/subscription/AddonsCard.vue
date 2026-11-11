@@ -16,7 +16,13 @@ import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES } from '~
 // Growth includes the receptionist, and the server never bills both
 // (receptionistLineWanted): adding Growth to an account that has the
 // receptionist replaces it.
-type AddonKey = 'growth' | 'receptionist'
+//
+// The clinic's own brand in the patient app is the third row and stands
+// apart: no plan and no other add-on includes it, and the trial does not
+// either. It is named in the request only when it is the thing being changed
+// -- the server leaves it as it is otherwise -- so adding the receptionist
+// cannot touch it.
+type AddonKey = 'growth' | 'receptionist' | 'branding'
 /** free: complimentary; plan: in the plan's price; growth: inside Growth. */
 type RowState = 'free' | 'plan' | 'growth' | 'on' | 'off'
 interface Prices { monthly_price_cents: number; annual_price_cents: number }
@@ -34,9 +40,13 @@ const props = defineProps<{
   trialing: boolean
   growthPrices: Prices | null
   receptionistPrices: Prices | null
+  /** Bought as its own line (subscriptions.branding_addon). */
+  brandingOn?: boolean
+  /** Null while the catalogue has no such add-on: the row is then not shown. */
+  brandingPrices?: Prices | null
   canManage: boolean
 }>()
-const emit = defineEmits<{ changed: [expect: { growth: boolean; receptionist: boolean }] }>()
+const emit = defineEmits<{ changed: [expect: { growth: boolean; receptionist: boolean; branding: boolean }] }>()
 const t = useT()
 
 const growthIncluded = computed(() => props.comped || props.planIncludesGrowth)
@@ -73,13 +83,27 @@ const rows = computed(() => [
     price: priceOf(props.receptionistPrices),
     state: (props.comped ? 'free' : receptionistIncluded.value ? 'growth' : props.receptionistOn ? 'on' : 'off') as RowState,
   },
+  ...(props.brandingPrices
+    ? [
+        {
+          key: 'branding' as const,
+          name: t('Your brand in the patient app', 'Tu marca en la app de pacientes'),
+          description: t(
+            'Your logo, your name and your colour in the patient app and on the wallet pass, in place of QuiroFlow\'s.',
+            'Tu logo, tu nombre y tu color en la app de pacientes y en el pase de Wallet, en lugar de los de QuiroFlow.',
+          ),
+          price: priceOf(props.brandingPrices),
+          state: (props.comped ? 'free' : props.brandingOn ? 'on' : 'off') as RowState,
+        },
+      ]
+    : []),
 ])
 
 // The trial includes Growth but not the receptionist (hasReceptionist), so
 // "In your trial" is only true of the Growth row, and adding the receptionist
 // during a trial gives it now rather than keeping it for later.
 function pillOf(row: { key: AddonKey; state: RowState }) {
-  if (row.key === 'receptionist' && row.state === 'off' && props.trialing) return { tone: 'chip' as const, label: t('Not in the trial', 'No incluida en la prueba') }
+  if (row.key !== 'growth' && row.state === 'off' && props.trialing) return { tone: 'chip' as const, label: t('Not in the trial', 'No incluida en la prueba') }
   return STATE_PILL.value[row.state]
 }
 
@@ -105,7 +129,8 @@ const target = computed(() => {
   // Removing Growth leaves the receptionist as it was bought: never added
   // behind the owner's back.
   const receptionist = p?.key === 'receptionist' ? p.on : props.receptionistOn && !growth
-  return { growth, receptionist }
+  const branding = p?.key === 'branding' ? p.on : !!props.brandingOn
+  return { growth, receptionist, branding }
 })
 
 function body() {
@@ -115,6 +140,8 @@ function body() {
     extraProfessionals: props.extraProfessionals,
     growth: target.value.growth,
     receptionist: target.value.receptionist,
+    // Only when it is what is changing; see the note at the top.
+    ...(pending.value?.key === 'branding' ? { branding: pending.value.on } : {}),
   }
 }
 

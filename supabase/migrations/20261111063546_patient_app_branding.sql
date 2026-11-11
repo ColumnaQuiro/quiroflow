@@ -17,9 +17,9 @@
 -- Sold as an add-on of its own. The clinic can fill these in and see the
 -- preview whenever it likes; patients get the look only while the account has
 -- the add-on (subscriptions.branding_addon), which is what
--- get_clinic_branding() decides. There is no price yet, so there is no row in
--- `addons` and nothing in Checkout sells it: the column is set by hand until
--- the price exists.
+-- get_clinic_branding() decides. Its price and its row in `addons` are in
+-- 20261111065621_branding_addon_price.sql; from then on the billing webhook
+-- writes the column from the Stripe subscription, like the other add-ons.
 --
 -- The columns are named patient_app_% so accounts_settings_permission already
 -- files them under clinic_config, the permission Settings > Brand is gated
@@ -46,7 +46,7 @@ comment on column public.accounts.patient_app_brand_logo_path is
 alter table public.subscriptions add column branding_addon boolean not null default false;
 
 comment on column public.subscriptions.branding_addon is
-  'Whether this account has bought its own look in the patient app. Set by hand until the add-on has a price; get_clinic_branding() reads it.';
+  'Whether this account has bought its own look in the patient app. Written by the platform billing webhook from the Stripe items; get_clinic_branding() reads it.';
 
 -- What the app draws itself with, or null when this clinic's patients see
 -- QuiroFlow's own look.

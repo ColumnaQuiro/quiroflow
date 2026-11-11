@@ -17,7 +17,9 @@ describe('Settings > Brand', () => {
       cy.login(account.email, account.password)
       cy.visit('/settings/branding')
 
-      cy.get('[data-cy=branding-status]').should('contain', 'Preview only')
+      cy.get('[data-cy=branding-status]').should('contain', 'Preview only').and('contain', '15,00')
+      // The owner is sent to Subscription to buy it, where Stripe's charge is shown first.
+      cy.get('[data-cy=branding-activate]').should('have.attr', 'href', '/subscription?addon=branding')
       cy.get('[data-cy=branding-save]').should('be.disabled')
 
       cy.get('[data-cy=branding-name]').type('Clínica Demo')
@@ -58,7 +60,7 @@ describe('Settings > Brand', () => {
       cy.login(account.email, account.password)
       cy.visit('/settings/branding')
       cy.get('[data-cy=branding-status]').should('contain', 'Your patients see this look')
-      cy.get('[data-cy=branding-contact]').should('not.exist')
+      cy.get('[data-cy=branding-activate]').should('not.exist')
 
       // A locked account keeps nothing it had bought.
       cy.setSubscriptionStatus(account.accountId, 'locked')

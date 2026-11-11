@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -59,6 +59,7 @@ export default defineEventHandler(async (event) => {
   // below, after the seat check.
   const growth = await growthAddonPrices(serviceRole, body.interval)
   const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
+  const branding = await brandingAddonPrices(serviceRole, body.interval)
 
   // enforce_practitioner_seats (0150) only blocks a plan limit from being
   // breached going FORWARD -- it has nothing to say about an account that's
@@ -96,6 +97,9 @@ export default defineEventHandler(async (event) => {
   }
   if (wantsReceptionist && !receptionist.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'The AI receptionist has no Stripe price configured for this billing interval' })
+  }
+  if (body.branding === true && !branding.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -170,6 +174,20 @@ export default defineEventHandler(async (event) => {
     } else if (receptionistItem) {
       items.push({ id: receptionistItem.id, deleted: true })
     }
+    // The clinic's own brand in the patient app. Unlike the two above, a
+    // request that does not mention it leaves it as it is: Change plan and
+    // the other callers know nothing about it, and a plan change must not
+    // take off something the clinic pays for. Kept, it still follows the new
+    // interval -- and if that interval has no price it is an operator
+    // problem to refuse on, not a reason to drop it.
+    const brandingItem = current.items.data.find((item) => branding.allPriceIds.has(item.price.id))
+    const wantsBranding = body.branding ?? !!brandingItem
+    if (wantsBranding) {
+      if (!branding.priceId) throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
+      items.push(brandingItem ? { id: brandingItem.id, price: branding.priceId, quantity: 1 } : { price: branding.priceId, quantity: 1 })
+    } else if (brandingItem) {
+      items.push({ id: brandingItem.id, deleted: true })
+    }
     // The VeriFactu fee is not the owner's to choose here, but it has to
     // follow the new interval: Stripe refuses items on mixed intervals.
     const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)
@@ -221,6 +239,7 @@ export default defineEventHandler(async (event) => {
       ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
       ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
       ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
+      ...(body.branding === true && branding.priceId ? [{ price: branding.priceId, quantity: 1 }] : []),
       ...verifactuFeeLine,
     ],
     // On the subscription rather than the line items: line-item tax_rates

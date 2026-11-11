@@ -40,6 +40,18 @@ export async function receptionistAddonPrices(
   return addonPrices(serviceRole, 'receptionist', interval)
 }
 
+/**
+ * The clinic's own brand in the patient app (20261111065621_branding_addon_price.sql).
+ * Independent of Growth and of every plan: it is never included in one and
+ * never replaced by one.
+ */
+export async function brandingAddonPrices(
+  serviceRole: SupabaseClient<Database>,
+  interval: 'monthly' | 'annual',
+): Promise<GrowthAddonPrices> {
+  return addonPrices(serviceRole, 'branding', interval)
+}
+
 async function addonPrices(
   serviceRole: SupabaseClient<Database>,
   id: string,

@@ -30,6 +30,16 @@ const PRACTICE: PlanPricing = {
 const GROWTH = { monthlyPriceCents: 3900, annualPriceCents: 3500 }
 
 describe('Subscription pricing rules', () => {
+  // The clinic's own brand in the patient app: its own line, on any plan,
+  // counted only when it is bought.
+  it('adds the brand add-on to the month and to the annual charge only when it is billed', () => {
+    const BRANDING = { monthlyPriceCents: 1500, annualPriceCents: 1300 }
+    const monthly = { interval: 'monthly' as const, extraProfessionals: 0, growthBilled: false }
+    expect(pricePerMonth(PRACTICE, monthly, GROWTH, null, null, BRANDING)).to.eq(9900)
+    expect(pricePerMonth(PRACTICE, { ...monthly, brandingBilled: true }, GROWTH, null, null, BRANDING)).to.eq(11400)
+    expect(nextChargeTotal(PRACTICE, { ...monthly, interval: 'annual' as const, brandingBilled: true }, GROWTH, null, null, BRANDING)).to.eq((8900 + 1300) * MONTHS_PER_YEAR)
+  })
+
   // The bug this exists to prevent: an annual customer was shown 44,00 € as
   // their next payment while Stripe took 528,00 €, because one helper
   // produced both numbers. They must never be equal on an annual plan.

@@ -139,6 +139,8 @@ export interface SubscriptionShape {
   verifactuLocations?: number
   /** The AI receptionist bought on its own, as its own line (never alongside Growth). */
   receptionistBilled?: boolean
+  /** The clinic's own brand in the patient app, bought as its own line. */
+  brandingBilled?: boolean
 }
 
 /**
@@ -154,6 +156,7 @@ export function pricePerMonth(
   addon: AddonPricing | null,
   verifactuFee: AddonPricing | null = null,
   receptionist: AddonPricing | null = null,
+  branding: AddonPricing | null = null,
 ): number {
   const annual = subscription.interval === 'annual'
   const base = annual ? plan.annualPriceCents : plan.monthlyPriceCents
@@ -161,7 +164,8 @@ export function pricePerMonth(
   const growth = subscription.growthBilled && addon ? (annual ? addon.annualPriceCents : addon.monthlyPriceCents) : 0
   const verifactu = verifactuFee ? (subscription.verifactuLocations ?? 0) * (annual ? verifactuFee.annualPriceCents : verifactuFee.monthlyPriceCents) : 0
   const receptionistLine = subscription.receptionistBilled && receptionist ? (annual ? receptionist.annualPriceCents : receptionist.monthlyPriceCents) : 0
-  return base + seats + growth + verifactu + receptionistLine
+  const brandingLine = subscription.brandingBilled && branding ? (annual ? branding.annualPriceCents : branding.monthlyPriceCents) : 0
+  return base + seats + growth + verifactu + receptionistLine + brandingLine
 }
 
 /**
@@ -180,8 +184,9 @@ export function nextChargeTotal(
   addon: AddonPricing | null,
   verifactuFee: AddonPricing | null = null,
   receptionist: AddonPricing | null = null,
+  branding: AddonPricing | null = null,
 ): number {
-  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee, receptionist)
+  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee, receptionist, branding)
   return subscription.interval === 'annual' ? perMonth * MONTHS_PER_YEAR : perMonth
 }
 

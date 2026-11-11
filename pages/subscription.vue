@@ -23,6 +23,7 @@ interface SubscriptionRow {
   extra_professionals: number
   growth_addon: boolean
   receptionist_addon: boolean
+  branding_addon: boolean
   verifactu_locations: number
   trial_ends_at: string | null
   comped: boolean
@@ -93,6 +94,11 @@ const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
 const growthAddon = ref<AddonRow | null>(null)
 const receptionistAddon = ref<AddonRow | null>(null)
+// The clinic's own brand in the patient app (Settings > Brand).
+const brandingAddon = ref<AddonRow | null>(null)
+const brandingPricing = computed(() =>
+  brandingAddon.value ? { monthlyPriceCents: brandingAddon.value.monthly_price_cents, annualPriceCents: brandingAddon.value.annual_price_cents } : null,
+)
 const receptionistPricing = computed(() =>
   receptionistAddon.value ? { monthlyPriceCents: receptionistAddon.value.monthly_price_cents, annualPriceCents: receptionistAddon.value.annual_price_cents } : null,
 )
@@ -116,7 +122,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, growth_addon, receptionist_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
+      'status, billing_interval, extra_professionals, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -199,6 +205,7 @@ const shape = computed(() => ({
   extraProfessionals: subscription.value?.extra_professionals ?? 0,
   growthBilled: growthBilled.value,
   receptionistBilled: receptionistBilled.value,
+  brandingBilled: !!subscription.value?.branding_addon,
   verifactuLocations: subscription.value?.verifactu_locations ?? 0,
 }))
 
@@ -219,7 +226,7 @@ const addonPricing = computed(() =>
 )
 
 const perMonthCents = computed(() =>
-  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value) : 0,
+  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value) : 0,
 )
 
 // Stripe's own figure wherever it exists. The local computation is the
@@ -228,7 +235,7 @@ const perMonthCents = computed(() =>
 const usingStripeAmount = computed(() => !!billingInfo.value?.upcoming)
 const nextChargeCents = computed(() => {
   if (billingInfo.value?.upcoming) return billingInfo.value.upcoming.totalCents
-  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value) : null
+  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value) : null
 })
 const nextChargeSubtotal = computed(() => billingInfo.value?.upcoming?.subtotalCents ?? null)
 const nextChargeTax = computed(() => billingInfo.value?.upcoming?.taxCents ?? null)
@@ -267,6 +274,13 @@ const planLineItems = computed(() => {
       key: 'receptionist',
       label: t('AI receptionist', 'Recepcionista IA'),
       amountCents: annual ? receptionistAddon.value.annual_price_cents : receptionistAddon.value.monthly_price_cents,
+    })
+  }
+  if (sub.branding_addon && brandingAddon.value) {
+    items.push({
+      key: 'branding',
+      label: t('Your brand in the patient app', 'Tu marca en la app de pacientes'),
+      amountCents: annual ? brandingAddon.value.annual_price_cents : brandingAddon.value.monthly_price_cents,
     })
   }
   const locations = sub.verifactu_locations ?? 0
@@ -414,6 +428,7 @@ onMounted(async () => {
   plans.value = planRows ?? []
   growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
   receptionistAddon.value = (addonRows ?? []).find((a) => a.id === 'receptionist') ?? null
+  brandingAddon.value = (addonRows ?? []).find((a) => a.id === 'branding') ?? null
   verifactuFee.value = (addonRows ?? []).find((a) => a.id === 'verifactu') ?? null
   loading.value = false
 
@@ -421,6 +436,15 @@ onMounted(async () => {
     activatingFirstChargeOn.value = checkoutTrialEnd(subscription.value) ? subscription.value?.trial_ends_at ?? null : null
     activating.value = true
     pollForActivation()
+  }
+
+  // Settings > Brand sends the owner here to switch the add-on on: the same
+  // confirmation the row's own Add button opens, with Stripe's charge shown
+  // before anything is bought.
+  if (route.query.addon === 'branding' && store.isOwner && brandingAddon.value && !comped.value && !subscription.value?.branding_addon) {
+    await nextTick()
+    addonsCard.value?.start('branding', true)
+    addonsCard.value?.$el?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
   }
 })
 
@@ -430,12 +454,12 @@ onMounted(async () => {
 // The Add-ons card. Its change lands through the Stripe webhook, a moment
 // after subscribe answers, so the row is re-read until it says what was asked
 // for -- a single reload right away would still show the add-on off.
-const addonsCard = ref<{ start: (key: 'growth' | 'receptionist', on: boolean) => void; $el?: HTMLElement } | null>(null)
-async function onAddonChanged(expect: { growth: boolean; receptionist: boolean }) {
+const addonsCard = ref<{ start: (key: 'growth' | 'receptionist' | 'branding', on: boolean) => void; $el?: HTMLElement } | null>(null)
+async function onAddonChanged(expect: { growth: boolean; receptionist: boolean; branding: boolean }) {
   for (let i = 0; i < 8; i++) {
     await loadSubscription()
     const sub = subscription.value
-    if (sub && !!sub.growth_addon === expect.growth && !!sub.receptionist_addon === expect.receptionist) break
+    if (sub && !!sub.growth_addon === expect.growth && !!sub.receptionist_addon === expect.receptionist && !!sub.branding_addon === expect.branding) break
     await new Promise((r) => setTimeout(r, 1500))
   }
   await loadBillingInfo()
@@ -668,6 +692,8 @@ async function addPaymentMethod() {
               :trialing="subscription.status === 'trialing'"
               :growth-prices="growthAddon"
               :receptionist-prices="receptionistAddon"
+              :branding-on="!!subscription.branding_addon"
+              :branding-prices="brandingAddon"
               :can-manage="store.isOwner"
               @changed="onAddonChanged"
             />

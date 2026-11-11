@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
+import { formatEur } from '~/utils/billing'
 import { CLINIC_BRAND_PRESETS, clinicBrandDeclarations, clinicBrandPalette, normalizeBrandColor } from '~/utils/clinicBrandPalette'
 
 // The clinic's own look in the patient app: its logo, the name it goes by
@@ -22,6 +23,8 @@ const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 const active = ref(false)
+// The add-on's monthly price, for the line that says it is a paid extra.
+const price = ref<number | null>(null)
 
 const name = ref('')
 const color = ref('')
@@ -39,12 +42,14 @@ const logoUrl = computed(() => publicLogo(logoPath.value ?? fallbackLogoPath.val
 
 async function load() {
   loading.value = true
-  const [{ data: account }, { data: branding }] = await Promise.all([
+  const [{ data: account }, { data: branding }, { data: addon }] = await Promise.all([
     supabase.from('accounts').select('patient_app_brand_name, patient_app_brand_color, patient_app_brand_logo_path').eq('id', store.accountId!).maybeSingle(),
     // Asked as a preview: it answers with what patients WOULD see, and
     // `active` says whether they do.
     supabase.rpc('get_clinic_branding', { p_slug: store.accountSlug, p_preview: true }),
+    supabase.from('addons').select('monthly_price_cents').eq('id', 'branding').maybeSingle(),
   ])
+  price.value = addon?.monthly_price_cents ?? null
   name.value = account?.patient_app_brand_name ?? ''
   color.value = account?.patient_app_brand_color ?? ''
   logoPath.value = account?.patient_app_brand_logo_path ?? null
@@ -138,7 +143,6 @@ function previewStyle(theme: 'light' | 'dark') {
 }
 const shownName = computed(() => name.value.trim() || store.accountName || t('Your clinic', 'Tu clínica'))
 const initials = computed(() => shownName.value.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase())
-const supportHref = computed(() => `mailto:hola@quiroflow.com?subject=${encodeURIComponent(t('Our own look in the patient app', 'Nuestra marca en la app de pacientes'))}`)
 </script>
 
 <template>
@@ -167,13 +171,18 @@ const supportHref = computed(() => `mailto:hola@quiroflow.com?subject=${encodeUR
                 {{
                   active
                     ? t('A change here reaches each phone the next time the app is opened.', 'Un cambio aquí llega a cada teléfono la próxima vez que se abre la app.')
-                    : t('Your own look is a paid extra. Set it up and check the preview here; write to us to switch it on.', 'La marca propia es un extra de pago. Prepárala y revisa la vista previa aquí; escríbenos para activarla.')
+                    : price === null
+                      ? t('Your own look is a paid extra. Set it up and check the preview here, then switch it on.', 'La marca propia es un extra de pago. Prepárala y revisa la vista previa aquí, y después actívala.')
+                      : t(`Your own look is a paid extra: ${formatEur(price)} a month + IVA. Set it up and check the preview here, then switch it on.`, `La marca propia es un extra de pago: ${formatEur(price)} al mes + IVA. Prepárala y revisa la vista previa aquí, y después actívala.`)
                 }}
               </p>
             </div>
-            <a v-if="!active" :href="supportHref" class="inline-flex h-9 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="branding-contact">
-              {{ t('Write to us', 'Escríbenos') }}
-            </a>
+            <template v-if="!active">
+              <NuxtLink v-if="store.isOwner" to="/subscription?addon=branding" class="inline-flex h-9 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="branding-activate">
+                {{ t('Switch it on', 'Activar') }}
+              </NuxtLink>
+              <span v-else class="text-[12.5px] text-ink-muted" data-cy="branding-ask-owner">{{ t('The account owner can switch it on from Subscription.', 'El propietario de la cuenta puede activarla desde Suscripción.') }}</span>
+            </template>
           </div>
 
           <div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

@@ -222,10 +222,10 @@ onMounted(loadLabels)
 
 // Who a conversation can be assigned to.
 const team = ref<{ id: string; full_name: string }[]>([])
+const teamDirectory = useTeamDirectory()
 onMounted(async () => {
-  const { data, error } = await supabase.from('team_members').select('id, full_name').is('deleted_at', null).order('full_name')
-  if (error) throw error
-  team.value = data ?? []
+  await teamDirectory.ensureLoaded()
+  team.value = teamDirectory.active.value
 })
 const myId = computed(() => store.teamMember?.id ?? null)
 function memberName(id: string | null | undefined) {
@@ -1876,8 +1876,6 @@ onMounted(() => {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, onMessageUpdate)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'inbox_assignments', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_labels', filter: `account_id=eq.${store.accountId}` }, () => loadLabels())
     .subscribe()
 })
 onUnmounted(() => {

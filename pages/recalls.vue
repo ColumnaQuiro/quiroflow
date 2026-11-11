@@ -242,9 +242,11 @@ async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
   return out
 }
 
+const teamDirectory = useTeamDirectory()
 async function loadTeamMembers() {
-  const { data } = await supabase.from('team_members').select('id, full_name, deleted_at').order('full_name')
-  teamMembers.value = data ?? []
+  // A failed read left the list empty before; it still does.
+  await teamDirectory.ensureLoaded().catch(() => {})
+  teamMembers.value = teamDirectory.all.value
 }
 // Who a recall can be given to: a former colleague still names old contact
 // log entries, but is offered nowhere.

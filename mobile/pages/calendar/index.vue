@@ -31,8 +31,8 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 // rendered.
 import type { BusinessHours } from '../../../utils/businessHours'
 import { appointmentStage } from '../../../utils/appointmentStage'
-import { shortPatientName } from '../../../utils/appointmentBlock'
-import type { BlockView } from '../../../components/calendar/AppointmentBlock.vue'
+import { practitionerBadgeLabels, shortPatientName } from '../../../utils/appointmentBlock'
+import type { BlockView, PractitionerBadgeView } from '../../../components/calendar/AppointmentBlock.vue'
 
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
@@ -63,7 +63,7 @@ interface Appointment {
 }
 interface ClassSession { id: string; starts_at: string; ends_at: string; practitioner_id: string; room_id: string | null; appointment_type_id: string; capacity: number; appointment_types: { name: string; color: string | null } | null }
 interface Block { id: string; starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; note: string | null }
-interface Practitioner { id: string; full_name: string; business_hours: BusinessHours | null }
+interface Practitioner { id: string; full_name: string; color: string | null; business_hours: BusinessHours | null }
 
 const supabase = useSupabaseClient()
 const route = useRoute()
@@ -253,7 +253,7 @@ async function load(quiet = false) {
       .gt('ends_at', from)
       .order('starts_at'),
     supabase.from('availability_blocks').select('id, starts_at, ends_at, practitioner_id, room_id, note').eq('clinic_id', clinicId).lt('starts_at', to).gt('ends_at', from),
-    needStatic ? supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
+    needStatic ? supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
     needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId) : none,
     needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
     // Group classes on in the range, drawn as one tile each (shownAppointments).
@@ -492,6 +492,24 @@ const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
 const { privacy, togglePrivacy, shown } = usePrivacyMode()
 const nameOf = (a: Appointment) => `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
 const practitionerName = (id: string | null) => practitioners.value.find((p) => p.id === id)?.full_name ?? null
+// On the whole clinic each tile carries its practitioner's initials in their
+// colour, and each tab carries the same badge, so the tab row is the legend,
+// as on the web calendar. The initials are the shortest that tell this
+// clinic's team apart: "L" unless two people start with L.
+const badgeLabels = computed(() => practitionerBadgeLabels(practitioners.value))
+function practitionerBadge(a: Appointment, c: Column): PractitionerBadgeView | null {
+  // A practitioner's own column or tab, and the no-practitioner tab, already
+  // say whose the visits are.
+  if (c.practitionerId || who.value !== ALL_PRACTITIONERS) return null
+  if (!a.practitioner_id) return { initials: '', color: null, name: null }
+  const p = practitioners.value.find((x) => x.id === a.practitioner_id)
+  // Someone no longer on the team: no badge, rather than a "?" that would
+  // say nobody is down for it.
+  if (!p) return null
+  return { initials: badgeLabels.value.get(p.id) ?? '?', color: p.color || null, name: p.full_name }
+}
+// The iPhone week list: one row per visit, no column to say whose it is.
+const listBadge = (a: Appointment) => practitionerBadge(a, { key: '', practitionerId: null, name: '', date: '' })
 function tint(color: string | null | undefined) {
   const c = color && /^#[0-9a-f]{6}$/i.test(color) ? color : '#4F46E5'
   return { background: `${c}1F`, borderLeftColor: c }
@@ -528,6 +546,7 @@ function blockView(a: Appointment, c: Column): BlockView {
     typeName: a.appointment_types?.name ?? null,
     typeColor: a.appointment_types?.color ?? null,
     practitionerName: c.practitionerId ? null : (practitionerName(a.practitioner_id)?.split(/\s+/)[0] ?? null),
+    practitioner: practitionerBadge(a, c),
     owesCents: 0,
     bono: null,
     hasNote: false,
@@ -741,7 +760,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         </button>
         <span class="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
         <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === pr.id ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
-          {{ pr.full_name }}
+          <span class="inline-flex items-center gap-1.5"><CalendarPractitionerBadge :initials="badgeLabels.get(pr.id) ?? ''" :color="pr.color || null" :name="pr.full_name" :class="who === pr.id ? 'ring-1 ring-brand-on' : ''" />{{ pr.full_name }}</span>
         </button>
         <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-brand-on' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
           {{ t('No practitioner', 'Sin profesional') }}
@@ -772,7 +791,10 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 <span class="w-11 shrink-0 font-mono text-[12.5px] text-ink-700">{{ timeLabel(a.starts_at) }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(a) }}</span>
-                  <span class="block truncate text-[12px] text-ink-muted"><template v-if="a._class">{{ a._class.capacity - a._class.taken > 0 ? t(`${a._class.capacity - a._class.taken} places left`, `${a._class.capacity - a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template><template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
+                  <span class="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-muted">
+                    <CalendarPractitionerBadge v-if="listBadge(a)" :initials="listBadge(a)!.initials" :color="listBadge(a)!.color" :name="listBadge(a)!.name" />
+                    <span class="truncate"><template v-if="a._class">{{ a._class.capacity - a._class.taken > 0 ? t(`${a._class.capacity - a._class.taken} places left`, `${a._class.capacity - a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template></span>
+                  </span>
                 </span>
                 <AppStagePill v-if="!a._class" :stage="stageOf(a)" :arrived-at="arrivedAt(a)" />
               </button>

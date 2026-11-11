@@ -42,6 +42,9 @@ export function useStaffNav() {
     // Shown while the role is still loading, as the Inbox is, so the bar
     // does not shift sideways when it arrives; the hub says so if it's not theirs.
     ...(!context.value || hasReports.value ? [{ label: t('Reports', 'Informes'), to: '/reports', icon: 'M2.5 13.5h11M4 11V8M7 11V4.5M10 11V6.5M13 11V3' }] : []),
+    // Personal: owners only, as on the web's sidebar. In the iPad's side menu;
+    // on a phone the five tabs are taken, so it opens from the Reports hub.
+    ...(context.value?.isOwner ? [{ label: t('Staff', 'Personal'), to: '/personal', inTabBar: false, icon: 'M2.5 3h11v10h-11zM6 6.6a1.4 1.4 0 102.8 0 1.4 1.4 0 00-2.8 0M4.6 11c.3-1.2 1.3-1.9 2.8-1.9s2.5.7 2.8 1.9M10.8 5.6h1.4M10.8 7.6h1.4' }] : []),
     { label: t('Profile', 'Perfil'), to: '/profile', inTabBar: false, icon: 'M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6' },
   ])
   const isActive = (to: string) => {

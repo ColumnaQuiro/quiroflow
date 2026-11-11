@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { clinicDateOf, nextDate, startOfLocalDate } from '~/utils/clinicClock'
-import { absenceKindLabel, isOpenEndedAbsence, OPEN_ENDED_ABSENCE } from '~/utils/staffShifts'
+import { clinicDateOf, nextDate, startOfLocalDate } from '../../utils/clinicClock'
+import { absenceKindLabel, isOpenEndedAbsence, OPEN_ENDED_ABSENCE } from '../../utils/staffShifts'
 
 // "Ausencia" on a team member's page: pausing someone who is still on the
 // team -- a baja, an illness, maternity or paternity -- without deactivating

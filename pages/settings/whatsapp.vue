@@ -8,6 +8,9 @@ const t = useT()
 
 const phoneNumberId = ref('')
 const businessAccountId = ref('')
+// Set when the number was connected while staying on the WhatsApp Business
+// app (Coexistence): shown on the card, so nobody wonders why the phone still works.
+const businessAppSince = ref<string | null>(null)
 // Whether the manual setup starts unfolded, decided once per load. Bound to
 // businessAccountId directly, it folded shut on the first character typed
 // into that very field.
@@ -98,12 +101,13 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id, messenger_page_id, webchat_enabled, webchat_greeting, slug',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_business_app_since, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id, messenger_page_id, webchat_enabled, webchat_greeting, slug',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   phoneNumberId.value = data?.whatsapp_phone_number_id ?? ''
   businessAccountId.value = data?.whatsapp_business_account_id ?? ''
+  businessAppSince.value = data?.whatsapp_business_app_since ?? null
   manualOpen.value = !businessAccountId.value
   // The tokens live in account_secrets; the page only learns which are stored.
   try {
@@ -385,7 +389,7 @@ async function save() {
           </p>
 
           <!-- The one-click route first: it is the one almost every clinic should take. -->
-          <SettingsWhatsAppConnectCard :connected-waba-id="businessAccountId || null" @connected="load" />
+          <SettingsWhatsAppConnectCard :connected-waba-id="businessAccountId || null" :business-app-since="businessAppSince" @connected="load" />
 
           <template v-if="loading">
             <UiSkeleton class="h-24 w-full rounded-card" />

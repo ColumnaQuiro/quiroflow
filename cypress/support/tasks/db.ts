@@ -3984,6 +3984,12 @@ async function createRoom(opts: { accountId: string; clinicId: string; name: str
   return row as { id: string }
 }
 
+/** Every room of a clinic gone, as in a clinic that never set any up. */
+async function deleteRooms(opts: { clinicId: string }) {
+  assertOk(await admin.from('calendar_resources').delete().eq('clinic_id', opts.clinicId))
+  return { ok: true }
+}
+
 /** A team member's own weekly hours (Settings -> Team). */
 async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<string, [string, string][]> | null }) {
   assertOk(await admin.from('team_members').update({ business_hours: opts.hours }).eq('id', opts.teamMemberId))
@@ -4779,6 +4785,7 @@ export const dbTasks = {
   'db:createWaitlistEntry': createWaitlistEntry,
   'db:waitlistEntryById': waitlistEntryById,
   'db:createRoom': createRoom,
+  'db:deleteRooms': deleteRooms,
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setRecallState': setRecallState,
   'db:addClinic': addClinic,

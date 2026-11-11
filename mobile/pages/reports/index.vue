@@ -162,6 +162,20 @@ const locale = computed(() => t('en-GB', 'es-ES'))
         <AppChevron dir="right" :size="16" class="text-ink-faint" />
       </NuxtLink>
 
+      <!-- Personal (owners): not a report, but a phone's five tabs are taken
+           and this is where an owner already comes for the clinic's figures.
+           The iPad has it in the side menu too. -->
+      <NuxtLink v-if="context.isOwner" to="/personal" class="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 shadow-card active:bg-surface-subtle" :class="seesNumbers ? 'mt-2.5' : ''" data-cy="reports-staff">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-ctl bg-brand-tint text-brand-text">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 3h11v10h-11zM6 6.6a1.4 1.4 0 102.8 0 1.4 1.4 0 00-2.8 0M4.6 11c.3-1.2 1.3-1.9 2.8-1.9s2.5.7 2.8 1.9M10.8 5.6h1.4M10.8 7.6h1.4" /></svg>
+        </span>
+        <span class="flex min-w-0 flex-1 flex-col">
+          <span class="text-[15px] font-semibold text-ink-900">{{ t('Staff', 'Personal') }}</span>
+          <span class="text-[12.5px] text-ink-muted">{{ t('Who is in, holidays, contracts and the gestoría', 'Quién está, vacaciones, contratos y gestoría') }}</span>
+        </span>
+        <AppChevron dir="right" :size="16" class="text-ink-faint" />
+      </NuxtLink>
+
       <section v-if="pagesLoading || pages.length" class="mt-5" data-cy="report-pages">
         <h2 class="mb-1.5 px-1 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Report pages', 'Páginas de informes') }}</h2>
         <ul class="rounded-card border border-line bg-surface px-4 shadow-card">

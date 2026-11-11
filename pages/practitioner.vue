@@ -765,6 +765,7 @@ onMounted(() => warmChunks(() => [
       :appointment-types="appointmentTypes.filter((x) => !x.archived_at || x.id === panelInputs!.appointment.appointment_type_id)"
       :team-members="teamMembers"
       :overrides="panelInputs.overrides"
+      :activity="panelInputs.activity"
       no-move
       @close="panelInputs = null"
       @changed="onPanelChanged"

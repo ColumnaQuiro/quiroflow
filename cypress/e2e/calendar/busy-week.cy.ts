@@ -1,8 +1,10 @@
 // A whole-clinic week holds hundreds of visits, and the calendar looks up
-// their balances, bonos, payments and moves by id. An .in() filter travels in
-// the URL, and past ~215 ids the gateway refuses it with 414 -- which the
-// page used to read as "nothing found", so a busy week quietly lost every
-// "Debe" and bono count. 300 visits here, one per patient.
+// their balances, bonos, payments and moves by id. As .in() filters those ids
+// travelled in the URL, and past ~215 the gateway refused it with 414 --
+// which the page used to read as "nothing found", so a busy week quietly
+// lost every "Debe" and bono count. They now go in the body of one request
+// (calendar_range_details); this holds that a week this size still gets its
+// answer. 300 visits here, one per patient.
 
 /** Monday of this week, local midnight. */
 function thisMonday() {
@@ -27,14 +29,16 @@ describe('A busy week', () => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patientIds[patientIds.length - 1], totalCents: 4500, status: 'unpaid' })
       })
 
-      cy.intercept('GET', '**/rest/v1/patient_live_balances*').as('balances')
-      cy.intercept('GET', '**/rest/v1/appointment_reschedules*').as('moves')
+      cy.intercept('POST', '**/rest/v1/rpc/calendar_range_details').as('details')
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       cy.contains('select', 'Work week').should('have.value', 'workweek')
 
-      cy.wait('@balances').its('response.statusCode').should('eq', 200)
-      cy.wait('@moves').its('response.statusCode').should('eq', 200)
+      // Every id of the week in the one request, and it is answered.
+      cy.wait('@details').then((call) => {
+        expect(call.request.body.p_appointment_ids).to.have.length.greaterThan(200)
+        expect(call.response?.statusCode).to.eq(200)
+      })
       cy.get('[data-cy=appt-block]').should('have.length.greaterThan', 200)
       // Week view shortens every name here to "B. Patient", so the debtor is
       // found by the one € dot in the week rather than by name.

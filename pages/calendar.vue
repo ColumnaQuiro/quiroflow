@@ -6,6 +6,7 @@ import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { practitionerBadgeLabels, shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
+import { visitPaymentsFromRows, type VisitPaymentRows } from '~/composables/useVisitPayments'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
@@ -15,6 +16,7 @@ import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/us
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
 import { isRouteAllowed } from '~/utils/routePermissions'
+import type { Database } from '~/types/database.types'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -142,7 +144,6 @@ interface ClassSessionRow {
 }
 
 const supabase = useSupabaseClient()
-const { fetchVisitPayments } = useVisitPayments()
 const store = useAccountStore()
 const { can, restricted } = usePermission()
 // calendar_read_only: sees the diary, changes nothing in it. The database
@@ -528,7 +529,13 @@ async function loadRooms() {
 const APPOINTMENT_SELECT =
   'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms, red_flags, tags), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
 
-async function loadAppointments(silent = false) {
+// `keepClasses` is for the reload after a write to an appointment: the class
+// sessions themselves only change through the class panels, which reload the
+// whole range, so that reload leaves them as they are and saves the request
+// -- provided the ones held are this range's (classesKey): a reload that
+// overtakes a navigation still in flight voids its answer, classes included.
+let classesKey = ''
+async function loadAppointments(silent = false, keepClasses = false) {
   if (!store.currentClinicId) {
     appointments.value = []
     rangeFailed.value = false
@@ -541,6 +548,8 @@ async function loadAppointments(silent = false) {
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
   const token = ++loadToken
+  const rangeClassesKey = `${store.currentClinicId}|${rangeStart.toISOString()}|${rangeEnd.toISOString()}|${practitionerFilter.value}`
+  const reuseClasses = keepClasses && classesKey === rangeClassesKey
   let query = supabase
     .from('appointments')
     .select(APPOINTMENT_SELECT)
@@ -567,7 +576,7 @@ async function loadAppointments(silent = false) {
   let data: unknown
   let sessions: unknown
   try {
-    ;[data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
+    ;[data, sessions] = await Promise.all([query.then(dataOrThrow), reuseClasses ? classSessions.value : classQuery.then(dataOrThrow)])
   } catch (e) {
     if (token !== loadToken) return
     if (!silent) rangeFailed.value = true
@@ -578,17 +587,19 @@ async function loadAppointments(silent = false) {
   rangeFailed.value = false
 
   classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
+  classesKey = rangeClassesKey
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
   loading.value = false
-  // The owing badge and "Sin próxima" are detail on blocks that are already
-  // right without them, so the grid no longer waits two more round trips for
-  // them. Both are per patient, not per range, so what the last range left
-  // behind is still true for anyone in this one until they land.
-  Promise.all([loadLiveBalances(token, patientIds), loadFutureAppointmentIds(token, patientIds)]).catch((e) =>
-    console.error('calendar: balances / next visits failed', e),
-  )
+  // Everything else a block draws -- the owing badge, "Sin próxima", the bono
+  // count, how often a visit was moved, the markers, the waitlist offers on
+  // freed slots -- is detail on blocks that are already right without it, so
+  // the grid does not wait for it. One request (calendar_range_details) where
+  // there were a dozen, each chunked by 150 ids. Balances and next visits are
+  // per patient, not per range, so what the last range left behind is still
+  // true for anyone in this one until it lands.
+  loadRangeDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: range details failed', e))
   // Today's panels (glance, flow tracker) describe today whatever range is in
   // view, so paging through weeks does not refetch them -- only a first load,
   // a clinic switch or an edit marks them stale. Started once the grid has
@@ -596,29 +607,59 @@ async function loadAppointments(silent = false) {
   // and on a slow connection the extra requests held its skeleton up.
   if (todayStale) {
     todayStale = false
-    loadToday()
+    const withTakings = todayTakingsStale
+    todayTakingsStale = false
+    loadToday(withTakings)
       .catch((e) => console.error('calendar: today failed', e))
       .finally(() => (todayLoaded.value = true)) // a failure shows zeros, not a placeholder forever
   }
-  // Second-rank detail -- the bono count, how often a visit was moved, the
-  // waitlist offers standing on freed slots. The grid is usable without them,
-  // so they fill in after it renders rather than holding it back for the
-  // three sequential rounds fetchVisitPayments needs.
-  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
-  loadMovedAwayMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: moved-away markers failed', e))
-  loadVisitMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: re-exam markers failed', e))
+}
+
+// What calendar_range_details returns: the rows of the selects it replaced,
+// under the caller's own policies, each read below exactly as it was.
+interface RangeDetails {
+  visit_payments: VisitPaymentRows
+  package_purchases: { patient_id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }[]
+  reschedules: { appointment_id: string }[]
+  balances: { patient_id: string | null; outstanding_cents: number | null }[]
+  future_appointments: { id: string; patient_id: string }[]
+  moves: MoveOut[]
+  waitlist_offers: WaitlistOffer[]
+  visit_markers: Database['public']['Functions']['care_plan_marked_visits']['Returns']
+}
+async function loadRangeDetails(token: number, appointmentIds: string[], patientIds: string[], rangeStart: Date, rangeEnd: Date) {
+  // The ids go in the body, so a whole-clinic week of several hundred visits
+  // is one request: as .in() filters they had to be cut into chunks of 150,
+  // or the gateway refused the URL with 414.
+  const { data, error } = await supabase.rpc(
+    'calendar_range_details' as never,
+    {
+      p_clinic_id: store.currentClinicId,
+      p_account_id: store.accountId,
+      p_from: rangeStart.toISOString(),
+      p_to: rangeEnd.toISOString(),
+      p_appointment_ids: appointmentIds,
+      p_patient_ids: patientIds,
+    } as never,
+  )
+  if (error) throw error
+  if (token !== loadToken) return
+  const details = (data ?? {}) as unknown as Partial<RangeDetails>
+
+  applyLiveBalances(details.balances ?? [])
+  applyFutureAppointmentIds(patientIds, details.future_appointments ?? [])
+  applyBlockDetails(appointmentIds, details)
+  applyVisitMarkers(details.visit_markers ?? [])
+  await loadMovedAwayMarkers(token, details.moves ?? [])
 }
 
 // Which visits in range are a care plan's re-exam (utils/carePlanVisitMarkers.ts),
 // and whether each is booked as the type the plan asks for. Numbered in the
 // database across every visit the patient has, not just this range's.
 const visitMarkerById = ref<Record<string, VisitMarkerView>>({})
-async function loadVisitMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
-  const { data, error } = await supabase.rpc('care_plan_marked_visits', { p_from: rangeStart.toISOString(), p_to: rangeEnd.toISOString() })
-  if (error) throw error
-  if (token !== loadToken) return
+function applyVisitMarkers(rows: RangeDetails['visit_markers']) {
   const map: Record<string, VisitMarkerView> = {}
-  for (const m of data ?? []) {
+  for (const m of rows) {
     map[m.appointment_id] = {
       visit: m.visit_number,
       label: visitMarkerLabel(m, t),
@@ -638,17 +679,18 @@ async function loadVisitMarkers(token: number, rangeStart: Date, rangeEnd: Date)
 // the moved visits themselves, which made confirmed visits vanish from
 // today and completed ones from past days.
 const movedAwayMarkers = ref<AppointmentRow[]>([])
-async function loadMovedAwayMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
-  const { data: moves, error } = await supabase
-    .from('appointment_reschedules')
-    .select('id, appointment_id, from_starts_at')
-    .eq('account_id', store.accountId!)
-    .gte('from_starts_at', rangeStart.toISOString())
-    .lt('from_starts_at', rangeEnd.toISOString())
-  if (error) throw error
-  if (token !== loadToken) return
+/** A move out of a slot in the range (appointment_reschedules), from calendar_range_details. */
+interface MoveOut {
+  id: string
+  appointment_id: string
+  from_starts_at: string
+}
+// The moves arrive with the range's details. A visit moved out of the range
+// is not among its appointments, so those rows -- and only those -- are one
+// more read, when there are any.
+async function loadMovedAwayMarkers(token: number, moves: MoveOut[]) {
   const loaded = new Map(appointments.value.map((a) => [a.id, a]))
-  const missing = [...new Set((moves ?? []).map((m) => m.appointment_id).filter((id) => !loaded.has(id)))]
+  const missing = [...new Set(moves.map((m) => m.appointment_id).filter((id) => !loaded.has(id)))]
   if (missing.length) {
     const rows = await fetchByIds(missing, (chunk) => {
       let q = supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', store.currentClinicId!).in('id', chunk)
@@ -660,7 +702,7 @@ async function loadMovedAwayMarkers(token: number, rangeStart: Date, rangeEnd: D
     for (const a of rows as unknown as AppointmentRow[]) loaded.set(a.id, a)
   }
   const markers: AppointmentRow[] = []
-  for (const m of moves ?? []) {
+  for (const m of moves) {
     const real = loaded.get(m.appointment_id)
     // Another clinic's visit, or one the practitioner filter leaves out.
     if (!real) continue
@@ -686,10 +728,21 @@ let loadToken = 0
 // Set by anything that could have changed today's visits; the next grid load
 // refreshes today's panels and clears it. Starts set, for the first load.
 let todayStale = true
-/** After a write: the grid in place, and today's panels, which the write may have touched. */
-function reloadAfterChange() {
+// The day's takings ("Cobrado", "Facturado") are two more requests, and only
+// a write that can move money changes them. Set with todayStale by anything
+// that could; a write that cannot (a resize, a step in the flow tracker)
+// refreshes today's visits and leaves the takings as they are.
+let todayTakingsStale = true
+/**
+ * After a write: the grid in place, and today's panels, which the write may
+ * have touched. Four requests -- the range's appointments and their details,
+ * today's and theirs -- where it was the whole first load over again.
+ * `money: false` when the write cannot have taken or charged anything.
+ */
+function reloadAfterChange({ money = true }: { money?: boolean } = {}) {
   todayStale = true
-  return loadAppointments(true)
+  if (money) todayTakingsStale = true
+  return loadAppointments(true, true)
 }
 
 const visitPaymentById = ref<Record<string, VisitPayment>>({})
@@ -706,29 +759,15 @@ interface WaitlistOffer {
 }
 const waitlistOffers = ref<WaitlistOffer[]>([])
 
-async function loadBlockDetails(token: number, appointmentIds: string[], patientIds: string[], rangeStart: Date, rangeEnd: Date) {
-  // Id lists go through fetchByIds: a whole-clinic week is several hundred
-  // appointments, and one .in() that long is refused with 414 -- which reads
-  // as "nothing found" and quietly blanks every bono and moved count.
-  const [payments, packages, reschedules, { data: offers }] = await Promise.all([
-    fetchVisitPayments(appointmentIds),
-    // Newest first inside each chunk; a chunk holds whole patients, so each
-    // patient's packs stay in order.
-    fetchByIds(patientIds, (chunk) =>
-      supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used, is_closed').in('patient_id', chunk).order('purchased_at', { ascending: false }),
-    ),
-    fetchByIds(appointmentIds, (chunk) => supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', chunk)),
-    supabase
-      .from('waitlist_entries')
-      .select('id, offered_starts_at, offered_ends_at, offered_room_id, offered_practitioner_id, offer_expires_at, patients(first_name, last_name)')
-      .eq('clinic_id', store.currentClinicId!)
-      .eq('status', 'offered')
-      .gte('offered_starts_at', rangeStart.toISOString())
-      .lt('offered_starts_at', rangeEnd.toISOString()),
-  ])
-  if (token !== loadToken) return
+// Second-rank detail -- how each visit was paid, the bono count, how often a
+// visit was moved, the waitlist offers standing on freed slots.
+function applyBlockDetails(appointmentIds: string[], details: Partial<RangeDetails>) {
+  // Packs arrive newest first.
+  const packages = details.package_purchases ?? []
+  const reschedules = details.reschedules ?? []
+  const offers = details.waitlist_offers ?? []
 
-  visitPaymentById.value = payments
+  visitPaymentById.value = visitPaymentsFromRows(appointmentIds, details.visit_payments)
   // Newest pack with sessions left, per patient -- the one tomorrow's visit
   // will draw from (bonoForVisit). A bono PracticeHub has closed keeps the
   // sessions that were on it and is not one of them.
@@ -741,7 +780,7 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
   const moved: Record<string, number> = {}
   for (const r of reschedules) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
   movedCountById.value = moved
-  waitlistOffers.value = ((offers as unknown as WaitlistOffer[]) ?? []).filter((o) => o.offered_starts_at)
+  waitlistOffers.value = offers.filter((o) => o.offered_starts_at)
 }
 
 // patient_live_balances.outstanding_cents: what the patient has unpaid. Only
@@ -777,7 +816,7 @@ const todayLoaded = ref(false)
 const takings = useDayTakings()
 const seesTakings = computed(() => isRouteAllowed(store, '/reports/daily-transactions'))
 let todayToken = 0
-async function loadToday() {
+async function loadToday(withTakings = true) {
   const clinicId = store.currentClinicId
   if (!clinicId) {
     todayRows.value = []
@@ -788,22 +827,32 @@ async function loadToday() {
   const token = ++todayToken
   const start = startOfDay(new Date())
   const end = addDays(start, 1)
-  if (seesTakings.value) takings.load(clinicId, start, end)
-  const [{ data: rows }, { data: moves }] = await Promise.all([
+  if (seesTakings.value && withTakings) takings.load(clinicId, start, end)
+  // Today's rows, and beside them calendar_today_details: the moves out of
+  // today and what each patient waiting to pay owes. The balances used to be
+  // a second round, once the rows said who was at checkout; the function
+  // picks the same visits itself.
+  const [{ data: rows }, details] = await Promise.all([
     supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', clinicId).gte('starts_at', start.toISOString()).lt('starts_at', end.toISOString()).order('starts_at'),
-    supabase
-      .from('appointment_reschedules')
-      .select('appointment_id, to_starts_at')
-      .eq('account_id', store.accountId!)
-      .gte('from_starts_at', start.toISOString())
-      .lt('from_starts_at', end.toISOString()),
+    supabase.rpc(
+      'calendar_today_details' as never,
+      { p_clinic_id: clinicId, p_account_id: store.accountId, p_from: start.toISOString(), p_to: end.toISOString() } as never,
+    ),
   ])
   if (token !== todayToken) return
+  // A failure here leaves the counts without their moves and the tracker
+  // without "debe", as a failed read of either did before; it does not take
+  // today's visits with it.
+  if (details.error) console.error('calendar: today details failed', details.error)
+  const { moves = [], balances = [] } = (details.data ?? {}) as unknown as Partial<{
+    moves: { appointment_id: string; to_starts_at: string }[]
+    balances: { patient_id: string | null; outstanding_cents: number | null }[]
+  }>
   // A deleted visit never happened; it is neither booked nor anyone's flow.
   const live = ((rows as unknown as AppointmentRow[]) ?? []).filter((a) => !a.deleted_at)
   const liveIds = new Set(live.map((a) => a.id))
   const movedAway = new Set(
-    (moves ?? [])
+    moves
       .filter((m) => (m.to_starts_at < start.toISOString() || m.to_starts_at >= end.toISOString()) && !liveIds.has(m.appointment_id))
       .map((m) => m.appointment_id),
   )
@@ -818,15 +867,9 @@ async function loadToday() {
   todayLoaded.value = true
 
   // What each patient waiting to pay owes, for the tracker's "debe X €".
-  const paying = [...new Set(live.filter((a) => stageOf(a) === 'checkout').map((a) => a.patient_id))]
-  if (paying.length === 0) {
-    todayOwedByPatient.value = {}
-    return
-  }
-  const balances = await fetchByIds(paying, (chunk) => supabase.from('patient_live_balances').select('patient_id, outstanding_cents').in('patient_id', chunk))
-  if (token !== todayToken) return
+  const paying = new Set(live.filter((a) => stageOf(a) === 'checkout').map((a) => a.patient_id))
   const owed: Record<string, number> = {}
-  for (const b of balances) owed[b.patient_id!] = Math.max(0, b.outstanding_cents ?? 0)
+  for (const b of balances) if (b.patient_id && paying.has(b.patient_id)) owed[b.patient_id] = Math.max(0, b.outstanding_cents ?? 0)
   todayOwedByPatient.value = owed
 }
 /** "32 %": whole numbers, es-ES spacing, of the day's Booked total. */
@@ -896,24 +939,31 @@ async function advanceFromFlow(id: string) {
   const at = new Date().toISOString()
   const values = stage === 'arrived' ? { flow_with_practitioner_at: at } : stage === 'withp' ? { flow_checkout_at: at } : null
   if (!values) return
+  // Moved on screen at once, the way a drag is, rather than after the write
+  // and a reload: the row changes column under the finger that tapped it.
+  // The grid and today's panels each hold their own copy of the row, so both
+  // are stepped, and both put back if the write is refused -- an update RLS
+  // refuses matches no rows and answers success, hence the read-back.
+  const copies = [appointments.value.find((a) => a.id === id), todayRows.value.find((a) => a.id === id)].filter((a): a is AppointmentRow => !!a)
+  const before = copies.map((a) => ({ a, withPractitioner: a.flow_with_practitioner_at, checkout: a.flow_checkout_at }))
+  for (const a of copies) Object.assign(a, values)
   flowBusy.value = true
-  const { error } = await supabase.from('appointments').update(values).eq('id', id)
+  const { data, error } = await supabase.from('appointments').update(values).eq('id', id).select('id')
   flowBusy.value = false
-  if (error) {
-    console.error('calendar: flow step failed', error)
+  if (error || !data?.length) {
+    for (const b of before) {
+      b.a.flow_with_practitioner_at = b.withPractitioner
+      b.a.flow_checkout_at = b.checkout
+    }
+    console.error('calendar: flow step failed', error ?? 'no row updated')
     return
   }
-  await reloadAfterChange()
+  // A step in the flow takes no money: today's takings stay as they are.
+  await reloadAfterChange({ money: false })
 }
-async function loadLiveBalances(token: number, patientIds: string[]) {
-  if (patientIds.length === 0) {
-    outstandingByPatient.value = {}
-    return
-  }
-  const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, outstanding_cents').in('patient_id', chunk))
-  if (token !== loadToken) return
+function applyLiveBalances(rows: RangeDetails['balances']) {
   const map: Record<string, number> = {}
-  for (const b of data) map[b.patient_id!] = b.outstanding_cents ?? 0
+  for (const b of rows) map[b.patient_id!] = b.outstanding_cents ?? 0
   outstandingByPatient.value = map
 }
 
@@ -926,19 +976,15 @@ const futureAppointmentIdsByPatient = ref<Record<string, Set<string>>>({})
 // answers, and absence from the map reads as "nothing booked" -- without
 // this every block would wear "Sin próxima" until the answer landed.
 const futureCheckedPatients = ref<Set<string>>(new Set())
-async function loadFutureAppointmentIds(token: number, patientIds: string[]) {
-  if (patientIds.length === 0) {
-    futureAppointmentIdsByPatient.value = {}
-    futureCheckedPatients.value = new Set()
-    return
-  }
-  const data = await fetchByIds(patientIds, (chunk) =>
-    // Not one the clinic deleted: deleting leaves the row, still 'booked'.
-    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()),
-  )
-  if (token !== loadToken) return
+// The rows are at most two future visits per patient -- not cancelled, not
+// deleted (deleting leaves the row, still 'booked') -- which is all
+// hasFutureAppointment asks: more than one, or one that is not this visit.
+// Read whole, 150 patients to a request, a busy clinic's future could pass
+// the API's 1,000-row cap, and the patients cut off wore "Sin próxima" with a
+// visit booked.
+function applyFutureAppointmentIds(patientIds: string[], rows: RangeDetails['future_appointments']) {
   const map: Record<string, Set<string>> = {}
-  for (const a of data) {
+  for (const a of rows) {
     ;(map[a.patient_id] ??= new Set()).add(a.id)
   }
   futureAppointmentIdsByPatient.value = map
@@ -984,6 +1030,7 @@ function loadRange() {
   if (viewMode.value === 'month') {
     if (todayStale && store.currentClinicId) {
       todayStale = false
+      todayTakingsStale = false
       loadToday()
         .catch((e) => console.error('calendar: today failed', e))
         .finally(() => (todayLoaded.value = true))
@@ -1030,6 +1077,7 @@ function rangeKey() {
 }
 async function onClinicChanged() {
   todayStale = true
+  todayTakingsStale = true
   // Rooms are only the day view's columns; the practitioner tabs come from
   // the team already loaded, so the range need not wait for them.
   const roomsLoaded = loadRooms().catch((e) => console.error('calendar: rooms failed', e))
@@ -1853,7 +1901,8 @@ async function saveInPlace(appointmentId: string, values: { ends_at: string; roo
     moveFailed(error)
     return
   }
-  await reloadAfterChange()
+  // A resize or a change of room: nothing was charged or paid.
+  await reloadAfterChange({ money: false })
 }
 
 // --- Reschedule mode ---

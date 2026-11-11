@@ -2,9 +2,10 @@ import type { StaffAccount } from '../../support/commands'
 import { seedVisit, todayAt } from '../../support/calendar'
 
 // Opening a visit: the read-only hover card, and the side panel that replaced
-// the edit modal. Everything is reached by keyboard or click -- the card by
-// moving the grid's cell cursor onto a block, never by hovering -- so every
-// state is assertable without pointer timing.
+// the edit modal. The card's content is reached by keyboard -- moving the
+// grid's cell cursor onto a block -- so it is assertable without pointer
+// timing; the pointer's own rules (rest before showing, travel onto the card,
+// none while pressing) are checked with synthetic pointer events.
 
 const EVERY_DAY_9_TO_7 = Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((d) => [d, [['09:00', '19:00']]]))
 
@@ -41,8 +42,6 @@ describe('Opening a visit', () => {
 
       // 08:00 in Room 1, one column right to Sala 1, five slots down to 10:30.
       cy.get('[data-cy=calendar-grid]').focus().type(`${'{uparrow}'.repeat(30)}{rightarrow}${'{downarrow}'.repeat(5)}`)
-      // The card takes no pointer events, so Cypress's "visible" (which asks
-      // what is under the point) sees the grid beneath it; assert content.
       cy.get('[data-cy=appt-hover]').within(() => {
         cy.contains('Laura Gómez').should('exist')
         cy.contains('10:30–11:00').should('exist')
@@ -70,6 +69,26 @@ describe('Opening a visit', () => {
       cy.get('[data-cy=appt-hover]').should('not.exist')
       block('Sergio Navarro').trigger('pointerenter', { pointerType: 'mouse' })
       cy.get('[data-cy=appt-hover]').should('contain.text', 'Sergio Navarro').and('contain.text', 'Reminder sent today 09:00 · no reply')
+
+      // The pointer can leave the block for the card, and the card stays to
+      // be read; a click on it opens the visit.
+      block('Sergio Navarro').trigger('pointerleave', { pointerType: 'mouse' })
+      cy.get('[data-cy=appt-hover]').trigger('pointerenter', { pointerType: 'mouse' })
+      cy.wait(500)
+      cy.get('[data-cy=appt-hover]').should('be.visible').click()
+      cy.get('[data-cy=appt-sheet]').should('be.visible').and('contain.text', 'Sergio Navarro')
+      cy.get('[data-cy=appt-hover]').should('not.exist')
+    })
+  })
+
+  it('keeps the card shut while a block is pressed to be dragged', () => {
+    seed().then(({ account }) => {
+      openCalendar(account, 'Sergio Navarro')
+      block('Sergio Navarro').trigger('pointerenter', { pointerType: 'mouse' })
+      block('Sergio Navarro').trigger('pointerdown', { pointerId: 3, button: 0, pointerType: 'mouse' })
+      cy.wait(900)
+      cy.get('[data-cy=appt-hover]').should('not.exist')
+      cy.window().trigger('pointerup', { pointerId: 3 })
     })
   })
 

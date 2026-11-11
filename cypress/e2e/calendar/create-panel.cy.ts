@@ -120,7 +120,8 @@ describe('Booking from the create panel', () => {
       openNewAppointmentPanel()
 
       // No backdrop: the grid is still there to click, and the booking follows.
-      cy.get('[data-cal-col]').first().click(30, 200)
+      // 10:00, from the row height rather than a fixed pixel: the rows grow.
+      cy.get('[data-cal-col]').first().then(($c) => cy.wrap($c).click(30, ($c[0].getBoundingClientRect().height / 12) * 2 + 10))
       cy.get('[data-cy=create-when]').should('contain.text', 'Room 1').and('not.contain.text', '09:00')
 
       cy.get('[data-cy=create-sheet]').within(() => {

@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { draftAiForm, type AiFormDraftResult } from '~/server/utils/aiFormDraftModel'
+import { aiDraftOverLimit } from '~/server/utils/aiDraft'
 import { requireSettingsPermission } from '~/server/utils/requirePermission'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { AI_FORM_MAX_DESCRIPTION, AI_FORM_MAX_SOURCE, aiFormLanguage } from '~/utils/aiFormDraft'
@@ -15,12 +16,9 @@ import { AI_FORM_MAX_DESCRIPTION, AI_FORM_MAX_SOURCE, aiFormLanguage } from '~/u
 // built by hand -- is what creates the template. So a draft nobody wanted
 // leaves nothing behind, and the model never touches the clinic's data.
 
-// A budget per clinic, counted from the usage every model call already
-// records (anthropicClient.ts -> ai_usage). Every draft pays for the model,
-// and nothing else stops a script asking for ten thousand.
+// A budget per clinic (aiDraftOverLimit), counted per builder.
 const FEATURE = 'form_builder'
-const PER_HOUR = 20
-const PER_DAY = 60
+const LIMITS = { perHour: 20, perDay: 60 }
 
 interface Body {
   description?: unknown
@@ -47,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
   // ai_usage is service-role only: no clinic reads another's spending.
   const service = serverSupabaseServiceRole<Database>(event)
-  const limit = await overLimit(service, teamMember.account_id)
+  const limit = await aiDraftOverLimit(service, teamMember.account_id, FEATURE, LIMITS)
   if (limit) return { available: true as const, limit }
 
   const client = await createAnthropicClient(apiKey, { feature: FEATURE, accountId: teamMember.account_id })
@@ -66,25 +64,3 @@ export default defineEventHandler(async (event) => {
   }
   return { available: true as const, empty: true as const }
 })
-
-async function overLimit(service: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string): Promise<'hour' | 'day' | null> {
-  const since = (ms: number) => new Date(Date.now() - ms).toISOString()
-  const count = async (from: string) => {
-    const { count, error } = await service
-      .from('ai_usage')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-      .eq('feature', FEATURE)
-      .gte('created_at', from)
-    // Unreadable counts as over: a budget that fails open is no budget.
-    if (error) {
-      console.error('[docs/draft-form] could not count drafts:', error.message)
-      return Number.POSITIVE_INFINITY
-    }
-    return count ?? 0
-  }
-  const [lastHour, lastDay] = await Promise.all([count(since(3600_000)), count(since(86400_000))])
-  if (lastDay >= PER_DAY) return 'day'
-  if (lastHour >= PER_HOUR) return 'hour'
-  return null
-}

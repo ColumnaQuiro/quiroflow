@@ -14,7 +14,7 @@ const NAV_ITEMS = computed(() => [
   { label: t('My Day', 'Mi día'), to: '/practitioner' },
   { label: t('Calendar', 'Calendario'), to: '/calendar' },
   { label: t('Patients', 'Pacientes'), to: '/patients' },
-  { label: t('Recalls', 'Recordatorios'), to: '/recalls' },
+  { label: t('Recalls', 'Recuperaciones'), to: '/recalls' },
   { label: t('Billing', 'Facturación'), to: '/billing' },
   { label: t('Reports', 'Informes'), to: '/reports' },
   { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox' },

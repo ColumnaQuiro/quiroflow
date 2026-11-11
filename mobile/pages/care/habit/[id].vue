@@ -103,13 +103,21 @@ async function submit() {
   if ((await reminders.checkPermissions()).notifications !== 'granted') await reminders.requestNotifications()
   if (habit.placeIds.length && location.value !== 'always' && (await discloseBackgroundLocation())) location.value = (await reminders.requestLocationAlways()).location
   saving.value = false
-  await navigateTo('/care/habits')
+  await backToHabits()
+}
+// Back to the list this was opened from, rather than a new copy of it on
+// top: pushing one left the editor behind it, so the list's back button
+// (PatientScreen) returned to the habit just saved or deleted.
+const router = useRouter()
+function backToHabits() {
+  if (window.history.state?.back === '/care/habits') return router.back()
+  return navigateTo('/care/habits', { replace: true })
 }
 async function remove() {
   const next = habits.value.filter((h) => h.id !== form.id)
   const used = new Set(next.flatMap((h) => h.placeIds))
   await save(next, places.value.filter((p) => used.has(p.id)))
-  await navigateTo('/care/habits')
+  await backToHabits()
 }
 
 const chip = (on: boolean) => (on ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700')
@@ -117,7 +125,7 @@ const field = 'h-11 w-full rounded-ctl border border-line-control bg-surface px-
 </script>
 
 <template>
-  <PatientScreen :title="isNew ? t('New habit', 'Nuevo hábito') : kindLabel(form.kind, lang)">
+  <PatientScreen :title="isNew ? t('New habit', 'Nuevo hábito') : kindLabel(form.kind, lang)" back="/care/habits" :back-label="t('My habits', 'Mis hábitos')">
     <form class="flex flex-col gap-5" data-cy="habit-form" @submit.prevent="submit">
       <fieldset>
         <legend class="mb-2 text-[10.5px] font-[650] uppercase tracking-[.05em] text-ink-muted">{{ t('Habit', 'Hábito') }}</legend>

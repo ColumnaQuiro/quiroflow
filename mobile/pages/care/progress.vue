@@ -28,7 +28,7 @@ const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB
 </script>
 
 <template>
-  <PatientScreen :title="t('Your consistency', 'Tu constancia')">
+  <PatientScreen :title="t('Your consistency', 'Tu constancia')" back="/care" :back-label="t('Self-care', 'Cuidarme')">
     <div v-if="loaded" class="flex flex-col gap-3" data-cy="care-progress">
       <section class="flex items-end gap-4 rounded-card border border-line bg-surface p-4 shadow-card">
         <div><p class="text-[44px] font-bold leading-none tracking-tight text-ink-900" data-cy="care-progress-streak">{{ streak.current }}</p><p class="mt-1 text-[12.5px] text-ink-muted">{{ t('days in a row', 'días seguidos') }}</p></div>

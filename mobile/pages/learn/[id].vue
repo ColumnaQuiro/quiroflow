@@ -11,7 +11,7 @@ const route = useRoute()
 </script>
 
 <template>
-  <PatientScreen :title="t('For you', 'Para ti')">
+  <PatientScreen :title="t('For you', 'Para ti')" back="/care" :back-label="t('Self-care', 'Cuidarme')">
     <PatientLearnRead :send-id="route.params.id as string" exercises-to="/exercises" />
   </PatientScreen>
 </template>

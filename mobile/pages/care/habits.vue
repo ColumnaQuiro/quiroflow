@@ -34,7 +34,7 @@ const ICONS: Record<HabitKind, { path: string; tone: string }> = {
 </script>
 
 <template>
-  <PatientScreen :title="t('My habits', 'Mis hábitos')" :lead="t('Your own reminders. They stay on this phone: your clinic does not see their times.', 'Tus propios recordatorios. Se quedan en este teléfono: la clínica no ve sus horas.')">
+  <PatientScreen :title="t('My habits', 'Mis hábitos')" back="/care" :back-label="t('Self-care', 'Cuidarme')" :lead="t('Your own reminders. They stay on this phone: your clinic does not see their times.', 'Tus propios recordatorios. Se quedan en este teléfono: la clínica no ve sus horas.')">
     <div class="flex flex-col gap-2.5" data-cy="habits">
       <p v-if="!reminders.available" class="rounded-card border border-line bg-surface-subtle p-4 text-[13.5px] text-ink-700">{{ t('Reminders work in the QuiroFlow app on your phone.', 'Los recordatorios funcionan en la app de QuiroFlow en tu teléfono.') }}</p>
       <article v-for="h in habits" :key="h.id" class="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 shadow-card" data-cy="habit-row">

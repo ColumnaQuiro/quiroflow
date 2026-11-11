@@ -41,7 +41,8 @@ describe('Creating an automation with AI', () => {
     cy.intercept('GET', '**/api/whatsapp/templates*', { body: { templates: [] } })
     cy.seedStaffAccount().then((account) => cy.login(account.email, account.password))
     cy.visit('/automations')
-    cy.get('[data-test="open-ai-draft"]', { timeout: 15000 }).should('be.visible')
+    // Enabled once the page is hydrated: a click before that would do nothing.
+    cy.get('[data-test="open-ai-draft"]', { timeout: 15000 }).should('be.visible').and('not.be.disabled')
   })
 
   it('opens the draft in the builder unsaved and switched off, and saves it paused', () => {

@@ -32,6 +32,7 @@ const DAY_HOUR_PX_MIN = 127
 const WEEK_HOUR_PX_MIN = 81
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 70 // day label + per-day counts + room-label rows (week view has room sub-columns per day, like Day view)
+const WEEK_ROOM_ROW_PX = 26 // the room-label row of WEEK_HEADER_PX, absent when the clinic has no rooms
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column, when there is room for it
 // ...and the narrowest it gives way to before the week scrolls sideways. At
 // 128 a working week with one room and Unassigned needed 1,338px, so on a
@@ -59,8 +60,8 @@ onMounted(() => {
 })
 onUnmounted(() => scrollAreaObserver?.disconnect())
 
-const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - DAY_HEADER_PX) / (END_HOUR - START_HOUR))))
-const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - WEEK_HEADER_PX) / (END_HOUR - START_HOUR))))
+const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - dayHeaderPx.value) / (END_HOUR - START_HOUR))))
+const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - weekHeaderPx.value) / (END_HOUR - START_HOUR))))
 
 // A short appointment's floor only needs to fit one line: below 40px a
 // block collapses to name, stage and money on a single row (utils/
@@ -1045,7 +1046,17 @@ watch([viewMode, anchorDate, practitionerFilter], () => {
   loadRange()
 })
 
-const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
+// A clinic with no rooms (Settings -> Calendar Resources) has one column a
+// day, and it is not "Unassigned": there is nothing to assign a visit to.
+// Headed "Sin asignar", it read as "these visits are missing something" --
+// a clinic with two practitioners and no rooms then made a room per
+// practitioner to fix it, and moved visits between those columns expecting
+// the practitioner to follow, which it does not. So with no rooms the
+// column has no name and the room-label rows are not drawn at all.
+const hasRooms = computed(() => rooms.value.length > 0)
+const dayColumns = computed(() => [...rooms.value, { id: '__none', name: hasRooms.value ? t('Unassigned', 'Sin asignar') : '' }])
+const dayHeaderPx = computed(() => (hasRooms.value ? DAY_HEADER_PX : 0))
+const weekHeaderPx = computed(() => (hasRooms.value ? WEEK_HEADER_PX : WEEK_HEADER_PX - WEEK_ROOM_ROW_PX))
 // Each room sub-column of the week: as wide as the screen allows up to
 // WEEK_ROOM_COL_PX, no narrower than WEEK_ROOM_COL_MIN_PX (past that, scroll).
 // 58 is the hour gutter. Before the grid is measured, the old width.
@@ -2456,7 +2467,7 @@ const focusAnnouncement = computed(() => {
   const c = gridColumns.value[cell.col]
   if (!c) return ''
   const appt = appointmentAtCell(cell)
-  const where = `${viewMode.value === 'day' ? '' : `${formatWeekdayDate(c.day)}, `}${c.roomName}, ${cellTimeLabel(cell)}`
+  const where = [viewMode.value === 'day' ? '' : formatWeekdayDate(c.day), c.roomName, cellTimeLabel(cell)].filter(Boolean).join(', ')
   if (appt) return `${where}: ${blockView(appt).name}, ${stageLabel(stageOf(appt), appt.checked_in_at ? formatTime(appt.checked_in_at) : null)}`
   return `${where}: ${cellIsFree(cell) ? t('free', 'libre') : t('unavailable', 'no disponible')}`
 })
@@ -3002,7 +3013,7 @@ function showNowLineOn(day: Date) {
           <!-- Day view: room columns -->
           <div v-if="viewMode === 'day'" class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
-              <div class="sticky top-0 z-30 flex bg-surface">
+              <div v-if="hasRooms" class="sticky top-0 z-30 flex bg-surface">
                 <div class="sticky left-0 z-10 h-10 w-[58px] shrink-0 border-b border-r border-line bg-surface"></div>
                 <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0" data-cy="day-column-head" :data-room="col.name">
                   <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
@@ -3187,7 +3198,7 @@ function showNowLineOn(day: Date) {
           <div v-else ref="weekScrollerRef" class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * weekColPx}px` }">
               <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
-                <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
+                <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${weekHeaderPx}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                   <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
@@ -3229,7 +3240,7 @@ function showNowLineOn(day: Date) {
                       </template>
                     </template>
                   </div>
-                  <div class="flex h-[26px] border-b border-line">
+                  <div v-if="hasRooms" class="flex h-[26px] border-b border-line">
                     <div
                       v-for="col in dayColumns"
                       :key="col.id"

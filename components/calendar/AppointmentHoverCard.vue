@@ -11,6 +11,9 @@ import { pendingFormsLabel } from '~/utils/appointmentStage'
 // with a half-typed note in it. Every action now lives in the panel a click
 // (or Enter) opens, and this card tells you what that panel will say.
 //
+// The pointer can move on to the card and it stays (pages/calendar.vue,
+// onHoverCardEnter): a long one scrolls, and a click on it opens the panel.
+//
 // Order, as on the canvas: who, when, where the patient is, money, this
 // visit's bono, the patient's sticky note, and how to open it. Keyboard focus
 // on a block shows the same card; touch screens get none, and a tap opens
@@ -98,7 +101,7 @@ const lineClass = computed(() => {
 </script>
 
 <template>
-  <div role="tooltip" data-cy="appt-hover" class="hovercard-pop flex w-[296px] flex-col overflow-hidden rounded-[12px] border border-line-control bg-surface shadow-popover">
+  <div role="tooltip" data-cy="appt-hover" class="hovercard-pop flex max-h-[calc(100vh-16px)] w-[296px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain rounded-[12px] border border-line-control bg-surface shadow-popover">
     <div class="flex items-center gap-2.5 px-3.5 pb-3 pt-3.5">
       <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="inBuilding ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-500'">{{ initials }}</span>
       <div class="flex min-w-0 flex-col gap-px">

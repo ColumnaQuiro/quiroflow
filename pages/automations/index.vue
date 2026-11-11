@@ -252,6 +252,11 @@ function onCreated(id: string) {
   router.push(`/automations/${id}`)
 }
 
+// "Create with AI": the draft opens in the builder, unsaved.
+const aiOpen = ref(false)
+const { can } = usePermission()
+const canDraft = computed(() => can('communication_config'))
+
 // The banner about old rules whose waits now wait. Dismissed per viewer: it
 // is news once, not a standing warning.
 const BANNER_KEY = 'quiroflow-automations-delay-banner'
@@ -282,6 +287,7 @@ function hideBanner() {
         <span class="text-[13px] text-ink-muted">{{ t('Messages and tasks that go out on their own: after an appointment, on a birthday, or to a group of patients.', 'Mensajes y tareas que se lanzan solos: tras una cita, en un cumpleaños o a un grupo de pacientes.') }}</span>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <UiBtn v-if="view !== 'sends' && canDraft" data-test="open-ai-draft" @click="aiOpen = true">{{ t('Create with AI', 'Crear con IA') }}</UiBtn>
         <UiBtn data-test="open-templates" @click="templatesOpen = true">{{ t('Templates', 'Plantillas') }}</UiBtn>
         <NuxtLink v-if="view === 'sends'" to="/automations/new?kind=broadcast" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-test="new-send">{{ t('New send', 'Nuevo envío') }}</NuxtLink>
         <NuxtLink v-else to="/automations/new" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11" data-test="new-automation">{{ t('New automation', 'Nueva automatización') }}</NuxtLink>
@@ -405,6 +411,7 @@ function hideBanner() {
       </div>
     </div>
 
+    <AutomationsAiDraftDialog v-if="aiOpen" @cancel="aiOpen = false" />
     <AutomationsTemplatesDialog v-if="templatesOpen" :existing-names="rules.map((r) => r.name)" :has-growth="hasGrowth" @close="templatesOpen = false" @created="onCreated" />
     <AutomationsProblemsDialog
       v-if="problems"

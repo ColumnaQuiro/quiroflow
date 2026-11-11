@@ -17,7 +17,7 @@ import { watchSupabaseFailures } from '~/utils/supabaseFailures'
 //     shows the staff one toast per page.
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig().public
-  const { failure } = useSupabaseFailureNotice()
+  const { failure, refusedWrites } = useSupabaseFailureNotice()
   watchSupabaseFailures(window, config.supabase.url, (f) => {
     failure.value = f
     // Being offline is not a bug in the code; it is told to the person
@@ -33,5 +33,7 @@ export default defineNuxtPlugin(() => {
     } else {
       console.error(`[supabase] ${f.method} ${f.target} failed with ${f.status} ${f.code}: ${f.message}`)
     }
+  }, () => {
+    refusedWrites.value++
   })
 })

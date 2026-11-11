@@ -138,6 +138,24 @@ export function classifySupabaseFailure({ url, method, status, body }: SupabaseR
   return { status, method, code, message, path, target, schema, read }
 }
 
+/**
+ * A write the database turned down on purpose: row-level security or a
+ * missing permission (403, 42501), a guard that raised (P0001), a check
+ * constraint (23514). Not a failure -- nothing is broken, so nothing is
+ * reported -- but the person still has to be told, and the call sites that
+ * await a write without reading its result tell them nothing. A function
+ * call is not counted (isRead: most are reads, and the ones that write say
+ * why themselves), nor is a 409, which several paths meet on purpose.
+ */
+export function isRefusedWrite({ url, method, status, body }: SupabaseResponseInput): boolean {
+  if (status < 400) return false
+  const path = restPath(url)
+  if (!path) return false
+  if (isRead(method.toUpperCase(), targetOf(path))) return false
+  const code = (body as { code?: unknown } | null)?.code
+  return status === 403 || code === '42501' || (typeof code === 'string' && REFUSAL_CODES.has(code))
+}
+
 /** The failure a rejected fetch amounts to, or null when it was deliberately aborted. */
 export function classifySupabaseNetworkFailure(url: string, method: string, error: unknown): SupabaseFailure | null {
   if ((error as { name?: unknown } | null)?.name === 'AbortError') return null
@@ -167,7 +185,7 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
  * clients built before it. The body is read from a clone, after the response
  * has been handed back.
  */
-export function watchSupabaseFailures(target: { fetch: typeof fetch }, supabaseUrl: string, onFailure: (failure: SupabaseFailure) => void) {
+export function watchSupabaseFailures(target: { fetch: typeof fetch }, supabaseUrl: string, onFailure: (failure: SupabaseFailure) => void, onRefusedWrite?: () => void) {
   const original = target.fetch
   if (typeof original !== 'function' || !supabaseUrl) return
   target.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -198,6 +216,7 @@ export function watchSupabaseFailures(target: { fetch: typeof fetch }, supabaseU
         .then((body) => {
           const failure = classifySupabaseFailure({ url, method, status: response.status, body })
           if (failure) onFailure(failure)
+          else if (onRefusedWrite && isRefusedWrite({ url, method, status: response.status, body })) onRefusedWrite()
         })
         .catch(() => {})
     }

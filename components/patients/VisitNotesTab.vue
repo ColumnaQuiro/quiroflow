@@ -23,13 +23,12 @@ const notes = ref<VisitNoteRow[]>([])
 const loading = ref(true)
 const deletingId = ref<string | null>(null)
 
-// Which note is open for editing, and its draft -- kept apart from the note
-// itself so cancelling restores the original rather than having to reload.
-// Same shape as appointments/NotesPanel.vue, which has had editing since it
-// was written; this tab only ever got the delete half.
-const editingId = ref<string | null>(null)
-const editDraft = ref('')
-const savingEdit = ref(false)
+// The pencil: corrected in place and saved as it is typed
+// (useVisitNoteEditing), the same as appointments/NotesPanel.vue.
+const { editingId, editDraft, startEdit, finishEdit, cancelEdit, onEditInput, editState, editErrorKind } = useVisitNoteEditing((id, body) => {
+  const note = notes.value.find((n) => n.id === id)
+  if (note) note.body = body
+})
 
 async function load() {
   loading.value = true
@@ -71,36 +70,8 @@ function practitionerLabel(note: VisitNoteRow) {
 // RLS (staff delete visit_notes, migration 0046) already gates this by the
 // visit_notes_delete permission and by created_by unless the account's
 // visit_notes_scope is 'all' -- can() here just avoids showing a button
-// that would fail, not the actual access control.
-function startEdit(note: VisitNoteRow) {
-  editingId.value = note.id
-  editDraft.value = note.body
-}
-
-function cancelEdit() {
-  editingId.value = null
-  editDraft.value = ''
-}
-
-// Same RLS note as delete below: 'staff update visit_notes' gates this by
-// visit_notes_edit and, unless visit_notes_scope is 'all', by created_by.
-async function saveEdit(note: VisitNoteRow) {
-  const body = editDraft.value.trim()
-  if (!body || body === note.body) {
-    cancelEdit()
-    return
-  }
-  savingEdit.value = true
-  const { error } = await supabase.from('visit_notes').update({ body }).eq('id', note.id)
-  savingEdit.value = false
-  if (error) return
-  // Patched in place rather than reloaded: the list is ordered by created_at
-  // and an edit does not move a note, so a round-trip would only make the
-  // note being read flicker.
-  note.body = body
-  cancelEdit()
-}
-
+// that would fail, not the actual access control. The same goes for the
+// edit ('staff update visit_notes', visit_notes_edit).
 async function deleteNote(note: VisitNoteRow) {
   if (!confirm(t('Delete this note? This cannot be undone.', '¿Eliminar esta nota? Esta acción no se puede deshacer.'))) return
   deletingId.value = note.id
@@ -146,12 +117,14 @@ async function deleteNote(note: VisitNoteRow) {
             v-model="editDraft"
             rows="5"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink-700 focus:border-brand focus:outline-none"
+            @input="onEditInput"
           />
-          <div class="mt-2 flex items-center gap-2">
-            <UiBtn size="sm" variant="primary" :disabled="savingEdit || !editDraft.trim()" @click="saveEdit(note)">
-              {{ savingEdit ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <UiBtn size="sm" variant="primary" :disabled="editState === 'saving' || !editDraft.trim()" @click="finishEdit">
+              {{ t('Save', 'Guardar') }}
             </UiBtn>
-            <UiBtn size="sm" variant="ghost" :disabled="savingEdit" @click="cancelEdit">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+            <UiBtn size="sm" variant="ghost" :disabled="editState === 'saving'" @click="cancelEdit">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+            <AppointmentsNoteSaveStatus :state="editState" :error-kind="editErrorKind" />
           </div>
         </template>
 
@@ -159,7 +132,7 @@ async function deleteNote(note: VisitNoteRow) {
       </div>
 
       <div v-if="editingId !== note.id" class="absolute right-3 top-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
-        <UiIconBtn v-if="can('visit_notes_edit')" icon="pencil" :label="t('Edit note', 'Editar nota')" @click="startEdit(note)" />
+        <UiIconBtn v-if="can('visit_notes_edit')" icon="pencil" :label="t('Edit note', 'Editar nota')" @click="startEdit(note, note.appointment_id)" />
         <UiIconBtn
           v-if="can('visit_notes_delete')"
           icon="trash"

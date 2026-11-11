@@ -17,7 +17,6 @@ const props = defineProps<{ appointmentId: string; patientId: string }>()
 const emit = defineEmits<{ saved: [] }>()
 
 const supabase = useSupabaseClient()
-const store = useAccountStore()
 const t = useT()
 
 interface Segment { level: string; band: 'cervical' | 'thoracic' | 'lumbar' }
@@ -79,31 +78,25 @@ const action = ref('')
 const plan = ref('')
 const findings = ref<string[]>([])
 const noteId = ref<string | null>(null)
-const saving = ref(false)
-const savedMessage = ref('')
-// Drives the Save button's enabled state. Typing marks the note dirty;
-// saving clears it, so the button reads as "nothing to save" once written.
-const dirty = ref(false)
 
 function pickCode(code: string) {
   const parts = [selectedSegment.value ? `${selectedSegment.value.level}${selectedSegment.value.side}` : null, selectedModifier.value, code].filter(Boolean)
   const line = parts.join(' ')
   findings.value = [...findings.value, line]
   objective.value = objective.value ? `${objective.value}\n${line}` : line
-  // Marks dirty rather than saving: a chip drops text into Objective that the
-  // practitioner usually wants to edit before it is committed, and saving on
-  // the click made that text land in the note as-is the moment it appeared.
-  dirty.value = true
+  // Saved like typing is, a moment later rather than on the click: the chip's
+  // text is usually edited straight away, and that edit is saved with it.
+  touch()
 }
 
 function insertDatestamp() {
   const stamp = new Date().toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   objective.value = objective.value ? `${objective.value}\n${stamp}` : stamp
-  dirty.value = true
+  touch()
 }
 function newLine() {
   objective.value += '\n'
-  dirty.value = true
+  touch()
 }
 function undoLast() {
   if (findings.value.length === 0) return
@@ -111,12 +104,12 @@ function undoLast() {
   const lines = objective.value.split('\n')
   lines.pop()
   objective.value = lines.join('\n')
-  dirty.value = true
+  touch()
 }
 function clearAll() {
   findings.value = []
   objective.value = ''
-  dirty.value = true
+  touch()
 }
 
 function compileBody() {
@@ -131,48 +124,44 @@ function parseBody(body: string) {
   return sections
 }
 
-// Persists the current SOAP fields. Runs on blur (autosave) and is exposed
-// so the My Day header's "Sign & complete" button can force a final save.
-// The 'saved' event only fires the first time a note is created for this
-// appointment -- that's the transition that flips the worklist's "Charted"
-// stage, so later autosaves don't need to trigger a list reload each time.
-// Serialises saves. Every field used to save on blur, and save() is async:
-// tabbing from Subjective to Objective fired a second save while the first
-// insert was still in flight, so noteId was still null and it inserted a
-// SECOND note for the same appointment. Five appointments in production ended
-// up with duplicate notes that way, one with eight rows. An in-flight promise
-// that later callers await is what makes noteId reliable.
-let inFlight: Promise<void> | null = null
+// Saved as it is typed (useVisitNoteAutosave): a moment after the last
+// change, when the tab is hidden, and when the pane goes. These boxes used to
+// be written only by "Save note", "Sign" or switching patient, so a note
+// typed and then left in an open tab was lost with the tab.
+//
+// One row per visit: the first save inserts it, every later one updates it,
+// one at a time. (Saves used to overlap: tabbing between boxes fired a second
+// save while the first insert was in flight, noteId was still null, and it
+// inserted a SECOND note -- five appointments in production ended up with
+// duplicates, one with eight rows. The engine's queue is what prevents that.)
+//
+// 'saved' fires only when the note is first created: that is what flips the
+// worklist's "Charted" stage, and later saves need no list reload.
+//
+// The visit being written: fixed per mount (My Day keys this pane by
+// appointment), and moved only by the reset below.
+let writingFor = props.appointmentId
+const autosave = useVisitNoteAutosave({
+  appointmentId: () => writingFor,
+  noteId,
+  body: compileBody,
+  onSaved: (_row, created) => {
+    if (created) emit('saved')
+  },
+})
+const { state: saveState, errorKind: saveErrorKind } = autosave
 
-async function save() {
-  if (inFlight) await inFlight
-  inFlight = doSave()
-  try {
-    await inFlight
-  } finally {
-    inFlight = null
-  }
+// Typed before the note on this visit had loaded: saving then would insert a
+// second note beside it, so the change waits for the load.
+let touchedWhileLoading = false
+function touch() {
+  if (loadingNote.value) touchedWhileLoading = true
+  else autosave.changed()
 }
 
-async function doSave() {
-  saving.value = true
-  const body = compileBody()
-  const isFirstSave = !noteId.value
-  if (noteId.value) {
-    await supabase.from('visit_notes').update({ body }).eq('id', noteId.value)
-  } else {
-    const { data } = await supabase
-      .from('visit_notes')
-      .insert({ account_id: store.accountId!, appointment_id: props.appointmentId, body, created_by: store.teamMember?.id ?? null })
-      .select('id')
-      .single()
-    noteId.value = data?.id ?? null
-  }
-  saving.value = false
-  dirty.value = false
-  savedMessage.value = t('Saved', 'Guardado')
-  setTimeout(() => (savedMessage.value = ''), 2000)
-  if (isFirstSave && noteId.value) emit('saved')
+/** Writes the note now, typed in or not: "Sign" commits what is on screen. */
+function save() {
+  return autosave.saveNowForced()
 }
 
 // Pulls the patient's most recent note from a different appointment and
@@ -194,6 +183,7 @@ async function copyLastNote() {
   objective.value = sections.Objective ?? ''
   action.value = sections.Action ?? ''
   plan.value = sections.Plan ?? ''
+  touch()
 }
 
 // Defense-in-depth alongside practitioner.vue's :key on the charting pane
@@ -206,14 +196,15 @@ async function copyLastNote() {
 watch(
   () => props.appointmentId,
   () => {
+    writingFor = props.appointmentId
     noteId.value = null
+    autosave.reset()
+    touchedWhileLoading = false
     subjective.value = ''
     objective.value = ''
     action.value = ''
     plan.value = ''
     findings.value = []
-    dirty.value = false
-    savedMessage.value = ''
     selectedSegment.value = null
     selectedModifier.value = null
   },
@@ -229,7 +220,7 @@ async function loadExisting() {
   const { data } = await supabase.from('visit_notes').select('id, body').eq('appointment_id', id).order('created_at', { ascending: false }).limit(1)
   if (id !== props.appointmentId) return
   const row = (data as { id: string; body: string }[] | null)?.[0]
-  if (row && !dirty.value) {
+  if (row && !touchedWhileLoading && !autosave.unsaved()) {
     noteId.value = row.id
     const parsed = parseVisitNote(row.body)
     if (parsed.structured) {
@@ -244,23 +235,19 @@ async function loadExisting() {
     }
   }
   loadingNote.value = false
+  if (touchedWhileLoading) {
+    touchedWhileLoading = false
+    autosave.changed()
+  }
 }
 onMounted(loadExisting)
 watch(() => props.appointmentId, loadExisting)
 
-// Saved a moment after the last change made from outside the boxes -- the
-// listing beside the note, "Bring over" from the last visit -- since those
-// never blur a field, which is what saves a typed change.
-let saveTimer: ReturnType<typeof setTimeout> | undefined
+// Changes made from outside the boxes -- the listing beside the note, "Bring
+// over" from the last visit -- are saved the same way as typing.
 function saveSoon() {
-  dirty.value = true
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => save(), 700)
+  touch()
 }
-onBeforeUnmount(() => {
-  clearTimeout(saveTimer)
-  if (dirty.value) save()
-})
 
 /** The listing's "Ajustado: …" line, kept as Action's first line. */
 function setListingLine(line: string) {
@@ -290,15 +277,14 @@ const fieldId = useId()
       <div class="flex items-center justify-between">
         <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Quick add', 'Añadir rápido') }}</p>
         <div class="flex items-center gap-2.5">
-          <span v-if="savedMessage" class="text-[11.5px] text-success-text">{{ savedMessage }}</span>
-          <span v-else-if="dirty" class="text-[11.5px] text-ink-faint2">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
+          <AppointmentsNoteSaveStatus :state="saveState" :error-kind="saveErrorKind" />
           <button
             type="button"
             class="rounded-ctlSm border border-line-control bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink-700 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="saving || !dirty"
-            @click="save"
+            :disabled="saveState === 'saving' || (saveState !== 'dirty' && saveState !== 'error')"
+            @click="autosave.save()"
           >
-            {{ saving ? t('Saving…', 'Guardando…') : t('Save note', 'Guardar nota') }}
+            {{ t('Save note', 'Guardar nota') }}
           </button>
         </div>
       </div>
@@ -323,7 +309,7 @@ const fieldId = useId()
           v-model="subjective"
           data-cy="soap-subjective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @input="dirty = true"
+          @input="touch"
         ></textarea>
       </div>
       <div>
@@ -332,7 +318,7 @@ const fieldId = useId()
           v-model="objective"
           data-cy="soap-objective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @input="dirty = true"
+          @input="touch"
         ></textarea>
       </div>
       <div>
@@ -341,7 +327,7 @@ const fieldId = useId()
           v-model="action"
           data-cy="soap-action"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @input="dirty = true"
+          @input="touch"
         ></textarea>
       </div>
       <div>
@@ -350,7 +336,7 @@ const fieldId = useId()
           v-model="plan"
           data-cy="soap-plan"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @input="dirty = true"
+          @input="touch"
         ></textarea>
       </div>
     </div>

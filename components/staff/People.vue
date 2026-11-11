@@ -15,7 +15,16 @@ import { CONTRACT_ENDING_SOON_DAYS, contractEnded, currentContract, daysUntilEnd
 // person opens onto their file (pages/personal/[id].vue). People who have
 // left are listed apart at the bottom: their contracts are labour records
 // kept after they go.
-const props = defineProps<{ accountId: string; timeZone: string }>()
+const props = defineProps<{
+  accountId: string
+  timeZone: string
+  /**
+   * Where "clocking corrections to review" leads; null: nowhere, said as
+   * plain text. The app sets null: its /jornada is the person's own month,
+   * and team corrections are reviewed on the web.
+   */
+  correctionsTo?: string | null
+}>()
 const emit = defineEmits<{ 'open-leave': [] }>()
 const t = useT()
 const { preference: lang } = useLang()
@@ -174,16 +183,60 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
         <button v-if="pendingLeave" type="button" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-leave" @click="emit('open-leave')">
           {{ pendingLeave === 1 ? t('1 leave request to decide', '1 solicitud de ausencia por decidir') : t(`${pendingLeave} leave requests to decide`, `${pendingLeave} solicitudes de ausencia por decidir`) }} →
         </button>
-        <NuxtLink v-if="pendingCorrections" to="/jornada" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-corrections">
+        <NuxtLink v-if="pendingCorrections && props.correctionsTo !== null" :to="props.correctionsTo ?? '/jornada'" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-corrections">
           {{ pendingCorrections === 1 ? t('1 clocking correction to review', '1 corrección de fichaje por revisar') : t(`${pendingCorrections} clocking corrections to review`, `${pendingCorrections} correcciones de fichaje por revisar`) }} →
         </NuxtLink>
+        <span v-else-if="pendingCorrections" class="px-1 py-1.5 text-[13px] font-semibold text-ink-700" data-cy="staff-waiting-corrections">
+          {{ pendingCorrections === 1 ? t('1 clocking correction to review, on the web', '1 corrección de fichaje por revisar, en la web') : t(`${pendingCorrections} clocking corrections to review, on the web`, `${pendingCorrections} correcciones de fichaje por revisar, en la web`) }}
+        </span>
         <NuxtLink v-for="u in unopenedList" :key="u.id" :to="`/personal/${u.id}?tab=documents`" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-documents">
           {{ u.count === 1 ? t(`${u.name}: 1 document unopened for a month`, `${u.name}: 1 documento sin abrir desde hace un mes`) : t(`${u.name}: ${u.count} documents unopened for a month`, `${u.name}: ${u.count} documentos sin abrir desde hace un mes`) }} →
         </NuxtLink>
       </div>
     </section>
 
-    <section class="overflow-x-auto rounded-card border border-line bg-surface">
+    <!-- Below desktop width (a phone, an iPad, the app): one card per person, the table's five columns stacked. -->
+    <ul class="flex flex-col gap-2 lg:hidden" data-cy="staff-people-cards">
+      <template v-if="!loaded">
+        <li v-for="i in 3" :key="i" class="flex flex-col gap-2 rounded-card border border-line bg-surface p-3.5" aria-hidden="true">
+          <UiSkeleton class="h-4 w-36 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
+        </li>
+      </template>
+      <li v-for="m in members" v-else :key="m.id">
+        <NuxtLink :to="`/personal/${m.id}`" class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-3.5 active:bg-surface-subtle" data-cy="staff-person-card" :data-name="m.full_name">
+          <span class="flex items-start gap-2.5">
+            <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: m.color }" aria-hidden="true" />
+            <span class="min-w-0 flex-1">
+              <strong class="block text-[15px] font-semibold text-ink-900">{{ m.full_name }}</strong>
+              <span class="block text-[12.5px] text-ink-muted" data-cy="staff-card-role">{{ roleOf(m) + (contractOf(m) ? ` · ${employmentTypeLabel(contractOf(m)!.employment_type, t)}` : '') }}</span>
+            </span>
+            <span class="shrink-0 rounded-ctlSm px-2 py-0.5 text-[12px] font-semibold" :class="toneClass[todayOf(m).tone]" data-cy="staff-card-today">{{ todayOf(m).text }}</span>
+          </span>
+          <span class="grid grid-cols-3 gap-2 border-t border-line-row pt-2.5 text-[13px] text-ink-900">
+            <span class="flex min-w-0 flex-col" data-cy="staff-card-leave">
+              <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Holidays left', 'Vacaciones') }}</span>
+              <span v-if="!hasAllowance(m)" class="text-ink-muted">—</span>
+              <span v-else><strong class="font-mono">{{ fmtDays(leaveOf(m).left) }}</strong><span class="text-ink-muted"> / {{ fmtDays(leaveOf(m).allowance) }}</span></span>
+              <span v-if="hasAllowance(m) && leaveOf(m).pending" class="text-[12px] text-warning-text">{{ t(`${fmtDays(leaveOf(m).pending)} pending`, `${fmtDays(leaveOf(m).pending)} pendientes`) }}</span>
+            </span>
+            <span class="flex min-w-0 flex-col" data-cy="staff-card-month">
+              <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('This month', 'Este mes') }}</span>
+              <span v-if="exempt.has(m.id)" class="text-ink-muted">{{ t("Doesn't clock", 'No ficha') }}</span>
+              <span v-else class="font-mono"><span class="whitespace-nowrap">{{ formatWorked(monthOf(m).clocked) }}</span><span class="block whitespace-nowrap text-ink-muted">/ {{ formatWorked(monthOf(m).planned) }}</span></span>
+            </span>
+            <span class="flex min-w-0 flex-col" data-cy="staff-card-contract">
+              <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Contract', 'Contrato') }}</span>
+              <span v-if="contractEndOf(m)" class="w-fit rounded-ctlSm px-1.5 py-0.5 text-[12px] font-semibold" :class="toneClass[contractEndOf(m)!.tone]">{{ contractEndOf(m)!.text }}</span>
+              <span v-else-if="contractOf(m)" class="text-[12.5px] text-ink-muted">{{ t('No end date', 'Sin fecha de fin') }}</span>
+              <span v-else class="text-ink-muted">—</span>
+            </span>
+          </span>
+        </NuxtLink>
+      </li>
+    </ul>
+
+    <section class="hidden overflow-x-auto rounded-card border border-line bg-surface lg:block">
       <table class="w-full border-collapse">
         <thead>
           <tr>

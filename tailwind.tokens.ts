@@ -39,7 +39,11 @@ export const tokens = {
           tintDeepBorder: themeColor('--color-brand-tintDeepBorder'),
           // Text on a bg-brand fill. Use text-brand-on there, never
           // text-white: the dark palette's brand is light (see theme.css).
-          on: themeColor('--color-on-fill'),
+          // Its own variable since a clinic can bring its own brand colour
+          // to the patient app (utils/clinicBrandPalette.ts): a pale one
+          // needs dark text on it while the danger and success fills keep
+          // theirs. theme.css points it at --color-on-fill.
+          on: themeColor('--color-brand-on'),
         },
         surface: {
           page: themeColor('--color-surface-page'),

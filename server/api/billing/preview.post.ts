@@ -28,7 +28,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -55,6 +55,10 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
   if (wantsReceptionist && !receptionist.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'The AI receptionist has no Stripe price configured for this billing interval' })
+  }
+  const branding = await brandingAddonPrices(serviceRole, body.interval)
+  if (body.branding === true && !branding.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -106,6 +110,15 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     items.push(receptionistItem ? { id: receptionistItem.id, price: receptionist.priceId, quantity: 1 } : { price: receptionist.priceId, quantity: 1 })
   } else if (receptionistItem) {
     items.push({ id: receptionistItem.id, deleted: true })
+  }
+  // Same as subscribe.post.ts: left as it is unless the request says otherwise.
+  const brandingItem = current.items.data.find((item) => branding.allPriceIds.has(item.price.id))
+  const wantsBranding = body.branding ?? !!brandingItem
+  if (wantsBranding) {
+    if (!branding.priceId) throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
+    items.push(brandingItem ? { id: brandingItem.id, price: branding.priceId, quantity: 1 } : { price: branding.priceId, quantity: 1 })
+  } else if (brandingItem) {
+    items.push({ id: brandingItem.id, deleted: true })
   }
   // Same as subscribe.post.ts: the fee follows the interval.
   const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)

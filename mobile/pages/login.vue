@@ -3,6 +3,8 @@ const supabase = useSupabaseClient()
 const t = useT()
 const authErrorMessage = useAuthErrorMessage()
 const clinic = useClinicCode()
+// The clinic's own name and logo, when it has them (useClinicBrand).
+const { brand } = useClinicBrand()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -36,6 +38,8 @@ onMounted(async () => {
 function backToJoin() {
   localStorage.removeItem('clinic_gate_seen')
   localStorage.removeItem('clinic_slug')
+  // The code is gone, and that clinic's look with it.
+  useClinicBrand().clear()
   navigateTo('/join')
 }
 
@@ -45,6 +49,7 @@ function backToJoin() {
 function switchToStaff() {
   localStorage.setItem('clinic_gate_seen', '1')
   localStorage.removeItem('clinic_slug')
+  useClinicBrand().clear()
   clinic.code.value = ''
   clinic.clinicName.value = ''
   side.value = 'staff'
@@ -137,12 +142,14 @@ async function onSubmit() {
           class="flex items-center gap-2.5 rounded-card border border-line bg-surface shadow-card-subtle px-3 py-2.5"
           data-testid="clinic-chip"
         >
+          <img v-if="brand?.logoUrl" :src="brand.logoUrl" alt="" class="h-[34px] w-[34px] shrink-0 rounded-ctl object-contain" data-testid="clinic-chip-logo" />
           <span
+            v-else
             aria-hidden="true"
             class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[12.5px] font-bold text-brand-on"
-          >{{ clinic.clinicName.value.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() }}</span>
+          >{{ (brand?.name ?? clinic.clinicName.value).split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() }}</span>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-[14px] font-semibold text-ink-900">{{ clinic.clinicName.value }}</p>
+            <p class="truncate text-[14px] font-semibold text-ink-900">{{ brand?.name ?? clinic.clinicName.value }}</p>
             <p class="truncate text-[12px] text-ink-muted">{{ t('Clinic code', 'Código') }}: {{ clinic.code.value }}</p>
           </div>
           <button type="button" class="rounded-ctlSm px-2 py-1 text-[13px] font-medium text-brand-text" @click="backToJoin">

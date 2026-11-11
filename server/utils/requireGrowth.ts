@@ -126,3 +126,15 @@ export async function requireReceptionist(event: H3Event): Promise<GrowthAccess>
   }
   return access
 }
+
+// The clinic's own look in the patient app, an add-on of its own
+// (20261111063546_patient_app_branding.sql). The same reading as
+// get_clinic_branding() in the database, which is what the app asks: a comped
+// account has it, and a locked or cancelled one keeps nothing it had bought.
+// Not part of Growth or of any plan, and not given by the trial.
+export function hasClinicBranding(subscription: { branding_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null): boolean {
+  if (!subscription) return false
+  if (subscription.comped) return true
+  if (subscription.status === 'locked' || subscription.status === 'canceled') return false
+  return !!subscription.branding_addon
+}

@@ -2,6 +2,8 @@
 import { isRouteAllowed } from '~/utils/routePermissions'
 
 const ICONS = {
+  swatch:
+    'M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z',
   building: 'M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21',
   users:
     'M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z',
@@ -52,6 +54,7 @@ const allGroups = computed(() => [
       { to: '/settings/reschedule-reasons', label: t('Scheduling Policies', 'Políticas de programación'), description: t('Reschedule, cancellation, and missed-appointment fees, plus reschedule reasons.', 'Comisiones por reprogramación, cancelación e inasistencia, y motivos de reprogramación.'), icon: ICONS.calendar },
       { to: '/settings/rooms', label: t('Calendar Resources', 'Recursos de calendario'), description: t('Rooms used for scheduling per clinic.', 'Salas usadas para la programación en cada clínica.'), icon: ICONS.calendar },
       { to: '/settings/app', label: t('Mobile App', 'App móvil'), description: t("Join code and QR, store links, what patients can do in the app, announcements, and install stats.", 'Código de acceso y QR, enlaces a las tiendas, lo que los pacientes pueden hacer en la app, avisos y estadísticas de instalación.'), icon: ICONS.devicePhoneMobile },
+      { to: '/settings/branding', label: t('Brand', 'Marca'), description: t('Your logo, name and colour in the patient app.', 'Tu logo, tu nombre y tu color en la app de pacientes.'), icon: ICONS.swatch },
       { to: '/settings/referral-sources', label: t('Referral Sources', 'Fuentes de referencia'), description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
       { to: '/settings/patient-types', label: t('Patient types', 'Tipos de paciente'), description: t('Groups such as Young or Over 65, which can bring exercises with them and start automations.', 'Grupos como Joven o Mayor de 65, que pueden traer ejercicios y disparar automatizaciones.'), icon: ICONS.tag },
       { to: '/settings/care-plans', label: t('Care plans', 'Planes de tratamiento'), description: t('What the review at the end of a plan proposes: maintenance, discharge and the habits pack.', 'Lo que propone la revisión al final de un plan: mantenimiento, alta y paquete de hábitos.'), icon: ICONS.calendar },

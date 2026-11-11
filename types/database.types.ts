@@ -1450,6 +1450,9 @@ export type Database = {
           patient_app_cancel_enabled: boolean
           patient_app_reschedule_enabled: boolean
           patient_app_change_notice_hours: number
+          patient_app_brand_name: string | null
+          patient_app_brand_color: string | null
+          patient_app_brand_logo_path: string | null
           online_booking_text_overrides: Json
           practicehub_api_key: string | null
           practicehub_base_url: string | null
@@ -1572,6 +1575,9 @@ export type Database = {
           patient_app_cancel_enabled?: boolean
           patient_app_reschedule_enabled?: boolean
           patient_app_change_notice_hours?: number
+          patient_app_brand_name?: string | null
+          patient_app_brand_color?: string | null
+          patient_app_brand_logo_path?: string | null
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
@@ -1693,6 +1699,9 @@ export type Database = {
           patient_app_cancel_enabled?: boolean
           patient_app_reschedule_enabled?: boolean
           patient_app_change_notice_hours?: number
+          patient_app_brand_name?: string | null
+          patient_app_brand_color?: string | null
+          patient_app_brand_logo_path?: string | null
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
@@ -8985,6 +8994,7 @@ export type Database = {
           id: string
           plan_id: string
           receptionist_addon: boolean
+          branding_addon: boolean
           status: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
@@ -9003,6 +9013,7 @@ export type Database = {
           id?: string
           plan_id: string
           receptionist_addon?: boolean
+          branding_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -9021,6 +9032,7 @@ export type Database = {
           id?: string
           plan_id?: string
           receptionist_addon?: boolean
+          branding_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -11131,6 +11143,7 @@ export type Database = {
       reschedule_patient_appointment: { Args: { p_appointment_id: string; p_starts_at: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
       get_clinic_by_code: { Args: { p_slug: string }; Returns: Json }
+      get_clinic_branding: { Args: { p_slug?: string; p_preview?: boolean }; Returns: Json }
       get_public_patient_doc: { Args: { p_token: string }; Returns: Json }
       lead_for_attributed_booking: { Args: { p_appointment_id: string }; Returns: string | null }
       lead_catch_up_with_appointments: { Args: { p_lead_id: string }; Returns: string | null }

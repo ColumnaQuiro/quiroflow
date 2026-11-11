@@ -12,6 +12,13 @@ onMounted(registerForPush)
 // stop them, so the staff side takes them off; layouts/patient.vue puts them
 // back when the phone is a patient's again.
 onMounted(() => useHabitReminders().clear())
+
+// The clinic's own colours and logo are for its patients (useClinicBrand);
+// the staff side is QuiroFlow's. Taken off while this layout is on screen and
+// put back when it leaves, for the person who is both.
+const clinicBrand = useClinicBrand()
+onMounted(clinicBrand.hide)
+onBeforeUnmount(clinicBrand.show)
 // The Inbox tab's unread count, kept current from here for the whole app.
 const { start: startInboxBadge } = useInboxUnread()
 onMounted(startInboxBadge)

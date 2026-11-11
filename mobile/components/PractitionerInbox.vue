@@ -26,6 +26,8 @@ interface Message {
   created_at: string
   /** Sent by the AI receptionist on its own -- labelled for the team, never the patient. */
   sent_by_ai?: boolean
+  /** 'business_app': written from the WhatsApp Business app on the clinic's phone (Coexistence). */
+  origin?: string | null
   /** In-app message a family member wrote for this patient (family accounts): their name. */
   sent_by_name?: string | null
   /** The patient's WhatsApp reaction to this message, drawn on it (ReactionBadge). */
@@ -121,7 +123,7 @@ const threadExtra = ref<Message[]>([])
 // placeholder rather than an empty conversation, which would say "they have
 // not written to you yet" about somebody who has.
 const loadedThreads = ref<Set<string>>(new Set())
-const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction'
+const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction, origin'
 const SUMMARY_LIMIT = 400
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
@@ -2124,6 +2126,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <!-- The receptionist answered on its own: said, for the team
             only -- the patient got the message alone. -->
             <p v-if="m.sent_by_ai" class="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[.04em] opacity-75" data-testid="message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
+            <!-- Same as the web Inbox: sent from the WhatsApp Business app the number is shared with. -->
+            <p v-else-if="m.origin === 'business_app'" class="mb-0.5 text-[10.5px] font-semibold opacity-75" data-testid="message-business-app">{{ t('From the phone', 'Desde el móvil') }}</p>
             <p v-else-if="m.sent_by_name" class="mb-0.5 text-[10.5px] font-semibold opacity-75">{{ t(`Sent by ${m.sent_by_name}`, `Enviado por ${m.sent_by_name}`) }}</p>
             <img
               v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"

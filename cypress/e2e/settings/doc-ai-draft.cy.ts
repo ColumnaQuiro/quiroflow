@@ -40,7 +40,8 @@ describe('Drafting a form with AI', () => {
       cy.get('[data-cy=doc-versions]').should('not.exist')
 
       cy.contains('button', 'Save').click()
-      cy.contains('Saved').should('be.visible')
+      // The banner changing is the insert having come back. (Not the toast:
+      // "Saved" also matches Settings › Saved Replies in the side menu.)
       cy.get('[data-cy=doc-ai-banner]').should('not.contain', 'not saved yet')
       cy.get('[data-cy=doc-versions]').should('be.visible')
 

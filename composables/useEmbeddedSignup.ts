@@ -70,8 +70,11 @@ export function useEmbeddedSignup() {
    * Rejects, rather than resolving with null, when the clinic closes the
    * dialog -- the caller wants to tell those two apart, and "nothing
    * happened" is a different message from "something broke".
+   *
+   * `businessApp`: the number is already on the WhatsApp Business app and
+   * the clinic wants to keep using it there (Coexistence).
    */
-  async function launch(): Promise<string> {
+  async function launch(opts: { businessApp?: boolean } = {}): Promise<string> {
     if (!available.value) throw new Error('WhatsApp connect is not configured on this deployment.')
     await loadFacebookSdk(appId)
 
@@ -123,7 +126,14 @@ export function useEmbeddedSignup() {
           // business tokens, and those come from exchanging a code server
           // side.
           override_default_response_type: true,
-          extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+          // 'whatsapp_business_app_onboarding' is Meta's Coexistence: the
+          // clinic connects the number it already has on the WhatsApp
+          // Business app and KEEPS using the app, with QuiroFlow sending and
+          // receiving through the API alongside it. '' is the standard flow,
+          // where the number becomes API-only and leaves the app. Which one
+          // the number actually ended up as is read back on the server
+          // (is_on_biz_app), not taken from here.
+          extras: { setup: {}, featureType: opts.businessApp ? 'whatsapp_business_app_onboarding' : '', sessionInfoVersion: '3' },
         },
       )
     })

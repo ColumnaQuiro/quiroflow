@@ -386,14 +386,16 @@ export function useAutomationBuilder() {
     }
   }
 
-  function initNew(from?: { rule: DraftRule; steps: DraftStep[] }) {
+  function initNew(from?: { rule: DraftRule; steps: DraftStep[] }, opts: { unsaved?: boolean } = {}) {
     ruleId.value = null
     draft.value = from ? { rule: clone(from.rule), enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
     stats.value = { rule: null, steps: {} }
     hasGrowth.value = store.hasGrowthAddon
     loaded.value = true
-    // Unsaved by definition (isNew), but not "changed" until something is.
+    // Unsaved by definition (isNew), but not "changed" until something is --
+    // except a draft someone asked the AI for, which leaving would throw away.
     resetBaseline()
+    if (opts.unsaved) original.value = ''
   }
   const isNew = computed(() => !ruleId.value)
 

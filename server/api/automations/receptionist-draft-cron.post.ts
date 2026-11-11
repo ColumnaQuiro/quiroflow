@@ -120,6 +120,10 @@ export default defineEventHandler(async (event) => {
       .in('account_id', leadAccounts)
       .eq('direction', 'inbound')
       .not('lead_id', 'is', null)
+      // Not a chat imported from the WhatsApp Business app on connecting
+      // (origin 'history'): the past, answered on the phone or not at all,
+      // and nothing a reply should appear out of nowhere for.
+      .or('origin.is.null,origin.neq.history')
       // WhatsApp refuses a free-form reply more than 24h after the last
       // inbound message, so a draft nobody could send is a draft not worth
       // paying a model to write.
@@ -229,7 +233,8 @@ async function patientsDue(supabase: any, accountIds: string[], since: string, p
       .eq('direction', 'inbound')
       .not('patient_id', 'is', null)
       .gt('created_at', since)
-    if (source === 'whatsapp_messages') query = query.is('lead_id', null)
+    // Imported history is not waiting for an answer (see the lead query).
+    if (source === 'whatsapp_messages') query = query.is('lead_id', null).or('origin.is.null,origin.neq.history')
     const { data, error } = await query.order('created_at', { ascending: false }).limit(500)
     if (error) {
       console.error(`[receptionist-draft-cron] could not read ${source}:`, error.message)

@@ -2,9 +2,63 @@
 // where '~' is mobile/ -- so the alias resolved to mobile/utils/bonoOwed,
 // which does not exist, and Xcode Cloud died on it. Nothing in CI compiles
 // the mobile app, so the only signal was a red cloud build four days later.
-import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '../utils/bonoOwed'
+import { bonoOwedCents } from '../utils/bonoOwed'
 import { outstandingCentsOf } from '../utils/owing'
-import { dataOrThrow } from '../utils/supabaseFailures'
+
+// What patient_ledger (20261111192200) answers: the rows the six selects
+// below used to fetch one request each, and -- with p_detail -- the rows the
+// Billing tab fetched in a dozen more. One request feeds both, so recording a
+// payment reloads the patient's money once instead of twice. Every key holds
+// raw rows; nothing in it is a figure.
+interface LedgerPackageRow {
+  id: string
+  package_name: string
+  sessions_total: number
+  sessions_used: number
+  price_cents: number
+  purchased_at: string
+  invoice_id: string | null
+  owed_cents: number | null
+  installments: number | null
+  installment_cents: number | null
+  is_closed: boolean
+}
+export interface LedgerBonoPaymentRow {
+  id: string
+  invoice_id: string | null
+  amount_cents: number
+  method: string
+  paid_at: string
+  package_purchase_id: string | null
+  external_reference: string | null
+  purpose: string | null
+  patient_id: string
+  patients: { first_name: string; last_name: string | null } | null
+}
+export interface PatientLedger {
+  invoices: { id: string; invoice_number: string; status: string; total_cents: number; created_at: string; is_refund: boolean; refunds_invoice_id: string | null; refunds_payment_id: string | null }[]
+  payments: { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }[]
+  account_credits: { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string; external_reference: string | null }[]
+  active_memberships: ActiveMembership[]
+  /** Each bono with every payment linked to it, whoever's record it sits on. */
+  package_purchases: (LedgerPackageRow & { payments: LedgerBonoPaymentRow[] })[]
+  package_shares: { package_purchases: (LedgerPackageRow & { patients: { first_name: string; last_name: string | null } | null }) | null }[]
+  /** get_my_shared_packages, when the shares table showed the caller nothing. */
+  my_shared_packages: { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; owner_first_name: string; owner_last_name: string | null }[] | null
+  // The Billing tab's own cards. Null unless the ledger was asked for in detail.
+  line_items: { invoice_id: string; description: string }[] | null
+  package_sessions: { id: string; amount_cents: number; used_at: string; package_purchases: { package_name: string } | null }[] | null
+  payment_schedules: { id: string; package_purchase_id: string | null; patient_membership_id: string | null; interval: string; interval_count: number; installments_total: number | null; installments_paid: number; status: string }[] | null
+  stripe_payment_events: { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }[] | null
+  memberships: { id: string; membership_name: string; price_cents: number; status: string; started_at: string; billing_interval: string | null; billing_interval_count: number | null; memberships: { billing_interval: string; billing_interval_count: number } | null }[] | null
+  membership_payments: { id: string; patient_membership_id: string; period_start: string; amount_cents: number; status: string }[] | null
+  stripe_customers: { stripe_customer_id: string; default_payment_method_id: string | null }[] | null
+}
+/** A load's outcome, for the one caller that shows the rows as well as the figures. */
+export interface PatientLedgerLoad {
+  ledger: PatientLedger | null
+  error: { message: string } | null
+}
 
 interface ActiveMembership {
   id: string
@@ -72,7 +126,7 @@ interface FinancialState {
   // once per id; refresh() (called after an actual write) still forces a
   // real reload.
   loaded: boolean
-  inFlight: Promise<void> | null
+  inFlight: Promise<unknown> | null
   // A read was refused or broke, so the figures above are whatever the last
   // successful load left (zero on a first load) -- not this patient's money.
   loadError: Ref<boolean>
@@ -108,7 +162,10 @@ function stateFor(id: string | null | undefined): FinancialState {
   return state
 }
 
-export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) {
+// `manual`: the caller loads on mount itself, through refreshWithDetail(), so
+// this must not start a second, plainer load of the same ledger beside it.
+// Only the Billing tab does that; everywhere else leaves it off.
+export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, opts: { manual?: boolean } = {}) {
   const supabase = useSupabaseClient()
   const id = computed(() => toValue(patientId))
 
@@ -118,20 +175,38 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
   // query to fail on purpose (patients/ledger-admits-a-failed-load). The
   // failed request is reported by utils/supabaseFailures.ts; this records
   // that the figures are not to be trusted.
-  async function doLoad(currentId: string) {
+  async function doLoad(currentId: string, detail: boolean): Promise<PatientLedgerLoad> {
     const state = stateFor(currentId)
     state.loading.value = true
+    let result: PatientLedgerLoad
     try {
-      await loadInto(state, currentId)
+      // One request where there were six, and a seventh behind them. It fails
+      // as a whole, which is what the six did between them: each threw rather
+      // than let a refused read sum to a balance of zero (CLAUDE.md,
+      // Migrations).
+      const { data, error } = await supabase.rpc('patient_ledger' as never, { p_patient_id: currentId, p_detail: detail } as never)
+      if (error) throw error
+      const ledger = (data ?? {}) as unknown as PatientLedger
+      applyLedger(state, currentId, ledger)
       state.loadError.value = false
-    } catch {
+      result = { ledger, error: null }
+    } catch (e) {
       state.loadError.value = true
+      result = { ledger: null, error: { message: (e as { message?: string } | null)?.message || String(e) } }
     }
     state.loading.value = false
     state.loaded = true
+    return result
   }
 
-  async function loadInto(state: FinancialState, currentId: string) {
+  // The figures, from the ledger's rows. Everything below is the arithmetic
+  // it always was; only where the rows come from changed.
+  function applyLedger(state: FinancialState, currentId: string, ledger: PatientLedger) {
+    const invoices = ledger.invoices ?? []
+    const memberships = ledger.active_memberships ?? []
+    const packages = ledger.package_purchases ?? []
+    const credits = ledger.account_credits ?? []
+    const payments = ledger.payments ?? []
 
     // payments carries its own patient_id since 0170, so this reads the
     // patient's money directly instead of joining through invoices. That is
@@ -140,31 +215,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // holds for a bono patient -- has none. The invoice is still joined, but
     // only for the status the credit-on-void rule below needs, and left outer
     // so an unallocated payment survives it.
-    // Each read throws on failure (dataOrThrow) rather than summing to a
-    // balance of zero: a ledger that reads "nothing owed" because one of six
-    // queries was refused is the failure that cost a day of RLS forensics
-    // (CLAUDE.md, Migrations). Except the shares read, which is REFUSED for a
-    // patient by design -- its policy calls is_account_member, which only
-    // staff may execute -- and whose empty result hands over to the RPC below.
-    const [invoices, memberships, packages, credits, { data: shares }, payments] = await Promise.all([
-      // Void invoices are filtered in JS rather than here: bonoValueCents
-      // below needs the bono's own sale invoice, and telling "no invoice"
-      // apart from "an invoice that was voided" needs the status in hand.
-      supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId).then(dataOrThrow),
-      supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active').then(dataOrThrow),
-      // The bono's payments come with it, whoever's record they were taken
-      // on -- a shared bono's beneficiary pays towards it too (BONO_PAYMENTS_EMBED).
-      supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', currentId).order('purchased_at', { ascending: false }).then(dataOrThrow),
-      supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId).then(dataOrThrow),
-      supabase
-        .from('package_purchase_shares')
-        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, purchased_at, patients(first_name, last_name))')
-        .eq('patient_id', currentId),
-      // No invoice join any more -- it existed only for the void-invoice
-      // credit-on-void check, which the 'credit' exclusion below now does
-      // unconditionally, invoice status or not.
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose').eq('patient_id', currentId).then(dataOrThrow),
-    ])
+    // Void invoices are filtered in JS rather than in the query: bonoValueCents
+    // below needs the bono's own sale invoice, and telling "no invoice"
+    // apart from "an invoice that was voided" needs the status in hand.
+    // The bono's payments come with it, whoever's record they were taken
+    // on -- a shared bono's beneficiary pays towards it too (BONO_PAYMENTS_EMBED).
 
     // A 'credit' payment is not money and never was: it records a patient
     // directing account credit they already hold towards something (a bono,
@@ -201,7 +256,19 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // count towards what the bono is owed, never towards this patient's money:
     // their own payments are `payments` above, so these are kept apart.
     const bonoPaymentsFromOthers = (packages ?? []).flatMap((p) => p.payments ?? []).filter((pay) => pay.patient_id !== currentId)
-    const ownPackages = (packages ?? []).map(({ payments: _payments, ...p }) => p)
+    // The columns this summary has always carried for a bono, named: the
+    // ledger's rows hold a few more for the Billing tab's card.
+    const ownPackages = (packages ?? []).map((p) => ({
+      id: p.id,
+      package_name: p.package_name,
+      sessions_total: p.sessions_total,
+      sessions_used: p.sessions_used,
+      price_cents: p.price_cents,
+      invoice_id: p.invoice_id,
+      owed_cents: p.owed_cents,
+      is_closed: p.is_closed,
+      purchased_at: p.purchased_at,
+    }))
 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
@@ -272,13 +339,26 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // a staff policy, and the bono is someone else's), so for them the read
     // above is empty and get_my_shared_packages answers instead -- only for
     // the patient themselves, with only the counters and the owner's name.
-    let shareRows = shares ?? []
+    // Both arrive in the ledger now: my_shared_packages is that RPC's answer,
+    // asked for inside patient_ledger only when the shares table came back
+    // empty -- the same condition the second request used to hang on.
+    type ShareRow = { package_purchases: { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; purchased_at?: string; patients: { first_name: string; last_name: string | null } | null } | null }
+    let shareRows: ShareRow[] = (ledger.package_shares ?? []).map((s) => ({
+      package_purchases: s.package_purchases && {
+        id: s.package_purchases.id,
+        package_name: s.package_purchases.package_name,
+        sessions_total: s.package_purchases.sessions_total,
+        sessions_used: s.package_purchases.sessions_used,
+        price_cents: s.package_purchases.price_cents,
+        is_closed: s.package_purchases.is_closed,
+        purchased_at: s.package_purchases.purchased_at,
+        patients: s.package_purchases.patients,
+      },
+    }))
     if (shareRows.length === 0) {
-      const { data: mine, error } = await supabase.rpc('get_my_shared_packages' as never, { p_patient_id: currentId } as never)
-      if (error) throw error
-      shareRows = ((mine as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; owner_first_name: string; owner_last_name: string | null }[] | null) ?? []).map(
+      shareRows = (ledger.my_shared_packages ?? []).map(
         ({ owner_first_name, owner_last_name, ...p }) => ({ package_purchases: { ...p, patients: { first_name: owner_first_name, last_name: owner_last_name } } }),
-      ) as unknown as typeof shareRows
+      )
     }
     const sharedPackages = shareRows
       .map((s) => s.package_purchases)
@@ -352,15 +432,27 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
   // Forces a fresh load regardless of cache state -- what every write
   // (recording a payment, applying credit, buying a package...) calls
   // afterward so the numbers actually reflect what just happened.
-  function refresh() {
+  function start(detail: boolean): Promise<PatientLedgerLoad> {
     const currentId = id.value
-    if (!currentId) return Promise.resolve()
+    if (!currentId) return Promise.resolve({ ledger: null, error: null })
     const state = stateFor(currentId)
-    const promise = doLoad(currentId).finally(() => {
+    const promise = doLoad(currentId, detail).finally(() => {
       if (state.inFlight === promise) state.inFlight = null
     })
     state.inFlight = promise
     return promise
+  }
+  function refresh(): Promise<void> {
+    return start(false).then(() => {})
+  }
+  // The same forced reload, asking for the Billing tab's rows as well and
+  // handing the whole ledger back: the tab fills its cards from the response
+  // that has just refreshed these figures, rather than fetching invoices,
+  // payments, credits and bonos a second time for itself. The error comes
+  // back too, because the tab shows it; the summary only records that there
+  // was one.
+  function refreshWithDetail(): Promise<PatientLedgerLoad> {
+    return start(true)
   }
 
   // Mount-time load: reuses another call site's already-loaded (or
@@ -375,7 +467,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     refresh()
   }
 
-  onMounted(loadIfNeeded)
+  if (!opts.manual) onMounted(loadIfNeeded)
   watch(id, loadIfNeeded)
 
   return {
@@ -390,5 +482,6 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     activePackages: computed(() => stateFor(id.value).activePackages.value),
     loadError: computed(() => stateFor(id.value).loadError.value),
     refresh,
+    refreshWithDetail,
   }
 }

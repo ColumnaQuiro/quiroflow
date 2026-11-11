@@ -35,7 +35,10 @@ describe('A ledger that could not load says so', () => {
           method: 'cash',
         })
 
-        cy.intercept('GET', '**/rest/v1/invoices*', {
+        // The ledger arrives in one request now (patient_ledger), so that is
+        // the request that fails: a column missing under any of its tables
+        // fails the function as it failed the one select that named it.
+        cy.intercept('POST', '**/rest/v1/rpc/patient_ledger*', {
           statusCode: 400,
           body: { code: '42703', message: 'column invoices.refunds_payment_id does not exist' },
         }).as('invoicesFail')

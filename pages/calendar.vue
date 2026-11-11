@@ -27,9 +27,11 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 // as comfortably tall on a normal screen; the grid (12h worth of rows) then
 // runs taller than the viewport on most screens and the scroll container
 // (scrollAreaRef, overflow-y-auto below) takes over instead of shrinking
-// rows to force everything to fit above the fold.
-const DAY_HOUR_PX_MIN = 127
-const WEEK_HOUR_PX_MIN = 81
+// rows to force everything to fit above the fold. Raised again (127/81 ->
+// 150/96) on the front desk's ask: at 81px a half-hour visit in the week
+// was ~38px, two cramped lines; at 96 the name, time and badges breathe.
+const DAY_HOUR_PX_MIN = 150
+const WEEK_HOUR_PX_MIN = 96
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 70 // day label + per-day counts + room-label rows (week view has room sub-columns per day, like Day view)
 const WEEK_ROOM_ROW_PX = 26 // the room-label row of WEEK_HEADER_PX, absent when the clinic has no rooms
@@ -536,6 +538,9 @@ async function loadAppointments(silent = false) {
     loadToday() // clears today's panels too
     return
   }
+  // A block carried into the next week keeps the grid drawn while that
+  // week loads, rather than putting it behind placeholders.
+  if (dragState.value) silent = true
   if (!silent) loading.value = true
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
@@ -578,7 +583,7 @@ async function loadAppointments(silent = false) {
   rangeFailed.value = false
 
   classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
-  appointments.value = (data as unknown as AppointmentRow[]) ?? []
+  appointments.value = keepDraggedRow((data as unknown as AppointmentRow[]) ?? [])
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
   loading.value = false
@@ -1671,8 +1676,22 @@ interface DragState {
   origStartsAt: string
   origEndsAt: string
   origRoomId: string | null
+  // The grid scrolls under a drag (the edge auto-scroll below, or the
+  // wheel), so the time is measured from where the pointer is in the grid,
+  // not on the screen.
+  startScrollTop: number
+  // The column the block was last over. Over the time gutter or a
+  // period-change strip there is no column, and the block stays where it was
+  // rather than jumping back to the day it came from.
+  lastCol: { roomId: string | null; dayKey: string } | null
 }
 const dragState = ref<DragState | null>(null)
+// The row being dragged, held so a range load mid-drag (the drag went on to
+// the next week) keeps it on the grid: the new week's rows do not include it.
+let dragRow: AppointmentRow | null = null
+let dragLastX = 0
+let dragLastY = 0
+let dragRectsStale = false
 // Distinguishes "dragged" from "clicked" -- a pointerdown/pointerup pair
 // with no meaningful movement in between should still open the edit modal
 // like before, but the browser's own synthesized click after a real drag
@@ -1698,10 +1717,21 @@ function captureColumnRects() {
   }))
 }
 function columnAtPoint(x: number, y: number) {
+  if (dragRectsStale) {
+    captureColumnRects()
+    dragRectsStale = false
+  }
   return dragColumnRects.find((c) => x >= c.rect.left && x <= c.rect.right && y >= c.rect.top && y <= c.rect.bottom)
+}
+function gridScroller() {
+  return document.querySelector<HTMLElement>('[data-cy=grid-scroller]')
 }
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
+  // Pressing on a visit is the start of a move or a click, never a request
+  // for its card: a card opening under the pointer while a block is being
+  // carried hid the very slots it was being carried to.
+  if (e.pointerType === 'mouse' && e.button === 0) closeHoverCardNow()
   if (appt.status !== 'booked' || readOnly.value) return
   // A right or middle click is not a drag, and a second finger landing while
   // one block is being dragged does not take the drag over: it used to
@@ -1723,14 +1753,22 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
     origStartsAt: appt.starts_at,
     origEndsAt: appt.ends_at,
     origRoomId: appt.room_id,
+    startScrollTop: gridScroller()?.scrollTop ?? 0,
+    lastCol: null,
   }
+  dragRow = appt
+  dragLastX = e.clientX
+  dragLastY = e.clientY
   dragMoved.value = false
   captureColumnRects()
+  dragRectsStale = false
   window.addEventListener('pointermove', onAppointmentDragMove)
   window.addEventListener('pointerup', onAppointmentDragEnd)
   window.addEventListener('pointercancel', onAppointmentDragCancel)
   window.addEventListener('blur', abortAppointmentDrag)
   window.addEventListener('keydown', onAppointmentDragKeydown)
+  // Capture: the grid's own scroller does not bubble its scroll to window.
+  window.addEventListener('scroll', onDragScroll, true)
 }
 
 function stopListeningForDrag() {
@@ -1739,6 +1777,126 @@ function stopListeningForDrag() {
   window.removeEventListener('pointercancel', onAppointmentDragCancel)
   window.removeEventListener('blur', abortAppointmentDrag)
   window.removeEventListener('keydown', onAppointmentDragKeydown)
+  window.removeEventListener('scroll', onDragScroll, true)
+  stopDragEdges()
+}
+
+function onDragScroll() {
+  if (!dragState.value) return
+  dragRectsStale = true
+  if (dragMoved.value) applyDrag()
+}
+
+// --- Carrying a block past what is on screen ---
+// The grid is taller than the window (see DAY_HOUR_PX_MIN), and a visit
+// often has to go to another week. Holding a dragged block near the top or
+// bottom of the grid scrolls it; holding it over the strip at either side
+// turns to the previous or next week (day, in Day view). Each waits a moment
+// first, so passing through on the way somewhere else does neither.
+const EDGE_SCROLL_ZONE_PX = 36
+const EDGE_SCROLL_DWELL_MS = 200
+const PERIOD_STRIP_PX = 32
+// The left strip sits just past the hour labels, which say where the block
+// is going and are not to be covered; the pointer over the labels counts too.
+const TIME_GUTTER_PX = 58
+const PERIOD_DWELL_MS = 650
+const PERIOD_REPEAT_MS = 1100
+let edgeScrollRaf = 0
+let edgeScrollSince = 0
+let periodTimer: ReturnType<typeof setTimeout> | null = null
+// Which strip the pointer is holding over, for its highlight.
+const dragPeriodEdge = ref<-1 | 1 | null>(null)
+// Where the strips are drawn: the visible part of the grid, below its header.
+const dragStripBox = ref<{ top: number; bottom: number; left: number; right: number } | null>(null)
+
+function gridHeaderPx() {
+  return viewMode.value === 'day' ? dayHeaderPx.value : weekHeaderPx.value
+}
+function measureStripBox() {
+  const el = gridScroller()
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  // clientWidth leaves the vertical scrollbar out of the right strip.
+  return { top: r.top + gridHeaderPx(), bottom: r.top + el.clientHeight, left: r.left, right: r.left + el.clientWidth }
+}
+function stopDragEdges() {
+  if (edgeScrollRaf) cancelAnimationFrame(edgeScrollRaf)
+  edgeScrollRaf = 0
+  edgeScrollSince = 0
+  if (periodTimer) clearTimeout(periodTimer)
+  periodTimer = null
+  dragPeriodEdge.value = null
+  dragStripBox.value = null
+}
+function edgeScrollTick() {
+  edgeScrollRaf = 0
+  const el = gridScroller()
+  const box = dragStripBox.value
+  if (!el || !box || !dragState.value) return
+  const y = dragLastY
+  const topZone = box.top + EDGE_SCROLL_ZONE_PX
+  const bottomZone = box.bottom - EDGE_SCROLL_ZONE_PX
+  const depth = y < topZone ? y - topZone : y > bottomZone ? y - bottomZone : 0
+  if (!depth) {
+    edgeScrollSince = 0
+    return
+  }
+  const now = performance.now()
+  if (!edgeScrollSince) edgeScrollSince = now
+  if (now - edgeScrollSince >= EDGE_SCROLL_DWELL_MS) {
+    // Faster the deeper into the zone, up to ~16px a frame.
+    const step = Math.sign(depth) * Math.min(16, 3 + Math.abs(depth) / 3)
+    const before = el.scrollTop
+    el.scrollTop += step
+    if (el.scrollTop === before) return // at the top or bottom already
+  }
+  edgeScrollRaf = requestAnimationFrame(edgeScrollTick)
+}
+function updateDragEdges() {
+  const s = dragState.value
+  if (!s || !dragMoved.value) return
+  if (!dragStripBox.value) dragStripBox.value = measureStripBox()
+  const box = dragStripBox.value
+  if (!box) return
+  if (!edgeScrollRaf) edgeScrollRaf = requestAnimationFrame(edgeScrollTick)
+  // A resize stays on its own day; only a move changes period.
+  const inStrip = dragLastY >= box.top && dragLastY <= box.bottom
+  const edge: -1 | 1 | null = s.mode !== 'move' || !inStrip ? null : dragLastX <= box.left + TIME_GUTTER_PX + PERIOD_STRIP_PX ? -1 : dragLastX >= box.right - PERIOD_STRIP_PX ? 1 : null
+  if (edge === dragPeriodEdge.value) return
+  dragPeriodEdge.value = edge
+  if (periodTimer) clearTimeout(periodTimer)
+  periodTimer = null
+  if (edge) periodTimer = setTimeout(() => turnPeriodWhileDragging(edge), PERIOD_DWELL_MS)
+}
+function turnPeriodWhileDragging(dir: -1 | 1) {
+  periodTimer = null
+  const s = dragState.value
+  if (!s || dragPeriodEdge.value !== dir) return
+  // The block lands on the same weekday and room of the period it is
+  // carried into, until the pointer finds a column there.
+  if (s.lastCol) {
+    const [y, m, d] = s.lastCol.dayKey.split('-').map(Number)
+    s.lastCol = { ...s.lastCol, dayKey: toDateKey(addDays(new Date(y, m - 1, d), viewMode.value === 'day' ? dir : dir * 7)) }
+  }
+  stepDate(dir)
+  nextTick(() => {
+    dragRectsStale = true
+    applyDrag()
+  })
+  // Still holding there: keep turning.
+  periodTimer = setTimeout(() => turnPeriodWhileDragging(dir), PERIOD_REPEAT_MS)
+}
+// A range load while a block is being carried keeps that block: it is the
+// live row the drag is moving, wherever it has got to. So does one landing
+// while the drop's reschedule dialog is up (dragRow is kept for exactly
+// that): the next week's rows can arrive after the release.
+function keepDraggedRow(rows: AppointmentRow[]) {
+  const row = dragState.value || (dragRow && pendingReschedule.value?.appointmentId === dragRow.id) ? dragRow : null
+  if (!row) return rows
+  const i = rows.findIndex((a) => a.id === row.id)
+  if (i >= 0) rows[i] = row
+  else rows.push(row)
+  return rows
 }
 
 // A drag that ends any way other than a release on the grid puts the block
@@ -1750,6 +1908,7 @@ function stopListeningForDrag() {
 function abortAppointmentDrag() {
   const s = dragState.value
   stopListeningForDrag()
+  dragRow = null
   if (!s) return
   dragState.value = null
   const appt = appointments.value.find((a) => a.id === s.apptId)
@@ -1771,16 +1930,25 @@ onBeforeUnmount(stopListeningForDrag)
 function onAppointmentDragMove(e: PointerEvent) {
   const s = dragState.value
   if (!s || e.pointerId !== s.pointerId) return
-  const dx = e.clientX - s.startClientX
-  const dy = e.clientY - s.startClientY
+  dragLastX = e.clientX
+  dragLastY = e.clientY
   if (!dragMoved.value) {
-    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
+    if (Math.abs(e.clientX - s.startClientX) < 5 && Math.abs(e.clientY - s.startClientY) < 5) return
     dragMoved.value = true
     closeHoverCardNow()
   }
+  applyDrag()
+  updateDragEdges()
+}
+
+// Puts the dragged block where the pointer (and the grid's scroll) says.
+function applyDrag() {
+  const s = dragState.value
+  if (!s) return
   const appt = appointments.value.find((a) => a.id === s.apptId)
   if (!appt) return
-  const deltaMin = pxToMinutesSinceStart(dy, hourPxForView())
+  const scrolled = (gridScroller()?.scrollTop ?? s.startScrollTop) - s.startScrollTop
+  const deltaMin = pxToMinutesSinceStart(dragLastY - s.startClientY + scrolled, hourPxForView())
 
   if (s.mode === 'resize') {
     const newEnd = new Date(new Date(s.origEndsAt).getTime() + deltaMin * 60000)
@@ -1789,7 +1957,9 @@ function onAppointmentDragMove(e: PointerEvent) {
   } else {
     const newStart = new Date(new Date(s.origStartsAt).getTime() + deltaMin * 60000)
     const durationMs = new Date(s.origEndsAt).getTime() - new Date(s.origStartsAt).getTime()
-    const col = columnAtPoint(e.clientX, e.clientY)
+    const over = columnAtPoint(dragLastX, dragLastY)
+    if (over) s.lastCol = { roomId: over.roomId, dayKey: over.dayKey }
+    const col = s.lastCol
     let finalStart = newStart
     if (col) {
       appt.room_id = col.roomId
@@ -1976,6 +2146,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
   // come off first, so it ended the drag without saving or reverting it.
   if (s && e.pointerId !== s.pointerId) return
   stopListeningForDrag()
+  dragRow = null
   if (!s) return
   dragState.value = null
   if (!dragMoved.value) return
@@ -2013,6 +2184,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
       saveInPlace(appt!.id, { ends_at: next.ends_at, room_id: next.room_id }, revert)
       return
     }
+    dragRow = appt!
     pendingReschedule.value = {
       appointmentId: appt!.id,
       patientId: appt!.patient_id,
@@ -2037,6 +2209,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
 function cancelReschedule() {
   pendingReschedule.value?.revert()
   pendingReschedule.value = null
+  dragRow = null
 }
 
 async function confirmReschedule(payload: { reasonId: string | null; note: string; applyFee: boolean; resendConfirmation: boolean }) {
@@ -2098,6 +2271,7 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   }
 
   pendingReschedule.value = null
+  dragRow = null
   // Reschedule-mode moves can land on a day/week that isn't the one already
   // loaded into `appointments.value` (drag-and-drop moves never leave the
   // loaded range, so this was a no-op for that flow before) -- reloading
@@ -2134,10 +2308,10 @@ function paymentFor(appt: AppointmentRow): VisitPayment {
 }
 
 // Hovering a block (mouse only) or moving the keyboard's cell onto it shows
-// the read-only hover card. A short show delay avoids flicker when the mouse
-// just passes over. The card has no controls, so it takes no pointer events
-// and there is nothing to travel onto; on touch there is no card at all -- a
-// tap opens the panel, whose header says the same things.
+// the read-only hover card, once the pointer rests (HOVER_REST_MS below).
+// The card has no controls, but the pointer can travel onto it and it stays
+// open there; a click on it opens the visit. On touch there is no card at
+// all -- a tap opens the panel, whose header says the same things.
 const hoveredAppt = ref<AppointmentRow | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const hoverCardEl = ref<any>(null)
@@ -2179,17 +2353,66 @@ watch(hoveredAppt, async (appt) => {
 })
 onUnmounted(() => hoverResizeObserver?.disconnect())
 
+// The card waits for the pointer to come to rest on a block (HOVER_REST_MS
+// after the last movement), the way PracticeHub's does: at a flat 300 ms from
+// entering, it opened while the pointer was still travelling to a block, or
+// pressing on one to drag it, and covered the slots around it. Once a card is
+// up, moving to the next block swaps it quickly.
+const HOVER_REST_MS = 550
+const HOVER_SWAP_MS = 150
+const HOVER_HIDE_MS = 250
+// Nothing to glance at while something else has the floor: a drag, the
+// panel, or the move it is asking about.
+function hoverBlocked() {
+  return !!(dragState.value || modalOpen.value || pendingReschedule.value || moveClash.value)
+}
+function hoverDelayFor(appt: AppointmentRow) {
+  return hoveredAppt.value && hoveredAppt.value.id !== appt.id ? HOVER_SWAP_MS : HOVER_REST_MS
+}
 function onBlockPointerEnter(appt: AppointmentRow, event: PointerEvent) {
-  if (event.pointerType !== 'mouse' || dragState.value || modalOpen.value) return
-  showHoverCardFor(appt, (event.currentTarget as HTMLElement).getBoundingClientRect(), 300)
+  if (event.pointerType !== 'mouse' || hoverBlocked() || event.buttons) return
+  showHoverCardFor(appt, (event.currentTarget as HTMLElement).getBoundingClientRect(), hoverDelayFor(appt))
+}
+// Still moving over the block: the wait starts again.
+function onBlockPointerMove(appt: AppointmentRow, event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || hoverBlocked()) return
+  if (event.buttons) {
+    if (hoverShowTimer) clearTimeout(hoverShowTimer)
+    hoverShowTimer = null
+    return
+  }
+  if (hoveredAppt.value?.id === appt.id) return
+  showHoverCardFor(appt, (event.currentTarget as HTMLElement).getBoundingClientRect(), hoverDelayFor(appt))
+}
+// The card is somewhere to read, not only to glance at: the pointer can move
+// on to it (to scroll a long one, or click it to open the visit) and it stays.
+function onHoverCardEnter() {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer)
+    hoverShowTimer = null
+  }
+}
+function onHoverCardClick() {
+  const appt = hoveredAppt.value
+  if (appt) openEditModal(appt)
 }
 function showHoverCardFor(appt: AppointmentRow, rect: DOMRect, delay: number) {
-  if (hoverHideTimer) {
+  // Only the card being kept is spared its hide; another visit's waits.
+  if (hoverHideTimer && hoveredAppt.value?.id === appt.id) {
     clearTimeout(hoverHideTimer)
     hoverHideTimer = null
   }
   if (hoverShowTimer) clearTimeout(hoverShowTimer)
   hoverShowTimer = setTimeout(() => {
+    hoverShowTimer = null
+    if (hoverHideTimer) {
+      clearTimeout(hoverHideTimer)
+      hoverHideTimer = null
+    }
     hoveredAppt.value = appt
     const spaceRight = window.innerWidth - rect.right
     const spaceLeft = rect.left
@@ -2208,7 +2431,11 @@ function cancelHoverShow() {
     clearTimeout(hoverShowTimer)
     hoverShowTimer = null
   }
-  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
+  if (hoverHideTimer) clearTimeout(hoverHideTimer)
+  hoverHideTimer = setTimeout(() => {
+    hoverHideTimer = null
+    hoveredAppt.value = null
+  }, HOVER_HIDE_MS)
 }
 // Dragging an appointment keeps the pointer over the calendar the whole
 // time, so mouseleave never fires on the original block -- the hover card
@@ -3136,12 +3363,13 @@ function showNowLineOn(day: Date) {
                       :data-appt-id="appt.id"
                       :data-stage="stageOf(appt)"
                       :data-dimmed="isDimmed(appt) || undefined"
-                      class="absolute scroll-mt-10"
+                      class="absolute scroll-mt-10 select-none"
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"
                       @pointerenter="onBlockPointerEnter(appt, $event)"
+                      @pointermove="onBlockPointerMove(appt, $event)"
                       @pointerleave="cancelHoverShow"
                     >
                       <CalendarAppointmentBlock
@@ -3361,12 +3589,13 @@ function showNowLineOn(day: Date) {
                         :data-appt-id="appt.id"
                         :data-stage="stageOf(appt)"
                       :data-dimmed="isDimmed(appt) || undefined"
-                        class="absolute"
+                        class="absolute select-none"
                         :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
                         @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                         @click.stop="handleAppointmentClick(appt)"
                         @pointerenter="onBlockPointerEnter(appt, $event)"
+                        @pointermove="onBlockPointerMove(appt, $event)"
                         @pointerleave="cancelHoverShow"
                       >
                         <CalendarAppointmentBlock
@@ -3491,9 +3720,35 @@ function showNowLineOn(day: Date) {
       :room-name="hoveredRoomName"
       :price-cents="priceFor(hoveredAppt)"
       :paid="paymentFor(hoveredAppt).kind !== 'none'"
-      class="pointer-events-none fixed z-30"
+      class="fixed z-30 cursor-pointer"
       :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
+      @pointerenter="onHoverCardEnter"
+      @pointerleave="cancelHoverShow"
+      @click="onHoverCardClick"
     />
+
+    <!-- While a block is carried: the strips at either side of the grid that
+         turn to the previous or next week (day). Drawn only; the drag reads
+         the pointer's position against dragStripBox itself. -->
+    <template v-if="dragStripBox && dragState?.mode === 'move'">
+      <div
+        v-for="side in ([-1, 1] as const)"
+        :key="side"
+        data-cy="drag-period-strip"
+        :data-side="side"
+        class="pointer-events-none fixed z-[35] flex flex-col items-center justify-center gap-1.5 border-line-control text-[11px] font-semibold transition-colors"
+        :class="[
+          side === -1 ? 'border-r' : 'border-l',
+          dragPeriodEdge === side ? 'bg-brand text-brand-on' : 'bg-surface/80 text-ink-muted',
+        ]"
+        :style="{ top: `${dragStripBox.top}px`, height: `${dragStripBox.bottom - dragStripBox.top}px`, left: `${side === -1 ? dragStripBox.left + TIME_GUTTER_PX : dragStripBox.right - PERIOD_STRIP_PX}px`, width: `${PERIOD_STRIP_PX}px` }"
+      >
+        <UiChevron :dir="side === -1 ? 'left' : 'right'" />
+        <span class="[writing-mode:vertical-rl]" :class="side === -1 ? 'rotate-180' : ''">
+          {{ viewMode === 'day' ? (side === -1 ? t('Previous day', 'Día anterior') : t('Next day', 'Día siguiente')) : side === -1 ? t('Previous week', 'Semana anterior') : t('Next week', 'Semana siguiente') }}
+        </span>
+      </div>
+    </template>
   </div>
 </template>
 

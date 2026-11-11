@@ -7,6 +7,15 @@ import { packAbsenceText, type PackPerson } from '../../utils/staffGestoriaPack'
 // nóminas, on screen first and then as a PDF to read and a CSV to import,
 // beside the registro de jornada PDF to sign. In Personal › Gestoría and in
 // Informes › Gestoría. Figures from server/api/staff/gestoria-pack.
+const props = defineProps<{
+  /**
+   * The app sets this: inside its WebView a plain link to /api/... goes
+   * nowhere, so each file is fetched and handed to the share sheet instead
+   * (mobile/pages/personal/index.vue). Unset, the links are ordinary
+   * downloads, as on the web.
+   */
+  download?: (path: string, filename: string) => void
+}>()
 const t = useT()
 const authedFetch = useAuthedFetch()
 
@@ -49,9 +58,16 @@ const linkBtn = 'inline-flex h-9 items-center whitespace-nowrap rounded-ctl bord
     <div class="flex flex-wrap items-center gap-2">
       <input v-model="month" type="month" :aria-label="t('Month', 'Mes')" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700 touch:h-11" data-cy="gestoria-pack-month" />
       <span class="flex-1" />
-      <a :href="url('csv')" :class="linkBtn" data-cy="gestoria-pack-csv">{{ t('CSV to import', 'CSV para importar') }}</a>
-      <a :href="`/api/time-records/export?month=${month}&format=pdf`" :class="linkBtn" data-cy="gestoria-pack-registro">{{ t('Working-time record PDF', 'Registro de jornada (PDF)') }}</a>
-      <a :href="url('pdf')" class="inline-flex h-9 items-center whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="gestoria-pack-pdf">{{ t('Summary PDF', 'Resumen en PDF') }}</a>
+      <template v-if="props.download">
+        <button type="button" :class="linkBtn" data-cy="gestoria-pack-csv" @click="props.download(url('csv'), `gestoria-${month}.csv`)">{{ t('CSV to import', 'CSV para importar') }}</button>
+        <button type="button" :class="linkBtn" data-cy="gestoria-pack-registro" @click="props.download(`/api/time-records/export?month=${month}&format=pdf`, `registro-jornada-${month}.pdf`)">{{ t('Working-time record PDF', 'Registro de jornada (PDF)') }}</button>
+        <button type="button" class="inline-flex h-9 items-center whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="gestoria-pack-pdf" @click="props.download(url('pdf'), `gestoria-${month}.pdf`)">{{ t('Summary PDF', 'Resumen en PDF') }}</button>
+      </template>
+      <template v-else>
+        <a :href="url('csv')" :class="linkBtn" data-cy="gestoria-pack-csv">{{ t('CSV to import', 'CSV para importar') }}</a>
+        <a :href="`/api/time-records/export?month=${month}&format=pdf`" :class="linkBtn" data-cy="gestoria-pack-registro">{{ t('Working-time record PDF', 'Registro de jornada (PDF)') }}</a>
+        <a :href="url('pdf')" class="inline-flex h-9 items-center whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="gestoria-pack-pdf">{{ t('Summary PDF', 'Resumen en PDF') }}</a>
+      </template>
     </div>
     <p class="text-[12.5px] text-ink-muted">{{ t('Everything the gestoría needs to prepare the payslips: days and hours against the contract, absences with their dates, holidays, the variable pay and how it was reached, contract changes. It hands over figures; the gestoría still works out the payslip.', 'Todo lo que la gestoría necesita para hacer las nóminas: días y horas frente al contrato, ausencias con sus fechas, vacaciones, la retribución variable y cómo se llega a ella, cambios de contrato. Da las cifras; la nómina la sigue calculando la gestoría.') }}</p>
     <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
-import { computePay, payPlanIsEmpty } from '~/utils/payPlan'
-import { EMPTY_PAY_FACTS, PAY_LINE_LABELS, loadPayMonth, type PayMonth } from '~/composables/usePayMonth'
+import { formatEur } from '../../utils/billing'
+import { computePay, payPlanIsEmpty } from '../../utils/payPlan'
+import { EMPTY_PAY_FACTS, PAY_LINE_LABELS, loadPayMonth, type PayMonth } from '../../composables/usePayMonth'
 
 // A person's file › Retribución: their pay plan and what it came to in a
 // month, from the same figures as Reports › Commissions (loadPayMonth).

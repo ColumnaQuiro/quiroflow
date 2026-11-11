@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { parseEurosToCents } from '~/utils/appointmentTypes'
+import { parseEurosToCents } from '../../utils/appointmentTypes'
 import type { Json } from '~/types/database.types'
-import { cleanTiers, EMPTY_PAY_PLAN, type PayPlan, type PayTierMode } from '~/utils/payPlan'
+import { cleanTiers, EMPTY_PAY_PLAN, type PayPlan, type PayTierMode } from '../../utils/payPlan'
 
 // One person's pay plan (pay_plans), from Reports > Commissions. Every part is
 // optional; what is left at zero simply does not count. Owners only (RLS).

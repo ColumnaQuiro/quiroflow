@@ -27,6 +27,12 @@ const { available, launch } = useEmbeddedSignup()
 
 const busy = ref(false)
 const mode = ref<'app' | 'api'>('app')
+// The choice is server-rendered before Vue owns it. Picked in that gap, the
+// browser moves the radio and hydration then moves it back to 'app' -- so the
+// clinic would see "a number for QuiroFlow only" ticked and connect the other
+// way. Disabled until mounted, which is also what lets Cypress wait for it.
+const hydrated = ref(false)
+onMounted(() => (hydrated.value = true))
 
 const options = computed(() => [
   {
@@ -102,7 +108,7 @@ async function connect() {
           {{ t('Sign in with Meta and pick your WhatsApp number. Nothing to copy across — no Meta app, no tokens.', 'Inicia sesión con Meta y elige tu número de WhatsApp. Nada que copiar — sin app de Meta, sin tokens.') }}
         </p>
       </div>
-      <UiBtn variant="primary" :disabled="busy" data-test="whatsapp-connect-button" @click="connect">
+      <UiBtn variant="primary" :disabled="busy || !hydrated" data-test="whatsapp-connect-button" @click="connect">
         {{ busy ? t('Connecting…', 'Conectando…') : props.connectedWabaId ? t('Reconnect', 'Reconectar') : t('Connect', 'Conectar') }}
       </UiBtn>
     </div>
@@ -115,7 +121,7 @@ async function connect() {
         class="flex cursor-pointer items-start gap-3 px-3.5 py-3"
         :class="[mode === opt.value ? 'bg-brand-tint' : '', i > 0 ? 'border-t border-line-row' : '']"
       >
-        <input v-model="mode" type="radio" name="whatsapp-connect-mode" :value="opt.value" :data-test="`whatsapp-connect-mode-${opt.value}`" :disabled="busy" class="mt-0.5 h-4 w-4 accent-brand" />
+        <input v-model="mode" type="radio" name="whatsapp-connect-mode" :value="opt.value" :data-test="`whatsapp-connect-mode-${opt.value}`" :disabled="busy || !hydrated" class="mt-0.5 h-4 w-4 accent-brand" />
         <span class="flex min-w-0 flex-1 flex-col gap-1">
           <strong class="text-[13.5px] font-[560] text-ink-900">{{ opt.title }}</strong>
           <span class="text-[12.5px] leading-relaxed text-ink-500">{{ opt.text }}</span>

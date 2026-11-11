@@ -43,6 +43,27 @@ describe('Connecting WhatsApp from Settings', () => {
     cy.contains('summary', 'Already have your own Meta app?').scrollIntoView().should('be.visible')
   })
 
+  it('asks which number before opening Meta, keeping the app by default', () => {
+    // Meta will not move a number between the two afterwards without
+    // disconnecting it, so the choice is made up front -- and the default is
+    // what nearly every clinic has: the number already on the receptionist's
+    // WhatsApp Business app, which they are not about to give up.
+    cy.get('[data-test="whatsapp-connect-mode-app"]').should('be.checked')
+    cy.get('[data-test="whatsapp-connect-mode-api"]').should('not.be.checked').check()
+    cy.get('[data-test="whatsapp-connect-mode-app"]').should('not.be.checked')
+  })
+
+  it('says the phone still works when the number is shared with the app', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setWhatsappBusinessAccount', { accountId: account.accountId, businessAccountId: '102290129340399' })
+      cy.task('db:updateRows', { table: 'accounts', values: { whatsapp_business_app_since: new Date().toISOString() }, match: { id: account.accountId } })
+      cy.login(account.email, account.password)
+      cy.visit('/settings/whatsapp')
+      cy.get('[data-test="whatsapp-connected-state"]').should('be.visible')
+      cy.get('[data-test="whatsapp-business-app-state"]').should('be.visible')
+    })
+  })
+
   it('shows the connected state once an account carries a WABA id', () => {
     cy.get('[data-test="whatsapp-connect-card"]').should('be.visible')
     // Written the way the connect callback writes it, then reloaded -- this
@@ -53,6 +74,8 @@ describe('Connecting WhatsApp from Settings', () => {
       cy.visit('/settings/whatsapp')
       cy.get('[data-test="whatsapp-connected-state"]').should('be.visible')
       cy.get('[data-test="whatsapp-connect-button"]').should('contain.text', 'Reconnect')
+      // An API-only number: nothing to say about the phone.
+      cy.get('[data-test="whatsapp-business-app-state"]').should('not.exist')
     })
   })
 })

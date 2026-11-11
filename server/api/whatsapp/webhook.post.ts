@@ -13,6 +13,7 @@ import { applyRecallReply } from '~/server/utils/recallReplies'
 import { declinesOnlyARecall, recallReplyIntent } from '~/utils/recallReply'
 import { answerEarlierVisitTap } from '~/server/utils/earlierVisitOffers'
 import { appointmentReplyIntent } from '~/utils/appointmentReply'
+import { importWhatsAppHistory, storeBusinessAppEcho, type CoexistenceMessage, type HistoryChunk } from '~/server/utils/whatsappCoexistence'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -60,6 +61,11 @@ interface MetaChangeValue {
   // a stranger -- there is no profile endpoint to ask afterwards the way
   // Instagram has one.
   contacts?: { wa_id: string; profile?: { name?: string } }[]
+  // Coexistence only -- a number also on the WhatsApp Business app (field
+  // smb_message_echoes): what the clinic sent from the phone.
+  message_echoes?: CoexistenceMessage[]
+  // Coexistence only (field history): the phone's past chats, shared once.
+  history?: HistoryChunk[]
 }
 
 const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio', 'document', 'sticker']
@@ -622,6 +628,21 @@ export default defineEventHandler(async (event) => {
               await supabase.from('appointments').update({ confirmation_status: intent }).eq('id', appt.id)
             }
           }
+        }
+      }
+
+      // A number shared with the WhatsApp Business app (Coexistence), after
+      // the same verification as everything above. Neither pushes, runs an
+      // automation or wakes the receptionist; the only thing an echo changes
+      // beyond its own row is a lead the AI was handling, which a person
+      // writing from the phone takes over. See whatsappCoexistence.ts.
+      for (const echo of value?.message_echoes ?? []) {
+        await storeBusinessAppEcho(supabase, account, echo)
+      }
+      for (const chunk of value?.history ?? []) {
+        const { imported, skippedThreads } = await importWhatsAppHistory(supabase, account.id, chunk)
+        if (imported || skippedThreads) {
+          console.info(`[whatsapp] account ${account.id}: imported ${imported} message(s) of chat history; ${skippedThreads} conversation(s) with nobody QuiroFlow knows left out.`)
         }
       }
     }

@@ -29,6 +29,8 @@ interface Message {
   body_preview: string | null
   /** Sent by the AI receptionist on its own, not a person (receptionistSend.ts). */
   sent_by_ai?: boolean
+  /** 'business_app': written from the WhatsApp Business app on the phone (Coexistence); 'history': imported from it. */
+  origin?: string | null
   /** In-app message a family member wrote for this patient (family accounts): their name. */
   sent_by_name?: string | null
   template_name: string | null
@@ -902,7 +904,7 @@ const threadMessages = ref<Message[]>([])
 const threadKey = ref<string | null>(null)
 const threadLoading = ref(false)
 const threadError = ref(false)
-const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction'
+const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction, origin'
 
 // Each conversation's last-loaded messages, newest-used last, so going back
 // to one is instant. Always refreshed on open; only ever a head start.
@@ -2750,6 +2752,10 @@ function avatarInitials(name: string) {
                 <p v-if="m.sent_by_ai" class="mb-0.5 text-[11px] font-semibold uppercase tracking-[.04em] opacity-75" data-cy="thread-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
                 <!-- A parent writing for their child from the app. -->
                 <p v-else-if="m.sent_by_name" class="mb-0.5 text-[11px] font-semibold opacity-75" data-cy="thread-message-family">{{ t(`Sent by ${m.sent_by_name}`, `Enviado por ${m.sent_by_name}`) }}</p>
+                <!-- Written on the clinic's phone, in the WhatsApp Business
+                app the number is shared with: not from here, so nobody
+                looks for who on the team sent it. -->
+                <p v-else-if="m.origin === 'business_app'" class="mb-0.5 text-[11px] font-semibold opacity-75" data-cy="thread-message-business-app">{{ t('From the phone', 'Desde el móvil') }}</p>
                 <img
                   v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
                   :src="mediaUrls[m.media_storage_path]"

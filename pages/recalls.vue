@@ -702,7 +702,7 @@ const QUEUE_COLUMNS = 'xl:grid-cols-[44px_minmax(0,2fr)_140px_144px_104px_minmax
 
 <template>
   <div class="flex h-full flex-col" data-cy="recalls-page" :data-ready="ready ? 'true' : 'false'">
-    <PageHeader :title="t('Recalls', 'Recordatorios')" :meta="clinicName ? t(`Patients with no next appointment, ${clinicName}`, `Pacientes sin próxima cita, ${clinicName}`) : t('Patients with no next appointment', 'Pacientes sin próxima cita')">
+    <PageHeader :title="t('Recalls', 'Recuperaciones')" :meta="clinicName ? t(`Patients with no next appointment, ${clinicName}`, `Pacientes sin próxima cita, ${clinicName}`) : t('Patients with no next appointment', 'Pacientes sin próxima cita')">
       <UiBtn v-if="tab === 'queue'" variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export CSV', 'Exportar CSV') }}</UiBtn>
     </PageHeader>
 

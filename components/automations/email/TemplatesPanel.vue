@@ -43,6 +43,8 @@ const ROW = 'flex w-full items-start gap-2.5 rounded-ctlSm px-2 py-2 text-left h
       </span>
     </div>
 
+    <AutomationsEmailAiWrite v-if="canManage" @drafted="(design, subject) => choose(`ai-${Date.now()}`, t('the AI draft', 'el borrador de IA'), design, subject)" />
+
     <p class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t("The clinic's", 'De la clínica') }}</p>
     <p v-if="loadError" class="text-[12px] text-danger-text">{{ loadError }}</p>
     <p v-else-if="loaded && !templates.length" :class="HINT">{{ t('None yet. "Save as template" keeps this email to start others from.', 'Aún ninguna. «Guardar como plantilla» guarda este email para empezar otros.') }}</p>

@@ -73,4 +73,47 @@ describe('Dragging a block', () => {
       })
     })
   })
+
+  // Off the screen: held over the strip at the grid's right edge, the block
+  // is carried into the next day (week, in the week views) and dropped there.
+  it('carries a visit into the next day over the edge strip', () => {
+    cy.seedStaffAccount().then((account) => {
+      seedVisit(account, null, 'Viaje', 'Mañana', 10, 0, { confirmationStatus: 'confirmed' }).then(({ appointmentId }) => {
+        cy.login(account.email, account.password)
+        cy.visit('/calendar')
+        cy.contains('select', 'Work week').select('day')
+        cy.contains('[data-cy=appt-block]', 'Viaje Mañana').should('exist')
+        // Clear of the auto-scroll zones at the grid's top and bottom.
+        cy.get('[data-cy=grid-scroller]').scrollTo(0, 0)
+
+        cy.get('[data-cy=grid-scroller]').then(($s) => {
+          const box = $s[0].getBoundingClientRect()
+          const stripX = box.left + $s[0].clientWidth - 12
+          cy.contains('[data-cy=appt-block]', 'Viaje Mañana').then(($el) => {
+            const r = $el[0].getBoundingClientRect()
+            const x = r.left + r.width / 2
+            const y = r.top + r.height / 2
+            cy.wrap($el).trigger('pointerdown', { pointerId: 9, clientX: x, clientY: y, button: 0, pointerType: 'mouse', scrollBehavior: false })
+            cy.window().trigger('pointermove', { pointerId: 9, clientX: x + 20, clientY: y })
+            cy.window().trigger('pointermove', { pointerId: 9, clientX: stripX, clientY: y })
+            cy.get('[data-cy=drag-period-strip][data-side="1"]').should('contain.text', 'Next day')
+            // One turn of the page (the strip waits 650 ms, then 1.1 s per turn).
+            cy.wait(1000)
+            cy.window().trigger('pointermove', { pointerId: 9, clientX: x, clientY: y })
+            cy.window().trigger('pointerup', { pointerId: 9, clientX: x, clientY: y })
+          })
+        })
+
+        cy.contains('h2', 'Reschedule appointment').should('be.visible')
+        cy.contains('button', 'Move appointment').click()
+        cy.contains('h2', 'Reschedule appointment').should('not.exist')
+        cy.task<{ starts_at: string }>('db:appointmentById', { appointmentId }).then((a) => {
+          const tomorrow = new Date(todayAt(10, 0))
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          expect(new Date(a.starts_at).getTime(), 'tomorrow, same time').to.eq(tomorrow.getTime())
+        })
+        cy.get('[data-cy=drag-period-strip]').should('not.exist')
+      })
+    })
+  })
 })

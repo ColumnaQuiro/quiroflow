@@ -1480,6 +1480,7 @@ export type Database = {
           stripe_secret_key: string | null
           stripe_webhook_secret: string | null
           whatsapp_access_token: string | null
+          whatsapp_business_app_since: string | null
           whatsapp_business_account_id: string | null
           whatsapp_confirmation_template_language: string
           whatsapp_confirmation_template_name: string | null
@@ -1604,6 +1605,7 @@ export type Database = {
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null
           whatsapp_access_token?: string | null
+          whatsapp_business_app_since?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
@@ -1729,6 +1731,7 @@ export type Database = {
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null
           whatsapp_access_token?: string | null
+          whatsapp_business_app_since?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
@@ -10200,6 +10203,7 @@ export type Database = {
           updated_at: string
           wamid: string | null
           sent_by_ai: boolean
+          origin: string | null
         }
         Insert: {
           account_id: string
@@ -10228,6 +10232,7 @@ export type Database = {
           updated_at?: string
           wamid?: string | null
           sent_by_ai?: boolean
+          origin?: string | null
         }
         Update: {
           account_id?: string
@@ -10256,6 +10261,7 @@ export type Database = {
           updated_at?: string
           wamid?: string | null
           sent_by_ai?: boolean
+          origin?: string | null
         }
         Relationships: [
           {

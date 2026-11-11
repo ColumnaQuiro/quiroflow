@@ -28,12 +28,20 @@ interface PhoneNumbersResponse {
   data?: { id: string; display_phone_number?: string; verified_name?: string }[]
 }
 
+interface PhoneNumberPlatform {
+  is_on_biz_app?: boolean
+  platform_type?: string
+}
+
 export default defineEventHandler(async (event) => {
   // The same permission that gates the rest of Settings > WhatsApp. Connecting
   // an account is not a bigger act than pasting the tokens by hand was.
   const { teamMember } = await requireSettingsPermission(event, 'communication_config')
 
-  const body = await readBody<{ code?: string }>(event)
+  // businessApp: the clinic chose to keep the number on the WhatsApp Business
+  // app (Coexistence). Only what they ASKED for -- whether the number really
+  // stayed on the app is read from Meta below.
+  const body = await readBody<{ code?: string; businessApp?: boolean }>(event)
   const code = (body?.code ?? '').trim()
   if (!code) {
     throw createError({ statusCode: 400, statusMessage: 'code is required.' })
@@ -150,6 +158,27 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // 4b. Is the number still on the WhatsApp Business app (Coexistence)?
+  //
+  //     Meta's answer, not the browser's: the dialog can end up onboarding the
+  //     number the standard way whatever was asked, and the two need different
+  //     things from us afterwards. Only asked when Coexistence was asked for --
+  //     a standard connection is never on the app -- and a failure to ask
+  //     falls back to the request rather than failing a connection that worked.
+  let onBusinessApp = false
+  if (body?.businessApp === true) {
+    try {
+      const platform = await $fetch<PhoneNumberPlatform>(`${GRAPH}/${phoneNumberId}`, {
+        query: { fields: 'is_on_biz_app,platform_type', access_token: businessToken },
+      })
+      onBusinessApp = platform.is_on_biz_app === true
+    } catch (err: any) {
+      const detail = err?.data?.error?.message ?? err?.message ?? 'unknown error'
+      console.warn(`[meta-connect] could not read is_on_biz_app for ${phoneNumberId} (${detail}); taking the clinic's word that it stays on the app.`)
+      onBusinessApp = true
+    }
+  }
+
   // 5. Subscribe THIS app to THAT account's webhooks.
   //
   //    Easy to skip and impossible to notice: the app-level webhook
@@ -174,6 +203,9 @@ export default defineEventHandler(async (event) => {
     .update({
       whatsapp_business_account_id: wabaId,
       whatsapp_phone_number_id: phoneNumberId,
+      // Cleared on a standard (re)connection, so the card does not go on
+      // telling a clinic its phone still works after the number left the app.
+      whatsapp_business_app_since: onBusinessApp ? new Date().toISOString() : null,
     })
     .eq('id', teamMember.account_id)
 
@@ -201,5 +233,36 @@ export default defineEventHandler(async (event) => {
   // secret in webhookMayActOnAccount, which is why that falls back to the
   // per-account row rather than requiring one.
 
-  return { connected: true, wabaId, phoneNumberId, displayPhoneNumber }
+  // 7. Coexistence only: ask Meta for the chats already on the phone.
+  //
+  //    Meta allows this once, and only within 24 hours of onboarding -- after
+  //    that the number has to be disconnected and connected again to get it.
+  //    So it is asked for here, as part of connecting, rather than left to a
+  //    button someone may not press in time. The clinic still decides: the app
+  //    asks them whether to share, and a refusal arrives as a history webhook
+  //    with error 2593109. What does arrive is imported by the webhook
+  //    (importWhatsAppHistory) without acting on any of it.
+  //
+  //    Contacts (sync_type smb_app_state_sync) are deliberately not asked for:
+  //    the phone's address book is friends and suppliers as much as patients,
+  //    and nothing here would know which.
+  //
+  //    Best-effort: the connection already works, and a failed request is not
+  //    a reason to tell the clinic it did not.
+  let historyRequested = false
+  if (onBusinessApp) {
+    try {
+      await $fetch(`${GRAPH}/${phoneNumberId}/smb_app_data`, {
+        method: 'POST',
+        query: { access_token: businessToken },
+        body: { messaging_product: 'whatsapp', sync_type: 'history' },
+      })
+      historyRequested = true
+    } catch (err: any) {
+      const detail = err?.data?.error?.message ?? err?.message ?? 'unknown error'
+      console.error(`[meta-connect] account ${teamMember.account_id}: could not request the WhatsApp Business app chat history: ${detail}`)
+    }
+  }
+
+  return { connected: true, wabaId, phoneNumberId, displayPhoneNumber, businessApp: onBusinessApp, historyRequested }
 })

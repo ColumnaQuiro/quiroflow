@@ -260,7 +260,12 @@ Without the filter, a parent's screen mixes their children's rows into
 their own.
 
 A guardian link lapses at 16 by date of birth, checked at query time; nothing
-is stored when it does. Reads done for someone else go to
+is stored when it does. One is also made **automatically** when the desk links
+a child under 16 to an adult as parent/child under Familia
+(`20261111191740_family_access_minors_automatic.sql`): only for a link with
+`created_by` set, so the WhatsApp receptionist's links, which have none, never
+grant access. Anything that writes `patient_relations` on the desk's behalf
+inherits that grant by setting `created_by`. Reads done for someone else go to
 `patient_access_log` through `log_family_access`
 (`server/utils/familyAccess.ts` on the server).
 

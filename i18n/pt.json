@@ -9295,6 +9295,7 @@
   "{0} will be on the list “{1}”: {2} new and {3} already here.": "{0} ficarão na lista “{1}”: {2} novos e {3} já existentes.",
   "{0} will have to set it up the next time they open QuiroFlow.": "Da próxima vez que abrirem o QuiroFlow, terão de a configurar: {0}.",
   "{0} will manage {1}'s account from their own app or portal.": "{0} vai gerir a conta de {1} a partir da sua própria app ou portal.",
+  "{0} will manage {1}'s app as their guardian, with full access. You can remove it once saved.": "{0} vai gerir a app de {1} como tutor(a), com acesso total. Pode retirá-lo depois de guardar.",
   "{0} with sessions left": "{0} com sessões por usar",
   "{0} without a phone, skipped": "{0} sem telefone, ignorados",
   "{0} working days": "{0} dias úteis",

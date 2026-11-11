@@ -7,7 +7,7 @@
 const RECALL_AFTER_DAYS = 21
 const props = defineProps<{ practitionerId?: string }>()
 
-interface RecallRow { days_since_last_appointment: number | null }
+interface RecallsDue { count: number; days_total: number }
 
 const t = useT()
 const supabase = useSupabaseClient()
@@ -19,20 +19,17 @@ const latest = useLatestRun()
 async function load() {
   const isStale = latest.start()
   loading.value = true
-  // A new query for every page. One builder shared by all of them is mutated
-  // by each .range(), and fetchAllRows asks for pages 2-5 at once -- so all
-  // four fetched the last range, came back empty, and a list longer than a
-  // page was counted as exactly 1000.
-  const page = (from: number, to: number) => {
-    let query = supabase.from('recall_candidates').select('days_since_last_appointment').gte('days_since_last_appointment', RECALL_AFTER_DAYS)
-    if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
-    return query.order('patient_id').range(from, to)
-  }
-  const rows = await fetchAllRows<RecallRow>(page)
+  // Counted through the view in the database (dashboard_recalls_due). The
+  // tile used to page the whole list -- a request per thousand patients due --
+  // to show how long it was and one average.
+  const { data, error } = await supabase.rpc('dashboard_recalls_due' as never, { p_min_days: RECALL_AFTER_DAYS, p_practitioner_id: props.practitionerId || null } as never)
   if (isStale()) return
-  count.value = rows.length
-  const known = rows.map((r) => r.days_since_last_appointment).filter((d): d is number => d !== null)
-  avgDays.value = known.length > 0 ? Math.round(known.reduce((sum, d) => sum + d, 0) / known.length) : null
+  if (error) throw error
+  const due = (data ?? { count: 0, days_total: 0 }) as unknown as RecallsDue
+  count.value = due.count
+  // Every row counted has a day count (the filter is on it), so the total
+  // over the count is the average the rows gave.
+  avgDays.value = due.count > 0 ? Math.round(due.days_total / due.count) : null
   loading.value = false
 }
 onMounted(load)

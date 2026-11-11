@@ -1,3 +1,5 @@
+import { sharedFetch } from './useSharedFetch'
+
 // Everything a new clinic has to set up before QuiroFlow runs on its own,
 // read from the clinic's own data -- the same rule as the dashboard's first
 // steps (components/dashboard/FirstSteps.vue): doing a step from anywhere
@@ -32,6 +34,37 @@ export interface SetupStep {
   body: string
   action: { label: string; to: string }
   alternative?: { label: string; to: string }
+}
+
+// What the clinic has set up, as setup_checklist() answers it: one request
+// where this composable used to send eight (an exact count of every
+// appointment among them) and the dashboard's first steps another five, on
+// every visit by an owner whose list was not yet complete. The rules are in
+// the function, beside the columns they read.
+export interface SetupFacts {
+  clinic_details: boolean
+  fiscal: boolean
+  online_booking: boolean
+  services: boolean
+  team: boolean
+  imported: boolean
+  whatsapp: boolean
+  reminders: boolean
+  verifactu: boolean
+  first_visit: boolean
+  /** The newest patient, for the first steps' "book a visit" link. */
+  latest_patient_id: string | null
+  /** Visits still under a name from the old software (Settings -> Team). */
+  unlinked_visits: number
+}
+
+// Shared (see useSharedFetch): the dashboard mounts the first steps and the
+// setup line side by side, and both ask this.
+export function loadSetupFacts(supabase: { rpc: (fn: never, args: never) => PromiseLike<{ data: unknown; error: unknown }> }, accountId: string): Promise<{ data: SetupFacts | null; error: unknown }> {
+  return sharedFetch(`setup-checklist:${accountId}`, async () => {
+    const { data, error } = await supabase.rpc('setup_checklist' as never, { p_account_id: accountId } as never)
+    return { data: (data ?? null) as unknown as SetupFacts | null, error }
+  })
 }
 
 export function useSetupChecklist() {
@@ -88,47 +121,26 @@ export function useSetupChecklist() {
 
   async function load() {
     readSkipped()
-    const accountId = store.accountId!
-    const [account, clinics, types, members, invites, imported, appointments, reminderRules, mfa] = await Promise.all([
-      supabase
-        .from('accounts')
-        .select('whatsapp_phone_number_id, whatsapp_reminder_template_name, appointment_reminder_enabled, verifactu_mode')
-        .eq('id', accountId)
-        .maybeSingle(),
-      supabase.from('clinics').select('address, phone, tax_id, legal_name, online_booking_enabled').is('archived_at', null),
-      supabase.from('appointment_types').select('id', { count: 'exact', head: true }).is('archived_at', null),
-      supabase.from('team_members').select('id', { count: 'exact', head: true }).eq('account_id', accountId).is('deleted_at', null),
-      supabase.from('account_invites').select('id', { count: 'exact', head: true }).is('accepted_at', null),
-      // What an importer wrote carries its source's reference; a patient
-      // typed in by hand does not, so one test patient does not tick it.
-      supabase.from('patients').select('id', { count: 'exact', head: true }).eq('account_id', accountId).not('external_reference', 'is', null),
-      supabase.from('appointments').select('id', { count: 'exact', head: true }),
-      // A clinic can remind through an automation instead of the built-in
-      // reminder ("24h before", "3 days before"), and then the built-in one
-      // is rightly off.
-      supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('trigger_event', 'appointment.hours_before').eq('enabled', true),
-      twoFactor.isEnabled().catch(() => false),
-    ])
+    const [answer, mfa] = await Promise.all([loadSetupFacts(supabase, store.accountId!), twoFactor.isEnabled().catch(() => false)])
     // A failed read must not tell an established clinic to redo its setup,
     // so any error shows a notice instead of a list of open steps.
-    if (account.error || clinics.error || types.error || members.error || invites.error || imported.error || appointments.error || reminderRules.error) {
+    if (answer.error || !answer.data) {
       failed.value = true
       loaded.value = true
       return
     }
-    const a = account.data
-    const c = clinics.data ?? []
-    facts.clinicDetails = c.length > 0 && c.every((x) => !!x.address?.trim() && !!x.phone?.trim())
-    facts.services = (types.count ?? 0) > 0
-    facts.team = (members.count ?? 0) > 1 || (invites.count ?? 0) > 0
-    facts.imported = (imported.count ?? 0) > 0
-    facts.whatsapp = !!a?.whatsapp_phone_number_id
-    facts.reminders = (!!a?.appointment_reminder_enabled && !!a?.whatsapp_reminder_template_name) || (reminderRules.count ?? 0) > 0
-    facts.onlineBooking = c.some((x) => x.online_booking_enabled)
-    facts.fiscal = c.length > 0 && c.every((x) => !!x.tax_id?.trim() && !!x.legal_name?.trim())
-    facts.verifactu = !!a?.verifactu_mode && a.verifactu_mode !== 'off'
+    const f = answer.data
+    facts.clinicDetails = f.clinic_details
+    facts.services = f.services
+    facts.team = f.team
+    facts.imported = f.imported
+    facts.whatsapp = f.whatsapp
+    facts.reminders = f.reminders
+    facts.onlineBooking = f.online_booking
+    facts.fiscal = f.fiscal
+    facts.verifactu = f.verifactu
     facts.twoFactor = mfa
-    facts.firstVisit = (appointments.count ?? 0) > 0
+    facts.firstVisit = f.first_visit
     loaded.value = true
   }
 

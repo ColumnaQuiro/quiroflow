@@ -1,18 +1,10 @@
-import type Anthropic from '@anthropic-ai/sdk'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
+import { draftAiForm, type AiFormDraftResult } from '~/server/utils/aiFormDraftModel'
 import { requireSettingsPermission } from '~/server/utils/requirePermission'
 import { modelFailureMessage } from '~/utils/modelFailure'
-import {
-  AI_FORM_DRAFT_SCHEMA,
-  AI_FORM_MAX_DESCRIPTION,
-  AI_FORM_MAX_SOURCE,
-  aiFormDraftSystemPrompt,
-  aiFormDraftUserMessage,
-  aiFormLanguage,
-  cleanAiFormDraft,
-} from '~/utils/aiFormDraft'
+import { AI_FORM_MAX_DESCRIPTION, AI_FORM_MAX_SOURCE, aiFormLanguage } from '~/utils/aiFormDraft'
 
 // Settings > Docs > "Create with AI": a description of a form, or the text
 // of one pasted from the clinic's old software, in; a draft of it as editor
@@ -22,19 +14,6 @@ import {
 // the person's own Save -- under the same doc_templates policies as a form
 // built by hand -- is what creates the template. So a draft nobody wanted
 // leaves nothing behind, and the model never touches the clinic's data.
-
-// Opus: a form is read by every patient the clinic sends it to, so the
-// draft's quality is worth more than the cents between models, and there is
-// nobody waiting on a chat bubble. Effort stays low to stay well inside
-// Netlify's 60-second limit on a function; see TIMEOUT_MS.
-const MODEL = 'claude-opus-5-5'
-// An 80-block form with long consent paragraphs is ~8k tokens of JSON.
-const MAX_TOKENS = 16000
-// Netlify stops a function at 60 s and answers 502 with no body, which the
-// dialog could only report as "something went wrong". Giving up first, with
-// no retries (the SDK would retry a timeout from the start), means the
-// person is told it took too long and can try a shorter form.
-const TIMEOUT_MS = 50_000
 
 // A budget per clinic, counted from the usage every model call already
 // records (anthropicClient.ts -> ai_usage). Every draft pays for the model,
@@ -72,46 +51,20 @@ export default defineEventHandler(async (event) => {
   if (limit) return { available: true as const, limit }
 
   const client = await createAnthropicClient(apiKey, { feature: FEATURE, accountId: teamMember.account_id })
-  let message: Anthropic.Beta.BetaMessage
+  let result: AiFormDraftResult
   try {
-    message = await client.beta.messages.create(
-      {
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'low', format: { type: 'json_schema', schema: AI_FORM_DRAFT_SCHEMA as unknown as Record<string, unknown> } },
-        // A form about a body is close enough to medicine that a safety
-        // check can decline it; the fallback model then drafts it instead.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        system: aiFormDraftSystemPrompt(language),
-        messages: [{ role: 'user', content: aiFormDraftUserMessage(description, source) }],
-      },
-      { timeout: TIMEOUT_MS, maxRetries: 0 },
-    )
+    result = await draftAiForm(client, { description, source, language })
   } catch (err) {
     console.error('[docs/draft-form] model request failed:', (err as Error)?.message ?? err)
     throw createError({ statusCode: 502, statusMessage: modelFailureMessage(err) })
   }
 
-  if (message.stop_reason === 'refusal') return { available: true as const, refused: true as const }
-  if (message.stop_reason === 'max_tokens') {
+  if (result.outcome === 'drafted') return { available: true as const, draft: result.draft }
+  if (result.outcome === 'refused') return { available: true as const, refused: true as const }
+  if (result.outcome === 'too_long') {
     throw createError({ statusCode: 422, statusMessage: 'That form is too long to draft in one go. Try it in parts.' })
   }
-
-  const text = message.content
-    .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-  let parsed: unknown = null
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    // Structured output should rule this out; treated as an empty draft.
-  }
-  const draft = cleanAiFormDraft(parsed)
-  if (draft.fields.length === 0) return { available: true as const, empty: true as const }
-  return { available: true as const, draft }
+  return { available: true as const, empty: true as const }
 })
 
 async function overLimit(service: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string): Promise<'hour' | 'day' | null> {

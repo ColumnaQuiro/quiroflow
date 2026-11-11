@@ -24,21 +24,23 @@ describe('Booking by touch', () => {
 
       cy.get('[data-cal-col]').first().then(($col) => {
         const hourPx = $col[0].getBoundingClientRect().height / 12
-        const y = hourPx * 2.5 + 5 // 10:30, Room 1, nothing booked
+        // 09:30, Room 1, nothing booked -- early enough that it and the hour
+        // after it are on screen at 1024x768 with the day's tall rows.
+        const y = hourPx * 1.5 + 5
 
         tap(cy.wrap($col), 40, y)
-        cy.get('[data-cy=slot-ghost]').should('contain.text', 'Book 10:30')
+        cy.get('[data-cy=slot-ghost]').should('contain.text', 'Book 09:30')
         cy.get('[data-cy=create-sheet]').should('not.exist')
 
         // A tap somewhere else moves the ghost; still nothing opens.
         tap(cy.wrap($col), 40, y + hourPx)
-        cy.get('[data-cy=slot-ghost]').should('contain.text', 'Book 11:30')
+        cy.get('[data-cy=slot-ghost]').should('contain.text', 'Book 10:30')
         cy.get('[data-cy=create-sheet]').should('not.exist')
 
         // The second tap on the same slot books it.
         tap(cy.wrap($col), 40, y + hourPx)
         cy.get('[data-cy=create-sheet]').should('be.visible')
-        cy.get('[data-cy=create-when]').should('contain.text', '11:30')
+        cy.get('[data-cy=create-when]').should('contain.text', '10:30')
       })
     })
   })

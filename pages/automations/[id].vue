@@ -34,11 +34,22 @@ function setTab(next: Tab) {
   router.replace({ query: { ...route.query, tab: next === 'flow' ? undefined : next, run: undefined } })
 }
 
+// "Create with AI" (AutomationsAiDraftDialog) hands its draft over in this
+// state and opens /automations/new?from=ai: unsaved, switched off, and
+// taken once, so a reload is a blank automation rather than the draft again.
+const aiDraft = useAiAutomationDraft()
+const fromAi = ref(false)
+
 async function init() {
   // The automation first: it is what the canvas waits on, so its requests go
   // out ahead of the lookups and the WhatsApp templates (which reach Meta).
   // /automations/new?kind=broadcast: a one-off send, from the Sends tab.
-  const loading = idParam.value === 'new' ? b.initNew(route.query.kind === 'broadcast' ? newBroadcastDraft(t('New send', 'Nuevo envío')) : undefined) : b.load(idParam.value)
+  const pending = idParam.value === 'new' && route.query.from === 'ai' ? aiDraft.value : null
+  aiDraft.value = null
+  fromAi.value = !!pending
+  const loading = idParam.value === 'new'
+    ? b.initNew(pending ?? (route.query.kind === 'broadcast' ? newBroadcastDraft(t('New send', 'Nuevo envío')) : undefined), { unsaved: !!pending })
+    : b.load(idParam.value)
   b.loadLookups()
   b.loadTemplates()
   await loading
@@ -314,6 +325,9 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       </div>
 
       <template v-else-if="tab === 'flow'">
+        <p v-if="fromAi" class="shrink-0 border-b border-warning-border bg-warning-bg px-5 py-2 text-[12.5px] text-warning-text" role="note" data-test="ai-draft-note">
+          {{ t('Drafted by AI and switched off. Check every step and message, fill in anything in [square brackets], and complete what it could not choose for you. Nothing is sent until you switch it on.', 'Creada con IA y desactivada. Revisa cada paso y cada mensaje, completa lo que esté [entre corchetes] y lo que no ha podido elegir por ti. No se envía nada hasta que la actives.') }}
+        </p>
         <p v-if="b.delayNowWaits.value" class="shrink-0 border-b border-warning-border bg-warning-bg px-5 py-2 text-[12.5px] text-warning-text" data-test="delay-note">
           {{ t('Before, the "Wait" steps of this automation were ignored and everything was sent at once. Now they really wait.', 'Antes, los pasos de «Esperar» de esta automatización se ignoraban y todo se enviaba a la vez. Ahora esperan de verdad.') }}
         </p>

@@ -109,18 +109,18 @@ async function choose(candidate: Candidate) {
   theirs.value = await holdingsFor(candidate.id)
 }
 
+// Asked in the app's own dialog (UiConfirmDialog), which names both records
+// and stays up, busy, until the merge has answered.
+const mergeAsk = ref(false)
+function askMerge() {
+  if (!survivor.value || !duplicate.value || merging.value) return
+  mergeAsk.value = true
+}
+
 async function confirmMerge() {
   const survivorId = survivor.value?.id
   const duplicateId = duplicate.value?.id
   if (!survivorId || !duplicateId || merging.value) return
-
-  const losing = duplicate.value!
-  const keeping = survivor.value!
-  const warning = t(
-    `Merge ${fullName(losing)} into ${fullName(keeping)}? Every appointment, receipt, factura, payment, bono and credit entry moves onto ${fullName(keeping)}, and the other record is deleted. This can't be undone.`,
-    `¿Fusionar ${fullName(losing)} en ${fullName(keeping)}? Todas las citas, recibos, facturas, pagos, bonos y créditos pasarán a ${fullName(keeping)}, y el otro registro se eliminará. Esta acción no se puede deshacer.`,
-  )
-  if (!confirm(warning)) return
 
   merging.value = true
   error.value = ''
@@ -137,6 +137,7 @@ async function confirmMerge() {
     emit('merged', survivorId)
   } finally {
     merging.value = false
+    mergeAsk.value = false
   }
 }
 
@@ -259,12 +260,32 @@ const money = (cents: number) => formatEur(cents)
         <p v-if="error" role="alert" class="mt-3 text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="mt-4 flex items-center gap-2">
-          <UiBtn variant="primary" :disabled="merging" @click="confirmMerge">
+          <UiBtn variant="primary" :disabled="merging" data-cy="merge-submit" @click="askMerge">
             {{ merging ? t('Merging…', 'Fusionando…') : t('Merge', 'Fusionar') }}
           </UiBtn>
           <UiBtn variant="secondary" @click="selected = null">{{ t('Pick another', 'Elegir otro') }}</UiBtn>
         </div>
       </template>
     </div>
+
+    <UiConfirmDialog
+      v-if="mergeAsk && survivor && duplicate"
+      tone="danger"
+      :title="t(`Merge ${fullName(duplicate)} into ${fullName(survivor)}?`, `¿Fusionar ${fullName(duplicate)} en ${fullName(survivor)}?`)"
+      :confirm-label="merging ? t('Merging…', 'Fusionando…') : t('Merge', 'Fusionar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="merging"
+      @confirm="confirmMerge"
+      @cancel="mergeAsk = false"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">
+        {{
+          t(
+            `Every appointment, receipt, factura, payment, bono and credit entry moves onto ${fullName(survivor)}, and the other record is deleted. This can't be undone.`,
+            `Todas las citas, recibos, facturas, pagos, bonos y créditos pasarán a ${fullName(survivor)}, y el otro registro se eliminará. Esta acción no se puede deshacer.`,
+          )
+        }}
+      </p>
+    </UiConfirmDialog>
   </div>
 </template>

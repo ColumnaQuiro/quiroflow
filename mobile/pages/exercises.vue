@@ -13,7 +13,7 @@ const patientId = computed(() => patient.value?.id ?? '')
 </script>
 
 <template>
-  <PatientScreen :title="t('Exercises', 'Ejercicios')">
+  <PatientScreen :title="t('Exercises', 'Ejercicios')" back="/care" :back-label="t('Self-care', 'Cuidarme')">
     <PatientExercises v-if="patientId" :patient-id="patientId" />
     <ExerciseReminderSetting v-if="patientId" class="mt-3" :patient-id="patientId" />
   </PatientScreen>

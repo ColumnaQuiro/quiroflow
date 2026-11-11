@@ -87,6 +87,9 @@ export function usePatientNav() {
   const isActive = (to: string) => {
     if (to === '/') return route.path === '/'
     if (to === '/visits' && route.path.startsWith('/billing')) return true
+    // The full exercises and the articles are opened from Cuidarme; with no
+    // tab lit up there, nothing said where the patient was or how to leave.
+    if (to === '/care' && ['/exercises', '/learn'].some((p) => route.path === p || route.path.startsWith(`${p}/`))) return true
     return route.path === to || route.path.startsWith(`${to}/`)
   }
   return { items, isActive }

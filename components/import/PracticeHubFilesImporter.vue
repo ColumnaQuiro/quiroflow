@@ -30,6 +30,19 @@ const connection = usePracticeHubConnection()
 // the per-request overhead does not dominate.
 const BATCH_SIZE = 20
 
+// The longest one file may take, download to stored row. A batch waits for its
+// slowest file, so one request that never answers held up the whole import:
+// Safari freezes the tab when the screen locks, the tab goes to the background
+// or the Mac sleeps, and a request caught in flight can stay pending after it
+// wakes. At one clinic that turned an afternoon into three runs of ten minutes,
+// each stopped with nothing in the server's logs, and a clinic told "800 of
+// 5,000 in three hours". Generous, because a large scan on a slow uplink is
+// real: the slowest download through our server measured 20 s, and the upload
+// shares the clinic's connection with nineteen others. A file that runs out is
+// counted as failed and the batch moves on; the next run retries it, and its
+// fixed storage path keeps a retry from leaving a second copy behind.
+const FILE_DEADLINE_MS = 3 * 60 * 1000
+
 interface PHFile {
   id: number
   size: number | null
@@ -50,6 +63,15 @@ interface PHPatient {
 type Phase = 'idle' | 'listing' | 'ready' | 'working' | 'done'
 const phase = ref<Phase>('idle')
 useImportWriting(() => phase.value === 'working')
+// The import runs in this tab and nowhere else, so keep the screen on while it
+// does, and say so when the tab was put aside and the browser paused it.
+useScreenWakeLock(() => phase.value === 'working')
+const pausedWhileHidden = ref(false)
+function noteHidden() {
+  if (phase.value === 'working' && document.visibilityState === 'hidden') pausedWhileHidden.value = true
+}
+onMounted(() => document.addEventListener('visibilitychange', noteHidden))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', noteHidden))
 const error = ref('')
 
 const totalInPracticeHub = ref(0)
@@ -242,7 +264,11 @@ async function buildList() {
   }
 }
 
-async function importOne(item: { ph: PHFile; patientId: string }) {
+function importWithDeadline(item: { ph: PHFile; patientId: string }) {
+  return withDeadline((signal) => importOne(item, signal), FILE_DEADLINE_MS)
+}
+
+async function importOne(item: { ph: PHFile; patientId: string }, signal: AbortSignal) {
   const fileName = item.ph.file_name?.trim() || `practicehub-${item.ph.id}`
 
   // The bytes come back through our own server: PracticeHub's S3 bucket sends
@@ -252,7 +278,11 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
     method: 'POST',
     body: { url: item.ph.url },
     responseType: 'blob',
+    signal,
   })
+  // Storage's upload takes no signal, so a file whose deadline passed during
+  // the download stops here instead of writing anyway.
+  signal.throwIfAborted()
 
   // Keyed on PracticeHub's file id, not the clock. Date.now() alone collides
   // when one patient has two files of the same name uploaded in the same
@@ -282,6 +312,7 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
     .select('id')
     .eq('account_id', store.accountId!)
     .eq('external_reference', String(item.ph.id))
+    .abortSignal(signal)
     .maybeSingle()
 
   if (placeholder) {
@@ -289,8 +320,9 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
       .from('patient_files')
       .update({ storage_path: storagePath })
       .eq('id', placeholder.id)
+      .abortSignal(signal)
     if (updateError) throw new Error(updateError.message)
-    await compress(placeholder.id)
+    await compress(placeholder.id, signal)
     return
   }
 
@@ -304,9 +336,9 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
     storage_path: storagePath,
     created_at: item.ph.created ?? undefined,
   }
-  const { data: inserted, error: insertError } = await supabase.from('patient_files').insert(row).select('id').single()
+  const { data: inserted, error: insertError } = await supabase.from('patient_files').insert(row).select('id').abortSignal(signal).single()
   if (insertError) throw new Error(insertError.message)
-  await compress(inserted.id)
+  await compress(inserted.id, signal)
 }
 
 // The same step an upload takes (components/patients/FilesTab.vue). Imported
@@ -314,8 +346,8 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
 // Settings > Files still had to compress. Awaited, unlike on upload, so a
 // batch never has more than BATCH_SIZE compressions running at once; a file
 // that fails to compress is still imported, and Settings > Files picks it up.
-async function compress(fileId: string) {
-  await useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId } }).catch(() => {})
+async function compress(fileId: string, signal: AbortSignal) {
+  await useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId }, signal }).catch(() => {})
 }
 
 // The download links PracticeHub hands out are pre-signed and short-lived, and
@@ -349,6 +381,9 @@ async function refreshLinks() {
 
 function failureText(item: { ph: PHFile }, reason: any): string {
   const name = item.ph.file_name ?? `#${item.ph.id}`
+  if (reason instanceof DeadlineError) {
+    return `${name}: ${t('no answer after 3 minutes', 'sin respuesta en 3 minutos')}`
+  }
   // responseType 'blob' leaves an error's body as a Blob, so the server's
   // statusMessage never reaches data; the status on the error does.
   const status = reason?.statusCode ?? reason?.response?.status
@@ -359,6 +394,7 @@ function failureText(item: { ph: PHFile }, reason: any): string {
 async function run() {
   phase.value = 'working'
   stopRequested.value = false
+  pausedWhileHidden.value = false
   error.value = ''
 
   for (let i = done.value; i < queue.value.length; i += BATCH_SIZE) {
@@ -366,7 +402,7 @@ async function run() {
     const batch = queue.value.slice(i, i + BATCH_SIZE)
     // Concurrent within a batch, serial between them: the clinic's connection
     // is the limit, and a whole file list at once would swamp it.
-    let results = await Promise.allSettled(batch.map((item) => importOne(item)))
+    let results = await Promise.allSettled(batch.map((item) => importWithDeadline(item)))
 
     if (results.some((r) => r.status === 'rejected' && isExpiredLink(r.reason))) {
       try {
@@ -374,7 +410,7 @@ async function run() {
         results = await Promise.all(
           results.map((r, n) =>
             r.status === 'rejected' && isExpiredLink(r.reason)
-              ? importOne(batch[n]).then(
+              ? importWithDeadline(batch[n]).then(
                   (value): PromiseSettledResult<void> => ({ status: 'fulfilled', value }),
                   (reason): PromiseSettledResult<void> => ({ status: 'rejected', reason }),
                 )
@@ -491,6 +527,17 @@ async function run() {
           </div>
           <p v-if="refreshingLinks" class="mt-2 text-[12.5px] text-ink-muted2">
             {{ t('The download links expired. Getting new ones from PracticeHub…', 'Los enlaces de descarga caducaron. Pidiendo otros nuevos a PracticeHub…') }}
+          </p>
+          <!--
+            The import runs in this tab. Safari stops it the moment the tab is
+            out of sight, and a clinic that left it running for three hours got
+            35 minutes of work, with nothing on screen to say why.
+          -->
+          <p v-if="phase === 'working'" class="mt-2 text-[12.5px] text-ink-muted2">
+            {{ t('Keep this tab open and in front until it finishes. If you switch tab or app, lock the screen or let the computer sleep, the browser pauses the import.', 'Deja esta pestaña abierta y delante hasta que termine. Si cambias de pestaña o de app, bloqueas la pantalla o el ordenador entra en reposo, el navegador pausa la importación.') }}
+          </p>
+          <p v-if="phase === 'working' && pausedWhileHidden" class="mt-1 text-[12.5px] text-warning-text">
+            {{ t('The import paused while this tab was out of sight. It carries on now that it is back in front.', 'La importación se pausó mientras esta pestaña no estaba delante. Sigue ahora que ha vuelto a primer plano.') }}
           </p>
         </div>
 

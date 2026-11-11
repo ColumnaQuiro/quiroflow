@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import type { DocField } from '~/utils/docFields'
+import type { AiFormDraft } from '~/utils/aiFormDraft'
 
 type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
 
@@ -118,6 +119,41 @@ function openTemplate(t: Template) {
   category.value = t.category ?? ''
   validMonths.value = t.valid_months ?? ''
   savedState.value = editorState()
+  aiDrafted.value = false
+}
+
+// ---- "Create with AI"
+// The draft opens in this editor unsaved: an id of '' until Save inserts it.
+// So a draft nobody wanted leaves no template behind, and what is saved is
+// what the person read here, under the same policies as a form built by hand.
+const aiDialogOpen = ref(false)
+const aiDrafted = ref(false)
+const isUnsaved = computed(() => activeTemplate.value?.id === '')
+
+function openAiDraft(draft: AiFormDraft) {
+  aiDialogOpen.value = false
+  const now = new Date().toISOString()
+  activeTemplate.value = {
+    id: '',
+    account_id: store.accountId!,
+    title: draft.title,
+    fields: draft.fields,
+    category: draft.category,
+    valid_months: null,
+    language: null,
+    translation_of: null,
+    created_by: null,
+    updated_by: null,
+    created_at: now,
+    updated_at: now,
+  } as unknown as Template
+  title.value = draft.title
+  fields.value = draft.fields
+  category.value = draft.category ?? ''
+  validMonths.value = ''
+  // Nothing is saved yet, so leaving asks first, as with any unsaved edit.
+  savedState.value = ''
+  aiDrafted.value = true
 }
 
 // What the editor held when it was opened or last saved. The back button
@@ -197,15 +233,34 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 async function save() {
   if (!activeTemplate.value) return
   saving.value = true
+  const values = {
+    title: title.value.trim() || t('Untitled template', 'Plantilla sin título'),
+    fields: fields.value as any,
+    category: category.value || null,
+    valid_months: validMonths.value === '' ? null : Math.min(120, Math.max(1, Math.round(Number(validMonths.value)))),
+    updated_by: store.teamMember?.id ?? null,
+  }
+  if (isUnsaved.value) {
+    // An AI draft: its first save is what creates the template.
+    const { data, error } = await supabase
+      .from('doc_templates')
+      .insert({ ...values, account_id: store.accountId!, created_by: store.teamMember?.id ?? null })
+      .select('*')
+      .single()
+    saving.value = false
+    if (error || !data) {
+      showToast(error?.message ?? t('Could not save', 'No se ha podido guardar'), 'error')
+      return
+    }
+    activeTemplate.value = data as unknown as Template
+    templates.value = [activeTemplate.value, ...templates.value]
+    savedState.value = editorState()
+    showToast(t('Saved', 'Guardado'))
+    return
+  }
   const { error } = await supabase
     .from('doc_templates')
-    .update({
-      title: title.value.trim() || t('Untitled template', 'Plantilla sin título'),
-      fields: fields.value as any,
-      category: category.value || null,
-      valid_months: validMonths.value === '' ? null : Math.min(120, Math.max(1, Math.round(Number(validMonths.value)))),
-      updated_by: store.teamMember?.id ?? null,
-    })
+    .update(values)
     .eq('id', activeTemplate.value.id)
   saving.value = false
   if (error) {
@@ -236,7 +291,10 @@ async function confirmDelete() {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Docs', 'Documentos')">
-      <UiBtn v-if="!activeTemplate" variant="primary" data-cy="doc-new" @click="newTemplate">{{ t('New Template', 'Nueva plantilla') }}</UiBtn>
+      <template v-if="!activeTemplate">
+        <UiBtn data-cy="doc-ai-new" @click="aiDialogOpen = true">{{ t('Create with AI', 'Crear con IA') }}</UiBtn>
+        <UiBtn variant="primary" data-cy="doc-new" @click="newTemplate">{{ t('New Template', 'Nueva plantilla') }}</UiBtn>
+      </template>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
@@ -304,6 +362,10 @@ async function confirmDelete() {
               <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
             </div>
             <div class="flex flex-col gap-4 p-[18px]">
+              <p v-if="aiDrafted" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" role="note" data-cy="doc-ai-banner">
+                <template v-if="isUnsaved">{{ t('Drafted by AI and not saved yet. Read every question, and any legal wording, before you save it or send it to a patient. Fill in anything in [square brackets].', 'Creado con IA y aún sin guardar. Lee cada pregunta, y cualquier texto legal, antes de guardarlo o enviarlo a un paciente. Completa lo que esté [entre corchetes].') }}</template>
+                <template v-else>{{ t('Drafted by AI. Read every question, and any legal wording, before you send it to a patient. Fill in anything in [square brackets].', 'Creado con IA. Lee cada pregunta, y cualquier texto legal, antes de enviarlo a un paciente. Completa lo que esté [entre corchetes].') }}</template>
+              </p>
               <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                 {{ t('Name', 'Nombre') }}
                 <input v-model="title" type="text" :placeholder="t('Untitled template', 'Plantilla sin título')" class="h-10 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[16px] font-semibold text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
@@ -322,7 +384,8 @@ async function confirmDelete() {
                 <input id="doc-valid-months" v-model="validMonths" type="number" min="1" max="120" :placeholder="t('No expiry', 'Sin caducidad')" class="h-9 touch:h-11 w-[130px] rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="doc-valid-months" />
                 <span class="text-[12.5px] text-ink-muted">{{ t('Signed copies about to expire are listed in Settings › Privacy.', 'Las copias firmadas a punto de caducar salen en Ajustes › Privacidad.') }}</span>
               </div>
-              <div class="flex flex-col gap-1.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="doc-versions">
+              <!-- A version points at a saved original, so an unsaved draft has none yet. -->
+              <div v-if="!isUnsaved" class="flex flex-col gap-1.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="doc-versions">
                 <template v-if="activeTemplate.translation_of">
                   <span class="text-[13.5px] text-ink-700">
                     {{ t(`${languageName(activeTemplate.language)} version of “${originalOf(activeTemplate)?.title ?? '…'}”.`, `Versión en ${languageName(activeTemplate.language).toLowerCase()} de «${originalOf(activeTemplate)?.title ?? '…'}».`) }}
@@ -365,6 +428,8 @@ async function confirmDelete() {
       <p class="text-[14px] leading-snug text-ink-700">{{ t('It can no longer be sent. Forms already sent with it stay on each patient’s record.', 'Ya no se podrá enviar. Los formularios ya enviados con ella se quedan en la ficha de cada paciente.') }}</p>
       <p v-if="deleting.category" class="text-[14px] leading-snug text-warning-text">{{ t('Reports stops counting them as this category, though: every patient shows as missing it until another template in the category is sent.', 'Pero Informes deja de contarlos en esta categoría: todos los pacientes aparecerán sin ella hasta que se envíe otra plantilla de la categoría.') }}</p>
     </UiConfirmDialog>
+
+    <SettingsDocAiDraftDialog v-if="aiDialogOpen" @drafted="openAiDraft" @cancel="aiDialogOpen = false" />
 
     <UiConfirmDialog
       v-if="leaveOpen"

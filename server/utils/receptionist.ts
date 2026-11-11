@@ -611,7 +611,7 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null; practitioner_ids?: string[] | null }): OfferedType {
+export function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null; practitioner_ids?: string[] | null }): OfferedType {
   return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals, priceCents: type.default_price_cents ?? null, practitionerIds: type.practitioner_ids ?? [] }
 }
 

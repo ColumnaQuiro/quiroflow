@@ -7,6 +7,7 @@
 // (clinics.timezone), and the clinic's name, phone and address are fields of
 // their own, so a clinic's template can say how to reach that location.
 import type { EmailTheme } from './emailDesign'
+import { earlierVisitLanguage, earlierVisitWhen } from './earlierVisitOffer'
 
 export const DEFAULT_TIMEZONE = 'Europe/Madrid'
 
@@ -23,6 +24,13 @@ export interface MergeContext {
   satisfactionUrl?: string
   waitlistClaimLink?: string
   waitlistSlotDatetime?: string
+  /**
+   * An earlier time offered for a first visit (earlierVisitOffers.ts): the
+   * time on offer and the visit they have, written in the language the
+   * template goes out in.
+   */
+  earlierSlotAt?: string
+  earlierVisitAt?: string
   /** An unpaid invoice's reminder (invoice.overdue): its number, what is owed, and /api/pay/<token>. */
   invoiceNumber?: string
   invoiceAmountOwed?: string
@@ -115,6 +123,10 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   if (source === 'satisfaction_link') return context?.satisfactionUrl ?? ''
   if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
   if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
+  if (source === 'earlier_slot_datetime' || source === 'earlier_visit_datetime') {
+    const at = source === 'earlier_slot_datetime' ? context?.earlierSlotAt : context?.earlierVisitAt
+    return at ? earlierVisitWhen(at, timeZone, earlierVisitLanguage(context?.language)) : ''
+  }
   if (source === 'invoice_number') return context?.invoiceNumber ?? ''
   if (source === 'invoice_amount_owed') return context?.invoiceAmountOwed ?? ''
   if (source === 'invoice_pay_link') return context?.invoicePayLink ?? ''

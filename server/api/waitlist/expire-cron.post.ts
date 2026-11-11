@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { offerNextWaitlistEntry } from '~/server/utils/waitlistOffer'
+import { sweepEarlierVisitOffers } from '~/server/utils/earlierVisitOffers'
 
 // Sweeps offered waitlist entries whose offer window has passed, marks them
 // expired, and re-offers the same freed slot to the next matching waiting
@@ -18,14 +19,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)
+  const origin = getRequestURL(event).origin
+
+  // First visits days away that a time has freed up for (earlierVisitOffers.ts):
+  // the same quarter-hour tick, so no cron of its own to schedule. First, so
+  // the waitlist's own early return below does not skip it.
+  const earlier = await sweepEarlierVisitOffers(event, supabase, origin)
+
   const { data: expiring } = await supabase
     .from('waitlist_entries')
     .select('id, account_id, clinic_id, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at, offered_to_all, class_session_id')
     .eq('status', 'offered')
     .lt('offer_expires_at', new Date().toISOString())
-  if (!expiring || expiring.length === 0) return { expired: 0, reoffered: 0 }
-
-  const origin = getRequestURL(event).origin
+  if (!expiring || expiring.length === 0) return { expired: 0, reoffered: 0, earlier }
 
   let reoffered = 0
   await mapWithConcurrency(expiring, SEND_CONCURRENCY, async (entry) => {
@@ -65,5 +71,5 @@ export default defineEventHandler(async (event) => {
     if (reofferedThis) reoffered++
   })
 
-  return { expired: expiring.length, reoffered }
+  return { expired: expiring.length, reoffered, earlier }
 })

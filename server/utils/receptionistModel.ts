@@ -8,7 +8,7 @@ import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 
@@ -173,6 +173,8 @@ export async function runReceptionistModel(
     give?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer stop_follow_ups (receptionistBooking.ts): a patient answered on their own only. */
     stopFollowUps?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer stop_earlier_time_offers (receptionistBooking.ts): a clinic offering earlier first visits, same terms as `book`. */
+    stopEarlier?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /**
      * The clinic's limit on times offered in one reply. A reply over it is
      * written again once (offeredTimeCount): told "at most 2", it offered one
@@ -227,6 +229,7 @@ export async function runReceptionistModel(
     ...(opts.cancel ? [CANCEL_APPOINTMENT] : []),
     ...(opts.give ? [GIVE_VISIT_TO] : []),
     ...(opts.stopFollowUps ? [STOP_FOLLOW_UPS] : []),
+    ...(opts.stopEarlier ? [STOP_EARLIER_TIME_OFFERS] : []),
   ]
   let handedOver: string | null = null
   // A booking's confirmation names its time (and a move, the old one too; a
@@ -349,6 +352,11 @@ export async function runReceptionistModel(
           result = await opts.stopFollowUps(use.input).catch((err) => {
             console.error('[receptionist] stop_follow_ups failed:', (err as Error)?.message ?? err)
             return { content: 'It could not be done. Call hand_over_to_colleague saying they have left, so a colleague takes them off the follow-ups.', isError: true }
+          })
+        } else if (use.name === 'stop_earlier_time_offers' && opts.stopEarlier) {
+          result = await opts.stopEarlier(use.input).catch((err) => {
+            console.error('[receptionist] stop_earlier_time_offers failed:', (err as Error)?.message ?? err)
+            return { content: 'It could not be done. Call hand_over_to_colleague saying they do not want to be offered an earlier time.', isError: true }
           })
         } else if (use.name === 'add_to_waitlist' && opts.waitlist) {
           result = await opts.waitlist(use.input).catch((err) => {

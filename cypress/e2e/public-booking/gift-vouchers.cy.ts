@@ -156,6 +156,7 @@ describe('Gift vouchers', () => {
         cy.visit(`/book/${account.accountSlug}?regalo=${v.code}`)
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
         cy.contains('Introduzca sus datos').should('be.visible')
         // The page's price format: a non-breaking space before the euro sign.
         cy.get('[data-cy=booking-gift-ok]').invoke('text').should('match', /50,00\s€ de saldo/)
@@ -183,6 +184,7 @@ describe('Gift vouchers', () => {
       cy.visit(`/book/${account.accountSlug}`)
       selectBookableDayWithSlots()
       cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+      cy.get('[data-cy=booking-continue]:visible').click()
       cy.contains('Introduzca sus datos').should('be.visible')
       cy.get('[data-cy=booking-gift-open]').should('contain', 'Tengo un bono regalo')
       cy.get('@giftOptions.all').should('have.length', 0)

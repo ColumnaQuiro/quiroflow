@@ -334,7 +334,7 @@ describe('Appointment types', () => {
 
         // Offered before.
         cy.visit(`/book/${account.accountSlug}`)
-        cy.contains('option', 'Ajuste').should('exist')
+        cy.contains('[data-cy=booking-service-option]', 'Ajuste').should('exist')
 
         cy.login(account.email, account.password)
         openType(type.id)
@@ -347,8 +347,8 @@ describe('Appointment types', () => {
 
         // Not on the public booking page.
         cy.visit(`/book/${account.accountSlug}`)
-        cy.contains('option', 'Revisión').should('exist')
-        cy.contains('option', 'Ajuste').should('not.exist')
+        cy.contains('[data-cy=booking-service-option]', 'Revisión').should('exist')
+        cy.contains('[data-cy=booking-service-option]', 'Ajuste').should('not.exist')
 
         // Not offered for a new appointment...
         cy.visit('/calendar')
@@ -375,7 +375,7 @@ describe('Appointment types', () => {
         cy.get('[data-cy=types-archived]').should('not.exist')
         typeState(type.id).then((st) => expect(st.row?.archived_at).to.equal(null))
         cy.visit(`/book/${account.accountSlug}`)
-        cy.contains('option', 'Ajuste').should('exist')
+        cy.contains('[data-cy=booking-service-option]', 'Ajuste').should('exist')
       })
     })
   })

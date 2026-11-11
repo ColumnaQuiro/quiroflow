@@ -32,6 +32,7 @@ describe('Booking fees and a card on file', () => {
         cy.visit(`/book/${account.accountSlug}`)
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.get('[data-cy=booking-policy]')
           .should('contain.text', 'Cancelar con menos de 24 h de antelación: 15,00')

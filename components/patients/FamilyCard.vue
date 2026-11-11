@@ -18,7 +18,14 @@ interface Person { id: string; first_name: string; last_name: string | null; gen
 interface ManagerLink { id: string; manager_patient_id: string; patient_id: string; basis: 'guardian' | 'consent'; access: 'full' | 'admin'; note: string | null }
 interface Link { id: string; related_patient_id: string; relation: FamilyRelation; related: Person | null }
 
-const props = defineProps<{ patient: { id: string; account_id: string; first_name: string; last_name?: string | null; date_of_birth?: string | null; is_minor?: boolean | null; user_id?: string | null; tutor_patient_id?: string | null } }>()
+// `preloaded`: on the Overview the links and the app access arrive with the
+// tab's one request (patient_overview). null while that request is out, the
+// rows once it is in; left out, the card reads its own. Adding and removing
+// read again from here either way.
+const props = defineProps<{
+  patient: { id: string; account_id: string; first_name: string; last_name?: string | null; date_of_birth?: string | null; is_minor?: boolean | null; user_id?: string | null; tutor_patient_id?: string | null }
+  preloaded?: { links: unknown[]; managers: unknown[] } | null
+}>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -54,8 +61,26 @@ const self = computed<Person>(() => ({
   is_minor: props.patient.is_minor ?? null,
   user_id: props.patient.user_id ?? null,
 }))
-onMounted(load)
-watch(() => props.patient.id, load)
+watch(
+  () => props.preloaded,
+  (given, was) => {
+    if (given) {
+      links.value = given.links as Link[]
+      managerLinks.value = given.managers as ManagerLink[]
+      loading.value = false
+    } else if (given === undefined && was !== undefined) {
+      // The parent's request failed before anything landed: read our own.
+      load()
+    }
+  },
+  { immediate: true },
+)
+onMounted(() => {
+  if (props.preloaded === undefined) load()
+})
+watch(() => props.patient.id, () => {
+  if (props.preloaded === undefined) load()
+})
 
 const nameOf = (p: Person | null) => `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim() || t('Patient', 'Paciente')
 

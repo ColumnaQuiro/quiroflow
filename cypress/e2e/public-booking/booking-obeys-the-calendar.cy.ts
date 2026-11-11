@@ -220,6 +220,7 @@ describe('Online booking obeys the calendar', () => {
       cy.get('.grid.grid-cols-7 button:not([disabled])').last().click()
       // The first slot of a day is opening time, 08:00, as the clinic reads it.
       cy.contains('button', /^\d{2}:\d{2}$/).first().should('have.text', '08:00').click()
+      cy.get('[data-cy=booking-continue]:visible').click()
       cy.contains('Introduzca sus datos').should('be.visible')
       cy.contains('label', 'Nombre *').parent().find('input').type('Zona')
       cy.contains('label', 'Correo electrónico *').parent().find('input').type(`zona-${Date.now()}@example.test`)

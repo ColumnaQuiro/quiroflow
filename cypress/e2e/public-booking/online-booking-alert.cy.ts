@@ -77,6 +77,7 @@ describe('New online booking alert', () => {
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
         cy.contains('label', 'Nombre *').parent().find('input').type('Maria')
         cy.contains('label', 'Apellidos').parent().find('input').type('Garcia')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type(`maria.${Date.now()}@example.test`)

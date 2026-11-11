@@ -38,6 +38,7 @@ describe('Public online booking', () => {
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
 
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.contains('label', 'Nombre *').parent().find('input').type('Maria')
@@ -88,6 +89,7 @@ describe('Public online booking', () => {
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
 
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.contains('label', 'Nombre *').parent().find('input').type('Marta')
@@ -139,6 +141,7 @@ describe('Public online booking', () => {
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
 
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.contains('label', 'Nombre *').parent().find('input').type('Ada')
@@ -178,6 +181,7 @@ describe('Public online booking', () => {
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
 
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.contains('label', 'Nombre *').parent().find('input').type('Directo')
@@ -216,6 +220,7 @@ describe('Public online booking', () => {
         cy.visit(`/book/${account.accountSlug}`)
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+        cy.get('[data-cy=booking-continue]:visible').click()
 
         cy.contains('Introduzca sus datos').should('be.visible')
         cy.contains('label', 'Nombre *').parent().find('input').type('Numero')

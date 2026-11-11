@@ -58,6 +58,66 @@ export type Database = {
           },
         ]
       }
+      earlier_visit_offers: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          closed_reason: string | null
+          created_at: string
+          id: string
+          last_offered_at: string | null
+          offer_expires_at: string | null
+          offered_ends_at: string | null
+          offered_starts_at: string | null
+          offers_made: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          closed_reason?: string | null
+          created_at?: string
+          id?: string
+          last_offered_at?: string | null
+          offer_expires_at?: string | null
+          offered_ends_at?: string | null
+          offered_starts_at?: string | null
+          offers_made?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          closed_reason?: string | null
+          created_at?: string
+          id?: string
+          last_offered_at?: string | null
+          offer_expires_at?: string | null
+          offered_ends_at?: string | null
+          offered_starts_at?: string | null
+          offers_made?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "earlier_visit_offers_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "earlier_visit_offers_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: true
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       habit_checkins: {
         Row: {
           account_id: string
@@ -1430,6 +1490,7 @@ export type Database = {
           whatsapp_reminder_template_name: string | null
           waitlist_auto_offer: boolean
           waitlist_offer_mode: string
+          earlier_first_visit_offers: boolean
           webchat_enabled: boolean
           webchat_greeting: string | null
           recall_assignee_default: string
@@ -1553,6 +1614,7 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          earlier_first_visit_offers?: boolean
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string
@@ -1677,6 +1739,7 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          earlier_first_visit_offers?: boolean
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string

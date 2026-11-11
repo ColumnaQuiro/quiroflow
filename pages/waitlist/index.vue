@@ -289,6 +289,8 @@ const INSET_EMPTY = '!py-0 [&>div]:max-w-none [&>div]:gap-3 [&>div]:border-0 [&>
           </tbody>
         </table>
       </div>
+
+      <WaitlistEarlierFirstVisits />
     </div>
 
     <div v-if="addOpen" class="fixed inset-0 z-50 flex justify-end bg-scrim/40" @click.self="addOpen = false">

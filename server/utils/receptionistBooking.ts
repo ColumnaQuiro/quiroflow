@@ -12,6 +12,7 @@ import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { applyPatientLeft } from '~/server/utils/recallReplies'
+import { earlierVisitEnrolled, stopEarlierVisitOffers } from '~/server/utils/earlierVisitOffers'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
@@ -148,6 +149,39 @@ export const STOP_FOLLOW_UPS: Anthropic.Tool = {
   },
 }
 
+export const STOP_EARLIER_TIME_OFFERS: Anthropic.Tool = {
+  name: 'stop_earlier_time_offers',
+  description:
+    'Stops the clinic writing to them when an earlier time frees up for their first visit. Call it only when they say they do not want that ("no hace falta", "me va bien la que tengo", "no me escribáis para adelantarla"). It does not change or cancel their visit.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      what_they_said: { type: 'string', description: 'Their words, quoted briefly.' },
+    },
+    required: ['what_they_said'],
+    additionalProperties: false,
+  },
+}
+
+/** stop_earlier_time_offers: the person writing, and the children they book for. */
+export function stopEarlierTimeOffersTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  return async () => {
+    let patientIds: string[] = []
+    if (ctx.person.kind === 'patient') patientIds = [ctx.person.patientId]
+    else if (ctx.person.patientId) patientIds = [ctx.person.patientId]
+    else {
+      // A lead booked in this conversation is a patient now; the lead row says which.
+      const { data: lead } = await ctx.service.from('leads').select('patient_id').eq('id', ctx.person.leadId).maybeSingle()
+      if ((lead as { patient_id: string | null } | null)?.patient_id) patientIds = [(lead as { patient_id: string }).patient_id]
+    }
+    patientIds = [...patientIds, ...(ctx.minors?.children ?? []).map((c) => c.id)]
+    const stopped = await stopEarlierVisitOffers(ctx.service, ctx.accountId, patientIds)
+    return stopped
+      ? { content: 'Done: the clinic will not write to them about an earlier time. Their visit stays as it is. Tell them so in one short sentence.', isError: false }
+      : { content: 'There was nothing to stop: no earlier time will be offered to them anyway. Tell them their visit stays as it is.', isError: false }
+  }
+}
+
 /** stop_follow_ups for one patient in one reply (applyPatientLeft). */
 export function stopFollowUpsTool(ctx: { event: H3Event; accountId: string; patientId: string }): (input: unknown) => Promise<ToolResult> {
   let used = false
@@ -186,6 +220,8 @@ export interface BookingContext {
   person: { kind: 'lead'; leadId: string; patientId: string | null } | { kind: 'patient'; patientId: string }
   /** Told what was booked or moved, in words, to note it in the conversation. */
   onBooked: (summary: string) => Promise<void>
+  /** The clinic offers earlier times for first visits (accounts.earlier_first_visit_offers): stop_earlier_time_offers is on. */
+  earlierTimeOffers?: boolean
   /**
    * Booking for a child of the person writing (typesForMinor): what a new
    * and a returning child may have, and their children already on file.
@@ -486,11 +522,18 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     // Someone coming for the first time is told where to go.
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
+    // A first visit two or more days away, at a clinic offering earlier times
+    // (earlierVisitOffers.ts), was just enrolled by the database: they are
+    // told, so the WhatsApp that may follow is not a surprise.
+    const earlierLine = !moving && (await earlierVisitEnrolled(ctx.service, appointmentId).catch(() => false))
+      ? `This first visit is two or more days away: if an earlier time frees up, the clinic will write to them on WhatsApp to offer it. Tell them so in one short sentence ("si se libera algo antes, te escribo").${ctx.earlierTimeOffers ? ' If they say they do not want that, call stop_earlier_time_offers.' : ''}`
+      : ''
     return {
       content: [
         `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : brought ? ` for ${brought.firstName}, in their own name, referred by the person writing` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative || brought ? `${(relative ?? brought)!.firstName} will get the clinic's usual confirmation themselves${brought ? ', on their own phone' : ''}.` : quiet ? 'They asked not to get automatic messages, so no confirmation or reminder will be sent: do not promise one.' : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
+        earlierLine,
       ].filter(Boolean).join(' '),
       isError: false,
     }

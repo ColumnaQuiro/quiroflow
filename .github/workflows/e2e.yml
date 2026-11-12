@@ -448,6 +448,19 @@ jobs:
           # without it no certificate can be stored, and the settings page's
           # "Valid" check could only ever be tested in its unconfigured state.
           NUXT_VERIFACTU_SECRET_KEY: ZTJlLXZlcmlmYWN0dS1wbGF0Zm9ybS1rZXktMzJieXQ=
+          # GoCardless (server/utils/gocardless.ts) pointed at the stub in
+          # cypress/support/tasks/gocardless.ts, for the same reason as the
+          # Meta one: the connect callback spends a code and stores a token,
+          # and the webhook books money, so both are driven for real against
+          # a local stand-in rather than GoCardless's sandbox. The webhook
+          # secret is fixed so a spec can sign a genuine delivery.
+          NUXT_GOCARDLESS_CLIENT_ID: e2e-gocardless-client
+          NUXT_GOCARDLESS_CLIENT_SECRET: e2e-gocardless-client-secret
+          NUXT_GOCARDLESS_WEBHOOK_SECRET: e2e-gocardless-webhook-secret
+          CYPRESS_GOCARDLESS_WEBHOOK_SECRET: e2e-gocardless-webhook-secret
+          NUXT_GOCARDLESS_ENVIRONMENT: sandbox
+          NUXT_GOCARDLESS_API_BASE_URL: http://127.0.0.1:9148
+          NUXT_GOCARDLESS_CONNECT_BASE_URL: http://127.0.0.1:9148
 
       - name: Upload screenshots on failure
         if: failure()

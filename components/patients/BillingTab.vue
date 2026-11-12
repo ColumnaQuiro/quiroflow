@@ -940,8 +940,44 @@ async function loadAll({ silent = loadedOnce }: { silent?: boolean } = {}) {
     packagesLoading.value = true
     membershipsLoading.value = true
   }
-  await Promise.all([fetchLedger().then((apply) => apply()), ensureBillingTemplatesLoaded(), loadUnlogged()])
+  await Promise.all([fetchLedger().then((apply) => apply()), ensureBillingTemplatesLoaded(), loadUnlogged(), loadDirectDebit()])
 }
+
+// --- Direct debit (GoCardless, server/api/gocardless/*) ---
+//
+// Read beside the ledger rather than through it: patient_ledger names the
+// columns it returns and knows nothing of providers. Three small selects, all
+// RLS-scoped to what this member may see.
+const gocardlessConnected = ref(false)
+const mandates = ref<{ gocardless_mandate_id: string; status: string; bank_name: string | null; account_number_ending: string | null }[]>([])
+const scheduleProviders = ref<Record<string, string>>({})
+const directDebitCharges = ref<Record<string, number>>({})
+async function loadDirectDebit() {
+  const [{ data: account }, { data: mandateRows }, { data: providerRows }] = await Promise.all([
+    supabase.from('accounts').select('gocardless_organisation_id').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('patient_gocardless_mandates').select('gocardless_mandate_id, status, bank_name, account_number_ending').eq('patient_id', props.patientId),
+    supabase.from('payment_schedules').select('id, provider').eq('patient_id', props.patientId),
+  ])
+  gocardlessConnected.value = Boolean(account?.gocardless_organisation_id)
+  mandates.value = mandateRows ?? []
+  scheduleProviders.value = Object.fromEntries((providerRows ?? []).map((r) => [r.id, r.provider]))
+  const gcIds = (providerRows ?? []).filter((r) => r.provider === 'gocardless').map((r) => r.id)
+  if (gcIds.length) {
+    const { data: events } = await supabase.from('gocardless_payment_events').select('payment_schedule_id').in('payment_schedule_id', gcIds).eq('action', 'confirmed')
+    const counts: Record<string, number> = {}
+    for (const e of events ?? []) if (e.payment_schedule_id) counts[e.payment_schedule_id] = (counts[e.payment_schedule_id] ?? 0) + 1
+    directDebitCharges.value = counts
+  } else {
+    directDebitCharges.value = {}
+  }
+}
+// The mandate a membership would be collected on: one that can still collect.
+const usableMandate = computed(() => mandates.value.find((m) => ['active', 'submitted', 'pending_submission'].includes(m.status)) ?? null)
+const mandateLabel = computed(() => {
+  const m = usableMandate.value ?? mandates.value[0]
+  if (!m) return null
+  return `${m.bank_name ?? t('Bank account', 'Cuenta bancaria')}${m.account_number_ending ? ` ••${m.account_number_ending}` : ''}`
+})
 
 // AccountLedger's own transfer-credit action mutates account_credits
 // directly (it's not routed through any of this file's write functions),
@@ -1460,6 +1496,9 @@ function scheduleForMembership(membershipId: string) {
 function eventsForSchedule(scheduleId: string) {
   return stripeEvents.value.filter((e) => e.payment_schedule_id === scheduleId)
 }
+function chargesForSchedule(scheduleId: string) {
+  return scheduleProviders.value[scheduleId] === 'gocardless' ? (directDebitCharges.value[scheduleId] ?? 0) : eventsForSchedule(scheduleId).length
+}
 
 // A membership's autopay starts from its plan's period (Settings >
 // Memberships); anything else, or a plan since removed, from one month.
@@ -1470,7 +1509,25 @@ function openAutopayForm(id: string, period?: { billing_interval: string; billin
   autopayIntervalCount.value = period?.billing_interval_count ?? 1
   autopayInterval.value = (period?.billing_interval as 'day' | 'week' | 'month' | 'year' | undefined) ?? 'month'
   autopayAlreadyPaid.value = 0
+  autopayMethod.value = hasCard.value ? 'card' : 'direct_debit'
+  autopayStartDate.value = ''
+  needsNoOtherConfirm.value = false
+  confirmNoOther.value = false
+  autopayAttemptId.value = crypto.randomUUID()
 }
+// How a membership is collected: the saved card (Stripe) or the patient's
+// direct debit mandate (GoCardless). Direct debit takes its period from the
+// membership's plan, so it asks only when to start.
+const autopayMethod = ref<'card' | 'direct_debit'>('card')
+const autopayStartDate = ref('')
+// GoCardless does not always let QuiroFlow see another app's subscriptions,
+// and PracticeHub may still be collecting on the same mandate. Then the
+// server asks (428) and the person confirms there is none.
+const needsNoOtherConfirm = ref(false)
+const confirmNoOther = ref(false)
+// One per opening of the form: a retried click is the same request to
+// GoCardless (its idempotency key), a new opening is a new one.
+const autopayAttemptId = ref('')
 
 // A bono sold in plazos starts its autopay from its own plan: that many
 // plazos, the ones already paid skipped, so Stripe charges the plazo price.
@@ -1510,6 +1567,7 @@ async function setUpPackageAutopay(purchase: PackagePurchaseRow) {
 
 async function setUpMembershipAutopay(m: PatientMembershipRow) {
   autopayError.value = ''
+  if (autopayMethod.value === 'direct_debit') return setUpMembershipDirectDebit(m)
   settingUpAutopay.value = true
   try {
     await useStaffFetch('/api/stripe/create-schedule', {
@@ -1532,18 +1590,60 @@ async function setUpMembershipAutopay(m: PatientMembershipRow) {
   }
 }
 
-function cancelAutopay(scheduleId: string) {
-  pendingAsk.value = {
-    title: t('Stop autopay?', '¿Detener el pago automático?'),
-    body: [t('No further payments are taken from the card. Payments already taken stay as they are.', 'No se cobrarán más pagos a la tarjeta. Los pagos ya cobrados no cambian.')],
-    confirmLabel: t('Stop autopay', 'Detener pago automático'),
-    tone: 'danger',
-    run: () => cancelAutopayNow(scheduleId),
+async function setUpMembershipDirectDebit(m: PatientMembershipRow) {
+  if (needsNoOtherConfirm.value && !confirmNoOther.value) {
+    autopayError.value = t('Confirm that nothing else is still collecting on this mandate.', 'Confirma que nada más sigue cobrando con esta domiciliación.')
+    return
+  }
+  settingUpAutopay.value = true
+  try {
+    await useStaffFetch('/api/gocardless/subscriptions/create', {
+      method: 'POST',
+      body: {
+        patientMembershipId: m.id,
+        mandateId: usableMandate.value?.gocardless_mandate_id,
+        startDate: autopayStartDate.value || undefined,
+        confirmNoOtherSubscription: confirmNoOther.value,
+        attemptId: autopayAttemptId.value,
+      },
+    })
+    autopayFormFor.value = null
+    await loadAll()
+  } catch (err: any) {
+    if (err?.statusCode === 428 || err?.response?.status === 428) needsNoOtherConfirm.value = true
+    autopayError.value = err?.data?.statusMessage ?? t('Could not set up the direct debit', 'No se pudo activar la domiciliación')
+  } finally {
+    settingUpAutopay.value = false
   }
 }
+
+function cancelAutopay(scheduleId: string) {
+  const directDebit = scheduleProviders.value[scheduleId] === 'gocardless'
+  pendingAsk.value = directDebit
+    ? {
+        title: t('Stop the direct debit?', '¿Detener la domiciliación?'),
+        body: [
+          t(
+            'No further payments are collected from the patient’s bank. The mandate stays, so it can be started again without the patient signing.',
+            'No se cobrarán más pagos de la cuenta del paciente. La domiciliación se conserva, así que se puede volver a activar sin que el paciente firme.',
+          ),
+        ],
+        confirmLabel: t('Stop the direct debit', 'Detener la domiciliación'),
+        tone: 'danger',
+        run: () => cancelAutopayNow(scheduleId),
+      }
+    : {
+        title: t('Stop autopay?', '¿Detener el pago automático?'),
+        body: [t('No further payments are taken from the card. Payments already taken stay as they are.', 'No se cobrarán más pagos a la tarjeta. Los pagos ya cobrados no cambian.')],
+        confirmLabel: t('Stop autopay', 'Detener pago automático'),
+        tone: 'danger',
+        run: () => cancelAutopayNow(scheduleId),
+      }
+}
 async function cancelAutopayNow(scheduleId: string) {
+  const directDebit = scheduleProviders.value[scheduleId] === 'gocardless'
   try {
-    await useStaffFetch('/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
+    await useStaffFetch(directDebit ? '/api/gocardless/subscriptions/cancel' : '/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
   } catch (err: any) {
     // A refused cancel used to say nothing, so the desk could believe autopay
     // had stopped while Stripe kept charging the card.
@@ -2577,7 +2677,7 @@ const fieldId = useId()
         <p class="mt-0.5 text-[12px] text-ink-muted2">
           <template v-if="cardExpiry">{{ t('Expires', 'Caduca') }} <span class="font-mono">{{ cardExpiry }}</span> · </template>
           {{ hasCard
-            ? t('Charges and autopay can run against it.', 'Los cobros y la domiciliación pueden usarla.')
+            ? t('Charges and autopay can run against it.', 'Los cobros y el pago automático pueden usarla.')
             : t('Send the patient a link to add one.', 'Envía al paciente un enlace para añadirla.') }}
         </p>
         <div class="mt-3 flex flex-wrap gap-2">
@@ -2590,6 +2690,16 @@ const fieldId = useId()
           <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">
             {{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}
           </UiBtn>
+        </div>
+        <div v-if="mandates.length" class="mt-3 border-t border-line-divider pt-3" data-cy="patient-direct-debit">
+          <p class="text-[14px] font-medium text-ink-900">
+            {{ t('Direct debit', 'Domiciliación') }}: <span class="font-mono">{{ mandateLabel }}</span>
+          </p>
+          <p class="mt-0.5 text-[12px] text-ink-muted2">
+            {{ usableMandate
+              ? t('Memberships can be collected from it.', 'Se pueden cobrar membresías con ella.')
+              : t('No longer active: the patient would have to sign a new one.', 'Ya no está activa: el paciente tendría que firmar una nueva.') }}
+          </p>
         </div>
         <PatientsInvoiceReminders :patient-id="patientId" :can-edit="can('patients_edit')" />
       </section>
@@ -3070,26 +3180,45 @@ const fieldId = useId()
 
             <div v-if="scheduleForMembership(m.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-600">
-                {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleStatusLabel(scheduleForMembership(m.id)!.status) }}</UiPill>
+                {{ scheduleProviders[scheduleForMembership(m.id)!.id] === 'gocardless' ? t('Direct debit', 'Domiciliación') : t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleStatusLabel(scheduleForMembership(m.id)!.status) }}</UiPill>
                 {{ t('every', 'cada') }} {{ intervalLabel(scheduleForMembership(m.id)!.interval, scheduleForMembership(m.id)!.interval_count) }} &middot;
-                {{ eventsForSchedule(scheduleForMembership(m.id)!.id).length }} {{ t('charge(s)', 'cobro(s)') }}
+                {{ chargesForSchedule(scheduleForMembership(m.id)!.id) }} {{ t('charge(s)', 'cobro(s)') }}
               </span>
               <UiBtn v-if="scheduleForMembership(m.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForMembership(m.id)!.id)">
                 {{ t('Cancel', 'Cancelar') }}
               </UiBtn>
             </div>
-            <div v-else-if="hasCard" class="mt-2.5">
-              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, memberPeriod(m))">
+            <div v-else-if="hasCard || usableMandate" class="mt-2.5">
+              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" data-cy="membership-autopay-open" @click="openAutopayForm(m.id, memberPeriod(m))">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
-              <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">
-                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-8 touch:h-11 w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
-                <select v-model="autopayInterval" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
-                  <option value="day">{{ t('day(s)', 'día(s)') }}</option>
-                  <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
-                  <option value="month">{{ t('month(s)', 'mes(es)') }}</option>
-                  <option value="year">{{ t('year(s)', 'año(s)') }}</option>
+              <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" data-cy="membership-autopay-form" @submit.prevent="setUpMembershipAutopay(m)">
+                <select v-if="hasCard && usableMandate" v-model="autopayMethod" :title="t('Collect by', 'Cobrar con')" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" data-cy="membership-autopay-method">
+                  <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+                  <option value="direct_debit">{{ t('Direct debit', 'Domiciliación') }}</option>
                 </select>
+                <template v-if="autopayMethod === 'card'">
+                  <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-8 touch:h-11 w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                  <select v-model="autopayInterval" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
+                    <option value="day">{{ t('day(s)', 'día(s)') }}</option>
+                    <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
+                    <option value="month">{{ t('month(s)', 'mes(es)') }}</option>
+                    <option value="year">{{ t('year(s)', 'año(s)') }}</option>
+                  </select>
+                </template>
+                <template v-else>
+                  <label class="flex flex-col gap-0.5 text-[11px] text-ink-muted2">
+                    {{ t('First charge on or after', 'Primer cobro a partir del') }}
+                    <input v-model="autopayStartDate" type="date" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" data-cy="membership-autopay-start" />
+                  </label>
+                  <span class="w-full text-[11.5px] text-ink-muted2">
+                    {{ t(`From ${mandateLabel}, every period the membership’s plan sets. Leave the date empty to start as soon as GoCardless allows. Coming from PracticeHub? Start it after PracticeHub’s last charge.`, `De ${mandateLabel}, cada periodo que marca el plan de la membresía. Deja la fecha vacía para empezar en cuanto GoCardless lo permita. ¿Viene de PracticeHub? Empieza después de su último cobro allí.`) }}
+                  </span>
+                  <label v-if="needsNoOtherConfirm" class="flex w-full items-start gap-1.5 text-[11.5px] text-ink-700" data-cy="membership-autopay-confirm-other">
+                    <input v-model="confirmNoOther" type="checkbox" class="mt-0.5" />
+                    {{ t('I have checked that nothing else (for example PracticeHub) is still collecting on this mandate.', 'He comprobado que nada más (por ejemplo, PracticeHub) sigue cobrando con esta domiciliación.') }}
+                  </label>
+                </template>
                 <UiBtn type="submit" size="sm" variant="primary" :disabled="settingUpAutopay">
                   {{ settingUpAutopay ? '…' : t('Start', 'Iniciar') }}
                 </UiBtn>
@@ -3098,7 +3227,11 @@ const fieldId = useId()
               </form>
             </div>
             <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
-              <span class="text-[11.5px] text-ink-muted2">{{ t('No card on file. Add one to put this membership on autopay.', 'No hay tarjeta guardada. Añade una para pasar esta membresía a pago automático.') }}</span>
+              <span class="text-[11.5px] text-ink-muted2">
+                {{ gocardlessConnected
+                  ? t('No card or direct debit. Add a card, or pair the patient’s mandate in Settings › Import, to put this membership on autopay.', 'Sin tarjeta ni domiciliación. Añade una tarjeta, o empareja su domiciliación en Ajustes › Importar, para pasar esta membresía a pago automático.')
+                  : t('No card on file. Add one to put this membership on autopay.', 'No hay tarjeta guardada. Añade una para pasar esta membresía a pago automático.') }}
+              </span>
               <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
           </div>

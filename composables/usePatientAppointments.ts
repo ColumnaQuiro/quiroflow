@@ -1,4 +1,5 @@
 import { formatEur } from '../utils/billing'
+import { visitWasAttended } from '../utils/attendanceCertificate'
 
 // A patient's own appointments, plus the two things they may do to one.
 //
@@ -23,11 +24,14 @@ export interface PatientAppointmentRow {
   confirmation_status?: string | null
   /** Set on arrival -- by the desk, or by the patient's own "Ya estoy aquí". */
   checked_in_at?: string | null
+  /** The later steps of the day's flow: either one means they came (visitWasAttended). */
+  flow_with_practitioner_at?: string | null
+  flow_checkout_at?: string | null
 }
 
 // clinic_id so the screens can show a visit at its clinic's hour
 // (usePatientAppInfo().zoneOf), not the phone's.
-const SELECT = 'id, clinic_id, starts_at, ends_at, status, confirmation_status, checked_in_at, appointment_types(name), team_members(full_name)'
+const SELECT = 'id, clinic_id, starts_at, ends_at, status, confirmation_status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, appointment_types(name), team_members(full_name)'
 
 export function usePatientAppointments(patientId: () => string, settings: () => PatientAppSettings) {
   const supabase = useSupabaseClient()
@@ -130,7 +134,40 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
     return true
   }
 
-  return { upcoming, past, loading, loadError, confirmAttendance, confirmingId, busyId, canChange, cancel, reload: load }
+  // The justificante de asistencia, for a visit that took place: the paper
+  // asked for at the desk most days, to show work or school they were here.
+  // The same rule as the desk's button, and the server's
+  // (/api/portal/appointments/attendance-certificate-link), so a button is
+  // never offered for one it would refuse. Opened as a link for the reason
+  // invoices are (usePatientInvoices).
+  function hasCertificate(appt: PatientAppointmentRow): boolean {
+    return visitWasAttended({
+      status: appt.status,
+      checked_in_at: appt.checked_in_at ?? null,
+      flow_with_practitioner_at: appt.flow_with_practitioner_at ?? null,
+      flow_checkout_at: appt.flow_checkout_at ?? null,
+      deleted_at: null,
+    })
+  }
+  const certificateBusyId = ref<string | null>(null)
+  async function openCertificate(appt: PatientAppointmentRow) {
+    certificateBusyId.value = appt.id
+    try {
+      await openWhenReady(async () => {
+        const { url } = await authedFetch<{ url: string }>('/api/portal/appointments/attendance-certificate-link', {
+          method: 'POST',
+          body: { appointmentId: appt.id },
+        })
+        return url
+      })
+    } catch {
+      showToast(t('Could not prepare the certificate.', 'No se pudo preparar el justificante.'), 'error')
+    } finally {
+      certificateBusyId.value = null
+    }
+  }
+
+  return { upcoming, past, loading, loadError, confirmAttendance, confirmingId, busyId, canChange, cancel, reload: load, hasCertificate, openCertificate, certificateBusyId }
 }
 
 export const PATIENT_APPOINTMENT_STATUS: Record<string, [string, string]> = {

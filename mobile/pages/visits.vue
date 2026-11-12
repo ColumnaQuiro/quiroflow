@@ -9,7 +9,8 @@ import { formatEur } from '../../utils/billing'
 // "Plan": the patient's visits and what they are part of, in the order they
 // are asked about -- the next visit, the care plan, what is left on the bono
 // and what is owed, the visits after that, the ones before, and the
-// facturas. It took over from the Citas and Pagos tabs (the full invoice
+// facturas. Each visit in the history that took place carries its
+// justificante de asistencia, to open and send on. It took over from the Citas and Pagos tabs (the full invoice
 // list is still /billing, opened from here). "Plan", not "Tratamiento": a
 // chiropractor in Spain may not call their care a treatment.
 //
@@ -32,7 +33,7 @@ const { settings } = usePatientAppInfo()
 const { patient, loading: identityLoading } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel, confirmAttendance, confirmingId } = usePatientAppointments(
+const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel, confirmAttendance, confirmingId, hasCertificate, openCertificate, certificateBusyId } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -256,6 +257,18 @@ function eur(cents: number) {
               :upcoming="false"
               @pay="payVisit(appt.id)"
             />
+            <!-- The justificante, for work or school: only for a visit they came to. -->
+            <button
+              v-if="hasCertificate(appt)"
+              type="button"
+              class="mt-1.5 flex min-h-9 items-center gap-1.5 text-[12.5px] font-medium text-brand-text disabled:opacity-60"
+              :disabled="certificateBusyId === appt.id"
+              data-cy="patient-attendance-certificate"
+              @click="openCertificate(appt)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M9 14l2 2 4-4" /></svg>
+              {{ certificateBusyId === appt.id ? t('Preparing…', 'Preparando…') : t('Certificate of attendance', 'Justificante de asistencia') }}
+            </button>
           </li>
         </ul>
         <PatientLoadError v-else-if="loadError" @retry="reload" />

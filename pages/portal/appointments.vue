@@ -8,7 +8,7 @@ const { settings, zoneOf } = usePatientAppInfo()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel, confirmAttendance, confirmingId } = usePatientAppointments(
+const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel, confirmAttendance, confirmingId, hasCertificate, openCertificate, certificateBusyId } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -88,6 +88,17 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
             <div class="min-w-0">
               <p class="text-[13px] text-ink-700">{{ formatWhen(appt) }}</p>
               <p class="text-[12px] text-ink-faint">{{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
+              <!-- The justificante, as in the app's Plan: only for a visit they came to. -->
+              <button
+                v-if="hasCertificate(appt)"
+                type="button"
+                class="mt-1 text-[12.5px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-60"
+                :disabled="certificateBusyId === appt.id"
+                data-cy="patient-attendance-certificate"
+                @click="openCertificate(appt)"
+              >
+                {{ certificateBusyId === appt.id ? t('Preparing…', 'Preparando…') : t('Certificate of attendance', 'Justificante de asistencia') }}
+              </button>
             </div>
             <span class="shrink-0 rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] font-medium text-chip-text">
               {{ t(PATIENT_APPOINTMENT_STATUS[appt.status]?.[0] ?? appt.status, PATIENT_APPOINTMENT_STATUS[appt.status]?.[1] ?? appt.status) }}

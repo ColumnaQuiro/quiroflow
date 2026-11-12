@@ -49,10 +49,11 @@ describe('VeriFactu sent by QuiroFlow', () => {
       cy.visit('/settings/verifactu')
       cy.wait('@delegations')
       cy.get('[data-cy="verifactu-sender"]').should('not.exist')
-      cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).within(() => {
-        cy.get('[data-cy="verifactu-delegation-accept"]').click()
-        cy.get('[data-cy="verifactu-delegation-withdraw"]').should('be.visible')
-      })
+      cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).find('[data-cy="verifactu-delegation-accept"]').click()
+      // Asked first, outside the row, naming the clinic.
+      cy.get('[data-cy="confirm-dialog"]').should('contain.text', clinicName)
+      cy.get('[data-cy="confirm-dialog-confirm"]').click()
+      cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).find('[data-cy="verifactu-delegation-withdraw"]').should('be.visible')
       cy.task<{ accepted_at: string | null }>('db:verifactuDelegationOf', { accountId: clinic.accountId }).its('accepted_at').should('not.eq', null)
 
       cy.login(clinic.email, clinic.password)

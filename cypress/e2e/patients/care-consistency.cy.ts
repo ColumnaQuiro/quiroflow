@@ -29,7 +29,10 @@ describe('Care consistency on the record', () => {
           cy.contains('button', 'Merge with another record').click()
           cy.get('#merge-search').type('Duplicada')
           cy.contains('button', 'Rosa Duplicada').click()
-          cy.contains('button', 'Merge').click()
+          cy.get('[data-cy=merge-submit]').click()
+          // The app's own question, which says the merge cannot be undone.
+          cy.get('[data-cy=confirm-dialog]').should('contain.text', 'undone')
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
           cy.contains('Patients merged').should('be.visible')
           cy.task<{ patient_id: string }[]>('db:selectRows', { table: 'habit_checkins', columns: 'patient_id', match: { account_id: account.accountId } }).should((rows) => {
             expect(rows).to.have.length(2)

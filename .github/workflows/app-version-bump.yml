@@ -43,6 +43,28 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # A token GitHub refuses fails the checkout with "could not read
+      # Username", which says nothing about why. Ask GitHub about it first and
+      # name the reason. Without the secret this is skipped and the workflow's
+      # own token is used.
+      - name: Check APP_VERSION_BUMP_TOKEN
+        env:
+          TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN }}
+        run: |
+          [ -z "$TOKEN" ] && { echo "not set; using the workflow's own token (CI will not start on the PR)"; exit 0; }
+          code=$(curl -s -o repo.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY")
+          case "$code" in
+            200) ;;
+            401) echo "::error::GitHub rejects APP_VERSION_BUMP_TOKEN (401): expired, revoked, pasted with extra characters, or still awaiting the organization's approval (org Settings -> Personal access tokens -> Pending requests)."; exit 1 ;;
+            403) echo "::error::APP_VERSION_BUMP_TOKEN is forbidden here (403): the organization may block this kind of token, or require approving it first. $(jq -r .message repo.json)"; exit 1 ;;
+            404) echo "::error::APP_VERSION_BUMP_TOKEN cannot see $GITHUB_REPOSITORY (404): its resource owner must be the organization, with this repository selected."; exit 1 ;;
+            *) echo "::error::Checking APP_VERSION_BUMP_TOKEN answered $code: $(jq -r .message repo.json)"; exit 1 ;;
+          esac
+          [ "$(jq -r .permissions.push repo.json)" = true ] \
+            || { echo "::error::APP_VERSION_BUMP_TOKEN can read $GITHUB_REPOSITORY but not push to it: give it Contents: Read and write (and Pull requests: Read and write)."; exit 1; }
+          rm repo.json
+          echo "APP_VERSION_BUMP_TOKEN is accepted and can push"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}

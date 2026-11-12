@@ -9331,6 +9331,7 @@
   "{0} will be on the list “{1}”: {2} new and {3} already here.": "{0} werden auf der Liste „{1}“ stehen: {2} neu und {3} bereits vorhanden.",
   "{0} will have to set it up the next time they open QuiroFlow.": "Beim nächsten Öffnen von QuiroFlow müssen sie einrichten: {0}.",
   "{0} will manage {1}'s account from their own app or portal.": "{0} verwaltet das Konto von {1} über die eigene App oder das eigene Portal.",
+  "{0} will manage {1}'s app as their guardian, with full access. You can remove it once saved.": "{0} verwaltet die App von {1} als Erziehungsberechtigte(r), mit vollem Zugriff. Sie können das nach dem Speichern wieder entfernen.",
   "{0} with sessions left": "{0} mit offenen Sitzungen",
   "{0} without a phone, skipped": "{0} ohne Telefon, übersprungen",
   "{0} working days": "{0} Arbeitstage",

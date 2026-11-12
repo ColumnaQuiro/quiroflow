@@ -60,10 +60,17 @@ async function loadPatient() {
   // two more round trips once the patient has landed. The tutor is named by
   // its column: patients references itself, and the constraint-name hint does
   // not resolve on a self-reference, while the column form does.
+  //
+  // So do the banner's phone number (the first one recorded) and the
+  // patient's types: they were two more requests fired beside this one, and
+  // requests fired together queue on the database. Each embed is read under
+  // its own table's policies, as the separate selects were.
   const { data, error } = await supabase
     .from('patients')
-    .select('*, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), tutor:tutor_patient_id(id, first_name, last_name)')
+    .select('*, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), tutor:tutor_patient_id(id, first_name, last_name), patient_contact_numbers(*), patient_type_members(type_id)')
     .eq('id', patientId)
+    .order('created_at', { referencedTable: 'patient_contact_numbers' })
+    .limit(1, { referencedTable: 'patient_contact_numbers' })
     .maybeSingle()
   if (run !== patientRun) return
   // A failed read is not "patient not found". Once the record is on screen it
@@ -82,14 +89,22 @@ async function loadPatient() {
     // Stripped rather than carried on the patient: the edit form and the
     // merge modal both work from this object, and an unknown key in an
     // update is a PostgREST error.
-    const { practitioner, tutor: tutorRow, ...row } = data as typeof data & { tutor: { id: string; first_name: string; last_name: string | null } | null }
+    const { practitioner, tutor: tutorRow, patient_contact_numbers: numbers, patient_type_members: typeRows, ...row } = data as typeof data & {
+      tutor: { id: string; first_name: string; last_name: string | null } | null
+      patient_contact_numbers: Tables<'patient_contact_numbers'>[] | null
+      patient_type_members: { type_id: string }[] | null
+    }
     patient.value = row
     practitionerName.value = practitioner?.full_name ?? null
     tutor.value = row.is_minor && tutorRow ? tutorRow : null
+    primaryNumber.value = numbers?.[0] ?? null
+    patientTypeIds.value = (typeRows ?? []).map((r) => r.type_id)
   } else {
     patient.value = null
     practitionerName.value = null
     tutor.value = null
+    primaryNumber.value = null
+    patientTypeIds.value = []
   }
   notFound.value = !data
   if (data && !accessLogged) {
@@ -106,28 +121,19 @@ async function retryLoad() {
   try {
     loading.value = true
     loadError.value = false
-    await Promise.all([loadPatient(), loadBannerDetail().catch(() => {})])
+    await loadPatient()
   } finally {
     retrying.value = false
   }
 }
 
-// The banner shows the number, so the number is loaded here rather than by
-// whichever tab happens to be open.
+// The banner shows the number, so the number is loaded here, with the
+// patient (loadPatient), rather than by whichever tab happens to be open.
 const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
-async function loadBannerDetail() {
-  const { data, error } = await supabase
-    .from('patient_contact_numbers')
-    .select('*')
-    .eq('patient_id', patientId)
-    .order('created_at')
-    .limit(1)
-  // Not thrown: nothing awaits this on mount, and the layout's toast already
-  // reports the failure. The banner just goes without the number.
-  if (error) return
-  primaryNumber.value = data?.[0] ?? null
-}
-onMounted(loadBannerDetail)
+// The patient's types, for the chips in the banner (PatientsTypesInline reads
+// this instead of asking again; null until the record is in).
+const patientTypeIds = ref<string[] | null>(null)
+provide('patientTypeIds', patientTypeIds)
 
 // Only the open tab is in the page's own bundle; the others and the dialogs
 // load when first shown (Lazy*), which kept ~270 KB of tabs nobody had opened

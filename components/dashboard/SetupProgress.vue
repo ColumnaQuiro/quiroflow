@@ -4,8 +4,9 @@
 // card: a new clinic already has the three first steps above it.
 //
 // Once a browser has seen the list complete, or the owner hides this, it stops
-// asking -- the twelve reads behind it are not worth repeating on every visit
-// to the dashboard of a clinic that has finished.
+// asking -- the read behind it (one request since setup_checklist(); it was
+// nine) is not worth repeating on every visit to the dashboard of a clinic
+// that has finished.
 
 const store = useAccountStore()
 const t = useT()

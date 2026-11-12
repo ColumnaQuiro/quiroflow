@@ -11,7 +11,16 @@ import type { CareStop } from '~/composables/useCareStopReasons'
 // "Stopped coming -- Record reason" sat on the record of someone coming next
 // week. A reason already recorded still shows, booked or not: it is a fact
 // somebody wrote down, and a booking does not unsay it.
-const props = defineProps<{ patient: { id: string; first_name: string; last_name?: string | null }; booked?: boolean }>()
+//
+// `preloaded`: on the Overview the current stop, the clinic's reasons and the
+// name of whoever recorded it arrive with the tab's one request
+// (patient_overview), where they were three. Left out, the card reads them
+// itself, as it does again after a reason is saved.
+const props = defineProps<{
+  patient: { id: string; first_name: string; last_name?: string | null }
+  booked?: boolean
+  preloaded?: { current: CareStop | null; reasons: { id: string; name: string }[]; recordedBy: string | null } | null
+}>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -34,8 +43,26 @@ async function load() {
   }
   loading.value = false
 }
-onMounted(load)
-watch(() => props.patient.id, load)
+watch(
+  () => props.preloaded,
+  (given, was) => {
+    if (given) {
+      current.value = given.current
+      reasons.value = given.reasons
+      recordedBy.value = given.recordedBy
+      loading.value = false
+    } else if (given === undefined && was !== undefined) {
+      load()
+    }
+  },
+  { immediate: true },
+)
+onMounted(() => {
+  if (props.preloaded === undefined) load()
+})
+watch(() => props.patient.id, () => {
+  if (props.preloaded === undefined) load()
+})
 
 function onSaved() {
   editing.value = false

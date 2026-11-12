@@ -2,10 +2,8 @@
 import { Line } from 'vue-chartjs'
 import { chartColor } from '~/utils/chartSetup'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface ApptRow {
-  id: string
   patient_id: string
   starts_at: string
   status: string
@@ -44,26 +42,19 @@ const types = ref<TypeRow[]>([])
 // It used to be refetched on every range change, which is the whole table
 // again each time, page by page in series.
 //
-// Ordered by id because fetchAllRows asks for its pages in parallel, and
-// offset paging is only stable over a stable order.
+// One request (report_statistics_rows) for the appointments and their types.
+// It was a count, a page per thousand appointments and the types -- a dozen
+// requests for a clinic with a few years behind it, each waiting its turn on
+// the database. The rows are the same ones, in the same order (by id, which
+// breaks the ties of the sort by time below), without the id nothing here
+// read.
 async function loadAppointments() {
   appointmentsLoading.value = true
-  // Counted alongside the first page, so the other nine-odd pages of a
-  // clinic's history go out together rather than four at a time (see
-  // fetchAllRows).
-  const [appts, typeRows] = await Promise.all([
-    fetchAllRows<Omit<ApptRow, 'at' | 'stage'>>(
-      (f, to) =>
-        supabase
-          .from('appointments')
-          .select('id, patient_id, starts_at, status, appointment_type_id, practitioner_id, clinic_id')
-          .is('deleted_at', null)
-          .order('id')
-          .range(f, to),
-      { total: supabase.from('appointments').select('id', { count: 'exact', head: true }).is('deleted_at', null) },
-    ),
-    supabase.from('appointment_types').select('id, name, stage').then((r) => (r.data ?? []) as TypeRow[]),
-  ])
+  const { data, error } = await supabase.rpc('report_statistics_rows' as never)
+  if (error) throw error
+  const rows = (data ?? {}) as unknown as { appointments?: Omit<ApptRow, 'at' | 'stage'>[]; appointment_types?: TypeRow[] }
+  const appts = rows.appointments ?? []
+  const typeRows = rows.appointment_types ?? []
   const stageOf = new Map(typeRows.map((type) => [type.id, type.stage]))
   allAppointments.value = appts
     .map((a) => ({ ...a, at: Date.parse(a.starts_at), stage: stageOf.get(a.appointment_type_id ?? '') ?? null }))

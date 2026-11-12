@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { sendInboxMessage } from '~/server/utils/inboxSend'
 import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
 import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoReply'
+import { HANDED_OVER_REPLY } from '~/utils/receptionistFollowThrough'
 import { sendWebchatText } from '~/server/utils/webchat'
 import { sendMessengerToLead } from '~/server/utils/messengerSend'
 
@@ -74,6 +75,33 @@ export async function sendAsReceptionist(event: H3Event, service: any, accountId
  * nobody on it, so the caller hands it over. A newer message is simply
  * answered on the next tick, with the reply thrown away (dropSupersededReply).
  */
+/**
+ * Tells them their message went to a person (HANDED_OVER_REPLY), when the
+ * receptionist could not write a reply -- unless a person has written to
+ * them, or changed their visits, since it read the conversation: then a
+ * person is already on it. Whether it was sent; a failure is logged and
+ * left to the handover, which is announced either way.
+ */
+export async function tellHandedOver(
+  event: H3Event,
+  service: any,
+  accountId: string,
+  target: ReceptionistTarget,
+  who: { patientId: string | null; leadId: string | null },
+  readAt: string,
+  timeZone: string,
+): Promise<boolean> {
+  const held = await heldBackBeforeSending(service, accountId, who, readAt, HANDED_OVER_REPLY, timeZone)
+  if (held === 'person' || held === 'diary') return false
+  try {
+    await sendAsReceptionist(event, service, accountId, target, HANDED_OVER_REPLY)
+    return true
+  } catch (err) {
+    console.error('[receptionist] could not say it was handed over:', (err as Error)?.message ?? err)
+    return false
+  }
+}
+
 export async function heldBackBeforeSending(
   service: any,
   accountId: string,

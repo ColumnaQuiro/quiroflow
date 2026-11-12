@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver } from '~/server/utils/receptionistSend'
 import { bookingTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
@@ -13,7 +13,7 @@ import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom, type Rece
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
-import { chosenOfferedTime, chosenTimeNote, isVoiceNote, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
+import { chosenOfferedTime, chosenTimeNote, isVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
 // A reply to a PATIENT's message in the Inbox, drafted by the receptionist
@@ -416,7 +416,11 @@ export async function draftPatientReply(
     if (refused || !draft) {
       await record('refused', run, { handedOver: true })
       await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: '-', drafted_through_at: newestInboundAt, dismissed_at: now, handed_over_at: now })
-      await announceHandover(service, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
+      // And they are told so, unless a person is already writing to them:
+      // handed over in silence, a lead who proposed a time at 19:49 heard
+      // nothing until 9:27 the next morning (11 Nov 2026).
+      const told = await tellHandedOver(opts.send.event, service, accountId, target, { patientId, leadId: null }, readAt, calendar.timeZone)
+      await announceHandover(service, accountId, target, name, told ? REFUSED_REASON : 'La recepcionista no ha podido responder a su último mensaje.')
       return { status: 'refused' }
     }
     // Recorded BEFORE it is sent: answered up to here, with the words kept as

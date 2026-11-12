@@ -31,6 +31,45 @@ export function sendFailedReason(err: unknown): string {
   return `No he podido enviar mi respuesta${message ? ` (${message})` : ''}. Te la he dejado como borrador: revísala y envíasela tú.`
 }
 
+/**
+ * What is sent when the receptionist could not answer and the conversation
+ * went to a person. It used to send nothing: a lead who proposed a time at
+ * 19:49 was handed over in silence and heard from the clinic at 9:27 the next
+ * morning (11 Nov 2026).
+ */
+export const HANDED_OVER_REPLY = 'Se lo paso a mi compañera y te contesta en cuanto pueda.'
+
+/** Why a reply that could not be written went to a person, for the handover note. */
+export const REFUSED_REASON = 'La recepcionista no ha podido responder a su último mensaje. Le he dicho que mi compañera le contestará.'
+
+// "mi compañera ... confirmará / revisará / añadirá / te escribe", "se lo paso
+// a mi compañera", and the same in English and French.
+const COLLEAGUE = String.raw`(?:mi|mis|nuestra|nuestras)\s+compa[nñ]er[oa]s?|el\s+equipo|recepci[oó]n|my\s+colleagues?|the\s+team|ma\s+coll[eè]gue|mon\s+coll[eè]gue|l['’][eé]quipe`
+const ACTS = String.raw`(?:te\s+|le\s+|lo\s+|la\s+|los\s+|las\s+|se\s+)*(?:confirmar[aá]n?|revisar[aá]n?|a[nñ]adir[aá]n?|escribir[aá]n?|contestar[aá]n?|responder[aá]n?|llamar[aá]n?|gestionar[aá]n?|mirar[aá]n?|comprobar[aá]n?|dir[aá]n?|ver[aá]n?|encargar[aá]n?|ocupar[aá]n?|pondr[aá]n?|subir[aá]n?|guardar[aá]n?|reservar[aá]n?|escuchar[aá]n?|confirma|revisa|a[nñ]ade|escribe|contesta|responde|llama|gestiona|mira|comprueba|encarga|ocupa|pone|va\s+a\s+\p{L}+r|will|is\s+going\s+to|vous\s+\p{L}+ra)(?![\p{L}\p{N}])`
+const PROMISE = new RegExp(String.raw`(?<![\p{L}])(?:${COLLEAGUE})(?![\p{L}])[^.!?\n]{0,40}?(?<![\p{L}])(?:${ACTS})|(?<![\p{L}])(?:se\s+lo|te\s+lo|lo|la|se\s+la)\s+paso\s+a\s+(?:${COLLEAGUE})|(?<![\p{L}])pass(?:ing)?\s+(?:it|this)\s+(?:on\s+)?to\s+(?:${COLLEAGUE})|(?<![\p{L}])je\s+(?:le\s+|la\s+)?transmets`, 'iu')
+
+/**
+ * The sentence of a reply that promises a colleague will do something -- or
+ * null. A promise like that is only kept if a person is told: the reply goes
+ * with a handover whether or not the model called hand_over_to_colleague.
+ *
+ * "Mi compañera te confirmará" was written three times to a patient with no
+ * handover and nobody wrote back all day (10 Nov 2026); "mi compañera la
+ * añadirá a tu ficha", of an X-ray sent in, the next day.
+ */
+export function colleaguePromise(text: string): string | null {
+  for (const sentence of text.split(/(?<=[.!?;])\s+|\n+/)) {
+    const s = sentence.trim()
+    if (s && PROMISE.test(s)) return s
+  }
+  return null
+}
+
+/** The handover note for a promise the reply made (colleaguePromise). */
+export function colleaguePromiseReason(sentence: string): string {
+  return `Le he dicho: «${sentence.slice(0, 200)}». Encárgate tú.`
+}
+
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 const WEEKDAYS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']

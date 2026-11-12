@@ -14,7 +14,7 @@ const t = useT()
 // back to whatever opened it (useFocusTrap).
 const dialogPanel = ref<HTMLElement | null>(null)
 const dialogTitleId = useId()
-useFocusTrap(dialogPanel, () => emit('close'))
+useFocusTrap(dialogPanel, requestClose)
 const { phoneProblem } = usePhoneValidation()
 const { can, scope } = usePermission()
 const { showToast } = useToast()
@@ -40,6 +40,29 @@ const preferredLanguage = ref('es')
 const notes = ref('')
 const error = ref('')
 const saving = ref(false)
+
+// Closing with something typed asks first. A stray tap on the scrim, which
+// is most of an iPad's screen beside this drawer, used to throw away a
+// half-filled form with no question; now the scrim does nothing once the
+// form is dirty, and Escape, the X and Cancel ask. The question has its own
+// focus trap, and only the innermost trap answers Escape (useFocusTrap), so
+// Escape on it returns here rather than closing both.
+const formState = () =>
+  JSON.stringify([
+    firstName.value, lastName.value, dateOfBirth.value, email.value, phoneCountry.value, phoneNumber.value, phoneIsWhatsapp.value,
+    clinicId.value, tagsInput.value, gender.value, address.value, postalCode.value, city.value, country.value,
+    referralSource.value, occupation.value, preferredLanguage.value, notes.value,
+  ])
+const pristine = formState()
+const dirty = computed(() => formState() !== pristine || Object.values(attributeValues.value).some((v) => v !== null && v !== undefined && v !== ''))
+const discardOpen = ref(false)
+function requestClose() {
+  if (dirty.value) discardOpen.value = true
+  else emit('close')
+}
+function onScrimClick() {
+  if (!dirty.value) emit('close')
+}
 
 interface FieldConfig { visible: boolean; required: boolean }
 const fieldConfig = ref<Record<string, FieldConfig>>({})
@@ -177,7 +200,7 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" data-cy="add-patient-scrim" @click.self="onScrimClick">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-drawer sm:p-6">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Add patient', 'Añadir paciente') }}</h2>
@@ -185,7 +208,7 @@ async function onSubmit() {
           type="button"
           :aria-label="t('Close', 'Cerrar')"
           class="-mr-1.5 inline-flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus touch:h-11 touch:w-11"
-          @click="emit('close')"
+          @click="requestClose"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" class="h-4 w-4">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -412,9 +435,20 @@ async function onSubmit() {
           <UiBtn type="submit" variant="primary" :disabled="saving">
             {{ saving ? t('Saving…', 'Guardando…') : t('Add patient', 'Añadir paciente') }}
           </UiBtn>
-          <UiBtn variant="ghost" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          <UiBtn variant="ghost" @click="requestClose">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
     </div>
+
+    <UiConfirmDialog
+      v-if="discardOpen"
+      :title="t('Discard changes?', '¿Descartar los cambios?')"
+      :confirm-label="t('Discard', 'Descartar')"
+      :cancel-label="t('Keep editing', 'Seguir editando')"
+      @confirm="emit('close')"
+      @cancel="discardOpen = false"
+    >
+      <p class="text-[14px] leading-relaxed text-ink-500">{{ t('This patient has not been added. What you typed will be lost.', 'Este paciente no se ha añadido. Se perderá lo que has escrito.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

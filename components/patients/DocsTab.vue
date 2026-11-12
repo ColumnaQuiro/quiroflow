@@ -203,8 +203,11 @@ async function toggleComplete() {
 // the rows that went are read back, as FilesTab does: the form used to
 // vanish here regardless and come back on the next load.
 const deleteError = ref('')
-async function removeDoc(doc: Doc) {
-  if (!confirm(`${t('Delete', 'Eliminar')} "${doc.title}"?`)) return
+const deleteAsk = ref<Doc | null>(null)
+async function removeDoc() {
+  const doc = deleteAsk.value
+  if (!doc) return
+  deleteAsk.value = null
   deleteError.value = ''
   const { data: gone, error } = await supabase.from('patient_docs').delete().eq('id', doc.id).select('id')
   if (error || !gone?.length) {
@@ -341,7 +344,7 @@ function metaFor(doc: Doc) {
             >
               {{ t('Resend', 'Reenviar') }}
             </button>
-            <UiIconBtn v-if="can('patient_docs_delete')" icon="trash" tone="danger" data-cy="doc-delete" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
+            <UiIconBtn v-if="can('patient_docs_delete')" icon="trash" tone="danger" data-cy="doc-delete" :label="t('Delete', 'Eliminar')" @click="deleteAsk = doc" />
           </div>
           </div>
         </li>
@@ -370,5 +373,17 @@ function metaFor(doc: Doc) {
         <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
       </div>
     </template>
+
+    <UiConfirmDialog
+      v-if="deleteAsk"
+      tone="danger"
+      :title="t(`Delete ${deleteAsk.title}?`, `¿Eliminar ${deleteAsk.title}?`)"
+      :confirm-label="t('Delete', 'Eliminar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="removeDoc"
+      @cancel="deleteAsk = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('It is removed from this patient for everyone, and cannot be recovered.', 'Se elimina de este paciente para todos, y no se puede recuperar.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

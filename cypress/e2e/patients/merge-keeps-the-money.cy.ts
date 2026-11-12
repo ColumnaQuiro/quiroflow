@@ -74,7 +74,10 @@ describe('Merging two records for one person', () => {
 
               // The record opened is the one kept, which is the default.
               cy.contains('Keeps everything').should('be.visible')
-              cy.contains('button', 'Merge').click()
+              cy.get('[data-cy=merge-submit]').click()
+              // The app's own question, which says the merge cannot be undone.
+              cy.get('[data-cy=confirm-dialog]').should('contain.text', 'undone')
+              cy.get('[data-cy=confirm-dialog-confirm]').click()
               cy.contains('Patients merged').should('be.visible')
 
               // The duplicate is gone -- the merge really did happen, so a

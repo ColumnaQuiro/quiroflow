@@ -1272,10 +1272,13 @@ function tagTone(tag: string) {
 
       <!-- A real table, so a screen reader announces the column a cell belongs
       to. min-w below keeps it scrolling horizontally as one unit on a narrow
-      screen rather than squeezing every column unreadably thin. -->
+      screen rather than squeezing every column unreadably thin.
+      On a tablet (md up to xl) it fits instead of scrolling: Last visit goes,
+      and Care plan too below 1160px, because the column that scrolled out of
+      sight was Balance -- the one reception looks for. -->
       <div v-else class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-busy="loading || enriching">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[940px] border-collapse text-[13px]">
+          <table class="w-full min-w-[940px] border-collapse text-[13px] md:max-xl:min-w-[700px]">
             <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
             <thead>
               <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
@@ -1310,9 +1313,9 @@ function tagTone(tag: string) {
                   </button>
                 </th>
                 <th scope="col" class="w-[175px] px-3 py-2.5 text-left">{{ t('Contact', 'Contacto') }}</th>
-                <th scope="col" class="w-[120px] px-3 py-2.5 text-left">{{ t('Last visit', 'Última visita') }}</th>
+                <th scope="col" class="md:max-xl:hidden w-[120px] px-3 py-2.5 text-left">{{ t('Last visit', 'Última visita') }}</th>
                 <th scope="col" class="w-[150px] px-3 py-2.5 text-left">{{ t('Next visit', 'Próxima visita') }}</th>
-                <th scope="col" class="w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de cuidados') }}</th>
+                <th scope="col" class="md:max-[1159px]:hidden w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de cuidados') }}</th>
                 <th scope="col" class="hidden w-[130px] px-3 py-2.5 text-left xl:table-cell">{{ t('Tags', 'Etiquetas') }}</th>
                 <th scope="col" class="w-[120px] px-3 py-2.5 text-right">{{ t('Balance', 'Saldo') }}</th>
                 <th scope="col" class="w-[48px] px-3 py-2.5"><span class="sr-only">{{ t('Actions', 'Acciones') }}</span></th>
@@ -1328,7 +1331,7 @@ function tagTone(tag: string) {
                     <UiSkeleton class="h-3 w-36 rounded-ctlSm" />
                   </div>
                 </td>
-                <td v-for="cell in 5" :key="cell" class="px-3 py-2.5"><UiSkeleton class="h-3 w-20 rounded-ctlSm" /></td>
+                <td v-for="cell in 5" :key="cell" :class="['px-3 py-2.5', cell === 2 ? 'md:max-xl:hidden' : cell === 4 ? 'md:max-[1159px]:hidden' : '']"><UiSkeleton class="h-3 w-20 rounded-ctlSm" /></td>
                 <td class="hidden px-3 py-2.5 xl:table-cell"><UiSkeleton class="h-3 w-16 rounded-ctlSm" /></td>
                 <td class="px-3 py-2.5" />
               </tr>
@@ -1411,7 +1414,7 @@ function tagTone(tag: string) {
                   </div>
                 </td>
 
-                <td class="px-3 py-2.5">
+                <td class="md:max-xl:hidden px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-20 rounded-ctlSm" />
                   <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
                   <span v-else-if="lastVisitText(patient.id)" class="whitespace-nowrap text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
@@ -1428,7 +1431,7 @@ function tagTone(tag: string) {
                   <p v-else class="text-[13px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
                 </td>
 
-                <td class="px-3 py-2.5">
+                <td class="md:max-[1159px]:hidden px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
                   <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
                   <template v-else-if="carePlanByPatient[patient.id]">

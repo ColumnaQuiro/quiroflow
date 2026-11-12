@@ -9,15 +9,19 @@ export interface ToastItem {
 // ref is simpler than wiring this through Nuxt's SSR-safe state store.
 const toasts = ref<ToastItem[]>([])
 let nextId = 0
+// When the last error toast went up: the layout's "that was not saved"
+// notice stays quiet when the screen has already said why.
+let lastErrorAt = 0
 
 export function useToast() {
   function showToast(message: string, type: ToastItem['type'] = 'success', durationMs = 4000) {
     const id = ++nextId
+    if (type === 'error') lastErrorAt = Date.now()
     toasts.value.push({ id, type, message })
     setTimeout(() => dismissToast(id), durationMs)
   }
   function dismissToast(id: number) {
     toasts.value = toasts.value.filter((t) => t.id !== id)
   }
-  return { toasts, showToast, dismissToast }
+  return { toasts, showToast, dismissToast, lastErrorToastAt: () => lastErrorAt }
 }

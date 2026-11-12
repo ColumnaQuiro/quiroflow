@@ -210,6 +210,7 @@ async function save() {
     // on zero rows. Someone who has left is never bookable online: the
     // database holds that (team_member_leaving_stops_online_booking).
     const { error } = await supabase.from('team_members').update(values).eq('id', memberId).select('id').single()
+    invalidateTeamDirectory()
     if (error) {
       saving.value = false
       // The seat cap trigger (PT402) explains itself.
@@ -318,6 +319,7 @@ async function deactivate() {
   deactivating.value = true
   try {
     await useStaffFetch(`/api/team-members/${memberId}/deactivate`, { method: 'POST', body: { reassignTo: reassignTo.value || null } })
+    invalidateTeamDirectory()
     showToast(t(`${form.value?.full_name} deactivated.`, `${form.value?.full_name} desactivado.`))
     original.value = JSON.stringify(form.value)
     router.push('/settings/team')
@@ -331,6 +333,7 @@ async function deactivate() {
 async function reactivate() {
   try {
     await useStaffFetch(`/api/team-members/${memberId}/reactivate`, { method: 'POST' })
+    invalidateTeamDirectory()
     deletedAt.value = null
     showToast(t('Active again.', 'Vuelve a estar activo.'))
   } catch (e: any) {

@@ -43,11 +43,11 @@ describe('The patient record when a read fails', () => {
         lastName: 'Tarjetas',
       }).then((patient: any) => {
         let failing = true
-        for (const table of ['appointments', 'care_plans', 'invoices']) {
-          cy.intercept('GET', `**/rest/v1/${table}?*patient_id=eq.${patient.id}*`, (req) => {
-            if (failing) req.reply({ statusCode: 500, body: { message: 'failed' } })
-          })
-        }
+        // The three cards are answered by one request (patient_overview), so
+        // that is the one to fail: appointments, the plan and what is owed.
+        cy.intercept('POST', '**/rest/v1/rpc/patient_overview*', (req) => {
+          if (failing) req.reply({ statusCode: 500, body: { message: 'failed' } })
+        })
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 

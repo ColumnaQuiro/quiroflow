@@ -67,34 +67,23 @@ function readValue(what: string) {
   }
 }
 
+// One request, shared with the setup line below this card (loadSetupFacts):
+// these were five of their own, two of them exact counts of every
+// appointment and every imported patient to compare with zero.
 async function load() {
-  const [types, patients, appointments, imported, unlinked] = await Promise.all([
-    supabase.from('appointment_types').select('id', { count: 'exact', head: true }).is('archived_at', null),
-    supabase.from('patients').select('id').order('created_at', { ascending: false }).limit(1),
-    supabase.from('appointments').select('id', { count: 'exact', head: true }),
-    // Every importer stamps external_reference on what it writes; a patient
-    // typed in by hand has none.
-    supabase.from('patients').select('id', { count: 'exact', head: true }).not('external_reference', 'is', null),
-    // The same rows Settings -> Team lists as "Imported names not linked".
-    supabase
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .is('practitioner_id', null)
-      .not('practitioner_name', 'is', null)
-      .is('deleted_at', null),
-  ])
+  const { data, error } = await loadSetupFacts(supabase, store.accountId!)
   // A failed read must not invite an established clinic to "add its first
   // patient", so any error hides the card instead of showing a step as open.
-  if (types.error || patients.error || appointments.error || imported.error || unlinked.error) {
+  if (error || !data) {
     dismissed.value = true
     loaded.value = true
     return
   }
-  hasType.value = (types.count ?? 0) > 0
-  latestPatientId.value = patients.data?.[0]?.id ?? null
-  hasAppointment.value = (appointments.count ?? 0) > 0
-  hasImported.value = (imported.count ?? 0) > 0
-  unlinkedVisits.value = unlinked.count ?? 0
+  hasType.value = data.services
+  latestPatientId.value = data.latest_patient_id
+  hasAppointment.value = data.first_visit
+  hasImported.value = data.imported
+  unlinkedVisits.value = data.unlinked_visits
   loaded.value = true
 }
 

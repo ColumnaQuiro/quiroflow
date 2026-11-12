@@ -5,66 +5,61 @@ import type { DateRange } from '../../composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
-interface ApptRow { id: string; patient_id: string; starts_at: string; practitioner_id: string | null; clinic_id: string | null }
-interface PaymentRow { amount_cents: number; method: string; invoice_id: string | null; invoices?: { status: string } | null }
-interface InvoiceRow { id: string; appointment_id: string | null }
+interface VisitStats { visits: number; patients: number; returning: number }
+interface PaymentRow {
+  amount_cents: number
+  method: string
+  invoice_id: string | null
+  invoices?: { status: string; appointments?: { status: string; practitioner_id: string | null; clinic_id: string | null } | null } | null
+}
 
 const t = useT()
 const supabase = useSupabaseClient()
-const allCompleted = ref<ApptRow[]>([])
+const stats = ref<VisitStats>({ visits: 0, patients: 0, returning: 0 })
 const payments = ref<PaymentRow[]>([])
-const invoices = ref<InvoiceRow[]>([])
-const historyLoading = ref(true)
+const statsLoading = ref(true)
 const paymentsLoading = ref(true)
-const loading = computed(() => historyLoading.value || paymentsLoading.value)
-const latestHistory = useLatestRun()
+const loading = computed(() => statsLoading.value || paymentsLoading.value)
+const latestStats = useLatestRun()
 const latestPayments = useLatestRun()
 
-// Two loads, because only one of them is about the period. The completed
-// visits are all-time -- retention compares against visits from before the
-// range -- and every figure below cuts the range out of them in memory, so
-// they used to be paged in full again on every change of dates for an
-// identical answer. They now reload only when whose figures these are
-// changes, and a new period costs only its payments.
-async function loadHistory() {
-  const isStale = latestHistory.start()
-  historyLoading.value = true
-  // Invoices are only read to walk payment -> invoice -> appointment when a
-  // practitioner/clinic filter is set (filteredPayments short-circuits
-  // without one), so an unfiltered dashboard was paging the whole invoices
-  // table for nothing.
-  const needsInvoices = !!props.practitionerId || !!props.clinicId
-  // Narrowed in the query to the practitioner/clinic filteredCompleted keeps
-  // anyway. The payment walk below reads appointmentById unfiltered, but a
-  // visit that fails the filter makes its payment drop out there exactly as
-  // an absent one does, so no figure moves.
-  let completedQuery = supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed')
-  if (props.practitionerId) completedQuery = completedQuery.eq('practitioner_id', props.practitionerId)
-  if (props.clinicId) completedQuery = completedQuery.eq('clinic_id', props.clinicId)
-  // Without the head-only counts fetchAllRows used to send alongside: they
-  // only let pages past the first go out together, and cost a request each
-  // on a dashboard that already fires twenty at once.
-  const [completed, inv] = await Promise.all([
-    fetchAllRows<ApptRow>((f, t) => completedQuery.range(f, t)),
-    needsInvoices ? fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t)) : Promise.resolve([] as InvoiceRow[]),
-  ])
+// The visits, the patients in them and how many had been before are counted
+// in the database (dashboard_visit_stats). They used to be cut in memory out
+// of every completed visit the clinic has ever had -- retention compares
+// against visits from before the range -- which was a page of rows per
+// thousand visits, growing every month, for three numbers.
+async function loadStats() {
+  const isStale = latestStats.start()
+  statsLoading.value = true
+  const { from, to } = rangeBounds(props.dateRange)
+  const { data, error } = await supabase.rpc(
+    'dashboard_visit_stats' as never,
+    { p_from: from.toISOString(), p_to: to.toISOString(), p_practitioner_id: props.practitionerId || null, p_clinic_id: props.clinicId || null } as never,
+  )
   if (isStale()) return
-  allCompleted.value = completed
-  invoices.value = inv
-  historyLoading.value = false
+  if (error) throw error
+  stats.value = (data ?? { visits: 0, patients: 0, returning: 0 }) as unknown as VisitStats
+  statsLoading.value = false
 }
 
 async function loadPayments() {
   const isStale = latestPayments.start()
   paymentsLoading.value = true
   const { from, to } = rangeBounds(props.dateRange)
+  // With a practitioner or clinic chosen, a payment counts only when its
+  // invoice is for a completed visit of theirs. The visit comes embedded
+  // under the invoice; it used to be looked up in every completed visit and
+  // every invoice the clinic has, both paged in full for this one walk.
+  // Without a filter nothing reads the visit, so it is not asked for.
+  const filtered = !!props.practitionerId || !!props.clinicId
+  const invoice = filtered ? 'invoices!payments_invoice_id_fkey(status, appointments!invoices_appointment_id_fkey(status, practitioner_id, clinic_id))' : 'invoices!payments_invoice_id_fkey(status)'
   const p = await fetchAllRows<PaymentRow>((f, t) =>
     supabase
       .from('payments')
-      .select('amount_cents, method, invoice_id, invoices!payments_invoice_id_fkey(status)')
+      .select(`amount_cents, method, invoice_id, ${invoice}`)
       .gte('paid_at', from.toISOString())
       .lte('paid_at', to.toISOString())
-      .range(f, t),
+      .range(f, t) as unknown as PromiseLike<{ data: PaymentRow[] | null; error: unknown }>,
   )
   if (isStale()) return
   // The void rule moved out of the query when the join went from inner to
@@ -84,30 +79,17 @@ async function loadPayments() {
 // QUIROFLOW-APP-5 had to go on from Google Play's test devices on /numbers.
 // Every other widget passes its load straight to onMounted, so this is
 // the one that was missing.
-onMounted(() => Promise.all([loadHistory(), loadPayments()]))
-watch(() => [props.practitionerId, props.clinicId], loadHistory)
-watch(() => props.dateRange, loadPayments, { deep: true })
+const load = () => Promise.all([loadStats(), loadPayments()])
+onMounted(load)
+// Both follow whose figures these are as well as the period now: the counts
+// are per period, and the payments carry their visit only under a filter.
+watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
 
-const filteredCompleted = computed(() => {
-  if (!props.practitionerId && !props.clinicId) return allCompleted.value
-  return allCompleted.value.filter((a) => {
-    if (props.practitionerId && a.practitioner_id !== props.practitionerId) return false
-    if (props.clinicId && a.clinic_id !== props.clinicId) return false
-    return true
-  })
-})
-
-const rangeStart = computed(() => rangeBounds(props.dateRange).from)
-const rangeEnd = computed(() => rangeBounds(props.dateRange).to)
-const inRange = computed(() => filteredCompleted.value.filter((a) => new Date(a.starts_at) >= rangeStart.value && new Date(a.starts_at) <= rangeEnd.value))
-
-const appointmentById = computed(() => new Map(allCompleted.value.map((a) => [a.id, a])))
-const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 const filteredPayments = computed(() => {
   if (!props.practitionerId && !props.clinicId) return payments.value
   return payments.value.filter((p) => {
-    const appt = appointmentById.value.get((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? '')
-    if (!appt) return false
+    const appt = p.invoices?.appointments
+    if (!appt || appt.status !== 'completed') return false
     if (props.practitionerId && appt.practitioner_id !== props.practitionerId) return false
     if (props.clinicId && appt.clinic_id !== props.clinicId) return false
     return true
@@ -118,16 +100,13 @@ const filteredPayments = computed(() => {
 // (Statistics), and this used to be called that too.
 const incomePerVisit = computed(() => {
   const totalCents = filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0)
-  if (inRange.value.length === 0) return null
-  return totalCents / 100 / inRange.value.length
+  if (stats.value.visits === 0) return null
+  return totalCents / 100 / stats.value.visits
 })
 
 const retentionRate = computed(() => {
-  const beforeRange = new Set(filteredCompleted.value.filter((a) => new Date(a.starts_at) < rangeStart.value).map((a) => a.patient_id))
-  const patientsInRange = new Set(inRange.value.map((a) => a.patient_id))
-  if (patientsInRange.size === 0) return null
-  const returning = [...patientsInRange].filter((id) => beforeRange.has(id)).length
-  return Math.round((returning / patientsInRange.size) * 100)
+  if (stats.value.patients === 0) return null
+  return Math.round((stats.value.returning / stats.value.patients) * 100)
 })
 </script>
 
@@ -141,7 +120,7 @@ const retentionRate = computed(() => {
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Visits', 'Visitas') }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">{{ inRange.length }}</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ stats.visits }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Average income per visit', 'Ingreso medio por visita') }}</span>

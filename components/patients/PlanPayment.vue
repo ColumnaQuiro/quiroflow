@@ -4,14 +4,29 @@
 // -- and whether its sessions cover the visits the plan still has -- or under
 // a membership. Read straight off the bono's counter and the membership row;
 // what is owed on them stays on the Money tab, the one place it is worked out.
-const props = defineProps<{ plan: { payment_kind?: string | null; package_purchase_id?: string | null; patient_membership_id?: string | null }; visitsLeft: number }>()
+//
+// `preloaded`: the record's Overview already holds the row, read with the
+// plan in its one request (patient_overview). Left out -- the Clinical tab,
+// the staff app -- the card reads it itself.
+type Bono = { package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }
+type Membership = { membership_name: string; price_cents: number; status: string; billing_interval: string | null; billing_interval_count: number | null }
+const props = defineProps<{
+  plan: { payment_kind?: string | null; package_purchase_id?: string | null; patient_membership_id?: string | null }
+  visitsLeft: number
+  preloaded?: { bono: Bono | null; membership: Membership | null } | null
+}>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const bono = ref<{ package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean } | null>(null)
-const membership = ref<{ membership_name: string; price_cents: number; status: string; billing_interval: string | null; billing_interval_count: number | null } | null>(null)
+const bono = ref<Bono | null>(null)
+const membership = ref<Membership | null>(null)
 
 async function load() {
+  if (props.preloaded !== undefined) {
+    bono.value = props.preloaded?.bono ?? null
+    membership.value = props.preloaded?.membership ?? null
+    return
+  }
   bono.value = null
   membership.value = null
   if (props.plan.payment_kind === 'bono' && props.plan.package_purchase_id) {
@@ -22,7 +37,7 @@ async function load() {
     membership.value = data as typeof membership.value
   }
 }
-watch(() => [props.plan.payment_kind, props.plan.package_purchase_id, props.plan.patient_membership_id], load, { immediate: true })
+watch(() => [props.plan.payment_kind, props.plan.package_purchase_id, props.plan.patient_membership_id, props.preloaded], load, { immediate: true })
 
 const bonoLeft = computed(() => (bono.value && !bono.value.is_closed ? Math.max(0, bono.value.sessions_total - bono.value.sessions_used) : 0))
 const covers = computed(() => bonoLeft.value >= props.visitsLeft)

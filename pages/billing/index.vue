@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 
 interface InvoiceRow {
@@ -93,19 +92,6 @@ function scoped<Q extends { eq: (c: string, v: string) => Q; ilike: (c: string, 
 const patientId = computed(() => (route.query.patient as string) || '')
 const patientName = ref('')
 
-async function loadPatientName() {
-  if (!patientId.value) {
-    patientName.value = ''
-    return
-  }
-  const { data } = await supabase
-    .from('patients')
-    .select('first_name, last_name')
-    .eq('id', patientId.value)
-    .maybeSingle()
-  patientName.value = data ? [data.first_name, data.last_name].filter(Boolean).join(' ') : ''
-}
-
 function clearPatientFilter() {
   const query = { ...route.query }
   delete query.patient
@@ -144,52 +130,46 @@ async function load() {
   loading.value = false
 }
 
-// One head-only count per bucket, rather than fetching every invoice's status
-// and tallying them in the browser. The old approach wasn't just slow, it was
-// wrong: an unpaginated select() is silently capped at 1000 rows, so any
-// account past that read "Paid · 1000 / All · 1000" no matter its real totals,
-// and a status with no row in the first 1000 showed 0. Production has 3,278
-// invoices, so the chips on screen were understating Paid by 2,258 and
-// reporting the one Void invoice as none. `head: true` returns the count in a
-// header with no row payload at all.
-let countsToken = 0
-async function loadCounts() {
-  const token = ++countsToken
-  const buckets: Exclude<StatusFilter, 'all'>[] = ['unpaid', 'paid', 'void']
-  // Scoped to the patient filter as well as the status. A chip counting the
-  // whole account while the list below shows one patient is the same class of
-  // lie as the 1000-row cap this function was written to fix.
-  const base = () => scoped(supabase.from('invoices').select('id', { count: 'exact', head: true }))
-  const [all, ...rest] = await Promise.all([
-    base(),
-    ...buckets.map((status) => base().eq('status', status)),
-  ])
-  if (token !== countsToken) return
-  const next: Record<StatusFilter, number> = { all: all.count ?? 0, unpaid: 0, paid: 0, void: 0 }
-  buckets.forEach((status, i) => {
-    next[status] = rest[i]?.count ?? 0
-  })
-  counts.value = next
-}
+// The four chips, what is outstanding and the filtered patient's name, in one
+// request (billing_invoice_stats). They were four head-only counts, every
+// unpaid invoice a page at a time, then those invoices' payments 150 ids to a
+// URL, then the name: ten or so requests on opening the page and again on
+// every search, queueing behind each other on a two-core database.
+//
+// The counts are counted by the database, under the same patient filter and
+// search as the list -- never tallied here from fetched rows, which is what
+// once capped every chip at 1000 while production had 3,278 invoices. The
+// function is handed the patients the search already resolved for the list,
+// so a chip counting the whole account while the list shows one patient (or
+// one search) cannot happen.
+//
+// The outstanding figure is still summed here, by the same line as before,
+// from every unpaid invoice and every payment against one: the function
+// returns those rows, uncapped, and does no arithmetic on them.
+let statsToken = 0
+async function loadStats() {
+  const token = ++statsToken
+  const { data, error } = await supabase.rpc('billing_invoice_stats' as never, {
+    p_patient_id: patientId.value || null,
+    p_term: sanitizeSearchToken(appliedSearch.value).trim(),
+    p_search_patient_ids: searchPatientIds.value,
+  } as never)
+  if (token !== statsToken) return
+  const stats = (data ?? {}) as unknown as {
+    counts?: Record<StatusFilter, number>
+    unpaid?: { id: string; total_cents: number }[]
+    unpaid_payments?: { invoice_id: string | null; amount_cents: number }[]
+    patient?: { first_name: string; last_name: string | null } | null
+  }
+  counts.value = { all: stats.counts?.all ?? 0, unpaid: stats.counts?.unpaid ?? 0, paid: stats.counts?.paid ?? 0, void: stats.counts?.void ?? 0 }
+  patientName.value = stats.patient ? [stats.patient.first_name, stats.patient.last_name].filter(Boolean).join(' ') : ''
+  // A failed read leaves the header without its figure, as it always did,
+  // rather than claiming nothing is outstanding.
+  if (error) return
 
-async function loadOutstanding() {
-  // fetchAllRows rather than a bare select() for that same 1000-row cap -- an
-  // account carrying more unpaid invoices than that silently under-reported
-  // what it is owed in the header.
-  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) =>
-    scoped(supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')).order('id').range(from, to),
-  )
-  const ids = rows.map((r) => r.id)
-
+  const rows = stats.unpaid ?? []
   const paidByInvoice: Record<string, number> = {}
-  // By chunk as well as by page: every unpaid invoice in the account is more
-  // ids than one URL holds long before it is more rows than one page.
-  const pays = await fetchByIds(ids, (chunk) =>
-    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((from, to) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(from, to),
-    ).then((data) => ({ data, error: null })),
-  )
-  for (const p of pays) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
+  for (const p of stats.unpaid_payments ?? []) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
 
   outstandingCents.value = rows.reduce((sum, r) => sum + Math.max(0, r.total_cents - (paidByInvoice[r.id] ?? 0)), 0)
   outstandingCount.value = rows.length
@@ -198,9 +178,7 @@ async function loadOutstanding() {
 
 onMounted(() => {
   load()
-  loadCounts()
-  loadOutstanding()
-  loadPatientName()
+  loadStats()
 })
 watch(statusFilter, () => {
   page.value = 1
@@ -218,16 +196,13 @@ watch(appliedSearch, async () => {
   counts.value = null
   statsLoaded.value = false
   load()
-  loadCounts()
-  loadOutstanding()
+  loadStats()
 })
 watch(patientId, () => {
   page.value = 1
   counts.value = null
   load()
-  loadCounts()
-  loadOutstanding()
-  loadPatientName()
+  loadStats()
 })
 
 function goToPage(p: number) {

@@ -131,6 +131,7 @@ const carePlanByPatient = ref<Record<string, CarePlanInfo>>({})
 const whatsappConsentByPatient = ref<Record<string, boolean>>({})
 const primaryPhoneByPatient = ref<Record<string, string>>({})
 const teamMembers = ref<TeamMemberOption[]>([])
+const teamDirectory = useTeamDirectory()
 const loading = ref(true)
 // The skeleton rows are for the first load only. A search keystroke or a
 // filter change used to swap the whole table for skeletons and drop the
@@ -158,9 +159,9 @@ onMounted(async () => {
     showAddPatient.value = true
     navigateTo({ query: { ...route.query, new: undefined } }, { replace: true })
   }
-  const { data, error } = await supabase.from('team_members').select('id, full_name').order('full_name')
-  if (error) throw error
-  teamMembers.value = data ?? []
+  // Shared with Inbox, Recalls and My Day: one read per session, not per page.
+  await teamDirectory.ensureLoaded()
+  teamMembers.value = teamDirectory.all.value
 })
 const page = ref(1)
 const totalCount = ref(0)

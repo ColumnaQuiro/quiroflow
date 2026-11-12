@@ -6,7 +6,11 @@ import { clinicDateOf } from '../../utils/clinicClock'
 // each period's visits done out of expected, coloured by how it went, with
 // "on track" / "behind" for the plan. On the record's Overview and in the
 // staff app's patient screen.
-const props = defineProps<{ patientId: string; plan: PeriodPlan; timeZone?: string | null }>()
+//
+// `preloadedVisits`: the record's Overview hands in the visits it read with
+// the plan (patient_overview) -- the same rows this asks for. Left out, as in
+// the staff app, the component reads them itself.
+const props = defineProps<{ patientId: string; plan: PeriodPlan; timeZone?: string | null; preloadedVisits?: { starts_at: string; status: string }[] | null }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
@@ -15,7 +19,17 @@ const loading = ref(true)
 const showAll = ref(false)
 const zone = computed(() => props.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone)
 
+const toDays = (rows: { starts_at: string; status: string }[]) => rows.map((v) => ({ day: clinicDateOf(new Date(v.starts_at), zone.value), status: v.status }))
+
 async function load() {
+  if (props.preloadedVisits !== undefined) {
+    // null: the parent's request is still out.
+    if (props.preloadedVisits) {
+      visits.value = toDays(props.preloadedVisits)
+      loading.value = false
+    }
+    return
+  }
   loading.value = true
   const { data } = await supabase
     .from('appointments')
@@ -24,10 +38,10 @@ async function load() {
     .is('deleted_at', null)
     .gte('starts_at', `${props.plan.started_at}T00:00:00Z`)
     .order('starts_at')
-  visits.value = ((data as { starts_at: string; status: string }[] | null) ?? []).map((v) => ({ day: clinicDateOf(new Date(v.starts_at), zone.value), status: v.status }))
+  visits.value = toDays((data as { starts_at: string; status: string }[] | null) ?? [])
   loading.value = false
 }
-watch(() => [props.patientId, props.plan.started_at, props.plan.total_visits, props.plan.frequency_value, props.plan.visits_per_period], load, { immediate: true })
+watch(() => [props.patientId, props.plan.started_at, props.plan.total_visits, props.plan.frequency_value, props.plan.visits_per_period, props.preloadedVisits], load, { immediate: true })
 
 const today = computed(() => clinicDateOf(new Date(), zone.value))
 const periods = computed(() => carePlanPeriods(props.plan, visits.value, today.value))

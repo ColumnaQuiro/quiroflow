@@ -25,21 +25,18 @@ async function load() {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - ACTIVE_WINDOW_DAYS)
 
-  let activeQuery = supabase
-    .from('appointments')
-    .select('patient_id')
-    .eq('status', 'completed')
-    .gte('starts_at', cutoff.toISOString())
-  if (props.practitionerId) activeQuery = activeQuery.eq('practitioner_id', props.practitionerId)
+  // Counted in the database (dashboard_active_patients): this used to read
+  // every completed visit of the window to count the patients in them, a
+  // page of rows per thousand visits for one number.
+  const activeQuery = supabase.rpc('dashboard_active_patients' as never, { p_since: cutoff.toISOString(), p_practitioner_id: props.practitionerId || null } as never)
 
-  // No head-only count beside the rows: it only let pages past the first go
-  // out together, and a window of completed visits rarely needs a second.
-  const [{ count, error }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t))])
+  const [{ count, error }, counted] = await Promise.all([totalQuery, activeQuery])
   if (isStale()) return
   if (error) throw error
+  if (counted.error) throw counted.error
 
   total.value = count ?? 0
-  active.value = new Set(rows.map((r) => r.patient_id)).size
+  active.value = (counted.data as unknown as number | null) ?? 0
   loading.value = false
 }
 onMounted(load)

@@ -101,16 +101,17 @@ function formatTime(iso: string) {
 
 const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchorDate.value), i)))
 
+const teamDirectory = useTeamDirectory()
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }] = await Promise.all([
+  const [{ data: types }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at'),
-    // Practitioners only, and not deactivated ones -- My Day is a treating
-    // worklist, so front desk and admin staff have no column here. Same
-    // filter the Calendar's own practitioner tabs already use.
-    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
+    teamDirectory.ensureLoaded().catch(() => {}),
   ])
   appointmentTypes.value = orderTypes(types ?? [])
-  teamMembers.value = members ?? []
+  // Practitioners only, and not deactivated ones -- My Day is a treating
+  // worklist, so front desk and admin staff have no column here. Same
+  // filter the Calendar's own practitioner tabs already use.
+  teamMembers.value = teamDirectory.practitioners.value
   referenceLoaded.value = true
 }
 
@@ -764,6 +765,7 @@ onMounted(() => warmChunks(() => [
       :appointment-types="appointmentTypes.filter((x) => !x.archived_at || x.id === panelInputs!.appointment.appointment_type_id)"
       :team-members="teamMembers"
       :overrides="panelInputs.overrides"
+      :activity="panelInputs.activity"
       no-move
       @close="panelInputs = null"
       @changed="onPanelChanged"

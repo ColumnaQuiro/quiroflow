@@ -118,6 +118,57 @@ export type Database = {
           },
         ]
       }
+      gocardless_payment_events: {
+        Row: {
+          account_id: string
+          action: string
+          amount_cents: number | null
+          charge_date: string | null
+          created_at: string
+          gocardless_event_id: string
+          gocardless_payment_id: string
+          id: string
+          payment_schedule_id: string | null
+        }
+        Insert: {
+          account_id: string
+          action: string
+          amount_cents?: number | null
+          charge_date?: string | null
+          created_at?: string
+          gocardless_event_id: string
+          gocardless_payment_id: string
+          id?: string
+          payment_schedule_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          action?: string
+          amount_cents?: number | null
+          charge_date?: string | null
+          created_at?: string
+          gocardless_event_id?: string
+          gocardless_payment_id?: string
+          id?: string
+          payment_schedule_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gocardless_payment_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gocardless_payment_events_payment_schedule_id_fkey"
+            columns: ["payment_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "payment_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       habit_checkins: {
         Row: {
           account_id: string
@@ -156,6 +207,79 @@ export type Database = {
           },
           {
             foreignKeyName: "habit_checkins_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_gocardless_mandates: {
+        Row: {
+          account_id: string
+          account_number_ending: string | null
+          bank_name: string | null
+          gocardless_customer_id: string
+          gocardless_mandate_id: string
+          id: string
+          matched_at: string
+          matched_by: string | null
+          matched_by_member: string | null
+          origin: string
+          patient_id: string
+          scheme: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          account_number_ending?: string | null
+          bank_name?: string | null
+          gocardless_customer_id: string
+          gocardless_mandate_id: string
+          id?: string
+          matched_at?: string
+          matched_by?: string | null
+          matched_by_member?: string | null
+          origin?: string
+          patient_id: string
+          scheme?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          account_number_ending?: string | null
+          bank_name?: string | null
+          gocardless_customer_id?: string
+          gocardless_mandate_id?: string
+          id?: string
+          matched_at?: string
+          matched_by?: string | null
+          matched_by_member?: string | null
+          origin?: string
+          patient_id?: string
+          scheme?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_gocardless_mandates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_gocardless_mandates_matched_by_member_fkey"
+            columns: ["matched_by_member"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_gocardless_mandates_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
@@ -1381,120 +1505,50 @@ export type Database = {
       }
       accounts: {
         Row: {
-          leave_carry_over_days: number
-          online_booking_card_on_file: boolean
-          referral_program_enabled: boolean
-          referral_reward_text: string | null
           appointment_confirmation_channels: string[]
           appointment_confirmation_enabled: boolean
           appointment_reminder_channels: string[]
           appointment_reminder_enabled: boolean
           appointment_reminder_hours_before: number
           cancellation_fee_cents: number | null
-          created_at: string
           clinical_retention_years: number
+          created_at: string
+          default_phone_country: string
+          earlier_first_visit_offers: boolean
           email_branding: Json | null
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
           email_reminder_subject: string | null
+          factura_prefix: string
+          factura_tax_exemption_code: string | null
+          factura_tax_rate_bp: number
+          gocardless_connected_at: string | null
+          gocardless_environment: string | null
+          gocardless_organisation_id: string | null
+          gocardless_verification_status: string | null
+          google_business_account: string | null
+          google_business_location: string | null
+          google_business_location_title: string | null
+          google_rating: number | null
+          google_review_count: number | null
+          google_review_url: string | null
+          google_reviews_synced_at: string | null
           hide_account_balance: boolean
           hide_invoice_balance: boolean
           hide_logo_on_invoices: boolean
           hide_next_visit_on_invoices: boolean
           hide_payments_on_invoices: boolean
           hide_provider_on_invoices: boolean
-          google_review_url: string | null
-          google_business_account: string | null
-          google_business_location: string | null
-          google_business_location_title: string | null
-          google_reviews_synced_at: string | null
-          google_rating: number | null
-          google_review_count: number | null
           id: string
           instagram_access_token: string | null
           instagram_user_id: string | null
           invoice_email_body: string | null
           invoice_email_subject: string | null
-          meta_ads_access_token: string | null
-          meta_ads_account_id: string | null
-          messenger_page_id: string | null
-          missed_appointment_fee_cents: number | null
-          name: string
-          new_patient_field_config: Json
-          next_invoice_number: number | null
-          owner_phone: string | null
-          online_booking_background_color: string | null
-          online_booking_gtm_id: string | null
-          online_booking_hide_heading: boolean
-          online_booking_hide_language_picker: boolean
-          online_booking_hide_logo: boolean
-          online_booking_max_days_ahead: number
           lead_convert_after_visits: number | null
           lead_convert_appointment_type_id: string | null
           lead_default_value_cents: number | null
-          new_lead_notify_email: string | null
-          new_lead_notify_whatsapp: string | null
-          new_lead_notify_whatsapp_template_language: string | null
-          new_lead_notify_whatsapp_template_name: string | null
-          online_booking_notify_email: string | null
-          online_booking_notify_whatsapp: string | null
-          online_booking_notify_whatsapp_template_language: string
-          online_booking_notify_whatsapp_template_name: string | null
-          online_booking_practitioner_order: string
-          online_booking_primary_color: string | null
-          online_booking_referral_url: string | null
-          online_booking_secondary_color: string | null
-          online_booking_success_url: string | null
-          patient_app_booking_enabled: boolean
-          patient_app_cancel_enabled: boolean
-          patient_app_reschedule_enabled: boolean
-          patient_app_change_notice_hours: number
-          patient_app_brand_name: string | null
-          patient_app_brand_color: string | null
-          patient_app_brand_logo_path: string | null
-          online_booking_text_overrides: Json
-          practicehub_api_key: string | null
-          practicehub_base_url: string | null
-          practicehub_contact_email: string | null
-          referred_by_account_id: string | null
-          scheduling_policy_fee_cents: number | null
-          send_invoices_automatically_default: boolean
-          show_dob_on_invoices: boolean
-          show_ssn_on_invoices: boolean
-          show_taxes_on_invoices: boolean
-          factura_tax_rate_bp: number
-          factura_tax_exemption_code: string | null
-          factura_prefix: string
-          rectificativa_prefix: string
-          signup_attribution: Json | null
-          slug: string
-          verifactu_mode: string
-          verifactu_sender: string
-          verifactu_production_from: string | null
-          require_two_factor: boolean
-          default_phone_country: string
-          stripe_connect_account_id: string | null
-          stripe_app_payments_enabled: boolean
-          stripe_publishable_key: string | null
-          stripe_secret_key: string | null
-          stripe_webhook_secret: string | null
-          whatsapp_access_token: string | null
-          whatsapp_business_app_since: string | null
-          whatsapp_business_account_id: string | null
-          whatsapp_confirmation_template_language: string
-          whatsapp_confirmation_template_name: string | null
-          whatsapp_phone_number_id: string | null
-          whatsapp_recall_template_language: string
-          whatsapp_recall_template_name: string | null
-          whatsapp_reminder_template_language: string | null
-          whatsapp_reminder_template_name: string | null
-          waitlist_auto_offer: boolean
-          waitlist_offer_mode: string
-          earlier_first_visit_offers: boolean
-          webchat_enabled: boolean
-          webchat_greeting: string | null
-          recall_assignee_default: string
+          leave_carry_over_days: number
           maintenance_discharge_recall_months: number
           maintenance_frequency_unit: string
           maintenance_frequency_value: number
@@ -1504,65 +1558,153 @@ export type Database = {
           maintenance_membership_id: string | null
           maintenance_total_visits: number | null
           maintenance_visits_per_period: number
+          messenger_page_id: string | null
+          meta_ads_access_token: string | null
+          meta_ads_account_id: string | null
+          missed_appointment_fee_cents: number | null
+          name: string
+          new_lead_notify_email: string | null
+          new_lead_notify_whatsapp: string | null
+          new_lead_notify_whatsapp_template_language: string | null
+          new_lead_notify_whatsapp_template_name: string | null
+          new_patient_field_config: Json
+          next_invoice_number: number | null
+          online_booking_background_color: string | null
+          online_booking_card_on_file: boolean
+          online_booking_gtm_id: string | null
+          online_booking_hide_heading: boolean
+          online_booking_hide_language_picker: boolean
+          online_booking_hide_logo: boolean
+          online_booking_max_days_ahead: number
+          online_booking_notify_email: string | null
+          online_booking_notify_whatsapp: string | null
+          online_booking_notify_whatsapp_template_language: string
+          online_booking_notify_whatsapp_template_name: string | null
+          online_booking_practitioner_order: string
+          online_booking_primary_color: string | null
+          online_booking_referral_url: string | null
+          online_booking_secondary_color: string | null
+          online_booking_success_url: string | null
+          online_booking_text_overrides: Json
+          owner_phone: string | null
+          patient_app_booking_enabled: boolean
+          patient_app_brand_color: string | null
+          patient_app_brand_logo_path: string | null
+          patient_app_brand_name: string | null
+          patient_app_cancel_enabled: boolean
+          patient_app_change_notice_hours: number
+          patient_app_reschedule_enabled: boolean
+          practicehub_api_key: string | null
+          practicehub_base_url: string | null
+          practicehub_contact_email: string | null
+          recall_assignee_default: string
           recall_assignee_member_id: string | null
+          rectificativa_prefix: string
+          referral_program_enabled: boolean
+          referral_reward_text: string | null
+          referred_by_account_id: string | null
+          require_two_factor: boolean
+          scheduling_policy_fee_cents: number | null
+          send_invoices_automatically_default: boolean
+          show_dob_on_invoices: boolean
+          show_ssn_on_invoices: boolean
+          show_taxes_on_invoices: boolean
+          signup_attribution: Json | null
+          slug: string
+          stripe_app_payments_enabled: boolean
+          stripe_connect_account_id: string | null
+          stripe_publishable_key: string | null
+          stripe_secret_key: string | null
+          stripe_webhook_secret: string | null
+          verifactu_mode: string
+          verifactu_production_from: string | null
+          verifactu_sender: string
+          waitlist_auto_offer: boolean
+          waitlist_offer_mode: string
+          webchat_enabled: boolean
+          webchat_greeting: string | null
+          whatsapp_access_token: string | null
+          whatsapp_business_account_id: string | null
+          whatsapp_business_app_since: string | null
+          whatsapp_confirmation_template_language: string
+          whatsapp_confirmation_template_name: string | null
+          whatsapp_phone_number_id: string | null
+          whatsapp_recall_template_language: string
+          whatsapp_recall_template_name: string | null
+          whatsapp_reminder_template_language: string | null
+          whatsapp_reminder_template_name: string | null
         }
         Insert: {
-          leave_carry_over_days?: number
-          online_booking_card_on_file?: boolean
-          referral_program_enabled?: boolean
-          referral_reward_text?: string | null
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
           appointment_reminder_enabled?: boolean
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
-          created_at?: string
           clinical_retention_years?: number
+          created_at?: string
+          earlier_first_visit_offers?: boolean
           email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
+          factura_prefix?: string
+          factura_tax_exemption_code?: string | null
+          factura_tax_rate_bp?: number
+          gocardless_connected_at?: string | null
+          gocardless_environment?: string | null
+          gocardless_organisation_id?: string | null
+          gocardless_verification_status?: string | null
+          google_business_account?: string | null
+          google_business_location?: string | null
+          google_business_location_title?: string | null
+          google_rating?: number | null
+          google_review_count?: number | null
+          google_review_url?: string | null
+          google_reviews_synced_at?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
-          google_review_url?: string | null
-          google_business_account?: string | null
-          google_business_location?: string | null
-          google_business_location_title?: string | null
-          google_reviews_synced_at?: string | null
-          google_rating?: number | null
-          google_review_count?: number | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
+          lead_convert_after_visits?: number | null
+          lead_convert_appointment_type_id?: string | null
+          lead_default_value_cents?: number | null
+          leave_carry_over_days?: number
+          maintenance_discharge_recall_months?: number
+          maintenance_frequency_unit?: string
+          maintenance_frequency_value?: number
+          maintenance_habits_article_ids?: string[]
+          maintenance_habits_on_discharge?: boolean
+          maintenance_habits_on_start?: boolean
+          maintenance_membership_id?: string | null
+          maintenance_total_visits?: number | null
+          maintenance_visits_per_period?: number
+          messenger_page_id?: string | null
           meta_ads_access_token?: string | null
           meta_ads_account_id?: string | null
-          messenger_page_id?: string | null
           missed_appointment_fee_cents?: number | null
           name: string
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
           new_patient_field_config?: Json
           next_invoice_number?: number | null
-          owner_phone?: string | null
           online_booking_background_color?: string | null
+          online_booking_card_on_file?: boolean
           online_booking_gtm_id?: string | null
           online_booking_hide_heading?: boolean
           online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
-          lead_convert_after_visits?: number | null
-          lead_convert_appointment_type_id?: string | null
-          lead_default_value_cents?: number | null
-          new_lead_notify_email?: string | null
-          new_lead_notify_whatsapp?: string | null
-          new_lead_notify_whatsapp_template_language?: string | null
-          new_lead_notify_whatsapp_template_name?: string | null
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -1572,41 +1714,47 @@ export type Database = {
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
           online_booking_success_url?: string | null
+          online_booking_text_overrides?: Json
+          owner_phone?: string | null
           patient_app_booking_enabled?: boolean
-          patient_app_cancel_enabled?: boolean
-          patient_app_reschedule_enabled?: boolean
-          patient_app_change_notice_hours?: number
-          patient_app_brand_name?: string | null
           patient_app_brand_color?: string | null
           patient_app_brand_logo_path?: string | null
-          online_booking_text_overrides?: Json
+          patient_app_brand_name?: string | null
+          patient_app_cancel_enabled?: boolean
+          patient_app_change_notice_hours?: number
+          patient_app_reschedule_enabled?: boolean
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
           practicehub_contact_email?: string | null
+          recall_assignee_default?: string
+          recall_assignee_member_id?: string | null
+          rectificativa_prefix?: string
+          referral_program_enabled?: boolean
+          referral_reward_text?: string | null
           referred_by_account_id?: string | null
+          require_two_factor?: boolean
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
           show_ssn_on_invoices?: boolean
           show_taxes_on_invoices?: boolean
-          factura_tax_rate_bp?: number
-          factura_tax_exemption_code?: string | null
-          factura_prefix?: string
-          rectificativa_prefix?: string
           signup_attribution?: Json | null
           slug: string
-          verifactu_mode?: string
-          verifactu_sender?: string
-          verifactu_production_from?: string | null
-          require_two_factor?: boolean
-          stripe_connect_account_id?: string | null
           stripe_app_payments_enabled?: boolean
+          stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null
+          verifactu_mode?: string
+          verifactu_production_from?: string | null
+          verifactu_sender?: string
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
+          webchat_enabled?: boolean
+          webchat_greeting?: string | null
           whatsapp_access_token?: string | null
-          whatsapp_business_app_since?: string | null
           whatsapp_business_account_id?: string | null
+          whatsapp_business_app_since?: string | null
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
@@ -1614,138 +1762,52 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
-          waitlist_auto_offer?: boolean
-          waitlist_offer_mode?: string
-          earlier_first_visit_offers?: boolean
-          webchat_enabled?: boolean
-          webchat_greeting?: string | null
-          recall_assignee_default?: string
-          maintenance_discharge_recall_months?: number
-          maintenance_frequency_unit?: string
-          maintenance_frequency_value?: number
-          maintenance_habits_article_ids?: string[]
-          maintenance_habits_on_discharge?: boolean
-          maintenance_habits_on_start?: boolean
-          maintenance_membership_id?: string | null
-          maintenance_total_visits?: number | null
-          maintenance_visits_per_period?: number
-          recall_assignee_member_id?: string | null
         }
         Update: {
-          leave_carry_over_days?: number
-          online_booking_card_on_file?: boolean
-          referral_program_enabled?: boolean
-          referral_reward_text?: string | null
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
           appointment_reminder_enabled?: boolean
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
-          created_at?: string
           clinical_retention_years?: number
+          created_at?: string
+          default_phone_country?: string
+          earlier_first_visit_offers?: boolean
           email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
+          factura_prefix?: string
+          factura_tax_exemption_code?: string | null
+          factura_tax_rate_bp?: number
+          gocardless_connected_at?: string | null
+          gocardless_environment?: string | null
+          gocardless_organisation_id?: string | null
+          gocardless_verification_status?: string | null
+          google_business_account?: string | null
+          google_business_location?: string | null
+          google_business_location_title?: string | null
+          google_rating?: number | null
+          google_review_count?: number | null
+          google_review_url?: string | null
+          google_reviews_synced_at?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
-          google_review_url?: string | null
-          google_business_account?: string | null
-          google_business_location?: string | null
-          google_business_location_title?: string | null
-          google_reviews_synced_at?: string | null
-          google_rating?: number | null
-          google_review_count?: number | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
-          meta_ads_access_token?: string | null
-          meta_ads_account_id?: string | null
-          messenger_page_id?: string | null
-          missed_appointment_fee_cents?: number | null
-          name?: string
-          new_patient_field_config?: Json
-          next_invoice_number?: number | null
-          owner_phone?: string | null
-          online_booking_background_color?: string | null
-          online_booking_gtm_id?: string | null
-          online_booking_hide_heading?: boolean
-          online_booking_hide_language_picker?: boolean
-          online_booking_hide_logo?: boolean
-          online_booking_max_days_ahead?: number
           lead_convert_after_visits?: number | null
           lead_convert_appointment_type_id?: string | null
           lead_default_value_cents?: number | null
-          new_lead_notify_email?: string | null
-          new_lead_notify_whatsapp?: string | null
-          new_lead_notify_whatsapp_template_language?: string | null
-          new_lead_notify_whatsapp_template_name?: string | null
-          online_booking_notify_email?: string | null
-          online_booking_notify_whatsapp?: string | null
-          online_booking_notify_whatsapp_template_language?: string
-          online_booking_notify_whatsapp_template_name?: string | null
-          online_booking_practitioner_order?: string
-          online_booking_primary_color?: string | null
-          online_booking_referral_url?: string | null
-          online_booking_secondary_color?: string | null
-          online_booking_success_url?: string | null
-          patient_app_booking_enabled?: boolean
-          patient_app_cancel_enabled?: boolean
-          patient_app_reschedule_enabled?: boolean
-          patient_app_change_notice_hours?: number
-          patient_app_brand_name?: string | null
-          patient_app_brand_color?: string | null
-          patient_app_brand_logo_path?: string | null
-          online_booking_text_overrides?: Json
-          practicehub_api_key?: string | null
-          practicehub_base_url?: string | null
-          practicehub_contact_email?: string | null
-          referred_by_account_id?: string | null
-          scheduling_policy_fee_cents?: number | null
-          send_invoices_automatically_default?: boolean
-          show_dob_on_invoices?: boolean
-          show_ssn_on_invoices?: boolean
-          show_taxes_on_invoices?: boolean
-          factura_tax_rate_bp?: number
-          factura_tax_exemption_code?: string | null
-          factura_prefix?: string
-          rectificativa_prefix?: string
-          signup_attribution?: Json | null
-          slug?: string
-          verifactu_mode?: string
-          verifactu_sender?: string
-          verifactu_production_from?: string | null
-          require_two_factor?: boolean
-          default_phone_country?: string
-          stripe_connect_account_id?: string | null
-          stripe_app_payments_enabled?: boolean
-          stripe_publishable_key?: string | null
-          stripe_secret_key?: string | null
-          stripe_webhook_secret?: string | null
-          whatsapp_access_token?: string | null
-          whatsapp_business_app_since?: string | null
-          whatsapp_business_account_id?: string | null
-          whatsapp_confirmation_template_language?: string
-          whatsapp_confirmation_template_name?: string | null
-          whatsapp_phone_number_id?: string | null
-          whatsapp_recall_template_language?: string
-          whatsapp_recall_template_name?: string | null
-          whatsapp_reminder_template_language?: string | null
-          whatsapp_reminder_template_name?: string | null
-          waitlist_auto_offer?: boolean
-          waitlist_offer_mode?: string
-          earlier_first_visit_offers?: boolean
-          webchat_enabled?: boolean
-          webchat_greeting?: string | null
-          recall_assignee_default?: string
+          leave_carry_over_days?: number
           maintenance_discharge_recall_months?: number
           maintenance_frequency_unit?: string
           maintenance_frequency_value?: number
@@ -1755,7 +1817,81 @@ export type Database = {
           maintenance_membership_id?: string | null
           maintenance_total_visits?: number | null
           maintenance_visits_per_period?: number
+          messenger_page_id?: string | null
+          meta_ads_access_token?: string | null
+          meta_ads_account_id?: string | null
+          missed_appointment_fee_cents?: number | null
+          name?: string
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
+          new_patient_field_config?: Json
+          next_invoice_number?: number | null
+          online_booking_background_color?: string | null
+          online_booking_card_on_file?: boolean
+          online_booking_gtm_id?: string | null
+          online_booking_hide_heading?: boolean
+          online_booking_hide_language_picker?: boolean
+          online_booking_hide_logo?: boolean
+          online_booking_max_days_ahead?: number
+          online_booking_notify_email?: string | null
+          online_booking_notify_whatsapp?: string | null
+          online_booking_notify_whatsapp_template_language?: string
+          online_booking_notify_whatsapp_template_name?: string | null
+          online_booking_practitioner_order?: string
+          online_booking_primary_color?: string | null
+          online_booking_referral_url?: string | null
+          online_booking_secondary_color?: string | null
+          online_booking_success_url?: string | null
+          online_booking_text_overrides?: Json
+          owner_phone?: string | null
+          patient_app_booking_enabled?: boolean
+          patient_app_brand_color?: string | null
+          patient_app_brand_logo_path?: string | null
+          patient_app_brand_name?: string | null
+          patient_app_cancel_enabled?: boolean
+          patient_app_change_notice_hours?: number
+          patient_app_reschedule_enabled?: boolean
+          practicehub_api_key?: string | null
+          practicehub_base_url?: string | null
+          practicehub_contact_email?: string | null
+          recall_assignee_default?: string
           recall_assignee_member_id?: string | null
+          rectificativa_prefix?: string
+          referral_program_enabled?: boolean
+          referral_reward_text?: string | null
+          referred_by_account_id?: string | null
+          require_two_factor?: boolean
+          scheduling_policy_fee_cents?: number | null
+          send_invoices_automatically_default?: boolean
+          show_dob_on_invoices?: boolean
+          show_ssn_on_invoices?: boolean
+          show_taxes_on_invoices?: boolean
+          signup_attribution?: Json | null
+          slug?: string
+          stripe_app_payments_enabled?: boolean
+          stripe_connect_account_id?: string | null
+          stripe_publishable_key?: string | null
+          stripe_secret_key?: string | null
+          stripe_webhook_secret?: string | null
+          verifactu_mode?: string
+          verifactu_production_from?: string | null
+          verifactu_sender?: string
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
+          webchat_enabled?: boolean
+          webchat_greeting?: string | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_business_app_since?: string | null
+          whatsapp_confirmation_template_language?: string
+          whatsapp_confirmation_template_name?: string | null
+          whatsapp_phone_number_id?: string | null
+          whatsapp_recall_template_language?: string
+          whatsapp_recall_template_name?: string | null
+          whatsapp_reminder_template_language?: string | null
+          whatsapp_reminder_template_name?: string | null
         }
         Relationships: [
           {
@@ -7404,6 +7540,8 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          gocardless_mandate_id: string | null
+          gocardless_subscription_id: string | null
           id: string
           installments_paid: number
           installments_total: number | null
@@ -7412,13 +7550,16 @@ export type Database = {
           package_purchase_id: string | null
           patient_id: string
           patient_membership_id: string | null
+          provider: string
           status: string
           stripe_subscription_id: string | null
-          stripe_subscription_schedule_id: string
+          stripe_subscription_schedule_id: string | null
         }
         Insert: {
           account_id: string
           created_at?: string
+          gocardless_mandate_id?: string | null
+          gocardless_subscription_id?: string | null
           id?: string
           installments_paid?: number
           installments_total?: number | null
@@ -7427,13 +7568,16 @@ export type Database = {
           package_purchase_id?: string | null
           patient_id: string
           patient_membership_id?: string | null
+          provider?: string
           status?: string
           stripe_subscription_id?: string | null
-          stripe_subscription_schedule_id: string
+          stripe_subscription_schedule_id?: string | null
         }
         Update: {
           account_id?: string
           created_at?: string
+          gocardless_mandate_id?: string | null
+          gocardless_subscription_id?: string | null
           id?: string
           installments_paid?: number
           installments_total?: number | null
@@ -7442,9 +7586,10 @@ export type Database = {
           package_purchase_id?: string | null
           patient_id?: string
           patient_membership_id?: string | null
+          provider?: string
           status?: string
           stripe_subscription_id?: string | null
-          stripe_subscription_schedule_id?: string
+          stripe_subscription_schedule_id?: string | null
         }
         Relationships: [
           {
@@ -7504,6 +7649,7 @@ export type Database = {
           amount_cents: number
           created_by: string | null
           external_reference: string | null
+          gocardless_payment_id: string | null
           id: string
           invoice_id: string | null
           method: string
@@ -7518,6 +7664,7 @@ export type Database = {
           amount_cents: number
           created_by?: string | null
           external_reference?: string | null
+          gocardless_payment_id?: string | null
           id?: string
           invoice_id?: string | null
           method?: string
@@ -7532,6 +7679,7 @@ export type Database = {
           amount_cents?: number
           created_by?: string | null
           external_reference?: string | null
+          gocardless_payment_id?: string | null
           id?: string
           invoice_id?: string | null
           method?: string

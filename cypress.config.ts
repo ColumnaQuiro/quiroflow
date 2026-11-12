@@ -4,6 +4,7 @@ import { dbTasks } from './cypress/support/tasks/db'
 import { routeTasks } from './cypress/support/tasks/routes'
 import { pdfTasks } from './cypress/support/tasks/pdf'
 import { automationTasks } from './cypress/support/tasks/automations'
+import { gocardlessTasks } from './cypress/support/tasks/gocardless'
 
 dotenv.config()
 
@@ -19,7 +20,7 @@ export default defineConfig({
     viewportWidth: 1440,
     viewportHeight: 900,
     setupNodeEvents(on, config) {
-      on('task', { ...dbTasks, ...routeTasks, ...pdfTasks, ...automationTasks })
+      on('task', { ...dbTasks, ...routeTasks, ...pdfTasks, ...automationTasks, ...gocardlessTasks })
       return config
     },
   },

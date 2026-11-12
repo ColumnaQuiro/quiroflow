@@ -204,17 +204,12 @@ describe('Logging a bono session', () => {
           }).as('visitInsert')
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
-          const alerts: string[] = []
-          cy.on('window:alert', (text) => {
-            alerts.push(text)
-          })
           cy.get('[data-cy="log-session-open"]').click()
           cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
           cy.wait('@visitInsert')
 
-          cy.wrap(alerts).should((seen) => {
-            expect(seen.join(' '), 'says it did not use a session').to.contain('no session was used')
-          })
+          // Said in an error toast now, not the browser's alert().
+          cy.contains('no session was used').should('be.visible')
           cy.task<any>('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects) => {
             expect(effects.sessions.length, 'no session recorded').to.eq(0)
             expect(effects.purchase.sessions_used, 'the claimed session given back').to.eq(0)

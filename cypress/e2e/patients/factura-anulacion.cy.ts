@@ -22,6 +22,7 @@ describe('Annulling a factura issued in error', () => {
         cy.contains('button', 'Recording…').should('not.exist')
         cy.contains('tr', 'Payment — Cash').click()
         cy.contains('button', 'Remove payment').click()
+        cy.get('[data-cy=confirm-dialog-confirm]').click()
         cy.contains('tr', 'Payment — Cash').should('not.exist')
 
         cy.contains('button', 'Facturas & receipts').click()

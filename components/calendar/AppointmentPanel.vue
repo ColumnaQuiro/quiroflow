@@ -206,13 +206,22 @@ function outsideHours(at: Date) {
 // -- as a drag on the calendar asks (CalendarMoveClashDialog).
 const { findMoveClashes } = useMoveClashCheck()
 const editClashes = ref<MoveClash[] | null>(null)
+const outOfHoursAsk = ref(false)
 async function saveEdit() {
   error.value = ''
   const startsAt = new Date(`${form.date}T${form.time}`)
   const endsAt = new Date(startsAt.getTime() + form.duration * 60000)
   if (outsideHours(startsAt) || outsideHours(new Date(endsAt.getTime() - 1))) {
-    if (!confirm(t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?'))) return
+    // Asked in UiConfirmDialog; placeEdit carries on from a yes.
+    outOfHoursAsk.value = true
+    return
   }
+  await placeEdit()
+}
+async function placeEdit() {
+  outOfHoursAsk.value = false
+  const startsAt = new Date(`${form.date}T${form.time}`)
+  const endsAt = new Date(startsAt.getTime() + form.duration * 60000)
   // Instants, not strings: Postgres and toISOString() spell the same moment
   // differently, and comparing the strings marked every edit as a move.
   const same = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
@@ -1048,6 +1057,17 @@ async function useExpectedType() {
       {{ t('It stops being marked done and goes back to the step it was on.', 'Deja de estar marcada como hecha y vuelve al paso en el que estaba.') }}
       <template v-if="view.bono?.drawn">{{ t(`The session goes back to ${view.bono.packageName} and its charge is voided.`, `La sesión vuelve a ${view.bono.packageName} y se anula su cargo.`) }}</template>
     </p>
+  </UiConfirmDialog>
+
+  <UiConfirmDialog
+    v-if="outOfHoursAsk"
+    :title="t('Outside working hours', 'Fuera del horario de atención')"
+    :confirm-label="t('Save anyway', 'Guardar igualmente')"
+    :cancel-label="t('Cancel', 'Cancelar')"
+    @confirm="placeEdit"
+    @cancel="outOfHoursAsk = false"
+  >
+    <p class="text-[14px] leading-snug text-ink-700">{{ t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?') }}</p>
   </UiConfirmDialog>
 
   <CalendarMoveClashDialog v-if="editClashes" :clashes="editClashes" :busy="busy" @confirm="commitEdit" @cancel="editClashes = null" />

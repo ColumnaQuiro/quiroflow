@@ -53,6 +53,29 @@ export default defineEventHandler(async (event) => {
   const request = await gocardlessForAccount(admin, teamMember.account_id)
   if (!request) throw createError({ statusCode: 409, statusMessage: 'GoCardless is not connected' })
 
+  // Read the mandate from GoCardless again rather than trusting the row:
+  // ours is only as fresh as the last webhook, and on a clinic leaving
+  // PracticeHub the mandate is exactly what someone may have just touched
+  // there. Cancelling a membership in PracticeHub was checked (12 Nov 2026)
+  // and leaves the mandate alone -- but that rests on two old test cases, and
+  // a subscription on a dead mandate would only fail days later, at the bank.
+  try {
+    const { mandates: live } = await request<{ mandates: GcMandate }>('GET', `/mandates/${encodeURIComponent(mandateId)}`)
+    if (live.status !== usable[0]!.status) {
+      await admin.from('patient_gocardless_mandates').update({ status: live.status, updated_at: new Date().toISOString() }).eq('account_id', teamMember.account_id).eq('gocardless_mandate_id', mandateId)
+    }
+    if (!['pending_submission', 'submitted', 'active'].includes(live.status)) {
+      throw createError({ statusCode: 409, statusMessage: `This mandate is no longer active in GoCardless (${live.status}). The patient has to sign a new one.` })
+    }
+  } catch (err: any) {
+    if (err?.statusCode === 409) throw err
+    if (err instanceof GoCardlessError && err.tokenGone) {
+      await forgetGoCardlessConnection(admin, teamMember.account_id)
+      throw createError({ statusCode: 409, statusMessage: 'GoCardless was disconnected from its own dashboard. Connect it again.' })
+    }
+    throw createError({ statusCode: 502, statusMessage: `Could not read the mandate from GoCardless: ${(err as Error).message}` })
+  }
+
   let others: GcSubscription[] | null = null
   try {
     others = await gocardlessListAll<GcSubscription>(request, '/subscriptions', 'subscriptions', { mandate: mandateId, status: 'pending_customer_approval,active,paused' })

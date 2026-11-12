@@ -56,4 +56,48 @@ describe('Certificate of attendance', () => {
       cy.wait('@certificate').its('response.statusCode').should('eq', 200)
     })
   })
+
+  it('the patient opens it from their own past visits, by a link that needs no session', () => {
+    const email = `justificante-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString()
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paula', lastName: 'Asiste' }).then((patient) => {
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
+        const visit = (startsAt: string, status: string) =>
+          cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, startsAt, status })
+        visit(daysAgo(2), 'completed').then((attended) => {
+          visit(daysAgo(1), 'no_show').then((missed) => {
+            cy.login(email, password)
+            cy.visit('/portal/appointments')
+
+            // Offered on the visit they came to, not on the one they missed.
+            cy.get('[data-cy=patient-attendance-certificate]').should('have.length', 1)
+            const tab = { location: { href: '' }, close: () => {} }
+            cy.window().then((win) => cy.stub(win, 'open').returns(tab))
+            cy.intercept('POST', '/api/portal/appointments/attendance-certificate-link').as('link')
+            cy.get('[data-cy=patient-attendance-certificate]').click()
+            cy.wait('@link').its('response.statusCode').should('eq', 200)
+            cy.wrap(tab).its('location.href').should('contain', '/api/portal/appointments/attendance-certificate?')
+
+            // The server refuses the missed one even when asked directly.
+            cy.request({ method: 'POST', url: '/api/portal/appointments/attendance-certificate-link', body: { appointmentId: missed.id }, failOnStatusCode: false })
+              .its('status').should('eq', 409)
+
+            // The link is the authority: it opens with no session at all,
+            // and stops working when pointed at another visit.
+            cy.then(() => {
+              const link = tab.location.href
+              cy.clearAllCookies()
+              cy.request({ url: link, encoding: 'binary' }).then((res) => {
+                expect(res.headers['content-type']).to.contain('application/pdf')
+                expect(String(res.body).slice(0, 5)).to.eq('%PDF-')
+              })
+              cy.request({ url: link.replace(attended.id, missed.id), failOnStatusCode: false }).its('status').should('eq', 403)
+            })
+          })
+        })
+      })
+    })
+  })
 })

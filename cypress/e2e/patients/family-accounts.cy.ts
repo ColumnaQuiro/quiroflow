@@ -230,6 +230,70 @@ describe('Family accounts', () => {
     })
   })
 
+  it('linking a child under 16 from the ficha gives the parent guardian access by itself, and unlinking takes it away', () => {
+    cy.seedStaffAccount().then((account) => {
+      const mk = (firstName: string, dateOfBirth: string) =>
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName: 'Vidal', dateOfBirth })
+      mk('Clara', years(41)).then((clara) =>
+        mk('Teo', years(6)).then((teo) =>
+          mk('Irene', years(17)).then((irene) =>
+            mk('Hugo', years(5)).then((hugo) => {
+              const managers = () =>
+                cy.task<{ manager_patient_id: string; patient_id: string; basis: string; access: string }[]>('db:selectRows', {
+                  table: 'patient_managers',
+                  columns: 'manager_patient_id, patient_id, basis, access',
+                  match: { account_id: account.accountId },
+                })
+              const linkFromFicha = (name: string, relation: string) => {
+                cy.get('[data-cy=family-add]').click({ scrollBehavior: 'center' })
+                cy.get('[data-cy=family-search]').type(name)
+                cy.contains('[data-cy=family-result]', `${name} Vidal`).click()
+                cy.get('[data-cy=family-relation]').select(relation)
+              }
+
+              cy.login(account.email, account.password)
+              cy.visit(`/patients/${clara.id}`)
+
+              // Teo, 6: the form says what saving gives, and saving gives it.
+              linkFromFicha('Teo', 'child')
+              cy.get('[data-cy=family-auto-guardian-hint]').should('contain', "Clara will manage Teo's app as their guardian")
+              cy.get('[data-cy=family-save]').click({ scrollBehavior: 'center' })
+              cy.contains('[data-cy=family-link]', 'Teo Vidal')
+                .find('[data-cy=family-app-access-link]')
+                .should('contain', "Clara manages Teo's app")
+                .and('contain', 'guardian')
+                .and('contain', 'everything')
+              managers().then((rows) => expect(rows).to.deep.equal([{ manager_patient_id: clara.id, patient_id: teo.id, basis: 'guardian', access: 'full' }]))
+
+              // Irene, 17: her own consent is needed, so nothing is given.
+              linkFromFicha('Irene', 'child')
+              cy.get('[data-cy=family-auto-guardian-hint]').should('not.exist')
+              cy.get('[data-cy=family-save]').click({ scrollBehavior: 'center' })
+              cy.contains('[data-cy=family-link]', 'Irene Vidal').find('[data-cy=family-app-access-link]').should('not.exist')
+              managers().should('have.length', 1)
+
+              // A child linked without the desk (as the WhatsApp receptionist
+              // does, with no created_by) is left for the desk to grant.
+              cy.task('db:insertRows', {
+                table: 'patient_relations',
+                rows: [
+                  { account_id: account.accountId, patient_id: clara.id, related_patient_id: hugo.id, relation: 'child' },
+                  { account_id: account.accountId, patient_id: hugo.id, related_patient_id: clara.id, relation: 'parent' },
+                ],
+              })
+              managers().should('have.length', 1)
+
+              // Unlinking Teo takes his access with it.
+              cy.contains('[data-cy=family-link]', 'Teo Vidal').find('[data-cy=family-remove]').click({ scrollBehavior: 'center' })
+              cy.contains('[data-cy=family-link]', 'Teo Vidal').should('not.exist')
+              managers().should('have.length', 0)
+            }),
+          ),
+        ),
+      )
+    })
+  })
+
   it('signing up never lands on a child’s record, nor guesses between two adults sharing an email', () => {
     cy.seedStaffAccount().then((account) => {
       const stamp = Date.now()

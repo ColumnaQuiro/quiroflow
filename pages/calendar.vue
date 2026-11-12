@@ -2056,6 +2056,27 @@ function onMoveClashCancel() {
   c?.back()
 }
 
+// Outside working hours asks too, in UiConfirmDialog where it used to be the
+// browser's confirm(). A promise, so both callers still read as "ask, and
+// stop on a no": a drag reverts and a slot pick stays in picking mode,
+// exactly as declining the native box did.
+const outOfHoursAsk = ref<{ verb: 'move' | 'save'; answer: (yes: boolean) => void } | null>(null)
+function askOutOfHours(verb: 'move' | 'save') {
+  return new Promise<boolean>((resolve) => {
+    // After this turn: the click the browser synthesizes from the drag's own
+    // release is still on its way, and must not land on a dialog.
+    setTimeout(() => {
+      outOfHoursAsk.value = {
+        verb,
+        answer: (yes) => {
+          outOfHoursAsk.value = null
+          resolve(yes)
+        },
+      }
+    }, 0)
+  })
+}
+
 // A drag that leaves the start where it was -- a resize, or the same time in
 // another room -- is not a reschedule: the patient comes when they were told
 // to. It saves as it is, with no reason to give, no "moved" flag, no
@@ -2142,7 +2163,7 @@ function cancelRescheduleMode() {
 // makes the new position show up once that week comes into view.
 async function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const src = reschedulingAppointment.value
-  if (!src || moveClash.value) return
+  if (!src || moveClash.value || outOfHoursAsk.value) return
   const [h, m] = time.split(':').map(Number)
   const newStartsAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
   const durationMs = new Date(src.endsAt).getTime() - new Date(src.startsAt).getTime()
@@ -2152,7 +2173,9 @@ async function pickRescheduleSlot(day: Date, time: string, roomId: string | null
     apptOutsideWorkingHours(newStartsAt, src.practitionerId) ||
     apptOutsideWorkingHours(new Date(newEndsAt.getTime() - 1), src.practitionerId)
   ) {
-    if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
+    if (!(await askOutOfHours('move'))) return
+    // Picking mode may have been left while the question was up.
+    if (reschedulingAppointment.value !== src) return
   }
 
   const clashes = await findMoveClashes({ appointmentId: src.id, practitionerId: src.practitionerId, roomId, startsAt: newStartsAt, endsAt: newEndsAt })
@@ -2221,7 +2244,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     apptOutsideWorkingHours(new Date(appt.starts_at), appt.practitioner_id) ||
     apptOutsideWorkingHours(new Date(new Date(appt.ends_at).getTime() - 1), appt.practitioner_id)
   ) {
-    if (!confirm(t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?'))) {
+    if (!(await askOutOfHours('save'))) {
       revert()
       return
     }
@@ -2420,7 +2443,7 @@ const HOVER_HIDE_MS = 250
 // Nothing to glance at while something else has the floor: a drag, the
 // panel, or the move it is asking about.
 function hoverBlocked() {
-  return !!(dragState.value || modalOpen.value || pendingReschedule.value || moveClash.value)
+  return !!(dragState.value || modalOpen.value || pendingReschedule.value || moveClash.value || outOfHoursAsk.value)
 }
 function hoverDelayFor(appt: AppointmentRow) {
   return hoveredAppt.value && hoveredAppt.value.id !== appt.id ? HOVER_SWAP_MS : HOVER_REST_MS
@@ -3747,6 +3770,23 @@ function showNowLineOn(day: Date) {
       @close="cancelReschedule"
       @confirm="confirmReschedule"
     />
+
+    <UiConfirmDialog
+      v-if="outOfHoursAsk"
+      :title="t('Outside working hours', 'Fuera del horario de atención')"
+      :confirm-label="outOfHoursAsk.verb === 'move' ? t('Move anyway', 'Mover igualmente') : t('Save anyway', 'Guardar igualmente')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="outOfHoursAsk?.answer(true)"
+      @cancel="outOfHoursAsk?.answer(false)"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">
+        {{
+          outOfHoursAsk.verb === 'move'
+            ? t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?')
+            : t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?')
+        }}
+      </p>
+    </UiConfirmDialog>
 
     <LazyCalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 

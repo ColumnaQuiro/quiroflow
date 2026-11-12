@@ -49,7 +49,7 @@ jobs:
       # own token is used.
       - name: Check APP_VERSION_BUMP_TOKEN
         env:
-          TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN }}
+          TOKEN: ${{ '' }}
         run: |
           [ -z "$TOKEN" ] && { echo "not set; using the workflow's own token (CI will not start on the PR)"; exit 0; }
           code=$(curl -s -o repo.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY")
@@ -73,7 +73,7 @@ jobs:
           # (fine-grained: this repository, Contents + Pull requests
           # read/write) avoids that. Without one this still opens the PR and
           # says how to start CI on it.
-          token: ${{ secrets.APP_VERSION_BUMP_TOKEN || github.token }}
+          token: ${{ '' || github.token }}
 
       - uses: actions/setup-node@v4
         with:
@@ -122,8 +122,8 @@ jobs:
       - name: Open the pull request
         if: steps.decide.outputs.go == 'true'
         env:
-          GH_TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN || github.token }}
-          HAS_TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN != '' }}
+          GH_TOKEN: ${{ '' || github.token }}
+          HAS_TOKEN: ${{ '' != '' }}
           BRANCH: ${{ steps.decide.outputs.branch }}
           CURRENT: ${{ steps.check.outputs.current }}
           LIVE: ${{ steps.check.outputs.live }}

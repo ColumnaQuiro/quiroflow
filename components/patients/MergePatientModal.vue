@@ -125,6 +125,11 @@ async function confirmMerge() {
   merging.value = true
   error.value = ''
   try {
+    // merge_patients keeps the survivor's photo when it has one, and the
+    // duplicate's row -- the only thing naming the duplicate's photo -- is
+    // deleted. Read both before, to remove that file after.
+    const { data: photos } = await supabase.from('patients').select('id, photo_storage_path').in('id', [survivorId, duplicateId])
+    const photoOf = (id: string) => photos?.find((p) => p.id === id)?.photo_storage_path || null
     const { error: rpcError } = await supabase.rpc('merge_patients', {
       p_survivor_id: survivorId,
       p_duplicate_id: duplicateId,
@@ -133,6 +138,10 @@ async function confirmMerge() {
       error.value = `${t('The records were not merged. Nothing was moved or deleted.', 'No se han fusionado las fichas. No se ha movido ni eliminado nada.')} (${rpcError.message})`
       return
     }
+    // When the survivor had none, it took the duplicate's path and the file
+    // is still in use: nothing to remove.
+    const orphaned = photoOf(duplicateId)
+    if (orphaned && photoOf(survivorId) && orphaned !== photoOf(survivorId)) await supabase.storage.from('patient-photos').remove([orphaned])
     showToast(t('Patients merged', 'Pacientes fusionados'))
     emit('merged', survivorId)
   } finally {

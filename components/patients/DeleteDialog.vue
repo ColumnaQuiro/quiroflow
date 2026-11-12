@@ -18,6 +18,9 @@
 // Visits charged to an insurer or company (third_party_charges, 20261023093754)
 // refuse the same way: their patient_id is RESTRICT, because what a third party
 // owes the clinic must not go quietly with the record.
+//
+// The delete itself runs on the server, which also removes the patient's
+// stored files, avatar and cached PDFs: rows cascade, Storage objects do not.
 const props = defineProps<{ patientId: string; patientName: string; archived: boolean }>()
 const emit = defineEmits<{ close: []; deleted: []; archive: [] }>()
 
@@ -70,12 +73,18 @@ async function remove() {
   if (!canDelete.value || deleting.value) return
   deleting.value = true
   error.value = ''
-  const { error: deleteError } = await supabase.from('patients').delete().eq('id', props.patientId)
-  deleting.value = false
-  if (deleteError) {
-    error.value = `${t('The patient was not deleted. Nothing was removed.', 'No se ha eliminado el paciente. No se ha borrado nada.')} (${deleteError.message})`
+  // Through the server, not a delete from here: the rows cascade but their
+  // files in Storage do not, and only the server can read the paths before
+  // the delete and remove the objects after it (/api/patients/[id] DELETE).
+  // The database still decides whether the record may go.
+  try {
+    await useStaffFetch(`/api/patients/${props.patientId}`, { method: 'DELETE' })
+  } catch (e: any) {
+    deleting.value = false
+    error.value = `${t('The patient was not deleted. Nothing was removed.', 'No se ha eliminado el paciente. No se ha borrado nada.')} (${e?.data?.statusMessage ?? e?.message ?? ''})`
     return
   }
+  deleting.value = false
   showToast(t('Patient deleted', 'Paciente eliminado'))
   emit('deleted')
 }

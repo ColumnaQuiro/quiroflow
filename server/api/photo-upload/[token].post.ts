@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { IMMUTABLE_CACHE_SECONDS } from '~/utils/storageCache'
 
 const TOKEN_TTL_MINUTES = 10
 
@@ -28,13 +29,29 @@ export default defineEventHandler(async (event) => {
   const extension = (file.type?.split('/')[1] ?? 'jpg').replace(/[^a-z0-9]/gi, '') || 'jpg'
   const path = `${row.account_id}/${row.patient_id}/${Date.now()}.${extension}`
 
+  const { data: before } = await supabase.from('patients').select('photo_storage_path').eq('id', row.patient_id).eq('account_id', row.account_id).maybeSingle()
+
   const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file.data, {
     contentType: file.type ?? 'image/jpeg',
     upsert: false,
+    // A timestamped name never serves different bytes.
+    cacheControl: IMMUTABLE_CACHE_SECONDS,
   })
   if (uploadError) throw createError({ statusCode: 500, statusMessage: uploadError.message })
 
-  await supabase.from('patients').update({ photo_storage_path: path }).eq('id', row.patient_id)
+  const { error: saveError } = await supabase.from('patients').update({ photo_storage_path: path }).eq('id', row.patient_id).eq('account_id', row.account_id)
+  if (saveError) {
+    // Nothing points at the new file, so it must not stay behind.
+    await removeStorageObjects(supabase, 'patient-photos', [path], 'photo upload not saved')
+    throw createError({ statusCode: 500, statusMessage: saveError.message })
+  }
+  // The photo this one replaces, which used to stay in the bucket for good.
+  // Only inside this account's folder, and only if no other record shows it.
+  const previous = before?.photo_storage_path
+  if (previous && previous !== path && previous.startsWith(`${row.account_id}/`)) {
+    const { count } = await supabase.from('patients').select('id', { count: 'exact', head: true }).eq('account_id', row.account_id).eq('photo_storage_path', previous)
+    if (count === 0) await removeStorageObjects(supabase, 'patient-photos', [previous], 'patient photo replaced')
+  }
   await supabase.from('photo_upload_tokens').update({ used_at: new Date().toISOString() }).eq('token', token)
 
   return { success: true }

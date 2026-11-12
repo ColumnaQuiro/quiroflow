@@ -5219,6 +5219,7 @@
   "Reload now": "Jetzt neu laden",
   "Remaining balance can be scheduled via Stripe autopay after the sale.": "Der Restbetrag kann nach dem Verkauf per automatischer Stripe-Zahlung eingeplant werden.",
   "Reminder": "Erinnerung",
+  "Reminder not sent yet": "Erinnerung noch nicht gesendet",
   "Reminder timing": "Zeitpunkt der Erinnerung",
   "Reminder type": "Art der Erinnerung",
   "Reminders": "Erinnerungen",

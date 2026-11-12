@@ -38,6 +38,45 @@ describe('Appointment stage', () => {
     expect(appointmentStage(booked)).to.equal('confirmed')
   })
 
+  describe('a staff booking nobody has asked about yet', () => {
+    const now = new Date('2026-11-12T10:00:00.000Z')
+    const reminders = { enabled: true, hoursBefore: 24 }
+    // Thursday next week, booked a month ago: its reminder is days away.
+    const nextWeek = { ...booked, starts_at: '2026-11-19T09:00:00.000Z', created_at: '2026-10-07T07:26:00.000Z', confirmation_sent_at: null, reminder_claimed_at: null, rescheduled: false }
+
+    it('is unconfirmed while the clinic reminder is still to come', () => {
+      expect(appointmentStage(nextWeek, reminders, now)).to.equal('pending')
+    })
+
+    it('is unconfirmed when its reminder is due on the next tick', () => {
+      expect(appointmentStage({ ...nextWeek, starts_at: '2026-11-13T09:00:00.000Z' }, reminders, now)).to.equal('pending')
+    })
+
+    it('is confirmed at a clinic with reminders switched off', () => {
+      expect(appointmentStage(nextWeek, { enabled: false, hoursBefore: 24 }, now)).to.equal('confirmed')
+    })
+
+    it('is confirmed when no reminder will go: booked at the desk an hour before', () => {
+      expect(appointmentStage({ ...nextWeek, starts_at: '2026-11-12T11:00:00.000Z', created_at: '2026-11-12T09:55:00.000Z' }, reminders, now)).to.equal('confirmed')
+    })
+
+    it('is confirmed once the reminder was dealt with and nothing came of it', () => {
+      // Claimed but never marked pending: no channel reached the patient.
+      expect(appointmentStage({ ...nextWeek, reminder_claimed_at: '2026-11-11T09:00:00.000Z' }, reminders, now)).to.equal('confirmed')
+    })
+
+    it('reads as before when the caller has not loaded the setting', () => {
+      expect(appointmentStage(nextWeek, null, now)).to.equal('confirmed')
+      expect(appointmentStage(booked, reminders, now)).to.equal('confirmed')
+    })
+
+    it('still lets an answer or an arrival decide', () => {
+      expect(appointmentStage({ ...nextWeek, confirmation_status: 'confirmed' }, reminders, now)).to.equal('confirmed')
+      expect(appointmentStage({ ...nextWeek, checked_in_at: at }, reminders, now)).to.equal('arrived')
+      expect(appointmentStage({ ...nextWeek, source: 'online' }, reminders, now)).to.equal('online')
+    })
+  })
+
   it('keeps an online booking unconfirmed until someone confirms it', () => {
     expect(appointmentStage({ ...booked, source: 'online' })).to.equal('online')
     expect(appointmentStage({ ...booked, source: 'online', confirmation_status: 'confirmed' })).to.equal('confirmed')

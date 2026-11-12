@@ -13,6 +13,8 @@
 // cannot disagree. Pure and exported on its own for the same reason as
 // utils/visitPayment.ts: the rules are worth pinning without a browser.
 
+import { appointmentReminderDecision, type ReminderCandidate } from './appointmentReminderDue'
+
 export type AppointmentStage =
   | 'pending' // staff booking, confirmation sent, no answer yet
   | 'online' // booked by the patient online, not yet confirmed
@@ -32,9 +34,44 @@ export interface StageInput {
   checked_in_at: string | null
   flow_with_practitioner_at: string | null
   flow_checkout_at: string | null
+  // What the reminder rule reads (utils/appointmentReminderDue). Optional
+  // because only a caller that also passes the clinic's reminder settings
+  // needs them; without both, a staff booking reads as it always did.
+  starts_at?: string
+  created_at?: string
+  confirmation_sent_at?: string | null
+  reminder_claimed_at?: string | null
+  rescheduled?: boolean | null
 }
 
-export function appointmentStage(a: StageInput): AppointmentStage {
+/** The clinic's appointment reminder, as accounts holds it (useReminderSettings). */
+export interface ReminderSettings {
+  enabled: boolean
+  hoursBefore: number
+}
+
+/**
+ * Whether this visit's reminder -- the message that asks the patient to
+ * confirm -- is still to go out. The cron's own verdict, so the calendar and
+ * the sender cannot disagree: due later, or due now and waiting for the next
+ * tick. The clinic's lead time, not the patient's own override, which the
+ * calendar does not load; the two only differ about a visit within a couple
+ * of hours of its start, where the reminder is skipped anyway.
+ */
+export function reminderStillToCome(a: StageInput, reminders: ReminderSettings | null | undefined, now: Date = new Date()): boolean {
+  if (!reminders?.enabled || !a.starts_at || !a.created_at) return false
+  const candidate: ReminderCandidate = {
+    starts_at: a.starts_at,
+    created_at: a.created_at,
+    confirmation_sent_at: a.confirmation_sent_at ?? null,
+    reminder_claimed_at: a.reminder_claimed_at ?? null,
+    rescheduled: a.rescheduled ?? null,
+  }
+  const decision = appointmentReminderDecision(candidate, reminders.hoursBefore, now)
+  return decision === 'not_yet' || decision === 'send'
+}
+
+export function appointmentStage(a: StageInput, reminders?: ReminderSettings | null, now: Date = new Date()): AppointmentStage {
   if (a.status === 'cancelled') return 'cancelled'
   if (a.status === 'completed') return 'completed'
   if (a.status === 'no_show') return 'noshow'
@@ -56,10 +93,19 @@ export function appointmentStage(a: StageInput): AppointmentStage {
   if (a.source === 'online') return 'online'
   if (a.confirmation_status === 'pending') return 'pending'
 
-  // null: no confirmation was ever requested. A staff booking made with the
-  // patient on the phone or at the desk is as firm as it gets, and calling it
-  // "unconfirmed" would dash the border of every visit at a clinic that has
-  // confirmations switched off.
+  // null: nobody has asked the patient yet. At a clinic that sends reminders
+  // the question is coming, and until it is answered the visit is not
+  // confirmed: reading it as "Confirmada" made next week look settled before
+  // a single reminder had gone out (19 Nov 2026: 28 of 29 "confirmed" visits
+  // had never been asked), and then flip to "Sin confirmar" the day the
+  // reminder went.
+  if (reminderStillToCome(a, reminders, now)) return 'pending'
+
+  // Nothing is coming: reminders are off, or this visit's has been dealt
+  // with or skipped (booked at the desk an hour before). A staff booking made
+  // with the patient on the phone or at the desk is as firm as it gets, and
+  // calling it "unconfirmed" would dash the border of every visit at a clinic
+  // that has confirmations switched off.
   return 'confirmed'
 }
 

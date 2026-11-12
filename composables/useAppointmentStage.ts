@@ -115,7 +115,11 @@ export function useStageLabels() {
             ? a.reminder_sent_at === lastMessage
               ? t(`Reminder sent ${when(lastMessage)} · no reply`, `Recordatorio enviado ${when(lastMessage)} · sin respuesta`)
               : t(`Confirmation sent ${when(lastMessage)} · no reply`, `Confirmación enviada ${when(lastMessage)} · sin respuesta`)
-            : null,
+            : // Nobody asked yet (no status at all): the clinic's reminder
+              // is still to come (utils/appointmentStage), and is what will.
+              a.confirmation_status == null
+              ? t('Reminder not sent yet', 'Recordatorio aún no enviado')
+              : null,
         }
       case 'online':
         return { title: t('Booked online · unconfirmed', 'Reservada online · sin confirmar'), sub: lastMessage ? t(`Message sent ${when(lastMessage)}`, `Mensaje enviado ${when(lastMessage)}`) : null }

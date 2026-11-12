@@ -104,7 +104,8 @@ describe('GoCardless direct debit', () => {
       // Disconnecting revokes the token at GoCardless and forgets the
       // organisation, and touches no mandate.
       cy.get('[data-cy=gocardless-disconnect]').scrollIntoView().click({ force: true })
-      cy.contains('button', 'Disconnect').last().click()
+      cy.get('[data-cy=confirm-dialog]').should('contain.text', 'Disconnect GoCardless?')
+      cy.get('[data-cy=confirm-dialog-confirm]').click()
       cy.get('[data-cy=gocardless-status]', SLOW).should('contain.text', 'Not connected')
       cy.task<{ revoked: string[] }>('gc:state').its('revoked').should('deep.equal', ['STUB-GC-TOKEN'])
       cy.task<{ gocardless_organisation_id: string | null }[]>('db:selectRows', { table: 'accounts', columns: 'gocardless_organisation_id', match: { id: s.account.accountId } })

@@ -42,6 +42,14 @@ export interface PanelAppointment extends StageFacts {
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string } | null
 }
+/** One line of the visit's audit trail (audit_logs), as the History tab reads it. */
+export interface PanelActivityRow {
+  summary: string
+  created_at: string
+  /** 'receptionist' for what the AI receptionist did on its own (receptionistAudit.ts). */
+  actor: string | null
+  team_members: { full_name: string } | null
+}
 interface RoomOption { id: string; name: string }
 interface TypeOption { id: string; name: string; duration_minutes: number; color: string }
 interface MemberOption { id: string; full_name: string; business_hours?: unknown }
@@ -65,6 +73,8 @@ const props = defineProps<{
    * calendar -- which passes nothing -- keeps the button.
    */
   noMove?: boolean
+  /** The audit trail, when whoever opened the panel has already loaded it; absent, the panel reads it. */
+  activity?: PanelActivityRow[]
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
 const typeNotes = useAppointmentTypeNotes()
@@ -494,15 +504,19 @@ const messages = computed(() =>
 // the status, time, practitioner, room or type (utils/appointmentActivity).
 // It was the old hover card's "Recent activity"; the card became read-only
 // and one-beat, so the trail lives here now, where there is room for it.
-interface ActivityRow {
-  summary: string
-  created_at: string
-  /** 'receptionist' for what the AI receptionist did on its own (receptionistAudit.ts). */
-  actor: string | null
-  team_members: { full_name: string } | null
-}
-const activity = ref<ActivityRow[]>([])
+type ActivityRow = PanelActivityRow
+const activity = ref<ActivityRow[]>(props.activity ?? [])
+// A screen that loaded this one visit (useAppointmentPanelLoader) already has
+// the trail from the same request, and reloads it after every change; the
+// calendar passes nothing, and the panel reads it itself.
+watch(
+  () => props.activity,
+  (rows) => {
+    if (rows) activity.value = rows
+  },
+)
 async function loadActivity() {
+  if (props.activity) return
   const id = props.appointment.id
   const { data } = await supabase
     .from('audit_logs')

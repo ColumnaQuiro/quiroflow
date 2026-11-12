@@ -1,26 +1,28 @@
 import type { BonoOwedPayment } from '../utils/bonoOwed'
-import { fetchAllRows } from './useFetchAllRows'
 
 // Everything the Debtors report and the dashboard's Debtors widget need to
-// work out what each bono is still owed, in three requests side by side.
+// work out what each bono is still owed, in one request: bono_debts().
 //
 // Only two kinds of payment can touch a bono (see utils/bonoOwed): those
-// linked to the purchase, and those on its sale invoice. The linked ones are
-// their own paged query. The ones on a sale invoice come embedded in the
-// purchase, under the invoice they settle -- they used to be a second round
-// of requests after the purchases had loaded, passing every sale invoice's id
-// back in the URL, chunked, with the invoices themselves a third.
+// linked to the purchase, and those on its sale invoice. The function hands
+// back both -- the linked ones as their own list, the ones on a sale invoice
+// embedded in the purchase under the invoice they settle -- along with the
+// Stripe schedules, as the rows the three paged selects here used to return.
+// What a bono is owed is still worked out from them in TypeScript; only the
+// transport moved, because every page of every one of those selects was a
+// request that waited its turn on the database.
 //
-// Embedding reaches a sale invoice's payments only through the invoice, so
-// one this person cannot see brings none with it. That changes nothing:
-// bonoOwedCents only counts a payment "via the invoice" when that invoice is
-// there to be valid, and a bono whose invoice is hidden was already measured
-// as having none.
+// A sale invoice's payments are reached only through the invoice, so one this
+// person cannot see brings none with it. That changes nothing: bonoOwedCents
+// only counts a payment "via the invoice" when that invoice is there to be
+// valid, and a bono whose invoice is hidden was already measured as having
+// none.
 //
 // Both kinds are merged by id -- a payment can be both, and counted twice it
-// would pay a bono off twice. Everything pages, so nothing is cut short at
-// Supabase's 1,000-row cap as the ledger grows (the linked payments were once
-// read unpaged, and every bono paid past row 1000 read as unpaid).
+// would pay a bono off twice. Nothing is cut short at Supabase's 1,000-row
+// cap, which applies to a select and not to what a function returns (the
+// linked payments were once read unpaged, and every bono paid past row 1000
+// read as unpaid; the schedules still were until this).
 export interface BonoPurchaseRow {
   id: string
   patient_id: string
@@ -39,7 +41,6 @@ export interface BonoPurchaseRow {
 export interface BonoInvoiceRow { id: string; status: string; total_cents: number }
 export interface BonoScheduleRow { package_purchase_id: string | null; status: string }
 
-const PAYMENT_COLUMNS = 'id, invoice_id, amount_cents, package_purchase_id, external_reference, purpose'
 type PaymentRow = BonoOwedPayment & { id: string }
 
 export function useBonoDebts() {
@@ -47,19 +48,12 @@ export function useBonoDebts() {
   /** `order` is the purchases' order: the report lists newest first, the widget sorts its own. */
   return async function loadBonoDebts(order: 'newest' | 'id') {
     type Row = BonoPurchaseRow & { invoices: (BonoInvoiceRow & { payments: PaymentRow[] }) | null }
-    const [rows, linked, { data: schedules }] = await Promise.all([
-      fetchAllRows<Row>((from, to) => {
-        let query = supabase
-          .from('package_purchases')
-          .select(
-            `id, patient_id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, external_reference, patients!package_purchases_patient_id_fkey(first_name, last_name), invoices!package_purchases_invoice_id_fkey(id, status, total_cents, payments!payments_invoice_id_fkey(${PAYMENT_COLUMNS}))`,
-          )
-        query = order === 'newest' ? query.order('purchased_at', { ascending: false }).order('id') : query.order('id')
-        return query.range(from, to) as unknown as PromiseLike<{ data: Row[] | null; error: unknown }>
-      }),
-      fetchAllRows<PaymentRow>((from, to) => supabase.from('payments').select(PAYMENT_COLUMNS).not('package_purchase_id', 'is', null).order('id').range(from, to)),
-      supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
-    ])
+    const { data, error } = await supabase.rpc('bono_debts' as never, { p_newest_first: order === 'newest' } as never)
+    if (error) throw error
+    const debts = (data ?? {}) as unknown as { purchases?: Row[]; linked_payments?: PaymentRow[]; schedules?: BonoScheduleRow[] }
+    const rows = debts.purchases ?? []
+    const linked = debts.linked_payments ?? []
+    const schedules = debts.schedules ?? []
 
     const invoicesById = new Map<string, BonoInvoiceRow>()
     const paymentsById = new Map<string, PaymentRow>()
@@ -73,7 +67,7 @@ export function useBonoDebts() {
     return {
       purchases: rows.map(({ invoices: _invoice, ...purchase }) => purchase),
       invoicesById,
-      schedulesByPurchase: new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as BonoScheduleRow])),
+      schedulesByPurchase: new Map(schedules.map((s) => [s.package_purchase_id as string, s])),
       payments: [...paymentsById.values()] as BonoOwedPayment[],
     }
   }

@@ -11,13 +11,19 @@ const { showToast } = useToast()
 const types = usePatientTypes()
 const bump = useState<number>('patientExercisesBump', () => 0)
 
+// On the record the page already has the patient's types, read with the
+// patient (pages/patients/[id].vue provides them): null until that lands.
+// Anywhere else nothing is provided and they are read here. After a change
+// they are always read again from here.
+const provided = inject<Ref<string[] | null> | undefined>('patientTypeIds', undefined)
 const mine = ref<string[]>([])
 async function loadMine() {
   const { data } = await supabase.from('patient_type_members').select('type_id').eq('patient_id', props.patientId)
   mine.value = ((data ?? []) as { type_id: string }[]).map((r) => r.type_id)
 }
-onMounted(() => Promise.all([types.load(), loadMine()]))
-watch(() => props.patientId, loadMine)
+if (provided) watch(provided, (ids) => { if (ids) mine.value = [...ids] }, { immediate: true })
+onMounted(() => Promise.all([types.load(), provided ? null : loadMine()]))
+watch(() => props.patientId, () => { if (!provided) loadMine() })
 
 const shown = computed(() => mine.value.map((id) => types.byId.value.get(id)).filter((x): x is NonNullable<typeof x> => !!x))
 const offered = computed(() => types.active.value.filter((x) => !mine.value.includes(x.id)))

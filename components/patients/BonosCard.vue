@@ -7,7 +7,12 @@
 //
 // Left out entirely for a patient with no live bono: an empty card on every
 // record would be noise.
-const props = defineProps<{ patientId: string }>()
+//
+// On the Overview its rows arrive with the tab's one request
+// (patient_overview) and are handed in as `preloaded`: null while that
+// request is out, the rows once it is in. Left out, the card reads its own.
+type Row = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean; patients?: { first_name: string; last_name: string | null } | null }
+const props = defineProps<{ patientId: string; preloaded?: { own: Row[]; shared: { package_purchases: Row | null }[] } | null }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -21,24 +26,38 @@ interface Bono {
 }
 const bonos = ref<Bono[]>([])
 
-type Row = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean; patients?: { first_name: string; last_name: string | null } | null }
-
 async function load() {
   const [{ data: own }, { data: shared }] = await Promise.all([
     supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, is_closed').eq('patient_id', props.patientId).eq('is_closed', false).order('purchased_at', { ascending: false }),
     supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name))').eq('patient_id', props.patientId),
   ])
-  const sharedRows = ((shared ?? []) as unknown as { package_purchases: Row | null }[]).map((r) => r.package_purchases).filter((p): p is Row => !!p && !p.is_closed)
+  apply((own ?? []) as Row[], (shared ?? []) as unknown as { package_purchases: Row | null }[])
+}
+function apply(own: Row[], shared: { package_purchases: Row | null }[]) {
+  const sharedRows = shared.map((r) => r.package_purchases).filter((p): p is Row => !!p && !p.is_closed)
   bonos.value = [
-    ...((own ?? []) as Row[]).map((p) => ({ ...p, owner: null })),
+    ...own.map((p) => ({ ...p, owner: null })),
     ...sharedRows.map((p) => ({ ...p, owner: p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : null })),
   ]
     // The calendar's rule for a live bono: not closed and not used up.
     .filter((p) => p.sessions_used < p.sessions_total)
     .map(({ id, package_name, sessions_total, sessions_used, owner }) => ({ id, package_name, sessions_total, sessions_used, owner }))
 }
-onMounted(load)
-watch(() => props.patientId, load)
+watch(
+  () => props.preloaded,
+  (given, was) => {
+    if (given) apply(given.own, given.shared)
+    // The parent's request failed before anything landed: read our own.
+    else if (given === undefined && was !== undefined) load()
+  },
+  { immediate: true },
+)
+onMounted(() => {
+  if (props.preloaded === undefined) load()
+})
+watch(() => props.patientId, () => {
+  if (props.preloaded === undefined) load()
+})
 </script>
 
 <template>

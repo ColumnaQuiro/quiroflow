@@ -20,12 +20,14 @@ describe('VeriFactu settings', () => {
       // On, but with no certificate: said in words rather than looking fine.
       cy.get('[data-cy="verifactu-not-sending"]').should('be.visible')
 
-      // Live needs a day; the confirm is accepted by Cypress. No .clear():
-      // typing YYYY-MM-DD into a native date input replaces the value, and
-      // clearing one behaves differently across browsers.
+      // Live needs a day, and asks first, saying what cannot be taken back.
+      // No .clear(): typing YYYY-MM-DD into a native date input replaces the
+      // value, and clearing one behaves differently across browsers.
       cy.get('[data-cy="verifactu-mode-live"]').check()
       cy.get('[data-cy="verifactu-live-date"]').type('2027-01-01')
       cy.get('[data-cy="verifactu-save"]').click()
+      cy.get('[data-cy="verifactu-go-live-dialog"]').should('contain.text', 'cannot be switched off')
+      cy.get('[data-cy="confirm-dialog-confirm"]').click()
       cy.wait('@save').its('response.statusCode').should('eq', 200)
       cy.task<{ verifactu_mode: string; verifactu_production_from: string }>('db:verifactuSettingsOf', { accountId: account.accountId }).then((row) => {
         expect(row.verifactu_mode).to.eq('live')

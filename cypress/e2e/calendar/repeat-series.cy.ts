@@ -161,13 +161,6 @@ describe('A new patient booked from the panel', () => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste', durationMinutes: 30 })
       cy.task<number>('db:patientCount', { accountId: account.accountId }).as('before')
 
-      let answer = false
-      const asked: string[] = []
-      cy.on('window:confirm', (text) => {
-        asked.push(text)
-        return answer
-      })
-
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       openNewAppointmentPanel()
@@ -182,21 +175,25 @@ describe('A new patient booked from the panel', () => {
         // Declined: nothing written, not even the patient.
         cy.get('[data-cy=create-submit]').click()
       })
-      cy.wrap(asked).should('have.length', 1).its(0).should('contain', 'outside working hours')
+      cy.get('[data-cy=confirm-dialog]').should('contain.text', 'outside working hours')
+      cy.get('[data-cy=confirm-dialog-cancel]').click()
+      cy.get('[data-cy=confirm-dialog]').should('not.exist')
       cy.get<number>('@before').then((before) => cy.task('db:patientCount', { accountId: account.accountId }).should('equal', before))
 
       // Accepted, but the appointment insert fails once: the patient exists
       // now, and stays chosen, so the retry books them rather than creating
       // them a second time.
-      cy.then(() => (answer = true))
       cy.intercept({ method: 'POST', url: '**/rest/v1/appointments*', times: 1 }, { statusCode: 400, body: { code: 'XX000', message: 'appointment insert refused', details: null, hint: null } }).as('refused')
+      cy.get('[data-cy=create-submit]').click()
+      cy.get('[data-cy=confirm-dialog-confirm]').click()
+      cy.wait('@refused')
       cy.get('[data-cy=create-sheet]').within(() => {
-        cy.get('[data-cy=create-submit]').click()
-        cy.wait('@refused')
         cy.contains('appointment insert refused').should('be.visible')
         cy.get('[data-cy=create-patient-selected]').should('contain.text', 'Nerea Pozo')
         cy.get('[data-cy=create-submit]').click()
       })
+      // Still out of hours, so the retry is asked again.
+      cy.get('[data-cy=confirm-dialog-confirm]').click()
       cy.get('[data-cy=create-sheet]').should('not.exist')
 
       cy.get<number>('@before').then((before) => cy.task('db:patientCount', { accountId: account.accountId }).should('equal', before + 1))

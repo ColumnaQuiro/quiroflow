@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { careStopCounts, cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, type CareStopRow, type RetentionVisit, type WinBackContact } from '~/utils/retentionStats'
 
@@ -60,32 +59,22 @@ let run = 0
 async function load() {
   const mine = ++run
   loading.value = true
-  const [all, alerts, contactRows] = await Promise.all([
-    fetchAllRows<RetentionVisit>((f, tt) => {
-      let q = supabase.from('appointments').select('patient_id, practitioner_id, starts_at, ends_at, status, created_at').is('deleted_at', null).not('patient_id', 'is', null).order('starts_at')
-      if (clinicFilter.value) q = q.eq('clinic_id', clinicFilter.value)
-      return q.range(f, tt)
-    }),
-    supabase
-      .from('care_plan_continuity_alerts')
-      .select('patient_id, default_practitioner_id, first_name, last_name, care_plan_name, total_visits, completed_in_plan, last_appointment_at, days_overdue')
-      .gt('days_overdue', 0)
-      .order('days_overdue', { ascending: false })
-      .limit(200),
-    // Reaching out, not appointment reminders: those carry the appointment.
-    fetchAllRows<WinBackContact>((f, tt) => supabase.from('contact_log').select('patient_id, created_at').is('appointment_id', null).order('created_at').range(f, tt)).then(
-      (rows) => ({ rows, ok: true }),
-      () => ({ rows: [] as WinBackContact[], ok: false }),
-    ),
-  ])
-  // A small table: every stop, narrowed below like the visits.
-  const stopRows = await fetchAllRows<CareStopRow>((f, tt) => supabase.from('patient_care_stops').select('reason_id, practitioner_id, clinic_id, recorded_at').order('recorded_at').range(f, tt)).catch(() => [] as CareStopRow[])
+  // One request for the four sources (report_retention_rows). The visits and
+  // the contact log were each a page per thousand rows, the log's fetched one
+  // after another, and the care stops waited for both. The rows are the ones
+  // those selects returned; the arithmetic is still utils/retentionStats.ts.
+  // The plans, the contacts and the stops each come back null if their own
+  // read failed, which the page takes as it took a failed select: no plans,
+  // no stops, and Win-back hidden.
+  const { data, error } = await supabase.rpc('report_retention_rows' as never, { p_clinic_id: clinicFilter.value || null } as never)
+  if (error) throw error
   if (mine !== run) return
-  stops.value = stopRows
-  visits.value = all
-  plans.value = (alerts.data as PlanAlert[] | null) ?? []
-  contacts.value = contactRows.rows
-  seesContacts.value = contactRows.ok && contactRows.rows.length > 0
+  const rows = (data ?? {}) as unknown as { visits?: RetentionVisit[]; plans?: PlanAlert[] | null; contacts?: WinBackContact[] | null; stops?: CareStopRow[] | null }
+  stops.value = rows.stops ?? []
+  visits.value = rows.visits ?? []
+  plans.value = rows.plans ?? []
+  contacts.value = rows.contacts ?? []
+  seesContacts.value = !!rows.contacts && rows.contacts.length > 0
   loadPhones()
   loading.value = false
 }

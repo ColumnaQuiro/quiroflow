@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifySupabaseFailure, classifySupabaseNetworkFailure, dataOrThrow, scrubPostgrestMessage, watchSupabaseFailures } from '../../utils/supabaseFailures'
+import { classifySupabaseFailure, classifySupabaseNetworkFailure, dataOrThrow, isRefusedWrite, scrubPostgrestMessage, watchSupabaseFailures } from '../../utils/supabaseFailures'
 
 // utils/supabaseFailures.ts: which Supabase responses count as a failed
 // query, what is said about them, and that nothing patient-shaped is.
@@ -152,6 +152,22 @@ describe('watchSupabaseFailures', () => {
     const before = t.fetch
     watchSupabaseFailures(t, '', () => {})
     expect(t.fetch).to.eq(before)
+  })
+})
+
+describe('isRefusedWrite', () => {
+  const rest = 'https://x.supabase.co/rest/v1'
+  it('is a write the database turned down on purpose', () => {
+    expect(isRefusedWrite({ url: `${rest}/payments`, method: 'POST', status: 403, body: { code: '42501' } })).to.eq(true)
+    expect(isRefusedWrite({ url: `${rest}/accounts?id=eq.1`, method: 'PATCH', status: 400, body: { code: 'P0001' } })).to.eq(true)
+    expect(isRefusedWrite({ url: `${rest}/invoices?id=eq.1`, method: 'DELETE', status: 400, body: { code: '23514' } })).to.eq(true)
+  })
+  it('is not a read, a function call, a conflict or a success', () => {
+    expect(isRefusedWrite({ url: `${rest}/payments?select=id`, method: 'GET', status: 403, body: { code: '42501' } })).to.eq(false)
+    expect(isRefusedWrite({ url: `${rest}/rpc/merge_patients`, method: 'POST', status: 400, body: { code: 'P0001' } })).to.eq(false)
+    expect(isRefusedWrite({ url: `${rest}/payments`, method: 'POST', status: 409, body: { code: '23505' } })).to.eq(false)
+    expect(isRefusedWrite({ url: `${rest}/payments`, method: 'POST', status: 201, body: null })).to.eq(false)
+    expect(isRefusedWrite({ url: 'https://x.supabase.co/auth/v1/token', method: 'POST', status: 403, body: null })).to.eq(false)
   })
 })
 

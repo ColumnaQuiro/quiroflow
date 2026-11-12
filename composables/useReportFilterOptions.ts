@@ -7,15 +7,17 @@ export interface FilterOption {
 // has them; this just avoids repeating the two fetches everywhere.
 export function useReportFilterOptions() {
   const supabase = useSupabaseClient()
+  const teamDirectory = useTeamDirectory()
   const practitioners = ref<FilterOption[]>([])
   const clinics = ref<FilterOption[]>([])
 
   async function load() {
-    const [{ data: tm }, { data: cl }] = await Promise.all([
-      supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).order('full_name'),
+    const [, { data: cl }] = await Promise.all([
+      teamDirectory.ensureLoaded().catch(() => {}),
       supabase.from('clinics').select('id, name').order('name'),
     ])
-    practitioners.value = (tm ?? []).map((t) => ({ id: t.id, name: t.full_name }))
+    // Former practitioners stay in the filter: past figures are still theirs.
+    practitioners.value = teamDirectory.all.value.filter((m) => m.is_practitioner).map((m) => ({ id: m.id, name: m.full_name }))
     clinics.value = (cl ?? []).map((c) => ({ id: c.id, name: c.name }))
   }
 

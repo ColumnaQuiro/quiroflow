@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
-import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '~/utils/bonoOwed'
+import { bonoOwedCents } from '~/utils/bonoOwed'
 import { bonoDueCents, installmentBeingPaid, installmentPlanOf, installmentsDue, readInstallmentOptions } from '~/utils/bonoInstallments'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
@@ -45,7 +45,7 @@ interface PackagePurchaseRow {
   // comes off it. See the is_closed migration.
   is_closed?: boolean
   // Set only for a bono shared TO this patient (they're a beneficiary, not
-  // the owner) -- see loadPackages(). Owner-only actions (Share, Delete,
+  // the owner) -- see fetchLedger(). Owner-only actions (Share, Delete,
   // collecting payment against the owner's own invoice) are hidden for
   // these; only using a session is something a beneficiary can do too.
   shared?: boolean
@@ -89,7 +89,7 @@ interface PaymentScheduleRow {
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
 interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
 // A payment linked to one of this patient's own bonos but taken
-// on ANOTHER patient's record -- see fetchPackages(). Not part of this
+// on ANOTHER patient's record -- see fetchLedger(). Not part of this
 // patient's ledger, only of what the bono has been paid.
 interface OtherBonoPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; patient_id: string; patients: { first_name: string; last_name: string | null } | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string }
@@ -129,8 +129,13 @@ const { preference: lang } = useLang()
 // "174,00 EUR" directly above "Nothing outstanding.", because oldestUnpaid
 // below was already reading invoice status while the figure above it was
 // reading paid-minus-invoiced. See utils/owing.ts.
-const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
-  usePatientFinancialSummary(() => props.patientId)
+//
+// manual + refreshWithDetail: this tab and that summary read the same
+// invoices, payments, credits and bonos, and used to fetch them once each --
+// on opening, and again after every payment. One patient_ledger request now
+// answers both (fetchLedger), so the summary is told not to start its own.
+const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary, refreshWithDetail } =
+  usePatientFinancialSummary(() => props.patientId, { manual: true })
 const { issueFactura, issueRectificativa, annulFactura } = useFacturas()
 const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod, labelFor: methodLabel } = usePaymentMethods()
 
@@ -161,25 +166,22 @@ const facturas = ref<FacturaRow[]>([])
 const sendingFacturaId = ref('')
 const facturaSendResult = ref<Record<string, string>>({})
 
+// One request (patient_facturas) for what was three, the third waiting on
+// the second: the patient's NIF and usual practitioner, their facturas, and
+// whoever the ones in a tutor's name are addressed to.
 async function loadFacturas() {
-  const [{ data: patientRow }, { data }] = await Promise.all([
-    supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle(),
-    supabase
-      .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, recipient_patient_id, payment_id, rectifies_factura_id, annulled_at')
-      .eq('patient_id', props.patientId)
-      .order('issued_at', { ascending: false }),
-  ])
-  patientNationalId.value = patientRow?.national_id ?? null
-  patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
-  facturas.value = data ?? []
+  const { data } = await supabase.rpc('patient_facturas' as never, { p_patient_id: props.patientId } as never)
+  const found = (data ?? {}) as unknown as {
+    patient: { national_id: string | null; default_practitioner_id: string | null } | null
+    facturas: FacturaRow[] | null
+    addressees: { id: string; first_name: string; last_name: string | null; national_id: string | null }[] | null
+  }
+  patientNationalId.value = found.patient?.national_id ?? null
+  patientDefaultPractitionerId.value = found.patient?.default_practitioner_id ?? null
+  facturas.value = found.facturas ?? []
   // Whoever the facturas in a tutor's name are addressed to: their name for
   // the list, their NIF for the warning below.
-  const addressees = [...new Set(facturas.value.map((f) => f.recipient_patient_id).filter((id): id is string => !!id))]
-  const { data: people } = addressees.length
-    ? await supabase.from('patients').select('id, first_name, last_name, national_id').in('id', addressees)
-    : { data: [] }
-  addresseeById.value = new Map((people ?? []).map((p) => [p.id, { name: `${p.first_name} ${p.last_name ?? ''}`.trim(), nif: p.national_id }]))
+  addresseeById.value = new Map((found.addressees ?? []).map((p) => [p.id, { name: `${p.first_name} ${p.last_name ?? ''}`.trim(), nif: p.national_id }]))
 }
 
 // What a factura still documents once its rectificativas are taken off. A
@@ -300,7 +302,7 @@ const activePanel = ref<'credit' | 'payment' | 'gift' | 'product' | null>(null)
 // A gift voucher redeemed here (PatientsRedeemGiftVoucher) is a payment, a
 // credit row or a bono, and a factura: everything this tab shows moves.
 async function onMoneyAdded() {
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 async function addCredit() {
@@ -364,7 +366,7 @@ async function addCredit() {
   addCreditMethod.value = 'cash'
   addingCredit.value = false
   if (!creditRowError) activePanel.value = null
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 async function applyCreditToInvoice() {
@@ -410,7 +412,7 @@ async function applyCreditToInvoice() {
   applyCreditInvoiceId.value = ''
   applyCreditAmount.value = ''
   applyingCredit.value = false
-  await Promise.all([refreshCreditSummary(), loadAll()])
+  await loadAll()
 }
 
 // -- Take a payment against an unpaid invoice (cash/card/credit, optionally
@@ -526,7 +528,7 @@ async function takePayment() {
   } else {
     activePanel.value = null
   }
-  await Promise.all([refreshCreditSummary(), loadAll()])
+  await loadAll()
 }
 
 const showCardModal = ref(false)
@@ -578,11 +580,9 @@ const ledgerCredits = ref<LedgerCreditRow[]>([])
 // packages panel: the panel answers "how many left", this answers "which
 // visits went through it", which is what the ledger is for.
 const ledgerPackageSessions = ref<{ id: string; amount_cents: number; used_at: string; package_name: string | null }[]>([])
-// Three independent loading flags instead of one -- each card (Account
-// Ledger, Packages/bonos, Memberships) shows its own skeleton and swaps in
-// as soon as its own pair of queries resolves, rather than the whole tab
-// waiting on whichever of the ~8 queries loadAll() used to fire together is
-// slowest before showing anything at all.
+// One flag per card (Account Ledger, Packages/bonos, Memberships). They were
+// kept apart so each card could swap in as its own queries resolved; all
+// three now arrive in one response (fetchLedger) and flip together.
 const ledgerLoading = ref(true)
 // Set when any of the ledger's own queries came back with an error. Without
 // it a failed load is indistinguishable from a patient who has never been
@@ -590,7 +590,7 @@ const ledgerLoading = ref(true)
 // PostgREST refusing the whole select -- a column the deployed code names and
 // the database does not have, a policy that denies the row -- rendered as
 // "No transactions yet" over a patient with money on their account. See
-// loadLedger().
+// fetchLedger().
 const ledgerError = ref('')
 const packagesLoading = ref(true)
 const membershipsLoading = ref(true)
@@ -776,219 +776,125 @@ async function recordPackagePayment(
   return null
 }
 
-// Each loader below is independent -- its own query pair, its own loading
-// flag -- so the three cards (Account Ledger, Packages/bonos, Memberships)
-// each show their own skeleton and swap in the moment their own data is
-// back, instead of the whole tab waiting on whichever query of the ~8 this
-// used to fire as one batch happened to be slowest. Within a loader, queries
-// keyed off the same patient_id still run in one parallel wave each
-// (invoice_line_items and membership_payments filter through an embedded
-// !inner join on their parent's patient_id rather than a separate .in(ids)
-// round-trip) -- that part of the original optimization is unchanged.
-async function loadLedger() {
-  ledgerLoading.value = true
-  ledgerError.value = ''
-  ;(await fetchLedger())()
-}
-
-// Fetches, and returns the assignment rather than doing it, so a silent
-// refresh can land the ledger and the bono card in the same tick -- see
-// loadAll().
+// One request for the whole tab -- the ledger, the bonos, the memberships and
+// the saved card -- and the same response refreshes the summary figures above
+// them (usePatientFinancialSummary.refreshWithDetail, patient_ledger). They
+// were about fifteen requests here and seven more there, most of them for the
+// same four tables, and every payment repeated the lot.
+//
+// Fetches, and returns the assignment rather than doing it, so everything a
+// figure is read from lands in the same tick: a bono's owed amount reads both
+// the bono and the ledger's payments, and landed one at a time a bono just
+// sold would show its full price owed until the payment for it arrived.
 async function fetchLedger(): Promise<() => void> {
-  // payments and account_credits used to be fetched by AccountLedger.vue
-  // itself, only after this loader finished and swapped that component in --
-  // a second serial round trip on every single tab open, even for a patient
-  // with nothing to show. Both filter through the same embedded !inner join
-  // as invoice_line_items (payments has no patient_id of its own) so they
-  // can join this same parallel wave instead.
-  const [inv, lines, pays, creds, sessions] = await Promise.all([
-    supabase
-      .from('invoices')
-      .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id, refunds_payment_id')
-      .eq('patient_id', props.patientId)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('invoice_line_items')
-      .select('invoice_id, description, invoices!inner(patient_id)')
-      .eq('invoices.patient_id', props.patientId),
-    // By patient, not through their invoices -- an inner join to invoices
-    // would hide every payment with no invoice_id, and money on account has
-    // none. invoice_id is still selected: it is how the ledger below matches
-    // a payment to the charge it settled, and it is simply null when it
-    // settled nothing in particular.
-    // created_by's name is embedded rather than resolved from a team-members
-    // list: there isn't one in the store, and a payment can name someone who
-    // has since been removed from the team (the FK is ON DELETE SET NULL, but
-    // a soft-deleted member keeps their row and their name).
-    supabase
-      .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, purpose, created_by, stripe_payment_intent_id, team_members(full_name)')
-      .eq('patient_id', props.patientId),
-    supabase
-      .from('account_credits')
-      .select('id, amount_cents, reason, method, invoice_id, payment_id, created_at')
-      .eq('patient_id', props.patientId)
-      .order('created_at', { ascending: true }),
-    supabase
-      .from('package_sessions')
-      .select('id, amount_cents, used_at, package_purchases(package_name)')
-      .eq('patient_id', props.patientId)
-      .order('used_at', { ascending: true }),
-  ])
+  const { ledger, error } = await refreshWithDetail()
 
-  // Every one of these used to be read as `data ?? []`, which throws the
-  // error away and leaves an empty array that reads exactly like a patient
-  // with nothing on their account. That is the wrong default for money: the
-  // invoices query alone failing (because the code named
+  // Every one of the ledger's queries used to be read as `data ?? []`, which
+  // throws the error away and leaves an empty array that reads exactly like a
+  // patient with nothing on their account. That is the wrong default for
+  // money: the invoices query alone failing (because the code named
   // invoices.refunds_payment_id against a database that did not have that
   // column yet) dropped every CHARGE from the ledger while the payments
   // against those charges still rendered, and the running balance was
   // recomputed from what was left -- a confident, wrong figure with nothing
   // on screen to say a query had failed. A ledger missing a row is worse
-  // than a ledger that admits it could not load, so one failure fails all
-  // five rather than rendering the rest.
-  const failed = [inv, lines, pays, creds, sessions].find((r) => r.error)
-  if (failed) {
+  // than a ledger that admits it could not load. One request cannot half
+  // fail, so that now holds for the bono and membership cards as well: they
+  // keep what they had (their skeletons, on a first load) rather than
+  // rendering "none" beside a ledger that says it did not load.
+  if (error || !ledger) {
     return () => {
-      ledgerError.value = failed.error!.message
+      if (error) ledgerError.value = error.message
       ledgerLoading.value = false
     }
   }
 
   return () => {
     ledgerError.value = ''
-    invoices.value = inv.data ?? []
+    invoices.value = ledger.invoices ?? []
     const byInvoice: Record<string, string[]> = {}
-    for (const l of (lines.data ?? []) as unknown as { invoice_id: string; description: string }[]) {
+    for (const l of ledger.line_items ?? []) {
       ;(byInvoice[l.invoice_id] ??= []).push(l.description)
     }
     lineItemDescriptions.value = byInvoice
-    ledgerPayments.value = (pays.data ?? []) as unknown as LedgerPaymentRow[]
-    ledgerCredits.value = creds.data ?? []
-    ledgerPackageSessions.value = ((sessions.data ?? []) as unknown as { id: string; amount_cents: number; used_at: string; package_purchases: { package_name: string } | null }[]).map((r) => ({
+    // By patient, not through their invoices -- an inner join to invoices
+    // would hide every payment with no invoice_id, and money on account has
+    // none. invoice_id is still there: it is how the ledger below matches a
+    // payment to the charge it settled, and it is simply null when it settled
+    // nothing in particular. Whoever recorded it comes embedded rather than
+    // resolved from a team-members list: there isn't one in the store, and a
+    // payment can name someone who has since been removed from the team.
+    ledgerPayments.value = ledger.payments ?? []
+    ledgerCredits.value = ledger.account_credits ?? []
+    ledgerPackageSessions.value = (ledger.package_sessions ?? []).map((r) => ({
       id: r.id,
       amount_cents: r.amount_cents,
       used_at: r.used_at,
       package_name: r.package_purchases?.package_name ?? null,
     }))
     ledgerLoading.value = false
-  }
-}
 
-async function loadPackages() {
-  packagesLoading.value = true
-  ;(await fetchPackages())()
-}
-
-async function fetchPackages(): Promise<() => void> {
-  // A patient's own "Packages / bonos" card previously only ever showed
-  // bonos THEY bought -- a bono shared to them (package_purchase_shares)
-  // never appeared here at all, even though this same card is exactly
-  // where a front-desk staff member would look to use a session from it.
-  // Mirrors usePatientFinancialSummary's own shares query/merge, kept
-  // separate here since this card additionally needs invoice_id (for
-  // "Take payment") and purchased_at (for sort order), neither of which
-  // that composable's activePackages carries.
-  const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
-    supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, is_closed, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
-    supabase
-      .from('payment_schedules')
-      .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
-      .eq('patient_id', props.patientId),
-    supabase
-      .from('package_purchase_shares')
-      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, is_closed, patients(first_name, last_name))')
-      .eq('patient_id', props.patientId),
-  ])
-  // A bono shared between two people is paid by either of them, and the front
-  // desk records each payment on whoever handed it over. Every one of those is
-  // linked to the bono, but the ledger above reads only THIS patient's
-  // payments -- so a couple's family bono, 60 EUR from each and 600 more from
-  // one, read "660 paid" on the owner's card where 720 had been paid. The
-  // bono's payments are therefore read through the bono itself, and the ones
-  // on another patient's record are kept here, beside the ledger rather than
-  // in it: they settle the bono, but they are not this patient's money.
-  // Only the owner's card shows what a bono has been paid, so only their own
-  // bonos need it.
-  const fromOthers = ((pkgPurchases ?? []) as unknown as { payments: OtherBonoPaymentRow[] | null }[])
-    .flatMap((p) => p.payments ?? [])
-    .filter((pay) => pay.patient_id !== props.patientId)
-  const ownPurchases = (pkgPurchases ?? []).map(({ payments: _payments, ...p }) => p)
-  const sharedPurchases = (shares ?? [])
-    .map((s) => s.package_purchases)
-    .filter((p): p is NonNullable<typeof p> => p !== null)
-    .map(({ patients: owner, ...p }) => ({
-      ...p,
-      shared: true,
-      ownerName: owner ? `${owner.first_name} ${owner.last_name ?? ''}`.trim() : undefined,
-    }))
-  const scheduleRows = sch ?? []
-  const events = scheduleRows.length > 0
-    ? (
-        await supabase
-          .from('stripe_payment_events')
-          .select('id, payment_schedule_id, period_start, amount_cents, status')
-          .in('payment_schedule_id', scheduleRows.map((s) => s.id))
-          .order('period_start', { ascending: false })
-      ).data
-    : null
-  return () => {
+    // A patient's own "Packages / bonos" card previously only ever showed
+    // bonos THEY bought -- a bono shared to them (package_purchase_shares)
+    // never appeared here at all, even though this same card is exactly
+    // where a front-desk staff member would look to use a session from it.
+    //
+    // A bono shared between two people is paid by either of them, and the front
+    // desk records each payment on whoever handed it over. Every one of those is
+    // linked to the bono, but the ledger above reads only THIS patient's
+    // payments -- so a couple's family bono, 60 EUR from each and 600 more from
+    // one, read "660 paid" on the owner's card where 720 had been paid. The
+    // bono's payments are therefore read through the bono itself, and the ones
+    // on another patient's record are kept here, beside the ledger rather than
+    // in it: they settle the bono, but they are not this patient's money.
+    // Only the owner's card shows what a bono has been paid, so only their own
+    // bonos need it.
+    const pkgPurchases = ledger.package_purchases ?? []
+    const fromOthers = pkgPurchases.flatMap((p) => p.payments ?? []).filter((pay) => pay.patient_id !== props.patientId)
+    const ownPurchases = pkgPurchases.map(({ payments: _payments, ...p }) => p)
+    const sharedPurchases = (ledger.package_shares ?? [])
+      .map((s) => s.package_purchases)
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .map(({ patients: owner, ...p }) => ({
+        ...p,
+        shared: true,
+        ownerName: owner ? `${owner.first_name} ${owner.last_name ?? ''}`.trim() : undefined,
+      }))
+    const scheduleRows = ledger.payment_schedules ?? []
     // In use first, then the rest, own and shared together (utils/bonoOrder.ts).
     purchases.value = sortBonos([...ownPurchases, ...sharedPurchases])
     otherBonoPayments.value = fromOthers
     schedules.value = scheduleRows
-    if (scheduleRows.length > 0) stripeEvents.value = events ?? []
+    if (scheduleRows.length > 0) stripeEvents.value = ledger.stripe_payment_events ?? []
     packagesLoading.value = false
+
+    patientMemberships.value = ledger.memberships ?? []
+    membershipPayments.value = ledger.membership_payments ?? []
+    membershipsLoading.value = false
+
+    // One row or none, as the maybeSingle() this replaces answered: two rows
+    // were an error there, and read as no card.
+    const customers = ledger.stripe_customers ?? []
+    stripeCustomer.value = customers.length === 1 ? customers[0]! : null
   }
-}
-
-async function loadMemberships({ silent = false } = {}) {
-  if (!silent) membershipsLoading.value = true
-  const [{ data: patMemberships }, { data: membershipPaymentRows }] = await Promise.all([
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, billing_interval, billing_interval_count, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
-    supabase
-      .from('membership_payments')
-      .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
-      .eq('patient_memberships.patient_id', props.patientId)
-      .order('period_start', { ascending: false }),
-  ])
-  patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
-  membershipPayments.value = (membershipPaymentRows ?? []) as unknown as MembershipPaymentRow[]
-  membershipsLoading.value = false
-}
-
-async function loadCard() {
-  const { data: customer } = await supabase.from('patient_stripe_customers').select('stripe_customer_id, default_payment_method_id').eq('patient_id', props.patientId).maybeSingle()
-  stripeCustomer.value = customer
 }
 
 let loadedOnce = false
 async function loadAll({ silent = loadedOnce }: { silent?: boolean } = {}) {
   loadedOnce = true
   // Callers that mutate data (recording a payment, selling a package,
-  // activating a membership...) still `await loadAll()` and expect
-  // everything back in sync afterward, so this stays a single entry point --
-  // it just fans out to independently-resolving loaders instead of one
-  // Promise.all gating a single `loading` flag.
+  // activating a membership...) `await loadAll()` and expect everything back
+  // in sync afterward -- the summary figures included, which arrive in the
+  // same response. After a write the cards already hold the previous answer,
+  // so they keep it on screen until the new one is in rather than flashing
+  // back to skeletons.
   if (!silent) {
-    await Promise.all([loadLedger(), loadPackages(), loadMemberships(), loadCard(), ensureBillingTemplatesLoaded(), loadUnlogged()])
-    return
+    ledgerLoading.value = true
+    ledgerError.value = ''
+    packagesLoading.value = true
+    membershipsLoading.value = true
   }
-  // After a write the cards already hold the previous answer, so they keep
-  // it on screen until the new one is in rather than flashing back to
-  // skeletons. The ledger and the bono card are applied together because a
-  // bono's owed figure reads both: landed one at a time, a bono just sold
-  // would show its full price owed until the payment for it arrived.
-  const [applyLedger, applyPackages] = await Promise.all([
-    fetchLedger(),
-    fetchPackages(),
-    loadMemberships({ silent: true }),
-    loadCard(),
-    ensureBillingTemplatesLoaded(),
-    loadUnlogged(),
-  ])
-  applyLedger()
-  applyPackages()
+  await Promise.all([fetchLedger().then((apply) => apply()), ensureBillingTemplatesLoaded(), loadUnlogged()])
 }
 
 // AccountLedger's own transfer-credit action mutates account_credits
@@ -996,7 +902,7 @@ async function loadAll({ silent = loadedOnce }: { silent?: boolean } = {}) {
 // so it needs both the summary strip and the ledger's payments/credits
 // refreshed afterward.
 async function onLedgerCreditsChanged() {
-  await Promise.all([refreshCreditSummary(), loadAll()])
+  await loadAll()
 }
 onMounted(async () => {
   loadAll()
@@ -1091,7 +997,7 @@ async function deleteInvoice(invoice: InvoiceRow) {
     showToast(t('This receipt was not deleted. Try again, or check your role allows deleting receipts.', 'No se ha eliminado este recibo. Inténtalo de nuevo, o comprueba que tu rol permite eliminar recibos.') + (error?.message ? ` (${error.message})` : ''), 'error')
     return
   }
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 // Settles an invoice's remaining balance without collecting money -- same
@@ -1169,7 +1075,7 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
     }
   }
 
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 async function writeOffInvoice(invoiceId: string) {
@@ -1182,7 +1088,7 @@ async function writeOffInvoice(invoiceId: string) {
   if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the receipt without collecting payment.', 'Esto salda el recibo sin cobrar el pago.')}`)) return
   await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
   await settleInvoiceIfCovered(supabase, invoiceId)
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 // -- Refund: a new invoice with a negative total, linked back to the one it
@@ -1356,7 +1262,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     if (restockError) showToast(t(`Refunded, but the stock could not be updated: ${restockError.message}`, `Reembolsado, pero no se ha podido actualizar el stock: ${restockError.message}`), 'error')
   }
 
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
@@ -1653,7 +1559,7 @@ async function sellPackage() {
   sellInstallments.value = 1
   sellAmountPaid.value = ''
   sellMethod.value = 'cash'
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 // What is still unpaid on a bono: payments landing on its own invoice
@@ -1790,12 +1696,12 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
   collectingPayment.value = false
   if (problem) {
     collectError.value = problem
-    await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+    await Promise.all([loadAll(), loadFacturas()])
     return
   }
   collectOnPackageId.value = null
   collectAmount.value = ''
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 // --- Linking an EXISTING payment to a bono -- for the cases packageOwedCents
@@ -1872,7 +1778,7 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
     if (problem) {
       linkingPayment.value = false
       showToast(problem, 'error', 10000)
-      await Promise.all([loadAll(), refreshCreditSummary()])
+      await loadAll()
       return
     }
   }
@@ -1880,7 +1786,7 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
 
   linkPaymentSelection.value = ''
   linkingPayment.value = false
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await loadAll()
 }
 
 async function unlinkPayment(paymentId: string) {
@@ -2236,7 +2142,7 @@ async function activateMembership() {
   activateMembershipId.value = ''
   activateAmountPaid.value = ''
   activateMethod.value = 'cash'
-  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+  await Promise.all([loadAll(), loadFacturas()])
 }
 
 async function setMembershipStatus(m: PatientMembershipRow, status: string) {
@@ -3097,7 +3003,7 @@ const fieldId = useId()
       </div>
     </div>
     <!-- A failed load is shown as a failure, never as an empty ledger: see
-         loadLedger(). Retry rather than a reload, because the rest of the tab
+         fetchLedger(). Retry rather than a reload, because the rest of the tab
          is fine and loadAll() is what has to run again. -->
     <div v-else-if="ledgerError" class="rounded-card border border-line bg-surface shadow-card">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">

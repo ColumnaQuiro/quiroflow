@@ -1,4 +1,4 @@
-import type { PanelAppointment } from '~/components/calendar/AppointmentPanel.vue'
+import type { PanelActivityRow, PanelAppointment } from '~/components/calendar/AppointmentPanel.vue'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
@@ -6,7 +6,7 @@ import { appointmentStage, needsNextBookingFlag, pendingFormsFlag } from '~/util
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { formatTime } from '~/utils/billing'
-import { dataOrThrow } from '~/utils/supabaseFailures'
+import { visitPaymentsFromRows, type VisitPaymentRows } from '~/composables/useVisitPayments'
 
 // Everything CalendarAppointmentPanel needs, for ONE visit.
 //
@@ -18,6 +18,11 @@ import { dataOrThrow } from '~/utils/supabaseFailures'
 // one appointment, read the same way (utils/appointmentStage,
 // utils/visitPayment, effectivePriceCents), so the panel says the same thing
 // whichever screen opened it.
+//
+// Two requests, side by side: the row, and appointment_panel -- everything
+// else, which needs only the id. It was the row and then seven more (the
+// payments, the balance, the packs, the moves, the next visit, the
+// overrides), with the panel's audit trail as a ninth once it mounted.
 
 export interface AppointmentPanelInputs {
   appointment: PanelAppointment & { appointment_types: { name: string; color: string; default_price_cents: number } | null }
@@ -25,6 +30,19 @@ export interface AppointmentPanelInputs {
   payment: VisitPayment
   priceCents: number
   overrides: AppointmentTypeOverride[]
+  /** The visit's audit trail, so the panel need not ask for it again (its `activity` prop). */
+  activity: PanelActivityRow[]
+}
+
+/** What the appointment_panel function returns: raw rows, read here as they always were. */
+interface AppointmentPanelRows {
+  visit_payments: VisitPaymentRows
+  balance: { outstanding_cents: number | null } | null
+  package_purchases: { package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }[]
+  reschedule_count: number
+  has_later_visit: boolean
+  overrides: AppointmentTypeOverride[]
+  activity: PanelActivityRow[]
 }
 
 const SELECT =
@@ -32,35 +50,29 @@ const SELECT =
 
 export function useAppointmentPanelLoader() {
   const supabase = useSupabaseClient()
-  const { fetchVisitPayments } = useVisitPayments()
 
   async function load(appointmentId: string): Promise<AppointmentPanelInputs | null> {
-    const { data: row, error } = await supabase.from('appointments').select(SELECT).eq('id', appointmentId).maybeSingle()
+    const [{ data: row, error }, details] = await Promise.all([
+      supabase.from('appointments').select(SELECT).eq('id', appointmentId).maybeSingle(),
+      supabase.rpc('appointment_panel' as never, { p_appointment_id: appointmentId } as never),
+    ])
     // Thrown, not "no such visit": the panel's caller shows nothing for null.
     if (error) throw error
     if (!row) return null
+    if (details.error) throw details.error
     const a = row as unknown as AppointmentPanelInputs['appointment']
+    const rows = (details.data ?? {}) as unknown as Partial<AppointmentPanelRows>
 
-    const [payments, balance, packages, moved, later, overrides] = await Promise.all([
-      fetchVisitPayments([a.id]),
-      supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', a.patient_id).maybeSingle().then(dataOrThrow),
-      supabase.from('package_purchases').select('package_name, sessions_total, sessions_used, is_closed').eq('patient_id', a.patient_id).order('purchased_at', { ascending: false }).then(dataOrThrow),
-      supabase
-        .from('appointment_reschedules')
-        .select('id', { count: 'exact', head: true })
-        .eq('appointment_id', a.id)
-        .then((r) => (r.error ? Promise.reject(r.error) : r.count)),
-      // The calendar's rule for "has a next visit" (loadFutureAppointmentIds): any
-      // visit not cancelled or deleted, from now on, other than this one.
-      supabase.from('appointments').select('id').eq('patient_id', a.patient_id).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()).neq('id', a.id).limit(1).then(dataOrThrow),
-      supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents').then(dataOrThrow),
-    ])
+    const payments = visitPaymentsFromRows([a.id], rows.visit_payments)
+    const balance = rows.balance ?? null
+    const packages = rows.package_purchases ?? []
+    const moved = rows.reschedule_count ?? 0
+    const ovr = rows.overrides ?? []
 
     const payment: VisitPayment = payments[a.id] ?? { kind: 'none' }
     // Same rule as the calendar: the newest pack that is neither closed nor used up.
-    const active = (packages ?? []).find((p) => !p.is_closed && p.sessions_used < p.sessions_total) ?? null
+    const active = packages.find((p) => !p.is_closed && p.sessions_used < p.sessions_total) ?? null
     const stage = appointmentStage(a)
-    const ovr = (overrides ?? []) as AppointmentTypeOverride[]
 
     const view: BlockView = {
       id: a.id,
@@ -78,13 +90,14 @@ export function useAppointmentPanelLoader() {
       pendingForms: pendingFormsFlag(stage, a.starts_at, a.patients?.pending_forms),
       redFlags: a.patients?.red_flags?.trim() || null,
       tags: a.patients?.tags ?? [],
-      movedCount: moved ?? 0,
-      noNext: needsNextBookingFlag(stage, a.starts_at, (later ?? []).length > 0),
+      movedCount: moved,
+      // The calendar's rule for "has a next visit", answered by the function.
+      noNext: needsNextBookingFlag(stage, a.starts_at, rows.has_later_visit ?? false),
     }
     const priceCents =
       a.appointment_type_id && a.appointment_types ? effectivePriceCents(a.appointment_types.default_price_cents, a.appointment_type_id, a.practitioner_id ?? '', ovr) : 0
 
-    return { appointment: a, view, payment, priceCents, overrides: ovr }
+    return { appointment: a, view, payment, priceCents, overrides: ovr, activity: rows.activity ?? [] }
   }
 
   return { load }

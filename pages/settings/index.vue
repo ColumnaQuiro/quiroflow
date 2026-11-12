@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { isRouteAllowed } from '~/utils/routePermissions'
-
 const ICONS = {
   swatch:
     'M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z',
@@ -36,78 +34,57 @@ const ICONS = {
 }
 
 const t = useT()
-const store = useAccountStore()
 
-// Every card is filtered through isRouteAllowed, the same check the route
-// middleware applies -- so a card is shown exactly when clicking it would not
-// bounce to /dashboard?denied=1. Only VeriFactu was filtered before, and a
-// role without billing_config or team_admin saw cards it could not open.
-const allGroups = computed(() => [
-  {
-    label: t('Clinic', 'Clínica'),
-    items: [
-      { to: '/settings/clinics', label: t('Clinics', 'Clínicas'), description: t('Locations your practice operates from.', 'Las sedes desde las que opera tu clínica.'), icon: ICONS.building },
-      { to: '/settings/online-booking', label: t('Online Booking', 'Reserva online'), description: t('Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', 'Horarios por clínica, ventana de reserva, elegibilidad de pacientes, códigos de descuento, diseño y textos personalizados.'), icon: ICONS.globe },
-      { to: '/settings/team', label: t('Team', 'Equipo'), description: t('Who signs in, their role, who sees patients, invites and two-factor login.', 'Quién entra, su rol, quién atiende pacientes, invitaciones y verificación en dos pasos.'), icon: ICONS.users },
-      { to: '/settings/roles', label: t('Roles & Permissions', 'Roles y permisos'), description: t('Control what each role can see and do.', 'Controla qué puede ver y hacer cada rol.'), icon: ICONS.lockClosed },
-      { to: '/settings/appointment-types', label: t('Appointment Types', 'Tipos de cita'), description: t('Visit types, durations, colors, default price.', 'Tipos de visita, duraciones, colores, precio predeterminado.'), icon: ICONS.tag },
-      { to: '/settings/reschedule-reasons', label: t('Scheduling Policies', 'Políticas de programación'), description: t('Reschedule, cancellation, and missed-appointment fees, plus reschedule reasons.', 'Comisiones por reprogramación, cancelación e inasistencia, y motivos de reprogramación.'), icon: ICONS.calendar },
-      { to: '/settings/rooms', label: t('Calendar Resources', 'Recursos de calendario'), description: t('Rooms used for scheduling per clinic.', 'Salas usadas para la programación en cada clínica.'), icon: ICONS.calendar },
-      { to: '/settings/app', label: t('Mobile App', 'App móvil'), description: t("Join code and QR, store links, what patients can do in the app, announcements, and install stats.", 'Código de acceso y QR, enlaces a las tiendas, lo que los pacientes pueden hacer en la app, avisos y estadísticas de instalación.'), icon: ICONS.devicePhoneMobile },
-      { to: '/settings/branding', label: t('Brand', 'Marca'), description: t('Your logo, name and colour in the patient app.', 'Tu logo, tu nombre y tu color en la app de pacientes.'), icon: ICONS.swatch },
-      { to: '/settings/referral-sources', label: t('Referral Sources', 'Fuentes de referencia'), description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
-      { to: '/settings/patient-types', label: t('Patient types', 'Tipos de paciente'), description: t('Groups such as Young or Over 65, which can bring exercises with them and start automations.', 'Grupos como Joven o Mayor de 65, que pueden traer ejercicios y disparar automatizaciones.'), icon: ICONS.tag },
-      { to: '/settings/care-plans', label: t('Care plans', 'Planes de tratamiento'), description: t('What the review at the end of a plan proposes: maintenance, discharge and the habits pack.', 'Lo que propone la revisión al final de un plan: mantenimiento, alta y paquete de hábitos.'), icon: ICONS.calendar },
-      { to: '/settings/new-patient-fields', label: t('New Patient Fields', 'Campos de nuevo paciente'), description: t('Which fields show and are required on the Add Patient panel.', 'Qué campos se muestran y son obligatorios en el panel de Añadir paciente.'), icon: ICONS.userCircle },
-      { to: '/settings/custom-fields', label: t('Custom Fields', 'Campos personalizados'), description: t('Your own fields on the patient record, clinical or admin.', 'Campos propios en la ficha del paciente, clínicos o administrativos.'), icon: ICONS.tag },
-    ],
-  },
-  {
-    label: t('Billing', 'Facturación'),
-    items: [
-      { to: '/settings/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
-      { to: '/settings/products', label: t('Products & stock', 'Productos y stock'), description: t('What you sell over the counter: stock, deliveries and margin.', 'Lo que vendes en mostrador: stock, entradas de mercancía y margen.'), icon: ICONS.shoppingBag },
-      { to: '/settings/packages', label: t('Packages / Bonos', 'Paquetes / Bonos'), description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
-      { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
-      { to: '/settings/payments', label: t('Payments', 'Pagos'), description: t('The methods staff record payments with, and card payments through Stripe.', 'Los métodos con los que se registran los pagos, y los cobros con tarjeta mediante Stripe.'), icon: ICONS.creditCard },
-      { to: '/settings/invoicing', label: t('Invoicing', 'Facturación'), description: t('Fiscal data, numbering, what receipts show and the receipt email.', 'Datos fiscales, numeración, qué muestran los recibos y el correo del recibo.'), icon: ICONS.documentText },
-      // Owners only: sending the clinic's invoicing records to the tax agency
-      // under its certificate is the company's decision, not a role's.
-      { to: '/settings/verifactu', label: 'VeriFactu', description: t('Send invoicing records to the AEAT: test or live, and the certificate they are sent with.', 'Envío de registros de facturación a la AEAT: pruebas o producción, y el certificado con el que se envían.'), icon: ICONS.lockClosed },
-    ],
-  },
-  {
-    label: t('Communication', 'Comunicación'),
-    items: [
-      { to: '/settings/messages', label: t('Messages', 'Mensajes'), description: t('Appointment confirmations and reminders, and the details they use.', 'Confirmaciones y recordatorios de cita, y los datos que usan.'), icon: ICONS.bolt },
-      { to: '/settings/whatsapp', label: t('WhatsApp', 'WhatsApp'), description: t('Webhook and message templates for recalls and confirmations.', 'Webhook y plantillas de mensaje para recordatorios y confirmaciones.'), icon: ICONS.chatBubble },
-      { to: '/settings/saved-replies', label: t('Saved Replies', 'Respuestas guardadas'), description: t('Pre-written answers your team can insert into the Inbox composer.', 'Respuestas predefinidas que tu equipo puede insertar en el compositor de la Bandeja de entrada.'), icon: ICONS.bookmark },
-      { to: '/settings/docs', label: t('Docs', 'Documentos'), description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
-      { to: '/settings/letters', label: t('Letters', 'Cartas'), description: t('Templates for the letters you write about a patient, printed on your letterhead.', 'Plantillas de las cartas que escribís sobre un paciente, impresas con vuestro membrete.'), icon: ICONS.documentText },
-      { to: '/settings/leads', label: t('Leads', 'Leads'), description: t('How leads move through the pipeline, what they are worth, and who is told when one arrives.', 'Cómo avanzan los leads por el embudo, cuánto valen y a quién se avisa cuando llega uno.'), icon: ICONS.bolt },
-      { to: '/settings/recalls', label: t('Recalls', 'Recuperaciones'), description: t('Who follows up a new recall, and the reasons patients stop coming that Reports › Retention counts.', 'Quién hace el seguimiento de una recuperación nueva, y los motivos por los que dejan de venir que cuenta Informes › Retención.'), icon: ICONS.bookmark },
-    ],
-  },
-  {
-    label: t('Data', 'Datos'),
-    items: [
-      { to: '/settings/import', label: t('Import', 'Importar'), description: t('Bring records across from PracticeHub, or patients from a CSV file.', 'Trae los registros desde PracticeHub, o pacientes desde un archivo CSV.'), icon: ICONS.arrowDownTray },
-      { to: '/settings/files', label: t('Files', 'Archivos'), description: t('Files still missing after a migration, and shrinking the ones already here.', 'Archivos que faltan tras una migración, y reducir el tamaño de los que ya están.'), icon: ICONS.paperClip },
-      // Owners only: who opened which patient's record and every version of a
-      // clinical note are the data controller's questions, not a role's.
-      { to: '/settings/activity', label: t('Activity log', 'Registro de actividad'), description: t('Who changed what, who opened which patient record, and who signed in.', 'Quién cambió qué, quién abrió la ficha de cada paciente y quién inició sesión.'), icon: ICONS.lockClosed },
-    ],
-  },
-  {
-    label: t('Developers', 'Desarrolladores'),
-    items: [
-      { to: '/settings/developers', label: t('API & Tokens', 'API y tokens'), description: t('Create scoped API tokens, see recent API activity, and read the developer documentation.', 'Crea tokens de API con permisos, consulta la actividad reciente de la API y lee la documentación para desarrolladores.'), icon: ICONS.codeBracket },
-      { to: '/settings/webhooks', label: t('Webhooks', 'Webhooks'), description: t('Have QuiroFlow tell another system when a patient, appointment or receipt changes.', 'Que QuiroFlow avise a otro sistema cuando cambia un paciente, una cita o un recibo.'), icon: ICONS.bolt },
-    ],
-  },
-])
+// The cards are the Settings menu, with a line of description each: the
+// groups, labels, order and who sees what come from useSettingsNavItems, the
+// same definition the menu and the command palette read. This page used to
+// keep a list of its own, and had fallen four pages behind the menu.
+// A page with no entry here still gets its card, without a description.
+const DETAILS = computed<Record<string, { description: string; icon: string }>>(() => ({
+  '/settings/clinics': { description: t('Locations your practice operates from.', 'Las sedes desde las que opera tu clínica.'), icon: ICONS.building },
+  '/settings/online-booking': { description: t('Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', 'Horarios por clínica, ventana de reserva, elegibilidad de pacientes, códigos de descuento, diseño y textos personalizados.'), icon: ICONS.globe },
+  '/settings/team': { description: t('Who signs in, their role, who sees patients, invites and two-factor login.', 'Quién entra, su rol, quién atiende pacientes, invitaciones y verificación en dos pasos.'), icon: ICONS.users },
+  '/settings/roles': { description: t('Control what each role can see and do.', 'Controla qué puede ver y hacer cada rol.'), icon: ICONS.lockClosed },
+  '/settings/appointment-types': { description: t('Visit types, durations, colors, default price.', 'Tipos de visita, duraciones, colores, precio predeterminado.'), icon: ICONS.tag },
+  '/settings/reschedule-reasons': { description: t('Reschedule, cancellation, and missed-appointment fees, plus reschedule reasons.', 'Comisiones por reprogramación, cancelación e inasistencia, y motivos de reprogramación.'), icon: ICONS.calendar },
+  '/settings/rooms': { description: t('Rooms used for scheduling per clinic.', 'Salas usadas para la programación en cada clínica.'), icon: ICONS.calendar },
+  '/settings/app': { description: t("Join code and QR, store links, what patients can do in the app, announcements, and install stats.", 'Código de acceso y QR, enlaces a las tiendas, lo que los pacientes pueden hacer en la app, avisos y estadísticas de instalación.'), icon: ICONS.devicePhoneMobile },
+  '/settings/branding': { description: t('Your logo, name and colour in the patient app.', 'Tu logo, tu nombre y tu color en la app de pacientes.'), icon: ICONS.swatch },
+  '/settings/referral-sources': { description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
+  '/settings/patient-types': { description: t('Groups such as Young or Over 65, which can bring exercises with them and start automations.', 'Grupos como Joven o Mayor de 65, que pueden traer ejercicios y disparar automatizaciones.'), icon: ICONS.tag },
+  '/settings/care-plans': { description: t('What the review at the end of a plan proposes: maintenance, discharge and the habits pack.', 'Lo que propone la revisión al final de un plan: mantenimiento, alta y paquete de hábitos.'), icon: ICONS.calendar },
+  '/settings/new-patient-fields': { description: t('Which fields show and are required on the Add Patient panel.', 'Qué campos se muestran y son obligatorios en el panel de Añadir paciente.'), icon: ICONS.userCircle },
+  '/settings/custom-fields': { description: t('Your own fields on the patient record, clinical or admin.', 'Campos propios en la ficha del paciente, clínicos o administrativos.'), icon: ICONS.tag },
+  '/settings/services': { description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
+  '/settings/products': { description: t('What you sell over the counter: stock, deliveries and margin.', 'Lo que vendes en mostrador: stock, entradas de mercancía y margen.'), icon: ICONS.shoppingBag },
+  '/settings/packages': { description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
+  '/settings/memberships': { description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
+  '/settings/payments': { description: t('The methods staff record payments with, and card payments through Stripe.', 'Los métodos con los que se registran los pagos, y los cobros con tarjeta mediante Stripe.'), icon: ICONS.creditCard },
+  '/settings/invoicing': { description: t('Fiscal data, numbering, what receipts show and the receipt email.', 'Datos fiscales, numeración, qué muestran los recibos y el correo del recibo.'), icon: ICONS.documentText },
+  '/settings/verifactu': { description: t('Send invoicing records to the AEAT: test or live, and the certificate they are sent with.', 'Envío de registros de facturación a la AEAT: pruebas o producción, y el certificado con el que se envían.'), icon: ICONS.lockClosed },
+  '/settings/messages': { description: t('Appointment confirmations and reminders, and the details they use.', 'Confirmaciones y recordatorios de cita, y los datos que usan.'), icon: ICONS.bolt },
+  '/settings/whatsapp': { description: t('Webhook and message templates for recalls and confirmations.', 'Webhook y plantillas de mensaje para recordatorios y confirmaciones.'), icon: ICONS.chatBubble },
+  '/settings/saved-replies': { description: t('Pre-written answers your team can insert into the Inbox composer.', 'Respuestas predefinidas que tu equipo puede insertar en el compositor de la Bandeja de entrada.'), icon: ICONS.bookmark },
+  '/settings/docs': { description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
+  '/settings/letters': { description: t('Templates for the letters you write about a patient, printed on your letterhead.', 'Plantillas de las cartas que escribís sobre un paciente, impresas con vuestro membrete.'), icon: ICONS.documentText },
+  '/settings/leads': { description: t('How leads move through the pipeline, what they are worth, and who is told when one arrives.', 'Cómo avanzan los leads por el embudo, cuánto valen y a quién se avisa cuando llega uno.'), icon: ICONS.bolt },
+  '/settings/recalls': { description: t('Who follows up a new recall, and the reasons patients stop coming that Reports › Retention counts.', 'Quién hace el seguimiento de una recuperación nueva, y los motivos por los que dejan de venir que cuenta Informes › Retención.'), icon: ICONS.bookmark },
+  '/settings/import': { description: t('Bring records across from PracticeHub, or patients from a CSV file.', 'Trae los registros desde PracticeHub, o pacientes desde un archivo CSV.'), icon: ICONS.arrowDownTray },
+  '/settings/files': { description: t('Files still missing after a migration, and shrinking the ones already here.', 'Archivos que faltan tras una migración, y reducir el tamaño de los que ya están.'), icon: ICONS.paperClip },
+  '/settings/activity': { description: t('Who changed what, who opened which patient record, and who signed in.', 'Quién cambió qué, quién abrió la ficha de cada paciente y quién inició sesión.'), icon: ICONS.lockClosed },
+  '/settings/developers': { description: t('Create scoped API tokens, see recent API activity, and read the developer documentation.', 'Crea tokens de API con permisos, consulta la actividad reciente de la API y lee la documentación para desarrolladores.'), icon: ICONS.codeBracket },
+  '/settings/webhooks': { description: t('Have QuiroFlow tell another system when a patient, appointment or receipt changes.', 'Que QuiroFlow avise a otro sistema cuando cambia un paciente, una cita o un recibo.'), icon: ICONS.bolt },
+  '/settings/education': { description: t('Your library of short articles and videos to send to patients.', 'Tu biblioteca de lecturas y vídeos breves para enviar a los pacientes.'), icon: ICONS.documentText },
+  '/settings/gift-vouchers': { description: t('What you sell as a gift on your public page, how long it lasts, and every voucher sold.', 'Lo que vendes como regalo en tu página pública, cuánto dura, y cada bono vendido.'), icon: ICONS.gift },
+  '/settings/third-parties': { description: t("Insurers and companies you bill on a patient's behalf, and what each pays.", 'Mutuas y empresas a las que facturas por cuenta de un paciente, y lo que paga cada una.'), icon: ICONS.building },
+  '/settings/privacy': { description: t('How long records are kept, and the ones past that period.', 'Cuánto tiempo se conservan las historias, y las que ya han superado ese plazo.'), icon: ICONS.lockClosed },
+}))
+const { groups: navGroups } = useSettingsNavItems()
 const groups = computed(() =>
-  allGroups.value.map((g) => ({ ...g, items: g.items.filter((item) => isRouteAllowed(store, item.to)) })).filter((g) => g.items.length > 0),
+  navGroups.value.map((g) => ({
+    label: g.label,
+    items: g.items.map((item) => ({ to: item.to, label: item.label, description: DETAILS.value[item.to]?.description ?? '', icon: DETAILS.value[item.to]?.icon ?? ICONS.tag })),
+  })),
 )
 </script>
 

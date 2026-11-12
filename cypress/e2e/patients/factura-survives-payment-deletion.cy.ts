@@ -35,6 +35,7 @@ describe('A factura outlives the payment it documents', () => {
           // taken that should have come from a bono.
           cy.contains('tr', 'Payment — Cash').click()
           cy.contains('button', 'Remove payment').click()
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
           // No spinner on this action -- wait for the row itself to go.
           cy.contains('tr', 'Payment — Cash').should('not.exist')
 

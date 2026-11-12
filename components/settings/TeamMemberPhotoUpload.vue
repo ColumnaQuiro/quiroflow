@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '../../utils/storageFilename'
 import { shrinkImageForUpload } from '../../utils/imageShrink'
+import { IMMUTABLE_CACHE_SECONDS } from '../../utils/storageCache'
 
 // Same upload-to-public-bucket pattern as ClinicLogoUpload/PatientsPhotoUpload.
 // `accountId` is taken as a prop rather than read from useAccountStore()
@@ -42,7 +43,7 @@ async function uploadFile(original: File) {
   // camera is several MB that every booking-page visitor would download.
   const file = await shrinkImageForUpload(original, 'photo')
   const path = `${props.accountId}/${props.teamMemberId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-  const { error } = await supabase.storage.from('team-member-photos').upload(path, file)
+  const { error } = await supabase.storage.from('team-member-photos').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
   if (error) {
     uploading.value = false
     emit('failed', error.message)

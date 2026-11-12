@@ -2,6 +2,8 @@
 // No login here -- the phone that scans the QR has no session at all, and
 // doesn't need one; the token itself (validated server-side) is what gates
 // this. Same layout: false pattern as the public booking page.
+import { shrinkImageForUpload } from '~/utils/imageShrink'
+
 definePageMeta({ layout: false })
 
 const route = useRoute()
@@ -23,10 +25,13 @@ onMounted(async () => {
 })
 
 async function onFileChosen(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  const original = (event.target as HTMLInputElement).files?.[0]
+  if (!original) return
   phase.value = 'uploading'
   error.value = ''
+  // A camera photo is several MB for a picture drawn as a small circle, and
+  // past ~4.5 MB the request never reached the server at all.
+  const file = await shrinkImageForUpload(original, 'photo')
   const formData = new FormData()
   formData.append('file', file)
   try {

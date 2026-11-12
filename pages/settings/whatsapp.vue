@@ -327,7 +327,10 @@ async function save() {
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
     meta_ads_account_id: metaAdsAccountId.value.trim() || null,
     instagram_user_id: instagramUserId.value.trim() || null,
-    messenger_page_id: messengerPageId.value.trim() || null,
+    // Only the Instagram connection sets messenger_page_id
+    // (accounts_guard_server_written), from the Page the clinic ticked at Meta.
+    // Leaving the Instagram ID empty disconnects it, and gives that Page up too.
+    ...(instagramUserId.value.trim() ? {} : { messenger_page_id: null }),
     webchat_enabled: webchatEnabled.value,
     webchat_greeting: webchatGreeting.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
@@ -368,6 +371,7 @@ async function save() {
     }
   }
 
+  if (!instagramUserId.value.trim()) messengerPageId.value = ''
   showToast(t('Saved', 'Guardado'))
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
@@ -509,9 +513,9 @@ async function save() {
                 <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
                   <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
                     <label for="fb-page-id" class="text-[14.5px] font-bold text-ink-900">{{ t('Facebook Page ID', 'ID de la página de Facebook') }}</label>
-                    <span class="text-[13px] text-ink-500">{{ t('The Page that token belongs to. Its Messenger DMs arrive in the Inbox too.', 'La página a la que pertenece ese token. Sus mensajes de Messenger también llegan a la Bandeja.') }}</span>
+                    <span class="text-[13px] text-ink-500">{{ t('Set by connecting Instagram, from the Page you tick at Meta. Its Messenger DMs arrive in the Inbox too.', 'Se fija al conectar Instagram, con la página que marques en Meta. Sus mensajes de Messenger también llegan a la Bandeja.') }}</span>
                   </div>
-                  <input id="fb-page-id" v-model="messengerPageId" type="text" placeholder="105600000000000" data-test="messenger-page-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+                  <input id="fb-page-id" :value="messengerPageId" type="text" readonly :placeholder="t('Not connected', 'Sin conectar')" data-test="messenger-page-id" :class="[inputClass, 'w-full cursor-default font-mono text-[13px] sm:w-[300px]']" />
                 </div>
               </details>
               <!-- Messenger is not a second connection: it is the Page Instagram already goes through. -->

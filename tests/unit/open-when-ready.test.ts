@@ -66,6 +66,33 @@ describe('openWhenReady', () => {
     expect(calls).to.deep.equal(['/documents/a.pdf'])
   })
 
+  it('never sends the same-origin tab to a javascript: URL', async () => {
+    // An exercise's video link is stored data; assigned to the empty tab, a
+    // javascript: URL would run on the app's origin with the patient's session.
+    for (const url of ['javascript:alert(1)', ' JavaScript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:x']) {
+      const { win, calls, tab } = fakeWindow()
+      expect(await openWhenReady(async () => url, win)).to.equal(false)
+      expect(tab.location.href).to.equal('')
+      expect(tab.closed).to.equal(true)
+      expect(calls).to.deep.equal([''])
+    }
+  })
+
+  it('opens nothing for a javascript: URL in the native app either', async () => {
+    const { win, calls, navigations } = fakeWindow({ native: true })
+    expect(await openWhenReady(async () => 'javascript:alert(1)', win)).to.equal(false)
+    expect(navigations).to.deep.equal([])
+    expect(calls).to.deep.equal([])
+  })
+
+  it('still opens the app own paths and http(s) links', async () => {
+    for (const url of ['/api/portal/x.pdf', 'https://maps.apple.com/?q=a', 'http://example.test/a']) {
+      const { win, tab } = fakeWindow()
+      expect(await openWhenReady(async () => url, win)).to.equal(true)
+      expect(tab.location.href).to.equal(url)
+    }
+  })
+
   it('does nothing in the native app when there is no URL', async () => {
     const { win, calls, navigations } = fakeWindow({ native: true })
     expect(await openWhenReady(async () => null, win)).to.equal(false)

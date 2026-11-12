@@ -81,6 +81,7 @@ const sources = computed<Source[]>(() => [
           { key: 'ledger', label: t('Ledger', 'Libro mayor'), hint: t('PracticeHub’s own invoices and payments, as it holds them. Needs Patients and Appointments first.', 'Las facturas y pagos propios de PracticeHub, tal y como los tiene. Requiere Pacientes y Citas antes.'), count: counted('payments', 'phpay-') },
           { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, family sharing and autopay.', 'Sesiones, precio, bonos compartidos y cobro automático.'), count: counted('package_purchases', 'PH-package-') },
           { key: 'care_plans_v3', label: t('2.0 care plans', 'Planes 2.0'), hint: t('For a clinic already on PracticeHub 2.0: its bonos and memberships, read through the 2.0 API. Read-only for now.', 'Para una clínica ya en PracticeHub 2.0: sus bonos y membresías, leídos con la API 2.0. Solo lectura por ahora.') },
+          { key: 'gocardless', label: t('Direct debits (GoCardless)', 'Domiciliaciones (GoCardless)'), hint: t('Pairs the mandates in your GoCardless account with their patients, so memberships are collected without anyone signing again. Needs GoCardless connected in Settings › Payments.', 'Empareja las domiciliaciones de tu cuenta de GoCardless con sus pacientes, para cobrar las membresías sin que nadie vuelva a firmar. Requiere GoCardless conectado en Ajustes › Pagos.') },
         ],
       },
       {
@@ -398,6 +399,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportPracticeHubLedgerImporter v-else-if="activeStep.key === 'ledger'" />
                 <ImportPracticeHubPatientPackagesImporter v-else-if="activeStep.key === 'patient_packages'" />
                 <ImportPracticeHub20CarePlansPreview v-else-if="activeStep.key === 'care_plans_v3'" />
+                <ImportGoCardlessMandates v-else-if="activeStep.key === 'gocardless'" />
                 <ImportPracticeHubPatientLogsImporter v-else-if="activeStep.key === 'patient_logs'" />
                 <ImportPracticeHubStickyNotesImporter v-else-if="activeStep.key === 'sticky_notes'" />
                 <ImportPracticeHubClinicalNotesImporter v-else-if="activeStep.key === 'treatment_notes'" />

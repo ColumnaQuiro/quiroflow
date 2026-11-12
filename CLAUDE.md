@@ -659,10 +659,17 @@ round trip to work out, neither is discoverable from the code.
   `CURRENT_PROJECT_VERSION` in project.pbxproj is not what reaches Apple --
   `ci_scripts/ci_post_clone.sh` overwrites it on every cloud build, and
   those builds have run on every push to `main` for a while (they were in
-  the 60s while git still said 15). Only bump `MARKETING_VERSION` by hand,
-  and only after a version is approved: see that script's comment for why
-  a closed train silently rejects uploads by email rather than failing the
-  build.
+  the 60s while git still said 15). `MARKETING_VERSION` moves only after
+  a version is approved: see that script's comment for why a closed train
+  rejects uploads rather than failing the build.
+  **`.github/workflows/app-version-bump.yml` opens that bump PR itself**,
+  hourly, once Apple's public lookup shows the version the repo still
+  builds (`scripts/app-version-bump.mjs`; it also sets Android's
+  hand-build defaults). Merging it stays manual. The lookup only sees
+  versions ON SALE, so after approving a MANUAL release run the workflow
+  by hand with `force`. Without the `APP_VERSION_BUMP_TOKEN` secret, the
+  PR is opened with the workflow's own token and starts no CI: close
+  and reopen it.
 - **Both stores are Spain-only** as of 2026-09-13, deliberately -- more
   countries later. On Apple, "Make this app available in new territories"
   is still ticked and the API refuses to change it (`appAvailabilities`

@@ -210,6 +210,24 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'That Instagram account is already connected to another QuiroFlow account. Disconnect it there first.',
     })
   }
+  // The Page's Messenger DMs route the same way, by accounts.messenger_page_id.
+  // Asked before step 6 subscribes the Page to `messages`: subscribing first
+  // and finding out afterwards that another account held the Page used to
+  // succeed anyway, and every Messenger DM to it went on landing in that
+  // other account's Inbox.
+  const { data: pageClaimants, error: pageClaimError } = await admin
+    .from('accounts')
+    .select('id')
+    .eq('messenger_page_id', chosen.pageId)
+    .neq('id', teamMember.account_id)
+    .limit(1)
+  if (pageClaimError) throw createError({ statusCode: 500, statusMessage: pageClaimError.message })
+  if (pageClaimants && pageClaimants.length > 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'That Facebook Page already receives Messenger for another QuiroFlow account. Disconnect it there first.',
+    })
+  }
 
   // 6. Subscribe this app to the Page's messages. The app-level Instagram
   //    webhook is not enough on its own, and its absence is silent: an

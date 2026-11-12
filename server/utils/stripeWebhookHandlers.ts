@@ -1,8 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import type Stripe from 'stripe'
-import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { bookMembershipPeriod, countScheduleInstallment, fireMembershipPaymentProcessed } from '~/server/utils/membershipCharges'
 import { pushPatientAction } from '~/server/utils/staffPush'
 import { formatEur } from '~/utils/billing'
 import { installmentBeingPaid } from '~/utils/bonoInstallments'
@@ -43,6 +42,12 @@ export function stripeInvoicePaymentIntentId(invoice: any): string | null {
 // (webhook.post.ts). Mirrors Stripe's outcome into payment_schedules /
 // stripe_payment_events so the app's reports stay in sync -- Stripe does
 // the actual charging (Subscription Schedules) on its own.
+//
+// Every row it reads or writes is filtered by accountId, the account the
+// route verified the signature for. The ids it is handed -- metadata, Stripe
+// customer, subscription and schedule ids -- come from the event body, and
+// on the legacy route that body is signed with a secret the clinic typed in
+// itself, so nothing in it may reach another account's rows.
 export async function handleStripeEvent(
   supabase: SupabaseClient<Database>,
   accountId: string,
@@ -52,132 +57,22 @@ export async function handleStripeEvent(
   // (a replaced card being detached). Both webhook routes hold one already.
   clinicStripe?: { stripe: Stripe; options: Stripe.RequestOptions },
 ) {
-  // No staff session exists on a Stripe webhook call, so this can't go
-  // through fire.post.ts (requireTeamMember-gated) like every client
-  // trigger -- same direct-call pattern as birthday-cron.post.ts.
-  async function fireMembershipPaymentProcessed(membershipId: string) {
-    const { data: membership } = await supabase.from('patient_memberships').select('patient_id').eq('id', membershipId).maybeSingle()
-    if (!membership) return
-    const { data: patient } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
-      .eq('id', membership.patient_id)
-      .maybeSingle()
-    if (!patient) return
-
-    const { data: rules } = await supabase
-      .from('automation_rules')
-      .select('id, filters')
-      .eq('account_id', accountId)
-      .eq('trigger_event', 'membership.payment_processed')
-      .eq('enabled', true)
-    for (const rule of rules ?? []) {
-      if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
-      await dispatchPatientRule(supabase, supabase, accountId, rule.id, patient, origin, undefined, {
-        triggerEvent: 'membership.payment_processed',
-        patientId: patient.id,
-        membershipId,
-      })
-    }
-  }
-
   async function findSchedule(subscriptionId: string | null) {
     if (!subscriptionId) return null
     const { data } = await supabase
       .from('payment_schedules')
       .select('id, installments_paid, installments_total, package_purchase_id, patient_membership_id, patient_id')
       .eq('stripe_subscription_id', subscriptionId)
+      .eq('account_id', accountId)
       .maybeSingle()
     return data
-  }
-
-  // The invoice is raised 'paid' before its payment exists (the payment names
-  // it). If the payment is then refused, what is left is a paid invoice with
-  // no money under it -- which reads as settled and is not. Take it back out
-  // (its line items cascade) rather than leave that behind.
-  async function dropUnpaidCharge(invoiceId: string, error: { message?: string } | null) {
-    console.error('[stripe webhook] payment insert failed, removing its invoice', invoiceId, error?.message)
-    await supabase.from('invoices').delete().eq('id', invoiceId)
-  }
-
-  // Adds one to a schedule's instalment count without losing a concurrent
-  // increment: the write only lands if the count is still what was read, and
-  // otherwise re-reads and tries again. Two different invoices of the same
-  // schedule arriving together used to both write n+1.
-  async function countInstallment(scheduleId: string) {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const { data: current } = await supabase
-        .from('payment_schedules')
-        .select('installments_paid, installments_total')
-        .eq('id', scheduleId)
-        .maybeSingle()
-      if (!current) return
-      const installmentsPaid = current.installments_paid + 1
-      const completed = current.installments_total != null && installmentsPaid >= current.installments_total
-      const { data: updated } = await supabase
-        .from('payment_schedules')
-        .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
-        .eq('id', scheduleId)
-        .eq('installments_paid', current.installments_paid)
-        .select('id')
-      if (updated?.length) return
-    }
-    console.error('[stripe webhook] could not count instalment after retries', scheduleId)
-  }
-
-  // A successful membership installment only ever touched
-  // stripe_payment_events/payment_schedules -- invisible to balanceCents,
-  // the Account Ledger, and the cash-up report. This makes it a normal
-  // invoice+payment pair like any other charge, so no new UI is needed.
-  async function recordMembershipCharge(patientId: string, membershipId: string, amountCents: number, periodStart: string, paymentIntentId: string | null) {
-    const { data: membership } = await supabase.from('patient_memberships').select('membership_name').eq('id', membershipId).maybeSingle()
-    const periodLabel = new Date(periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-
-    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId })
-    if (!invoiceNumber) return
-
-    const { data: invoice } = await supabase
-      .from('invoices')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
-      .select('id')
-      .single()
-    if (!invoice) return
-
-    await supabase.from('invoice_line_items').insert({
-      account_id: accountId,
-      invoice_id: invoice.id,
-      description: `Membership: ${membership?.membership_name ?? 'Membership'} — ${periodLabel}`,
-      quantity: 1,
-      price_cents: amountCents,
-    })
-    const { data: payment, error: paymentError } = await supabase
-      .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'membership' })
-      .select('id')
-      .single()
-    if (paymentError || !payment) {
-      await dropUnpaidCharge(invoice.id, paymentError)
-      return
-    }
-
-    // Money arriving with nobody at a screen still needs its document.
-    if (payment) {
-      await issueFacturaServer(supabase, {
-        accountId,
-        patientId,
-        paymentId: payment.id,
-        amountCents,
-        purpose: 'membership',
-        serviceName: `${membership?.membership_name ?? 'Membership'} — ${periodLabel}`,
-      })
-    }
   }
 
   // An autopay instalment on a bono is recorded exactly the way one taken at
   // the desk is (BillingTab.recordPackagePayment): a payment ON THE BONO, with
   // no invoice of its own and no credit row.
   //
-  // It used to mirror recordMembershipCharge -- a paid invoice for the
+  // It used to mirror the membership booking (bookMembershipPeriod) -- a paid invoice for the
   // instalment, the payment hung off it, and an account_credits top-up -- which
   // is the bono model 20260914150556 and 0161 retired, and it was the only
   // place still writing it:
@@ -200,6 +95,7 @@ export async function handleStripeEvent(
       .from('package_purchases')
       .select('package_name, price_cents, sessions_total, installments, installment_cents')
       .eq('id', packagePurchaseId)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     const { data: payment, error: paymentError } = await supabase
@@ -231,6 +127,7 @@ export async function handleStripeEvent(
         .from('payments')
         .select('amount_cents')
         .eq('package_purchase_id', packagePurchaseId)
+        .eq('account_id', accountId)
         .neq('id', payment.id)
         .or('purpose.is.null,purpose.neq.on_account')
       const paidBeforeCents = (earlier ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
@@ -269,6 +166,7 @@ export async function handleStripeEvent(
           .from('stripe_payment_events')
           .select('id')
           .eq('stripe_invoice_id', invoice.id)
+          .eq('account_id', accountId)
           .eq('status', 'paid')
           .limit(1)
         if (alreadyBooked?.length) return
@@ -293,12 +191,19 @@ export async function handleStripeEvent(
       }
 
       if (status === 'paid') {
-        await countInstallment(schedule.id)
+        await countScheduleInstallment(supabase, accountId, schedule.id)
 
         if (schedule.patient_membership_id) {
           const periodStart = new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString()
-          await recordMembershipCharge(schedule.patient_id, schedule.patient_membership_id, invoice.amount_paid || invoice.amount_due, periodStart, paymentIntentId)
-          await fireMembershipPaymentProcessed(schedule.patient_membership_id)
+          await bookMembershipPeriod(supabase, accountId, {
+            patientId: schedule.patient_id,
+            membershipId: schedule.patient_membership_id,
+            amountCents: invoice.amount_paid || invoice.amount_due,
+            periodStart,
+            method: 'card',
+            stripePaymentIntentId: paymentIntentId,
+          })
+          await fireMembershipPaymentProcessed(supabase, accountId, schedule.patient_membership_id, origin)
         } else if (schedule.package_purchase_id) {
           await recordPackageCharge(schedule.patient_id, schedule.package_purchase_id, invoice.amount_paid || invoice.amount_due, paymentIntentId)
         }
@@ -319,13 +224,14 @@ export async function handleStripeEvent(
         .from('payment_schedules')
         .update({ stripe_subscription_id: subscriptionId })
         .eq('stripe_subscription_schedule_id', schedule.id)
+        .eq('account_id', accountId)
         .is('stripe_subscription_id', null)
     }
   }
 
   if (stripeEvent.type === 'subscription_schedule.canceled') {
     const schedule = stripeEvent.data.object as Stripe.SubscriptionSchedule
-    await supabase.from('payment_schedules').update({ status: 'canceled' }).eq('stripe_subscription_schedule_id', schedule.id)
+    await supabase.from('payment_schedules').update({ status: 'canceled' }).eq('stripe_subscription_schedule_id', schedule.id).eq('account_id', accountId)
   }
 
   // Mirrors save-payment-method.post.ts's own update, for a card added via
@@ -339,8 +245,8 @@ export async function handleStripeEvent(
     const customerId = typeof setupIntent.customer === 'string' ? setupIntent.customer : setupIntent.customer?.id
     const paymentMethodId = typeof setupIntent.payment_method === 'string' ? setupIntent.payment_method : setupIntent.payment_method?.id
     if (customerId && paymentMethodId) {
-      const { data: before } = await supabase.from('patient_stripe_customers').select('default_payment_method_id').eq('stripe_customer_id', customerId).maybeSingle()
-      await supabase.from('patient_stripe_customers').update({ default_payment_method_id: paymentMethodId }).eq('stripe_customer_id', customerId)
+      const { data: before } = await supabase.from('patient_stripe_customers').select('default_payment_method_id').eq('stripe_customer_id', customerId).eq('account_id', accountId).maybeSingle()
+      await supabase.from('patient_stripe_customers').update({ default_payment_method_id: paymentMethodId }).eq('stripe_customer_id', customerId).eq('account_id', accountId)
       // A patient replacing their card from the app (api/portal/card-link)
       // adds a second one to the same customer. Let the old one go, so "the
       // card on file" stays one card -- the one remove-card.post.ts detaches
@@ -385,11 +291,21 @@ export async function handleStripeEvent(
         .from('payments')
         .select('id')
         .eq('stripe_payment_intent_id', intent.id)
+        .eq('account_id', accountId)
         .maybeSingle()
       if (!existingPayment) {
         // Read the invoice BEFORE inserting: a payment names its own patient
         // since 0170, and this branch starts from nothing but an invoice id.
-        const { data: invoice } = await supabase.from('invoices').select('total_cents, patient_id').eq('id', invoiceId).maybeSingle()
+        // Only one of THIS account's: the id comes from the event's metadata,
+        // and on the legacy per-clinic route the clinic itself holds the
+        // signing secret, so it can sign any event it likes. Read by id
+        // alone, an invoice of another clinic was marked paid by one.
+        const { data: invoice } = await supabase
+          .from('invoices')
+          .select('total_cents, patient_id')
+          .eq('id', invoiceId)
+          .eq('account_id', accountId)
+          .maybeSingle()
         if (!invoice) return
 
         const { data: payment } = await supabase
@@ -414,15 +330,15 @@ export async function handleStripeEvent(
             purpose: 'visit',
           })
         }
-        const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
+        const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId).eq('account_id', accountId)
         const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
         if (paidCents >= invoice.total_cents) {
-          await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+          await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId).eq('account_id', accountId)
         }
         // Paid by the patient from the app or the portal ("Pagar"): tell the
         // clinic, as nobody at the desk took this money.
         if (payment && intent.metadata?.source === 'patient_pay' && invoice.patient_id) {
-          const { data: who } = await supabase.from('patients').select('first_name, last_name').eq('id', invoice.patient_id).maybeSingle()
+          const { data: who } = await supabase.from('patients').select('first_name, last_name').eq('id', invoice.patient_id).eq('account_id', accountId).maybeSingle()
           const name = who ? `${who.first_name} ${who.last_name ?? ''}`.trim() : 'Un paciente'
           await pushPatientAction(supabase, {
             patientId: invoice.patient_id,

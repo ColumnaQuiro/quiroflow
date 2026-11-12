@@ -29,9 +29,28 @@
 // absolute URL is outside the app; anything else would navigate the app away
 // from itself, so it keeps the old window.open.
 
+//
+// Only a web address is opened: http(s), or one of the app's own paths.
+// Some URLs reach here as data -- an exercise's video link is whatever the
+// clinic stored in exercises.media_url -- and the empty tab below is
+// same-origin with the app, so `tab.location.href = 'javascript:...'` would
+// run that script with the patient's session. Parsed with URL rather than
+// tested with a regex because the parser is what the browser applies: it
+// drops the tabs, newlines and leading spaces a regex would have to know
+// about ("java\tscript:").
+
 type Opener = Pick<Window, 'open'> & {
   location?: Pick<Location, 'assign'>
   Capacitor?: { isNativePlatform?: () => boolean }
+}
+
+export function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url, 'https://app.invalid/')
+    return protocol === 'https:' || protocol === 'http:'
+  } catch {
+    return false
+  }
 }
 
 export async function openWhenReady(
@@ -40,7 +59,7 @@ export async function openWhenReady(
 ): Promise<boolean> {
   if (win.Capacitor?.isNativePlatform?.()) {
     const url = await resolveUrl()
-    if (!url) return false
+    if (!url || !isWebUrl(url)) return false
     if (/^https?:\/\//i.test(url) && win.location) win.location.assign(url)
     else win.open(url, '_blank')
     return true
@@ -54,7 +73,7 @@ export async function openWhenReady(
     tab?.close()
     throw err
   }
-  if (!url) {
+  if (!url || !isWebUrl(url)) {
     tab?.close()
     return false
   }

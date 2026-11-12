@@ -1,0 +1,139 @@
+name: App version bump
+
+# Opens the "App X.Y" pull request as soon as the App Store has the version the
+# repo is still building.
+#
+# An approved marketing version closes its train: every Xcode Cloud build that
+# still carries it archives and then fails at "Preparing build for App Store
+# Connect". The bump was a person noticing the approval and editing
+# project.pbxproj, and it was usually noticed because builds had already
+# failed (builds 115, 128-130, 376-378, 400-401...).
+#
+# This only OPENS the pull request. Merging stays a person's click after CI is
+# green, like every other change (CLAUDE.md, "Git workflow").
+#
+# The check (scripts/app-version-bump.mjs) reads Apple's public lookup API, so
+# no App Store Connect key lives here. It sees what is on sale, which is
+# enough for an AFTER_APPROVAL release. A MANUAL one closes its train at
+# approval but is not on sale until someone presses Release; for that, run
+# this by hand with `force`.
+on:
+  schedule:
+    # Hourly. The lookup lags the release by a few minutes to an hour, and
+    # the job takes seconds.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Bump even if the App Store does not show the current version yet (a MANUAL release that is approved but not released)
+        type: boolean
+        default: false
+
+concurrency:
+  group: app-version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # A pull request opened with the workflow's own GITHUB_TOKEN starts
+          # no workflows, so CI would never run on it. A token of a person's
+          # (fine-grained: this repository, Contents + Pull requests
+          # read/write) avoids that. Without one this still opens the PR and
+          # says how to start CI on it.
+          token: ${{ secrets.APP_VERSION_BUMP_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compare with the App Store
+        id: check
+        run: node scripts/app-version-bump.mjs
+
+      - name: Decide
+        id: decide
+        env:
+          NEEDED: ${{ steps.check.outputs.needed }}
+          FORCE: ${{ inputs.force }}
+          NEXT: ${{ steps.check.outputs.next }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$NEEDED" != "true" ] && [ "$FORCE" != "true" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          branch="chore/app-$NEXT"
+          # Opened already, by an earlier run or by hand: the next hourly run
+          # must not open a second one.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "$branch already exists; nothing to do"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -n "$(gh pr list --state open --search "\"App $NEXT\" in:title" --json number --jq '.[].number')" ]; then
+            echo "an open pull request already bumps to $NEXT; nothing to do"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      # Only build.gradle's hand-build default; android.yml asks Play itself
+      # on every CI build. So a failure here is a warning, not a reason to
+      # leave iOS builds failing.
+      - name: Next Android versionCode
+        id: play
+        if: steps.decide.outputs.go == 'true'
+        continue-on-error: true
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: echo "code=$(node scripts/google-play.mjs next-version-code)" >> "$GITHUB_OUTPUT"
+
+      - name: Open the pull request
+        if: steps.decide.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN || github.token }}
+          HAS_TOKEN: ${{ secrets.APP_VERSION_BUMP_TOKEN != '' }}
+          BRANCH: ${{ steps.decide.outputs.branch }}
+          CURRENT: ${{ steps.check.outputs.current }}
+          LIVE: ${{ steps.check.outputs.live }}
+          NEXT: ${{ steps.check.outputs.next }}
+          CODE: ${{ steps.play.outputs.code }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          node scripts/app-version-bump.mjs --apply "$NEXT" "$CODE"
+          git commit -am "App $NEXT: $CURRENT is approved (iOS MARKETING_VERSION, Android defaults)"
+          git push origin "$BRANCH"
+
+          if [ "$FORCE" = "true" ] && [ "$CURRENT" != "$LIVE" ]; then
+            why="Run by hand with \`force\`: the App Store still shows $LIVE, so $CURRENT is presumably approved with a MANUAL release."
+          else
+            why="$LIVE is on sale on the App Store, so its train is closed: every Xcode Cloud build still carrying it fails at \"Preparing build for App Store Connect\"."
+          fi
+          if [ -n "$CODE" ]; then
+            android="Android hand-build defaults -> $NEXT / code $CODE (one above the highest Play has; CI asks Play itself on every build)"
+          else
+            android="Android hand-build versionName -> $NEXT. **The versionCode default was left alone**: Play could not be asked (see the workflow log). CI asks Play itself, so only a hand build is affected."
+          fi
+          ci=""
+          if [ "$HAS_TOKEN" != "true" ]; then
+            ci=$'\n\n**CI has not run on this PR.** It was opened with the workflow\'s own token, which starts no workflows. Close and reopen it to run CI, or add an `APP_VERSION_BUMP_TOKEN` repository secret so the next one starts by itself.'
+          fi
+          gh pr create --base main --head "$BRANCH" --title "App $NEXT: $CURRENT is approved" --body "$why
+
+          - iOS \`MARKETING_VERSION\` $CURRENT -> $NEXT (every target and configuration)
+          - $android
+
+          After merging, check that Xcode Cloud started a run; it sometimes does not, and one can be started through the App Store Connect API.$ci
+
+          Opened by \`.github/workflows/app-version-bump.yml\`."
+          echo "### Opened the bump to $NEXT" >> "$GITHUB_STEP_SUMMARY"

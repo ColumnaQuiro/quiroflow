@@ -97,8 +97,12 @@ async function storeFile(
     // Many patients "have" a photo that is a stored 643-byte near-white JPEG,
     // an empty capture. No real photo is that small.
     if (file.bytes.length <= 1024) return { blank: true as const }
-    const path = `${accountId}/${patient.id}/quirocitas.${contentType.includes('png') ? 'png' : 'jpg'}`
-    const { error } = await admin.storage.from('patient-photos').upload(path, file.bytes, { contentType, upsert: true })
+    const png = contentType.includes('png')
+    const path = `${accountId}/${patient.id}/quirocitas.${png ? 'png' : 'jpg'}`
+    // patient-photos only takes image/* (20261112070000), and Quirocitas does
+    // not always say what it is sending: the type follows the name it is
+    // stored under. No long cache: this path is overwritten on a re-run.
+    const { error } = await admin.storage.from('patient-photos').upload(path, file.bytes, { contentType: png ? 'image/png' : 'image/jpeg', upsert: true })
     if (error) throw createError({ statusCode: 500, statusMessage: error.message })
     return { storagePath: path, size: file.bytes.length, contentType }
   }

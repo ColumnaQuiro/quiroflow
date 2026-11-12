@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
+import { IMMUTABLE_CACHE_SECONDS } from '~/utils/storageCache'
 import { formatEur } from '~/utils/billing'
 import { CLINIC_BRAND_PRESETS, clinicBrandDeclarations, clinicBrandPalette, normalizeBrandColor } from '~/utils/clinicBrandPalette'
 
@@ -89,7 +90,7 @@ async function onFileChosen(event: Event) {
   // The app, the lock screen and the wallet pass all draw this small.
   const file = await shrinkImageForUpload(original, 'logo')
   const path = `${store.accountId}/brand/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-  const { error } = await supabase.storage.from('clinic-logos').upload(path, file)
+  const { error } = await supabase.storage.from('clinic-logos').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
   uploading.value = false
   if (error) {
     showToast(error.message, 'error')

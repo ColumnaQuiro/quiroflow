@@ -1,5 +1,6 @@
 import type { PDFDocument } from 'pdf-lib'
 import { flattenPdfAnnotations, type PdfLib } from './flattenPdfAnnotations'
+import { PATIENT_IMAGE_MAX_EDGE, PATIENT_THUMB_MAX_EDGE, fitLongEdge } from '../../utils/patientFileStorage'
 
 // Both libraries are loaded when a file is actually compressed, not when the
 // server starts. sharp is ~800 ms and 19 MB of native code, and server/utils
@@ -23,9 +24,23 @@ const JPEG_QUALITY = 90
 // is a real (if small) risk if something ever goes wrong mid-write.
 const MIN_SIZE_BYTES = 300_000
 
+// The grid draws a thumbnail at ~200 px; 75 is plenty there and keeps one at
+// 20-40 KB against the 1.3 MB photo the grid used to download per card.
+const THUMB_QUALITY = 75
+
 interface CompressResult {
   buffer: Buffer
   changed: boolean
+}
+
+export interface CompressOptions {
+  /**
+   * The backfill over files that were already compressed once: touch a photo
+   * only when it is larger than PATIENT_IMAGE_MAX_EDGE, and nothing else. A
+   * photo already at size is returned untouched, so running it twice (or
+   * resuming a stopped run) never re-encodes the same pixels again.
+   */
+  resizeOnly?: boolean
 }
 
 // A standalone image is re-encoded in its own format, never converted:
@@ -38,17 +53,68 @@ interface CompressResult {
 // came back sideways, over the original. Only for standalone images: inside a
 // PDF the tag means nothing (the page draws the raw pixels), and applying it
 // there would be the rotation.
-async function compressImageBuffer(buffer: Buffer, mimeType: string): Promise<CompressResult> {
+//
+// A photo (JPEG, WebP) larger than PATIENT_IMAGE_MAX_EDGE on its long edge is
+// scaled down to it; never enlarged. A PNG is not: here it is a signature, a
+// screenshot or a chart far more often than a photo, and scaling one blurs
+// its text for little gain. resize() runs after the orientation is applied,
+// and an 'inside' fit in a square box is the same whichever way up it is.
+async function compressImageBuffer(buffer: Buffer, mimeType: string, options: CompressOptions): Promise<CompressResult> {
   const sharp = await loadSharp()
-  const image = sharp(buffer).rotate()
+  if (mimeType === 'image/png') {
+    if (options.resizeOnly) return { buffer, changed: false }
+    // Lossless: the same pixels, alpha included, packed tighter.
+    const out = await sharp(buffer).rotate().png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
+    return out.length < buffer.length ? { buffer: out, changed: true } : { buffer, changed: false }
+  }
+
+  const meta = await sharp(buffer).metadata()
+  const needsResize = fitLongEdge(meta.width ?? 0, meta.height ?? 0, PATIENT_IMAGE_MAX_EDGE).resized
+  if (options.resizeOnly && !needsResize) return { buffer, changed: false }
+
+  let image = sharp(buffer).rotate()
+  if (needsResize) image = image.resize({ width: PATIENT_IMAGE_MAX_EDGE, height: PATIENT_IMAGE_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
   const out =
     mimeType === 'image/jpeg'
       ? await image.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer()
-      : mimeType === 'image/png'
-        ? // Lossless: the same pixels, alpha included, packed tighter.
-          await image.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
-        : await image.webp({ quality: JPEG_QUALITY, alphaQuality: 100 }).toBuffer()
+      : await image.webp({ quality: JPEG_QUALITY, alphaQuality: 100 }).toBuffer()
   return out.length < buffer.length ? { buffer: out, changed: true } : { buffer, changed: false }
+}
+
+// What sharp is asked to make a thumbnail of. Not SVG (rendering an uploaded
+// SVG on the server is a risk for no gain) and not PDF or video: those get
+// the file tile in the grid, with no new dependency to draw a page.
+const THUMBNAIL_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
+
+export interface ThumbnailResult {
+  /** The JPEG to store, or null when there is nothing worth storing. */
+  thumb: Buffer | null
+  /** False when sharp could not read the image at all (HEIC: the prebuilt
+   *  libvips has no HEVC decoder), as opposed to "read it, no thumbnail needed". */
+  decoded: boolean
+}
+
+/**
+ * A small JPEG of an image for the Files grid. Null for anything that is not
+ * an image sharp can read, and for an image so small that the thumbnail would
+ * not be smaller than the file itself -- the grid then uses the file, as it
+ * always did. Never throws.
+ */
+export async function makePatientFileThumbnail(buffer: Buffer, mimeType: string | null): Promise<ThumbnailResult> {
+  if (!mimeType || !THUMBNAIL_TYPES.has(mimeType)) return { thumb: null, decoded: false }
+  try {
+    const sharp = await loadSharp()
+    const out = await sharp(buffer)
+      .rotate()
+      .resize({ width: PATIENT_THUMB_MAX_EDGE, height: PATIENT_THUMB_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
+      // JPEG has no alpha; without this a transparent PNG's clear areas go black.
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
+      .toBuffer()
+    return { thumb: out.length < buffer.length ? out : null, decoded: true }
+  } catch {
+    return { thumb: null, decoded: false }
+  }
 }
 
 // How many colour components a PDF image's /ColorSpace declares, when it is
@@ -145,11 +211,11 @@ async function processPdfBuffer(buffer: Buffer): Promise<CompressResult> {
 // that didn't actually come out smaller. Never throws for an
 // unrecognized/unprocessable file; callers should treat that the same as
 // "nothing to do here".
-export async function compressPatientFile(buffer: Buffer, mimeType: string | null): Promise<CompressResult> {
+export async function compressPatientFile(buffer: Buffer, mimeType: string | null, options: CompressOptions = {}): Promise<CompressResult> {
   try {
-    if (mimeType === 'application/pdf') return await processPdfBuffer(buffer)
+    if (mimeType === 'application/pdf') return options.resizeOnly ? { buffer, changed: false } : await processPdfBuffer(buffer)
     if (buffer.length < MIN_SIZE_BYTES) return { buffer, changed: false }
-    if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp') return await compressImageBuffer(buffer, mimeType)
+    if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp') return await compressImageBuffer(buffer, mimeType, options)
   } catch {
     // Same reasoning as above: a file this couldn't process is left
     // exactly as it was, not treated as an error.

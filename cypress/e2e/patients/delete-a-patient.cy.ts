@@ -85,4 +85,31 @@ describe('Deleting a patient', () => {
       })
     })
   })
+
+  // The rows cascade; Storage objects do not. Until 12 Nov 2026 the delete
+  // ran from the browser and every deleted patient left their files in the
+  // bucket with nothing pointing at them. It goes through the server now,
+  // which reads the paths before the delete and removes the objects after.
+  it('takes the patient\'s stored files with it', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Olvidada' }).then((patient) => {
+        cy.task<{ id: string; path: string }>('db:storePatientFile', { accountId: account.accountId, patientId: patient.id, fileName: 'resonancia.pdf' }).then((file) => {
+          cy.task('db:patientFileStored', { path: file.path }).should('eq', true)
+
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${patient.id}`)
+          cy.get('button[aria-label="More actions"]').click()
+          cy.contains('button', 'Delete patient').click()
+          cy.get('input[type="text"]').last().type('Olga Olvidada')
+          cy.intercept('DELETE', `/api/patients/${patient.id}`).as('deletePatient')
+          cy.contains('button', 'Delete permanently').should('not.be.disabled').click()
+
+          cy.wait('@deletePatient').its('response.body').should('deep.include', { deleted: true })
+          cy.location('pathname', { timeout: 15000 }).should('eq', '/patients')
+          cy.task('db:patientByName', { accountId: account.accountId, firstName: 'Olga', lastName: 'Olvidada' }).should('eq', null)
+          cy.task('db:patientFileStored', { path: file.path }).should('eq', false)
+        })
+      })
+    })
+  })
 })

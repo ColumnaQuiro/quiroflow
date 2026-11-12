@@ -13,6 +13,11 @@ import { normalizeSearchTerm } from '~/utils/searchText'
 // Under each link, "Acceso en la app" (FamilyAppAccess.vue): whether one of
 // the two manages the other's account from their own login. Separate from the
 // link on purpose -- being someone's sibling gives no access to their record.
+// The one exception is a child under 16: linking them here as an adult's son
+// or daughter gives that parent guardian access at once
+// (20261111191740_family_access_minors_automatic.sql), removable below.
+// Removing the link removes any access between the two with it, since the
+// access is only shown, and only taken away, under the link.
 
 interface Person { id: string; first_name: string; last_name: string | null; gender: string | null; date_of_birth: string | null; is_minor?: boolean | null; user_id?: string | null }
 interface ManagerLink { id: string; manager_patient_id: string; patient_id: string; basis: 'guardian' | 'consent'; access: 'full' | 'admin'; note: string | null }
@@ -102,11 +107,21 @@ watch(search, (value) => {
     const taken = new Set([props.patient.id, ...links.value.map((l) => l.related_patient_id)])
     const { data } = await supabase
       .from('patients')
-      .select('id, first_name, last_name, gender, date_of_birth')
+      .select('id, first_name, last_name, gender, date_of_birth, is_minor')
       .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
       .limit(10)
     results.value = ((data as Person[] | null) ?? []).filter((p) => !taken.has(p.id)).slice(0, 8)
   }, 250)
+})
+// Said before saving, so the desk knows what linking a child gives the parent.
+const autoGuardian = computed(() => {
+  if (!picked.value || (relation.value !== 'child' && relation.value !== 'parent')) return null
+  const [parent, child] = relation.value === 'child' ? [self.value, picked.value] : [picked.value, self.value]
+  const childAge = patientAge(child.date_of_birth)
+  const parentAge = patientAge(parent.date_of_birth)
+  if (!(childAge !== null ? childAge < 16 : Boolean(child.is_minor))) return null
+  if (parent.is_minor || (parentAge !== null && parentAge < 18)) return null
+  return { parent, child }
 })
 function closeAdd() {
   adding.value = false
@@ -133,6 +148,16 @@ async function add() {
   await load()
 }
 async function remove(link: Link) {
+  const other = link.related_patient_id
+  const { error: accessError } = await supabase
+    .from('patient_managers')
+    .delete()
+    .or(`and(manager_patient_id.eq.${props.patient.id},patient_id.eq.${other}),and(manager_patient_id.eq.${other},patient_id.eq.${props.patient.id})`)
+  if (accessError) {
+    showToast(t('The family link could not be removed.', 'No se ha podido quitar el familiar.'), 'error')
+    return
+  }
+  managerLinks.value = managerLinks.value.filter((m) => !(m.manager_patient_id === other || m.patient_id === other))
   const { error } = await supabase
     .from('patient_relations')
     .delete()
@@ -219,6 +244,12 @@ async function remove(link: Link) {
           <option v-for="r in FAMILY_RELATIONS" :key="r" :value="r">{{ relationLabel(r, picked?.gender, t) }}</option>
         </select>
       </label>
+      <p v-if="autoGuardian" class="text-[12px] text-ink-muted" data-cy="family-auto-guardian-hint">
+        {{ t(
+          `${autoGuardian.parent.first_name} will manage ${autoGuardian.child.first_name}'s app as their guardian, with full access. You can remove it once saved.`,
+          `${autoGuardian.parent.first_name} gestionará la app de ${autoGuardian.child.first_name} como tutor/a, con acceso completo. Puedes quitarlo después de guardar.`,
+        ) }}
+      </p>
       <div class="flex justify-end gap-2">
         <UiBtn variant="secondary" size="sm" @click="closeAdd">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         <UiBtn variant="primary" size="sm" :disabled="!picked || saving" data-cy="family-save" @click="add">{{ saving ? t('Saving…', 'Guardando…') : t('Add', 'Añadir') }}</UiBtn>

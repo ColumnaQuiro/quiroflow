@@ -17,7 +17,7 @@ describe('A team note on an appointment type', () => {
         cy.visit(`/settings/appointment-types/${type.id}`)
         cy.get('[data-cy=type-staff-note]', { timeout: 15000 }).type(NOTE)
         cy.contains('button', 'Save').click()
-        cy.contains('Saved').should('be.visible')
+        cy.contains(/^Saved$/).should('be.visible')
 
         seedVisit(account, null, 'Nota', 'Tipo', 10, 0, { appointmentTypeId: type.id }).then(({ patientId }) => {
           // The patient of that visit can read the type, but not its note.

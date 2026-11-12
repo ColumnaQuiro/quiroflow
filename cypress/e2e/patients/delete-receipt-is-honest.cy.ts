@@ -17,19 +17,13 @@ describe('Deleting a receipt', () => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Recibo', lastName: 'Pagado' }).then((patient: any) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, invoiceNumber: 'INV-DEL-1', totalCents: 5000, status: 'paid' }).then((inv: any) => {
           cy.task('db:createPayment', { accountId: account.accountId, invoiceId: inv.id, amountCents: 5000, method: 'cash' }).then((payment: any) => {
-            const confirms: string[] = []
-            cy.on('window:confirm', (text) => {
-              confirms.push(text)
-              return true
-            })
-
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
             openReceiptRow('INV-DEL-1')
             cy.contains('a', 'Open receipt').parent().find('button[aria-label="Delete receipt"]').click()
 
             cy.contains('has payments recorded against it').should('be.visible')
-            cy.wrap(confirms).should('have.length', 0)
+            cy.get('[data-cy=confirm-dialog]').should('not.exist')
             cy.task('db:invoiceById', { invoiceId: inv.id }).should('not.eq', null)
             cy.task('db:paymentById', { paymentId: payment.id }).then((row: any) => {
               expect(row.invoice_id, 'still settling its receipt').to.eq(inv.id)
@@ -44,21 +38,17 @@ describe('Deleting a receipt', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Recibo', lastName: 'Erroneo' }).then((patient: any) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, invoiceNumber: 'INV-DEL-2', totalCents: 5000, status: 'unpaid' }).then((inv: any) => {
-          const confirms: string[] = []
-          cy.on('window:confirm', (text) => {
-            confirms.push(text)
-            return true
-          })
-
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
           openReceiptRow('INV-DEL-2')
           cy.contains('a', 'Open receipt').parent().find('button[aria-label="Delete receipt"]').click()
 
+          cy.get('[data-cy=confirm-dialog]').should('contain.text', 'INV-DEL-2').and('contain.text', 'It has no payments').and('not.contain.text', 'removes any payments')
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
+
           cy.contains('tr', 'INV-DEL-2').should('not.exist')
+          cy.get('[data-cy=confirm-dialog]').should('not.exist')
           cy.task('db:invoiceById', { invoiceId: inv.id }).should('eq', null)
-          cy.wrap(confirms).should('have.length', 1)
-          cy.wrap(confirms).its(0).should('not.contain', 'removes any payments')
         })
       })
     })

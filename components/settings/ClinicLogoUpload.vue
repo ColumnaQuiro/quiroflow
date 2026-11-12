@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
+import { IMMUTABLE_CACHE_SECONDS } from '~/utils/storageCache'
 
 // Same upload-to-public-bucket pattern as PatientsPhotoUpload, minus the
 // QR/phone flow (irrelevant here -- staff upload a clinic logo from the
@@ -31,7 +32,7 @@ async function uploadFile(original: File) {
   // size they draw it, not the size it was exported at.
   const file = await shrinkImageForUpload(original, 'logo')
   const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-  const { error: uploadError } = await supabase.storage.from('clinic-logos').upload(path, file)
+  const { error: uploadError } = await supabase.storage.from('clinic-logos').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
   if (uploadError) {
     error.value = uploadError.message
     uploading.value = false

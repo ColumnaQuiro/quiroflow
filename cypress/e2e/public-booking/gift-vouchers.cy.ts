@@ -50,7 +50,10 @@ describe('Gift vouchers', () => {
     cy.get('[data-cy=gift-enabled]').check()
     cy.get('input[aria-label="Amount in euros"]').type('75{enter}')
     cy.get('[data-cy=gift-settings-save]').click()
-    cy.contains('Saved').should('be.visible')
+    // Exactly "Saved": the toast. A bare contains('Saved') found the menu's
+    // "Saved Replies" link first, and passed or failed on whether that link
+    // happened to be scrolled into view.
+    cy.contains(/^Saved$/).should('be.visible')
     cy.task<{ enabled: boolean; amounts_cents: number[] }[]>('db:selectRows', { table: 'gift_voucher_settings', columns: 'enabled, amounts_cents', match: { account_id: account.accountId } })
       .its('0').should('deep.equal', { enabled: true, amounts_cents: [3000, 5000, 7500, 10000] })
 

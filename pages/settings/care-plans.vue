@@ -111,7 +111,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Care plans', 'Planes de tratamiento')" />
+    <PageHeader :title="t('Care plans', 'Planes de cuidados')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />

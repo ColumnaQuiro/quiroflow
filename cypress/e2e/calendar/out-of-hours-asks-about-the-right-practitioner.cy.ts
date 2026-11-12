@@ -96,37 +96,27 @@ function enterRescheduleMode() {
 describe('The out-of-hours question on a move', () => {
   it('is asked when the appointment’s own practitioner is off, though a colleague works then', () => {
     seedMove(everyDayButToday()).then((account: any) => {
-      const asked: string[] = []
-      // Declined, so the appointment should stay exactly where it was -- the
-      // dialog firing and the move being abandoned are one assertion.
-      cy.on('window:confirm', (text) => {
-        asked.push(text)
-        return false
-      })
-
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       enterRescheduleMode()
 
       cy.get('[data-cal-col]').first().click(30, 60)
 
-      cy.wrap(asked).should('have.length', 1)
-      cy.wrap(asked).its(0).should('contain', 'outside working hours')
+      // Asked in the app's own dialog, and declined: the appointment should
+      // stay exactly where it was.
+      cy.get('[data-cy=confirm-dialog]').should('contain.text', 'outside working hours')
+      cy.get('[data-cy=confirm-dialog-cancel]').click()
+      cy.get('[data-cy=confirm-dialog]').should('not.exist')
       // Declining leaves reschedule mode running and the visit untouched: no
       // confirmation dialog, still at its original time.
       cy.contains('h2', 'Reschedule appointment').should('not.exist')
+      cy.contains('Rescheduling').should('be.visible')
       cy.contains('Lauren Movida').should('be.visible')
     })
   })
 
   it('is not asked when that practitioner works the time being picked', () => {
     seedMove(everyDay()).then((account: any) => {
-      const asked: string[] = []
-      cy.on('window:confirm', (text) => {
-        asked.push(text)
-        return true
-      })
-
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       enterRescheduleMode()
@@ -135,7 +125,7 @@ describe('The out-of-hours question on a move', () => {
 
       // Straight to the move's own confirmation, nothing in the way.
       cy.contains('h2', 'Reschedule appointment').should('be.visible')
-      cy.wrap(asked).should('have.length', 0)
+      cy.get('[data-cy=confirm-dialog]').should('not.exist')
     })
   })
 })

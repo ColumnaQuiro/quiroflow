@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import QRCode from 'qrcode'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { shrinkImageForUpload } from '~/utils/imageShrink'
+import { IMMUTABLE_CACHE_SECONDS } from '~/utils/storageCache'
 
 const props = defineProps<{ patientId: string; photoStoragePath: string | null; initials: string }>()
 const emit = defineEmits<{ uploaded: [] }>()
@@ -31,7 +33,7 @@ function pickFromComputer() {
   fileInput.value?.click()
 }
 
-async function uploadFile(file: File) {
+async function uploadFile(original: File) {
   uploading.value = true
   error.value = ''
   // Snapshotted once, up front: reading props.patientId again after the
@@ -39,14 +41,30 @@ async function uploadFile(file: File) {
   // photo onto whichever patient this component instance happens to be
   // showing by the time the upload resolves, not whoever it was picked for.
   const patientId = props.patientId
+  const previous = props.photoStoragePath
+  // Drawn as a small circle everywhere; stored as picked, it was whatever
+  // the camera took. Same shrink a team photo gets.
+  const file = await shrinkImageForUpload(original, 'photo')
   const path = `${useAccountStore().accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-  const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file)
+  // The name carries the time, so this URL never serves different bytes: a
+  // year in the browser and CDN cache instead of the default hour.
+  const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
   if (uploadError) {
     error.value = `${t('The photo was not uploaded.', 'No se ha subido la foto.')} (${uploadError.message})`
     uploading.value = false
     return
   }
-  await supabase.from('patients').update({ photo_storage_path: path }).eq('id', patientId)
+  const { data: saved, error: saveError } = await supabase.from('patients').update({ photo_storage_path: path }).eq('id', patientId).select('id')
+  if (saveError || !saved?.length) {
+    // Nothing points at the new file, so it must not stay behind.
+    await supabase.storage.from('patient-photos').remove([path])
+    error.value = `${t('The photo was not uploaded.', 'No se ha subido la foto.')}${saveError ? ` (${saveError.message})` : ''}`
+    uploading.value = false
+    return
+  }
+  // Each replacement used to leave the photo before it in the bucket for
+  // good. Only once the new one is saved, and never the file just written.
+  if (previous && previous !== path) await supabase.storage.from('patient-photos').remove([previous])
   uploading.value = false
   emit('uploaded')
 }

@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { patientFileThumbPath } from '~/utils/patientFileStorage'
 
 // Ajustes › Privacidad: anonymise records past their retention period
 // (20261017182107_record_retention.sql). The database does the deciding and
@@ -26,7 +27,9 @@ export default defineEventHandler(async (event) => {
     done.push(id)
     const result = (data ?? {}) as { files?: string[]; photo?: string | null }
     try {
-      if (result.files?.length) await service.storage.from('patient-files').remove(result.files)
+      // Each file's thumbnail sits beside it at a path derived from its own;
+      // the rows are gone by now, so derived is the only way to know it.
+      if (result.files?.length) await service.storage.from('patient-files').remove([...result.files, ...result.files.map(patientFileThumbPath)])
       if (result.photo) await service.storage.from('patient-photos').remove([result.photo])
     } catch (e) {
       // The record is already anonymised; a file left in storage is unreachable

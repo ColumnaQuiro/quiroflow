@@ -522,8 +522,10 @@ export function useQuirocitasImport() {
             // PostgREST's upsert cannot target: look first, then write.
             const row = { file_name: f.fileName, file_type: res.contentType ?? null, size_bytes: res.size ?? null, storage_path: res.storagePath, is_xray: f.isXray }
             const { data: here } = await supabase.from('patient_files').select('id').eq('account_id', store.accountId!).eq('external_reference', f.ref).maybeSingle()
+            // A re-run has just written the original over the compressed copy,
+            // so the row must stop saying it was compressed and resized.
             const { data, error } = here
-              ? await supabase.from('patient_files').update(row).eq('id', here.id).select('id').single()
+              ? await supabase.from('patient_files').update({ ...row, compressed_at: null, resized_at: null }).eq('id', here.id).select('id').single()
               : await supabase.from('patient_files').insert({ ...row, account_id: store.accountId!, patient_id: patients.get(f.patientRef)!, external_reference: f.ref }).select('id').single()
             if (error) throw error
             written++

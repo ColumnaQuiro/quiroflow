@@ -2,6 +2,7 @@
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { editableFileName, renamedFileName } from '~/utils/renameFile'
+import { patientFileObjectPaths } from '~/utils/patientFileStorage'
 import { MIN_DOCUMENT_PASSWORD_LENGTH, captionRevealsPassword, defaultProtectedCaption, documentPassword, isSpanishId } from '~/utils/protectedDocument'
 
 const props = defineProps<{ patientId: string }>()
@@ -66,12 +67,17 @@ async function load() {
   files.value = (data as unknown as PatientFile[]) ?? []
   loading.value = false
 
-  // PDFs get a signed URL too, not just images. A scanned report or an MRI
-  // write-up is the common case here and a diagonal-stripe placeholder with
-  // "PDF" on it tells the practitioner nothing -- they end up opening every
-  // one to find the right document. The browser's own PDF viewer renders
-  // the first page in the card below, so this needs no rendering library.
-  const previewable = files.value.filter((f) => f.storage_path && (f.file_type?.startsWith('image/') || isPdf(f)))
+  // The grid shows each image's THUMBNAIL (thumb_path, a ~480 px JPEG made
+  // when the file was compressed), not the file: the cards are ~200 px wide
+  // and used to download a 1.3 MB photo each. An image with no thumbnail yet
+  // (not processed, or one the server could not read) falls back to its own
+  // file, as before. The file itself is fetched when the card is opened.
+  //
+  // PDFs get no preview at all now. Each card used to load its whole PDF --
+  // 2.1 MB on average, up to 25 -- into an iframe to draw page one, so a
+  // patient with forty scans downloaded all forty to see a list.
+  const previewPath = (f: PatientFile) => f.thumb_path || f.storage_path!
+  const previewable = files.value.filter((f) => f.storage_path && isImage(f))
   // One signing request for the lot rather than one per file: a patient with
   // forty scans was forty round trips before a single thumbnail appeared.
   // Matched back by path, since the response is per path, not per row.
@@ -79,10 +85,10 @@ async function load() {
   if (previewable.length > 0) {
     const { data: signed } = await supabase.storage
       .from('patient-files')
-      .createSignedUrls([...new Set(previewable.map((f) => f.storage_path!))], 60 * 10)
+      .createSignedUrls([...new Set(previewable.map(previewPath))], 60 * 10)
     const byPath: Record<string, string> = {}
     for (const s of signed ?? []) if (s.path && s.signedUrl && !s.error) byPath[s.path] = s.signedUrl
-    for (const f of previewable) if (byPath[f.storage_path!]) urls[f.id] = byPath[f.storage_path!]
+    for (const f of previewable) if (byPath[previewPath(f)]) urls[f.id] = byPath[previewPath(f)]
   }
   thumbUrls.value = urls
 }
@@ -302,7 +308,9 @@ async function confirmRemove() {
     error.value = deleteError ? `${t('The file was not deleted.', 'No se ha eliminado el archivo.')} (${deleteError.message})` : t('This file was not deleted: your role cannot delete it.', 'No se ha eliminado el archivo: tu rol no puede eliminarlo.')
     return
   }
-  if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
+  // Its thumbnail goes with it; a path with nothing behind it is ignored.
+  const objects = patientFileObjectPaths(file)
+  if (objects.length) await supabase.storage.from('patient-files').remove(objects)
   files.value = files.value.filter((f) => f.id !== file.id)
 }
 </script>
@@ -343,39 +351,28 @@ async function confirmRemove() {
       @drop.prevent="onDrop"
     >
       <div v-for="file in files" :key="file.id" class="group overflow-hidden rounded-ctl border border-line-divider bg-surface">
-        <div
-          class="relative flex h-[104px] w-full items-center justify-center overflow-hidden bg-surface-subtle"
+        <!-- The tile opens the file. A photo shows its thumbnail; anything
+             else (a PDF, a video, a name-only import) is the striped file
+             tile with its kind on it. A div when there is nothing to open. -->
+        <component
+          :is="file.storage_path ? 'button' : 'div'"
+          :type="file.storage_path ? 'button' : undefined"
+          class="relative flex h-[104px] w-full items-center justify-center overflow-hidden bg-surface-subtle outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+          :class="file.storage_path ? 'cursor-pointer' : ''"
+          :aria-label="file.storage_path ? t(`Open ${file.file_name}`, `Abrir ${file.file_name}`) : undefined"
+          data-cy="file-tile"
           :style="
-            thumbUrls[file.id] && isImage(file)
+            thumbUrls[file.id]
               ? { backgroundImage: `url(${thumbUrls[file.id]})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-              : thumbUrls[file.id] && isPdf(file)
-                ? {}
-                : { backgroundImage: 'repeating-linear-gradient(135deg, #F4F5F8 0px, #F4F5F8 6px, #EDEEF2 6px, #EDEEF2 12px)' }
+              : { backgroundImage: 'repeating-linear-gradient(135deg, #F4F5F8 0px, #F4F5F8 6px, #EDEEF2 6px, #EDEEF2 12px)' }
           "
+          @click="file.storage_path && view(file)"
         >
-          <!-- The browser's built-in viewer renders page one. pointer-events
-          are off so the whole tile stays a plain card -- the iframe must not
-          swallow clicks or scroll -- and the chrome is hidden so it reads as
-          a thumbnail rather than an embedded reader. -->
-          <iframe
-            v-if="thumbUrls[file.id] && isPdf(file)"
-            :src="`${thumbUrls[file.id]}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`"
-            class="pointer-events-none absolute inset-0 h-full w-full border-0"
-            loading="lazy"
-            tabindex="-1"
-            aria-hidden="true"
-          ></iframe>
           <span
             v-if="!thumbUrls[file.id]"
             class="rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted2"
           >
             {{ kindLabel(file) }}
-          </span>
-          <span
-            v-else-if="isPdf(file)"
-            class="absolute bottom-1.5 left-1.5 rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted2"
-          >
-            PDF
           </span>
           <span
             v-if="!file.storage_path"
@@ -384,7 +381,7 @@ async function confirmRemove() {
           >
             {{ t('Name only', 'Solo el nombre') }}
           </span>
-        </div>
+        </component>
         <div class="p-2.5">
           <input
             v-if="renamingId === file.id"

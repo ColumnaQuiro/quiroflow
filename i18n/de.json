@@ -8563,6 +8563,7 @@
   "Only at {0}": "Nur an {0}",
   "Only {0}'s figures": "Nur die Zahlen von {0}",
   "Open on {0}": "Geöffnet am {0|Monday=Montag|Tuesday=Dienstag|Wednesday=Mittwoch|Thursday=Donnerstag|Friday=Freitag|Saturday=Samstag|Sunday=Sonntag}",
+  "Open {0}": "{0} öffnen",
   "Opened {0}": "Geöffnet {0}",
   "Other free times for {0} with {1}": "Weitere freie Zeiten für {0|this appointment=diesen Termin} mit {1}",
   "Overdue: {0}+ weeks": "Überfällig: {0}+ Wochen",

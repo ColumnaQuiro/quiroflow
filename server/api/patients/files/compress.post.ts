@@ -7,6 +7,11 @@
 // a service role -- the "patient-files" bucket's own storage policy already
 // lets any account member read/write within their account's folder, so
 // there's no need for elevated access here.
+//
+// "Compress" is now three things, all in processStoredPatientFile: the
+// re-encode, a 2000 px cap on a photo's long edge, and the small thumbnail
+// the Files grid shows instead of the whole file. Every way a file arrives
+// calls this -- the web and mobile uploads, Import > Files, Quirocitas.
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireActiveAccount(event)
   const body = await readBody<{ fileId: string }>(event)
@@ -14,27 +19,20 @@ export default defineEventHandler(async (event) => {
 
   const { data: file } = await supabase
     .from('patient_files')
-    .select('id, storage_path, file_type, size_bytes, compressed_at')
+    .select('id, storage_path, file_type, size_bytes, compressed_at, thumb_path')
     .eq('id', body.fileId)
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
   if (!file || !file.storage_path) throw createError({ statusCode: 404, statusMessage: 'File not found' })
   if (file.compressed_at) return { compressed: false, reason: 'already compressed' }
 
-  const { data: downloaded, error: downloadError } = await supabase.storage.from('patient-files').download(file.storage_path)
-  if (downloadError || !downloaded) throw createError({ statusCode: 502, statusMessage: 'Could not download file to compress' })
-
-  const originalBuffer = Buffer.from(await downloaded.arrayBuffer())
-  const { buffer: outputBuffer, changed } = await compressPatientFile(originalBuffer, file.file_type)
-
-  if (changed) {
-    const { error: uploadError } = await supabase.storage
-      .from('patient-files')
-      .upload(file.storage_path, outputBuffer, { contentType: file.file_type ?? undefined, upsert: true })
-    if (uploadError) throw createError({ statusCode: 502, statusMessage: 'Could not save the compressed file' })
+  let outcome
+  try {
+    outcome = await processStoredPatientFile(supabase, { ...file, storage_path: file.storage_path }, { write: true })
+  } catch (e: any) {
+    const what = e?.message === 'download failed' ? 'Could not download file to compress' : 'Could not save the compressed file'
+    throw createError({ statusCode: 502, statusMessage: what })
   }
 
-  await supabase.from('patient_files').update({ compressed_at: new Date().toISOString(), ...(changed ? { size_bytes: outputBuffer.length } : {}) }).eq('id', file.id)
-
-  return { compressed: changed, originalSize: originalBuffer.length, newSize: changed ? outputBuffer.length : originalBuffer.length }
+  return { compressed: outcome.compressed, thumbnail: outcome.thumbnail, originalSize: outcome.originalSize, newSize: outcome.newSize }
 })

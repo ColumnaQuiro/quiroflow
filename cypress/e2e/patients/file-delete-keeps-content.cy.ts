@@ -38,6 +38,8 @@ describe('Deleting a patient file', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${p.id}?tab=attachments`)
           cy.contains('informe.pdf').should('be.visible')
+          // A PDF is a file tile now, not its whole content in an iframe per card.
+          cy.get('[data-cy="file-tile"]').should('contain', 'PDF').find('iframe').should('not.exist')
           cy.get('[data-cy="file-delete"]').click()
           cy.get('[data-cy="confirm-dialog"]').contains('button', 'Delete file').click()
           cy.contains('informe.pdf').should('not.exist')

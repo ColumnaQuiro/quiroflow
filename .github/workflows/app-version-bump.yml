@@ -18,6 +18,8 @@ name: App version bump
 # approval but is not on sale until someone presses Release; for that, run
 # this by hand with `force`.
 on:
+  push:
+    branches: [feat/auto-app-version-bump]
   schedule:
     # Hourly. The lookup lags the release by a few minutes to an hour, and
     # the job takes seconds.
@@ -65,7 +67,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref }}
           # A pull request opened with the workflow's own GITHUB_TOKEN starts
           # no workflows, so CI would never run on it. A token of a person's
           # (fine-grained: this repository, Contents + Pull requests
@@ -85,14 +87,14 @@ jobs:
         id: decide
         env:
           NEEDED: ${{ steps.check.outputs.needed }}
-          FORCE: ${{ inputs.force }}
+          FORCE: ${{ inputs.force || github.event_name == 'push' }}
           NEXT: ${{ steps.check.outputs.next }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$NEEDED" != "true" ] && [ "$FORCE" != "true" ]; then
             echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          branch="chore/app-$NEXT"
+          branch="test/app-$NEXT"
           # Opened already, by an earlier run or by hand: the next hourly run
           # must not open a second one.
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
@@ -127,7 +129,7 @@ jobs:
           LIVE: ${{ steps.check.outputs.live }}
           NEXT: ${{ steps.check.outputs.next }}
           CODE: ${{ steps.play.outputs.code }}
-          FORCE: ${{ inputs.force }}
+          FORCE: ${{ inputs.force || github.event_name == 'push' }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -150,7 +152,7 @@ jobs:
           if [ "$HAS_TOKEN" != "true" ]; then
             ci=$'\n\n**CI has not run on this PR.** It was opened with the workflow\'s own token, which starts no workflows. Close and reopen it to run CI, or add an `APP_VERSION_BUMP_TOKEN` repository secret so the next one starts by itself.'
           fi
-          gh pr create --base main --head "$BRANCH" --title "App $NEXT: $CURRENT is approved" --body "$why
+          gh pr create --draft --base main --head "$BRANCH" --title "TEST, do not merge: App $NEXT: $CURRENT is approved" --body "$why
 
           - iOS \`MARKETING_VERSION\` $CURRENT -> $NEXT (every target and configuration)
           - $android

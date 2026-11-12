@@ -155,7 +155,7 @@ const grid = 'grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 sm:grid-co
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Services & Products', 'Servicios y productos')">
+    <PageHeader :title="t('Services', 'Servicios')">
       <UiBtn variant="primary" data-cy="service-add" @click="nameInput?.focus()">{{ t('New service', 'Nuevo servicio') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">

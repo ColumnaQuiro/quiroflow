@@ -407,7 +407,13 @@ async function applyCreditToInvoice() {
   })
   if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
 
-  await settleInvoiceIfCovered(supabase, invoice.id)
+  // It throws when its write is refused, which left this form stuck on
+  // "applying" with the ledger never reloaded.
+  try {
+    await settleInvoiceIfCovered(supabase, invoice.id)
+  } catch (err: any) {
+    showToast(t('The payment was recorded, but the receipt could not be marked as paid.', 'El pago se ha registrado, pero no se ha podido marcar el recibo como pagado.') + (err?.message ? ` (${err.message})` : ''), 'error', 10000)
+  }
 
   applyCreditInvoiceId.value = ''
   applyCreditAmount.value = ''
@@ -535,6 +541,32 @@ const showCardModal = ref(false)
 const copyingCardLink = ref(false)
 const removingCard = ref(false)
 const { showToast } = useToast()
+
+// One question at a time, asked in UiConfirmDialog rather than confirm():
+// the browser's box has its own language, no dark mode and no room for the
+// consequence. `run` is everything the action did once confirm() said yes;
+// the dialog stays up, busy, until it finishes, so it cannot be fired twice.
+interface PendingAsk {
+  title: string
+  body: string[]
+  confirmLabel: string
+  tone: 'danger' | 'neutral'
+  run: () => Promise<void>
+}
+const pendingAsk = ref<PendingAsk | null>(null)
+const askBusy = ref(false)
+async function answerAsk() {
+  const ask = pendingAsk.value
+  if (!ask || askBusy.value) return
+  askBusy.value = true
+  try {
+    await ask.run()
+  } finally {
+    askBusy.value = false
+    pendingAsk.value = null
+  }
+}
+
 async function copyCardLink() {
   copyingCardLink.value = true
   try {
@@ -547,8 +579,16 @@ async function copyCardLink() {
     copyingCardLink.value = false
   }
 }
-async function removeCard() {
-  if (!confirm(t('Remove this patient’s saved card? Card charges and autopay can’t run without one.', '¿Eliminar la tarjeta guardada de este paciente? Sin tarjeta no se pueden hacer cobros con tarjeta ni pagos automáticos.'))) return
+function removeCard() {
+  pendingAsk.value = {
+    title: t('Remove this patient’s saved card?', '¿Eliminar la tarjeta guardada de este paciente?'),
+    body: [t('Card charges and autopay can’t run without one.', 'Sin tarjeta no se pueden hacer cobros con tarjeta ni pagos automáticos.')],
+    confirmLabel: t('Remove card', 'Eliminar tarjeta'),
+    tone: 'danger',
+    run: removeCardNow,
+  }
+}
+async function removeCardNow() {
   removingCard.value = true
   try {
     await useStaffFetch('/api/stripe/remove-card', { method: 'POST', body: { patientId: props.patientId } })
@@ -654,7 +694,13 @@ async function recordSalePayment(description: string, amountCents: number, metho
     .single()
   if (!invoice) return paymentRefusedMessage(invoiceError)
 
-  await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
+  const { error: lineError } = await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
+  if (lineError) {
+    // A receipt with no line says "paid" for nothing in particular. Written a
+    // moment ago by this call and with no payment yet, so it comes back out.
+    await supabase.from('invoices').delete().eq('id', invoice.id)
+    return paymentRefusedMessage(lineError)
+  }
 
   const { data: payment, error: paymentError } = await supabase
     .from('payments')
@@ -1017,15 +1063,20 @@ async function deleteInvoice(invoice: InvoiceRow) {
     )
     return
   }
-  if (
-    !confirm(
-      `${t('Delete receipt', 'Eliminar recibo')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t(
+  pendingAsk.value = {
+    title: t(`Delete receipt ${invoice.invoice_number} (${money(invoice.total_cents)})?`, `¿Eliminar el recibo ${invoice.invoice_number} (${money(invoice.total_cents)})?`),
+    body: [
+      t(
         "It has no payments; the charge and its lines are removed from the patient's account. This can't be undone.",
         'No tiene pagos; el cargo y sus líneas se eliminan de la cuenta del paciente. Esta acción no se puede deshacer.',
-      )}`,
-    )
-  )
-    return
+      ),
+    ],
+    confirmLabel: t('Delete receipt', 'Eliminar recibo'),
+    tone: 'danger',
+    run: () => deleteInvoiceNow(invoice),
+  }
+}
+async function deleteInvoiceNow(invoice: InvoiceRow) {
   // Checked, and checked for a row: a policy refuses a delete by matching
   // nothing rather than by erroring.
   const { data: deleted, error } = await supabase.from('invoices').delete().eq('id', invoice.id).select('id')
@@ -1080,21 +1131,27 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
     .eq('payment_id', paymentId)
   const facturaNumbers = (linkedFacturas ?? []).map((f) => f.number).join(', ')
 
-  if (
-    !confirm(
-      `${t('Remove this', 'Eliminar este')} ${money(amountCents)} ${t('payment', 'pago')}${invoice ? ` ${t('from', 'de')} ${invoice.invoice_number}` : ''}? ` +
-        t('The receipt reopens if it is no longer fully paid. This does not refund any money.', 'El recibo se reabrirá si deja de estar pagado. Esto no reembolsa ningún importe.') +
-        (facturaNumbers
-          ? '\n\n' +
+  pendingAsk.value = {
+    title: invoice
+      ? t(`Remove this ${money(amountCents)} payment from ${invoice.invoice_number}?`, `¿Eliminar este pago de ${money(amountCents)} de ${invoice.invoice_number}?`)
+      : t(`Remove this ${money(amountCents)} payment?`, `¿Eliminar este pago de ${money(amountCents)}?`),
+    body: [
+      t('The receipt reopens if it is no longer fully paid. This does not refund any money.', 'El recibo se reabrirá si deja de estar pagado. Esto no reembolsa ningún importe.'),
+      ...(facturaNumbers
+        ? [
             t(
               `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series, flagged as no longer matching a payment; annul it afterwards from Facturas & receipts. If money actually went back to the patient, record a refund instead.`,
               `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal, marcada como sin pago asociado; después puedes anularla desde Facturas y recibos. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
-            )
-          : ''),
-    )
-  )
-    return
-
+            ),
+          ]
+        : []),
+    ],
+    confirmLabel: t('Remove payment', 'Eliminar pago'),
+    tone: 'danger',
+    run: () => deletePaymentNow(paymentId, invoiceId, invoice),
+  }
+}
+async function deletePaymentNow(paymentId: string, invoiceId: string | null, invoice: InvoiceRow | undefined) {
   const { error } = await supabase.from('payments').delete().eq('id', paymentId)
   if (error) {
     showToast(error.message, 'error')
@@ -1107,7 +1164,10 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
     const { data: remaining } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
     const paidCents = (remaining ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
     if (invoice.status !== 'void') {
-      await supabase.from('invoices').update({ status: paidCents >= invoice.total_cents ? 'paid' : 'unpaid' }).eq('id', invoiceId)
+      const { error: statusError } = await supabase.from('invoices').update({ status: paidCents >= invoice.total_cents ? 'paid' : 'unpaid' }).eq('id', invoiceId)
+      if (statusError) {
+        showToast(t('The payment was removed, but the receipt could not be reopened.', 'El pago se ha eliminado, pero no se ha podido reabrir el recibo.') + ` (${statusError.message})`, 'error', 10000)
+      }
     }
   }
 
@@ -1121,9 +1181,27 @@ async function writeOffInvoice(invoiceId: string) {
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
   const openCents = invoice.total_cents - paidCents
   if (openCents <= 0) return
-  if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the receipt without collecting payment.', 'Esto salda el recibo sin cobrar el pago.')}`)) return
-  await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
-  await settleInvoiceIfCovered(supabase, invoiceId)
+  pendingAsk.value = {
+    title: t(`Write off ${money(openCents)} remaining on ${invoice.invoice_number}?`, `¿Condonar ${money(openCents)} restantes de ${invoice.invoice_number}?`),
+    body: [t('This settles the receipt without collecting payment.', 'Esto salda el recibo sin cobrar el pago.')],
+    confirmLabel: t('Write off', 'Condonar'),
+    tone: 'neutral',
+    run: () => writeOffInvoiceNow(invoiceId, openCents),
+  }
+}
+async function writeOffInvoiceNow(invoiceId: string, openCents: number) {
+  const { error } = await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
+  if (error) {
+    showToast(t('This receipt was not written off. Try again.', 'No se ha condonado este recibo. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    return
+  }
+  // settleInvoiceIfCovered throws when its write is refused; uncaught, the
+  // ledger was never reloaded and nothing said why.
+  try {
+    await settleInvoiceIfCovered(supabase, invoiceId)
+  } catch (err: any) {
+    showToast(t('The write-off was recorded, but the receipt could not be marked as paid.', 'La condonación se ha registrado, pero no se ha podido marcar el recibo como pagado.') + (err?.message ? ` (${err.message})` : ''), 'error', 10000)
+  }
   await Promise.all([loadAll(), loadFacturas()])
 }
 
@@ -1201,10 +1279,17 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
   const chargeCorrectionCents = amountCents - onAccountCents
 
   // Its own series, so a refund no longer consumes an invoice number.
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId!, p_prefix: 'REF-' })
-  if (!invoiceNumber) return
+  // Each step below used to give up, or carry on, without a word: the refund
+  // dialog had already closed, so a refused write looked like a refund.
+  const notRecorded = (error: { message?: string } | null) =>
+    showToast(t('The refund was not recorded. Try again.', 'No se ha registrado el reembolso. Inténtalo de nuevo.') + (error?.message ? ` (${error.message})` : ''), 'error', 10000)
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId!, p_prefix: 'REF-' })
+  if (!invoiceNumber) {
+    notRecorded(numberError)
+    return
+  }
 
-  const { data: refund } = await supabase
+  const { data: refund, error: refundError } = await supabase
     .from('invoices')
     .insert({
       account_id: store.accountId!,
@@ -1221,15 +1306,27 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     })
     .select('id')
     .single()
-  if (!refund) return
+  if (!refund) {
+    notRecorded(refundError)
+    return
+  }
 
-  await supabase.from('invoice_line_items').insert({
+  const { error: lineError } = await supabase.from('invoice_line_items').insert({
     account_id: store.accountId!,
     invoice_id: refund.id,
     description: refundDescription(invoice?.invoice_number ?? null, reason),
     quantity: 1,
     price_cents: -chargeCorrectionCents,
   })
+  if (lineError) {
+    // The refund receipt was written a moment ago by this call and has no
+    // payment or factura yet, so it comes back out rather than standing as a
+    // negative charge with nothing on it.
+    await supabase.from('invoices').delete().eq('id', refund.id)
+    notRecorded(lineError)
+    await loadAll()
+    return
+  }
 
   // Without this, the refund never showed up as money leaving in
   // usePatientFinancialSummary's balanceCents (paidCents - invoicedCents):
@@ -1238,7 +1335,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
   // patient's balance for money that had already gone back to them. Same
   // gap in reports/income.vue's Total paid/By payment method, which read
   // only from `payments` and never saw a refund at all.
-  const { data: refundPayment } = await supabase
+  const { data: refundPayment, error: refundPaymentError } = await supabase
     .from('payments')
     .insert({
       account_id: store.accountId!,
@@ -1249,6 +1346,15 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     })
     .select('id')
     .single()
+  if (refundPaymentError || !refundPayment) {
+    // No money went out on the books: without its payment the refund receipt
+    // alone lowers what was charged and leaves a phantom credit. Same undo as
+    // above, and nothing after this point may run.
+    await supabase.from('invoices').delete().eq('id', refund.id)
+    notRecorded(refundPaymentError)
+    await loadAll()
+    return
+  }
 
   // The rectifying document. Without it the factura saying this money came in
   // stays in the series with nothing against it, which is the state every
@@ -1511,22 +1617,31 @@ async function setUpMembershipDirectDebit(m: PatientMembershipRow) {
   }
 }
 
-async function cancelAutopay(scheduleId: string) {
+function cancelAutopay(scheduleId: string) {
   const directDebit = scheduleProviders.value[scheduleId] === 'gocardless'
-  if (
-    !confirm(
-      directDebit
-        ? t(
-            'Stop the direct debit? No further payments are collected from the patient’s bank. The mandate stays, so it can be started again without the patient signing.',
-            '¿Detener la domiciliación? No se cobrarán más pagos de la cuenta del paciente. La domiciliación se conserva, así que se puede volver a activar sin que el paciente firme.',
-          )
-        : t(
-            'Stop autopay? No further payments are taken from the card. Payments already taken stay as they are.',
-            '¿Detener el pago automático? No se cobrarán más pagos a la tarjeta. Los pagos ya cobrados no cambian.',
+  pendingAsk.value = directDebit
+    ? {
+        title: t('Stop the direct debit?', '¿Detener la domiciliación?'),
+        body: [
+          t(
+            'No further payments are collected from the patient’s bank. The mandate stays, so it can be started again without the patient signing.',
+            'No se cobrarán más pagos de la cuenta del paciente. La domiciliación se conserva, así que se puede volver a activar sin que el paciente firme.',
           ),
-    )
-  )
-    return
+        ],
+        confirmLabel: t('Stop the direct debit', 'Detener la domiciliación'),
+        tone: 'danger',
+        run: () => cancelAutopayNow(scheduleId),
+      }
+    : {
+        title: t('Stop autopay?', '¿Detener el pago automático?'),
+        body: [t('No further payments are taken from the card. Payments already taken stay as they are.', 'No se cobrarán más pagos a la tarjeta. Los pagos ya cobrados no cambian.')],
+        confirmLabel: t('Stop autopay', 'Detener pago automático'),
+        tone: 'danger',
+        run: () => cancelAutopayNow(scheduleId),
+      }
+}
+async function cancelAutopayNow(scheduleId: string) {
+  const directDebit = scheduleProviders.value[scheduleId] === 'gocardless'
   try {
     await useStaffFetch(directDebit ? '/api/gocardless/subscriptions/cancel' : '/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
   } catch (err: any) {
@@ -1873,7 +1988,15 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
       return
     }
   }
-  await supabase.from('payments').update({ package_purchase_id: purchase.id }).eq('id', linkPaymentSelection.value)
+  const { error: linkError } = await supabase.from('payments').update({ package_purchase_id: purchase.id }).eq('id', linkPaymentSelection.value)
+  if (linkError) {
+    linkingPayment.value = false
+    showToast(t('The payment was not linked to the bono. Try again.', 'No se ha vinculado el pago al bono. Inténtalo de nuevo.') + ` (${linkError.message})`, 'error')
+    // Reloaded all the same: an on-account payment has already been spent
+    // towards the bono above.
+    await loadAll()
+    return
+  }
 
   linkPaymentSelection.value = ''
   linkingPayment.value = false
@@ -1881,7 +2004,11 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
 }
 
 async function unlinkPayment(paymentId: string) {
-  await supabase.from('payments').update({ package_purchase_id: null }).eq('id', paymentId)
+  const { error } = await supabase.from('payments').update({ package_purchase_id: null }).eq('id', paymentId)
+  if (error) {
+    showToast(t('The payment was not unlinked from the bono. Try again.', 'No se ha desvinculado el pago del bono. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    return
+  }
   await loadAll()
 }
 
@@ -1976,7 +2103,7 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
       .select('id')
       .maybeSingle()
     if (!claimed) {
-      alert(t('Someone just used a session from this bono. Try again.', 'Alguien acaba de usar una sesión de este bono. Inténtalo de nuevo.'))
+      showToast(t('Someone just used a session from this bono. Try again.', 'Alguien acaba de usar una sesión de este bono. Inténtalo de nuevo.'), 'error', 10000)
       await loadAll()
       return
     }
@@ -2026,11 +2153,13 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
           .eq('id', purchase.id)
           .eq('sessions_used', purchase.sessions_used + 1)
         const detail = appointmentError ? ` (${appointmentError.message})` : ''
-        alert(
+        showToast(
           t(
             `The visit could not be recorded, so no session was used. Try again.${detail}`,
             `No se pudo registrar la visita, así que no se ha usado ninguna sesión. Inténtalo de nuevo.${detail}`,
           ),
+          'error',
+          10000,
         )
         await loadAll()
         return
@@ -2058,11 +2187,13 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
           .update({ sessions_used: purchase.sessions_used })
           .eq('id', purchase.id)
           .eq('sessions_used', purchase.sessions_used + 1)
-        alert(
+        showToast(
           t(
             `The payment could not be moved to the bono, so no session was used. (${moveError.message})`,
             `No se pudo pasar el pago al bono, así que no se ha usado ninguna sesión. (${moveError.message})`,
           ),
+          'error',
+          10000,
         )
         await loadAll()
         return
@@ -2070,7 +2201,7 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
     }
 
     // The visit on the bono's own history.
-    await supabase.from('package_sessions').insert({
+    const { error: sessionError } = await supabase.from('package_sessions').insert({
       account_id: store.accountId,
       patient_id: props.patientId,
       package_purchase_id: purchase.id,
@@ -2078,6 +2209,26 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
       amount_cents: perSessionCents,
       used_at: usedAt,
     })
+    if (sessionError) {
+      // The count was already taken above; with no row for the visit the bono
+      // would be one session short and its history would not say where it
+      // went. Given back, as the two failures above do, and nothing charged.
+      await supabase
+        .from('package_purchases')
+        .update({ sessions_used: purchase.sessions_used })
+        .eq('id', purchase.id)
+        .eq('sessions_used', purchase.sessions_used + 1)
+      showToast(
+        t(
+          `The session could not be recorded, so none was used. Try again. (${sessionError.message})`,
+          `No se pudo registrar la sesión, así que no se ha usado ninguna. Inténtalo de nuevo. (${sessionError.message})`,
+        ),
+        'error',
+        10000,
+      )
+      await loadAll()
+      return
+    }
 
     // And its charge, at the bono's per-session rate. This is what draws the
     // prepayment down: the money went into the balance when the bono was
@@ -2117,7 +2268,17 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
     // charged. Booked only: a
     // cancellation or no-show is not something logging a session overrides.
     if (visit) {
-      await supabase.from('appointments').update({ status: 'completed' }).eq('id', visit.id).eq('status', 'booked')
+      const { error: completeError } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', visit.id).eq('status', 'booked')
+      if (completeError) {
+        showToast(
+          t(
+            `The session was logged, but the visit could not be marked as completed: ${completeError.message}`,
+            `La sesión se ha registrado, pero no se ha podido marcar la visita como completada: ${completeError.message}`,
+          ),
+          'error',
+          10000,
+        )
+      }
     }
 
     // Deliberately fires no appointment.completed/invoice.paid automation:
@@ -2130,10 +2291,26 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
   }
 }
 
-async function deletePackagePurchase(purchase: PackagePurchaseRow) {
-  const usedWarning = purchase.sessions_used > 0 ? ` ${purchase.sessions_used} ${t('of', 'de')} ${purchase.sessions_total} ${t('sessions have already been used.', 'sesiones ya se han utilizado.')}` : ''
-  if (!confirm(`${t('Delete', 'Eliminar')} "${purchase.package_name}"? ${t("This can't be undone.", 'Esta acción no se puede deshacer.')}${usedWarning}`)) return
-  await supabase.from('package_purchases').delete().eq('id', purchase.id)
+function deletePackagePurchase(purchase: PackagePurchaseRow) {
+  pendingAsk.value = {
+    title: t(`Delete ${purchase.package_name}?`, `¿Eliminar ${purchase.package_name}?`),
+    body: [
+      t("This can't be undone.", 'Esta acción no se puede deshacer.'),
+      ...(purchase.sessions_used > 0 ? [`${purchase.sessions_used} ${t('of', 'de')} ${purchase.sessions_total} ${t('sessions have already been used.', 'sesiones ya se han utilizado.')}`] : []),
+    ],
+    confirmLabel: t('Delete', 'Eliminar'),
+    tone: 'danger',
+    run: () => deletePackagePurchaseNow(purchase),
+  }
+}
+async function deletePackagePurchaseNow(purchase: PackagePurchaseRow) {
+  // Checked for a row as well: a policy refuses a delete by matching nothing
+  // rather than by erroring, and the bono then came back on the reload.
+  const { data: deleted, error } = await supabase.from('package_purchases').delete().eq('id', purchase.id).select('id')
+  if (error || !deleted?.length) {
+    showToast(t('This bono was not deleted. Try again, or check your role allows deleting bonos.', 'No se ha eliminado este bono. Inténtalo de nuevo, o comprueba que tu rol permite eliminar bonos.') + (error?.message ? ` (${error.message})` : ''), 'error')
+    return
+  }
   await loadAll()
 }
 
@@ -2181,14 +2358,22 @@ watch(shareSearch, (value) => {
 })
 
 async function addShare(packageId: string, patient: SharedPatient) {
-  await supabase.from('package_purchase_shares').insert({ account_id: store.accountId!, package_purchase_id: packageId, patient_id: patient.id })
+  const { error } = await supabase.from('package_purchase_shares').insert({ account_id: store.accountId!, package_purchase_id: packageId, patient_id: patient.id })
+  if (error) {
+    showToast(t('This bono was not shared. Try again.', 'No se ha compartido este bono. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    return
+  }
   shareSearch.value = ''
   shareResults.value = []
   await loadShares(packageId)
 }
 
 async function removeShare(packageId: string, patientId: string) {
-  await supabase.from('package_purchase_shares').delete().eq('package_purchase_id', packageId).eq('patient_id', patientId)
+  const { error } = await supabase.from('package_purchase_shares').delete().eq('package_purchase_id', packageId).eq('patient_id', patientId)
+  if (error) {
+    showToast(t('This bono is still shared. Try again.', 'Este bono sigue compartido. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    return
+  }
   await loadShares(packageId)
 }
 
@@ -2237,7 +2422,13 @@ async function activateMembership() {
 }
 
 async function setMembershipStatus(m: PatientMembershipRow, status: string) {
-  await supabase.from('patient_memberships').update({ status }).eq('id', m.id)
+  const { error } = await supabase.from('patient_memberships').update({ status }).eq('id', m.id)
+  if (error) {
+    showToast(t('The membership was not changed. Try again.', 'No se ha cambiado la membresía. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    // Reloaded so the row is drawn again from what the membership still is.
+    await loadAll()
+    return
+  }
   if (status === 'cancelled') fire('membership.removed', { patientId: props.patientId, membershipId: m.id })
   await loadAll()
 }
@@ -2249,13 +2440,17 @@ function paymentsFor(membershipId: string) {
 async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
   const periodStart = new Date()
   periodStart.setDate(1)
-  await supabase.from('membership_payments').insert({
+  const { error } = await supabase.from('membership_payments').insert({
     account_id: store.accountId!,
     patient_membership_id: m.id,
     period_start: periodStart.toISOString().slice(0, 10),
     amount_cents: m.price_cents,
     status,
   })
+  if (error) {
+    showToast(t('The payment was not logged. Try again.', 'No se ha registrado el pago. Inténtalo de nuevo.') + ` (${error.message})`, 'error')
+    return
+  }
   await loadAll()
 }
 
@@ -3333,6 +3528,19 @@ const fieldId = useId()
           :placeholder="t('payment recorded in error, no money was taken', 'cobro registrado por error, no se cobró nada')"
         />
       </label>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="pendingAsk"
+      :tone="pendingAsk.tone"
+      :title="pendingAsk.title"
+      :confirm-label="pendingAsk.confirmLabel"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="askBusy"
+      @confirm="answerAsk"
+      @cancel="askBusy || (pendingAsk = null)"
+    >
+      <p v-for="(line, i) in pendingAsk.body" :key="i" class="text-[14px] leading-snug text-ink-700">{{ line }}</p>
     </UiConfirmDialog>
 
     <PatientsStripeCardModal

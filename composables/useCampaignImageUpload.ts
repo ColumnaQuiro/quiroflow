@@ -1,4 +1,5 @@
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { IMMUTABLE_CACHE_SECONDS } from '~/utils/storageCache'
 
 // Images in emails go to the public "campaign-images" bucket, not
 // patient-files: a mail client loads <img src> with no auth, so it cannot be
@@ -28,7 +29,7 @@ export function useCampaignImageUpload() {
     uploading.value = true
     try {
       const path = `${store.accountId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-      const { error: err } = await supabase.storage.from('campaign-images').upload(path, file)
+      const { error: err } = await supabase.storage.from('campaign-images').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
       if (err) {
         error.value = err.message
         return null

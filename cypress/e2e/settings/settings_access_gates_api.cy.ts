@@ -74,6 +74,14 @@ describe('Settings-only endpoints require settings_access too', () => {
       cy.request({ method: 'POST', url: '/api/internal/compress-existing-files', body: { limit: 1 }, failOnStatusCode: false }).then((res) => {
         expect(res.status, 'POST /api/internal/compress-existing-files').to.eq(403)
       })
+      // The resize backfill is the same route in another mode; the gate is
+      // on the route, before the body is read.
+      cy.request({ method: 'POST', url: '/api/internal/compress-existing-files', body: { mode: 'resize', limit: 1 }, failOnStatusCode: false }).then((res) => {
+        expect(res.status, 'POST /api/internal/compress-existing-files (resize)').to.eq(403)
+      })
+      cy.request({ url: '/api/internal/storage-orphans', failOnStatusCode: false }).then((res) => {
+        expect(res.status, 'GET /api/internal/storage-orphans').to.eq(403)
+      })
     })
   })
 

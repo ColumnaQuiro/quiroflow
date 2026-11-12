@@ -6372,8 +6372,10 @@ export type Database = {
           id: string
           is_xray: boolean
           patient_id: string
+          resized_at: string | null
           size_bytes: number | null
           storage_path: string | null
+          thumb_path: string | null
           uploaded_by: string | null
           visibility: string
         }
@@ -6387,8 +6389,10 @@ export type Database = {
           id?: string
           is_xray?: boolean
           patient_id: string
+          resized_at?: string | null
           size_bytes?: number | null
           storage_path?: string | null
+          thumb_path?: string | null
           uploaded_by?: string | null
           visibility?: string
         }
@@ -6402,8 +6406,10 @@ export type Database = {
           id?: string
           is_xray?: boolean
           patient_id?: string
+          resized_at?: string | null
           size_bytes?: number | null
           storage_path?: string | null
+          thumb_path?: string | null
           uploaded_by?: string | null
           visibility?: string
         }
@@ -10649,6 +10655,17 @@ export type Database = {
       mark_staff_document_viewed: {
         Args: { p_document_id: string }
         Returns: undefined
+      }
+      storage_orphan_report: {
+        Args: { p_account_id: string }
+        Returns: {
+          bucket: string
+          objects: number
+          bytes: number
+          orphan_objects: number | null
+          orphan_bytes: number | null
+          rule: string
+        }[]
       }
       platform_supabase_usage: {
         Args: never

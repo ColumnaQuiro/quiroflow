@@ -2,6 +2,7 @@
 // Relative, not ~/: the app (mobile/) renders this through DocBlocks in
 // reception mode, and there ~ means mobile/.
 import { sanitizeStorageFilename } from '../utils/storageFilename'
+import { IMMUTABLE_CACHE_SECONDS } from '../utils/storageCache'
 
 // Build-mode half of a `drawable_image` block: the clinic picks the diagram
 // here, and the patient draws on it in DocImageDraw. Same upload-to-a-public
@@ -22,7 +23,7 @@ async function uploadFile(file: File) {
   uploading.value = true
   error.value = ''
   const path = `${useAccountStore().accountId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-  const { error: uploadError } = await supabase.storage.from('doc-images').upload(path, file)
+  const { error: uploadError } = await supabase.storage.from('doc-images').upload(path, file, { cacheControl: IMMUTABLE_CACHE_SECONDS })
   uploading.value = false
   if (uploadError) {
     error.value = uploadError.message

@@ -210,6 +210,15 @@ async function loadImportedNames() {
   }
   importedNames.value = Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
 }
+// A name already promised to someone by a pending invite. Accepting it only
+// takes appointments nobody is linked to yet, so linking the name to anyone
+// meanwhile leaves the invitee with nothing -- and while they have not joined,
+// the only person "Link to…" offers is usually the owner. That is how one
+// clinic handed a colleague's 2,865 appointments to its owner three minutes
+// after inviting her. So the row says it is spoken for instead of offering it.
+function pendingInviteFor(name: string) {
+  return invites.value.find((i) => i.link_practitioner_name === name) ?? null
+}
 const linkFor = ref<{ name: string; count: number; memberId: string } | null>(null)
 function askLink(n: { name: string; count: number }) {
   const memberId = linkTarget.value[n.name]
@@ -441,12 +450,17 @@ onMounted(() => {
                 <strong class="text-[14.5px] text-ink-900">{{ n.name }}</strong>
                 <span class="text-[13px] text-ink-500">{{ t(`${n.count} appointments`, `${n.count} citas`) }}</span>
               </div>
+              <p v-if="pendingInviteFor(n.name)" class="text-[13px] text-ink-500" data-cy="team-imported-pending">
+                {{ t(`Invited (${inviteTitle(pendingInviteFor(n.name)!)}): they become theirs when they accept.`, `Invitación enviada (${inviteTitle(pendingInviteFor(n.name)!)}): serán suyas cuando la acepte.`) }}
+              </p>
+              <template v-else>
               <select v-model="linkTarget[n.name]" data-cy="team-imported-target" :aria-label="t(`Link ${n.name} to`, `Vincular ${n.name} a`)" class="h-9 touch:h-11 w-[220px] rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none">
                 <option :value="undefined" disabled>{{ t('Link to…', 'Vincular a…') }}</option>
                 <option v-for="m in active" :key="m.id" :value="m.id">{{ m.full_name }}</option>
               </select>
               <UiBtn data-cy="team-imported-link" :disabled="!linkTarget[n.name]" @click="askLink(n)">{{ t('Link', 'Vincular') }}</UiBtn>
               <button type="button" data-cy="team-imported-invite" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-brand-text hover:bg-surface-subtle" @click="openInvite({ name: n.name, link: n.name })">{{ t('Invite as practitioner', 'Invitar como profesional') }}</button>
+              </template>
             </div>
           </section>
 

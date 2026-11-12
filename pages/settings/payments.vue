@@ -2,8 +2,8 @@
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 // Settings > Payments: how money comes in. The payment methods staff record
-// a payment with, and card payments through Stripe -- which is the one
-// method that needs a connection. These were two pages
+// a payment with, card payments through Stripe and direct debits through
+// GoCardless -- the two methods that need a connection. These were two pages
 // (/settings/payment-methods now redirects here).
 
 const supabase = useSupabaseClient()
@@ -458,6 +458,8 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
               </div>
             </template>
           </section>
+
+          <SettingsGoCardlessCard />
         </div>
       </div>
     </div>

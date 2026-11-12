@@ -442,6 +442,20 @@ export default defineNuxtConfig({
     // every Google host is reached as <this>/<host>/<path> instead, which is
     // how a test points them all at one local stub.
     googleApiBaseUrl: '',
+    // GoCardless partner app (server/utils/gocardless.ts): memberships
+    // collected by SEPA Direct Debit from the clinic's OWN GoCardless account,
+    // connected by OAuth. The client id/secret and webhook secret come from
+    // the partner app in GoCardless's dashboard (NUXT_GOCARDLESS_*). Blank
+    // client id leaves Settings > Payments without the GoCardless card.
+    // `gocardlessEnvironment` is 'sandbox' or 'live' and picks the hosts;
+    // the two base URLs override them for exactly one reason -- a test stub,
+    // as metaGraphBaseUrl does -- and are blank in production.
+    gocardlessClientId: '',
+    gocardlessClientSecret: '',
+    gocardlessWebhookSecret: '',
+    gocardlessEnvironment: 'sandbox',
+    gocardlessApiBaseUrl: '',
+    gocardlessConnectBaseUrl: '',
     public: {
       // Sentry: the DSN only allows sending events, so it is public by
       // design. Blank turns monitoring off (NUXT_PUBLIC_SENTRY_DSN), and the

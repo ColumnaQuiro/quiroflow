@@ -16,6 +16,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Schedule not found or Stripe not configured' })
   }
 
+  // A schedule collected by GoCardless has no Stripe side to cancel; it is
+  // stopped by api/gocardless/subscriptions/cancel.post.ts.
+  if (!schedule.stripe_subscription_schedule_id) {
+    throw createError({ statusCode: 400, statusMessage: 'This schedule is not collected by Stripe' })
+  }
+
   const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
   try {
     await stripe.subscriptionSchedules.cancel(schedule.stripe_subscription_schedule_id, {}, options)

@@ -8,7 +8,11 @@ import type { SupabaseFailure } from '../utils/supabaseFailures'
 //
 // Module-scoped like useToast: one plain ref every reader shares, client-only.
 const failure = ref<SupabaseFailure | null>(null)
+// Counts the writes the database turned down on purpose (isRefusedWrite):
+// not failures, so not in `failure`, but the layout says so when the screen
+// that made the write does not.
+const refusedWrites = ref(0)
 
 export function useSupabaseFailureNotice() {
-  return { failure }
+  return { failure, refusedWrites }
 }

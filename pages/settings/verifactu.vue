@@ -107,17 +107,19 @@ const changed = computed(() => {
   return mode.value === 'live' && (!settings.value.productionFrom || liveDay.value !== madridDay(settings.value.productionFrom))
 })
 
-async function save() {
+// Going live is asked in UiConfirmDialog, which has room to say what cannot
+// be taken back and what it costs; confirmGoLive carries on from the answer.
+const goLiveAsk = ref(false)
+function save() {
   if (!changed.value) return
-  if (mode.value === 'live') {
-    const ok = confirm(
-      t(
-        `Go live on ${liveDay.value}? From midnight that day (Madrid), every factura is sent to the AEAT's real service. Once the first one has gone, the date cannot change and VeriFactu cannot be switched off.`,
-        `¿Pasar a producción el ${liveDay.value}? Desde la medianoche de ese día (Madrid), cada factura se envía al servicio real de la AEAT. Una vez enviada la primera, la fecha no se puede cambiar y VeriFactu no se puede desactivar.`,
-      ) + (feeText.value ? `\n\n${feeText.value}` : ''),
-    )
-    if (!ok) return
-  }
+  if (mode.value === 'live') goLiveAsk.value = true
+  else persist()
+}
+function confirmGoLive() {
+  goLiveAsk.value = false
+  persist()
+}
+async function persist() {
   saving.value = true
   try {
     await useStaffFetch('/api/verifactu/settings', { method: 'PUT', body: { mode: mode.value, productionFrom: mode.value === 'live' ? liveDay.value : null } })
@@ -191,15 +193,16 @@ async function loadDelegations() {
   }
 }
 
+// Confirming is asked first (UiConfirmDialog below); withdrawing is not.
+const acceptAsk = ref<PlatformDelegation | null>(null)
+function confirmAccepted() {
+  const d = acceptAsk.value
+  if (!d) return
+  acceptAsk.value = null
+  setAccepted(d, true)
+}
+
 async function setAccepted(d: PlatformDelegation, accepted: boolean) {
-  if (accepted) {
-    const ok = confirm(
-      d.route === 'apoderamiento'
-        ? t(`Confirm that QuiroFlow has ACCEPTED the IZ860 apoderamiento from ${d.clinicName ?? d.nif} in the AEAT’s office. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que QuiroFlow ha ACEPTADO el apoderamiento IZ860 de ${d.clinicName ?? d.nif} en la sede de la AEAT. Desde ahora sus registros se envían con el certificado de QuiroFlow.`)
-        : t(`Confirm that the signed document from ${d.clinicName ?? d.nif} has been checked. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que se ha revisado el documento firmado de ${d.clinicName ?? d.nif}. Desde ahora sus registros se envían con el certificado de QuiroFlow.`),
-    )
-    if (!ok) return
-  }
   decidingFor.value = d.accountId
   try {
     await useStaffFetch(`/api/verifactu/delegations/${d.accountId}`, { method: 'PUT', body: { accepted } })
@@ -734,7 +737,7 @@ const facts = computed(() => {
                 </div>
                 <UiPill v-if="!d.acceptedAt" tone="warning">{{ t('Waiting', 'Pendiente') }}</UiPill>
                 <UiBtn v-if="d.route === 'colaboracion_social' && d.signedDocumentUploadedAt" size="sm" @click="downloadSignedDocument(d)">{{ t('Document', 'Documento') }}</UiBtn>
-                <UiBtn v-if="!d.acceptedAt" variant="primary" size="sm" data-cy="verifactu-delegation-accept" :disabled="decidingFor === d.accountId || (d.route === 'colaboracion_social' && !d.signedDocumentUploadedAt)" @click="setAccepted(d, true)">{{ t('Confirm', 'Confirmar') }}</UiBtn>
+                <UiBtn v-if="!d.acceptedAt" variant="primary" size="sm" data-cy="verifactu-delegation-accept" :disabled="decidingFor === d.accountId || (d.route === 'colaboracion_social' && !d.signedDocumentUploadedAt)" @click="acceptAsk = d">{{ t('Confirm', 'Confirmar') }}</UiBtn>
                 <UiBtn v-else size="sm" data-cy="verifactu-delegation-withdraw" :disabled="decidingFor === d.accountId" @click="setAccepted(d, false)">{{ t('Withdraw', 'Retirar') }}</UiBtn>
               </div>
             </section>
@@ -742,5 +745,38 @@ const facts = computed(() => {
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="goLiveAsk"
+      tone="danger"
+      :title="t(`Go live on ${liveDay}?`, `¿Pasar a producción el ${liveDay}?`)"
+      :confirm-label="t('Go live', 'Pasar a producción')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmGoLive"
+      @cancel="goLiveAsk = false"
+    >
+      <div class="space-y-2 text-[14px] leading-snug text-ink-700" data-cy="verifactu-go-live-dialog">
+        <p>{{ t('From midnight that day (Madrid), every factura is sent to the AEAT’s real service.', 'Desde la medianoche de ese día (Madrid), cada factura se envía al servicio real de la AEAT.') }}</p>
+        <p class="font-semibold text-ink-900">{{ t('Once the first one has gone, the date cannot change and VeriFactu cannot be switched off.', 'Una vez enviada la primera, la fecha no se puede cambiar y VeriFactu no se puede desactivar.') }}</p>
+        <p v-if="feeText">{{ feeText }}</p>
+      </div>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="acceptAsk"
+      :title="t(`Confirm the authorisation from ${acceptAsk.clinicName ?? acceptAsk.nif}?`, `¿Confirmar la autorización de ${acceptAsk.clinicName ?? acceptAsk.nif}?`)"
+      :confirm-label="t('Confirm', 'Confirmar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmAccepted"
+      @cancel="acceptAsk = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">
+        {{
+          acceptAsk.route === 'apoderamiento'
+            ? t(`Confirm that QuiroFlow has ACCEPTED the IZ860 apoderamiento from ${acceptAsk.clinicName ?? acceptAsk.nif} in the AEAT’s office. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que QuiroFlow ha ACEPTADO el apoderamiento IZ860 de ${acceptAsk.clinicName ?? acceptAsk.nif} en la sede de la AEAT. Desde ahora sus registros se envían con el certificado de QuiroFlow.`)
+            : t(`Confirm that the signed document from ${acceptAsk.clinicName ?? acceptAsk.nif} has been checked. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que se ha revisado el documento firmado de ${acceptAsk.clinicName ?? acceptAsk.nif}. Desde ahora sus registros se envían con el certificado de QuiroFlow.`)
+        }}
+      </p>
+    </UiConfirmDialog>
   </div>
 </template>

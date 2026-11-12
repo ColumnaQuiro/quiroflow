@@ -610,8 +610,23 @@ async function save() {
         return
       }
     } else if (outOfHours.value) {
-      if (!confirm(t('This appointment falls outside working hours. Book it anyway?', 'Esta cita está fuera del horario de atención. ¿Reservarla de todos modos?'))) return
+      // Asked in UiConfirmDialog; bookOutOfHours carries on from the answer.
+      outOfHoursAsk.value = starts
+      return
     }
+    await book(starts)
+  } finally {
+    saving.value = false
+  }
+}
+
+const outOfHoursAsk = ref<Date[] | null>(null)
+async function bookOutOfHours() {
+  const starts = outOfHoursAsk.value
+  if (!starts) return
+  outOfHoursAsk.value = null
+  saving.value = true
+  try {
     await book(starts)
   } finally {
     saving.value = false
@@ -791,6 +806,9 @@ async function book(requested: Date[]) {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  // This listener was added before the question's focus trap, so it hears
+  // Escape first: without this, Escape on the question closed the panel.
+  if (outOfHoursAsk.value) return
   if (e.key === 'Escape' && !e.defaultPrevented) emit('close')
 }
 onMounted(() => {
@@ -1124,6 +1142,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         </button>
       </div>
     </form>
+
+    <UiConfirmDialog
+      v-if="outOfHoursAsk"
+      :title="t('Outside working hours', 'Fuera del horario de atención')"
+      :confirm-label="t('Book anyway', 'Reservar igualmente')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="bookOutOfHours"
+      @cancel="outOfHoursAsk = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('This appointment falls outside working hours. Book it anyway?', 'Esta cita está fuera del horario de atención. ¿Reservarla de todos modos?') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>
 

@@ -29,7 +29,7 @@ const { formatLongDate } = useDates()
 // A modal dialog: focus stays inside it, Escape closes it, and focus goes
 // back to whatever opened it (useFocusTrap).
 const dialogPanel = ref<HTMLElement | null>(null)
-useFocusTrap(dialogPanel, () => emit('close'))
+useFocusTrap(dialogPanel, () => requestClose('close'))
 const { showToast } = useToast()
 const { can } = usePermission()
 
@@ -228,6 +228,38 @@ const isMinor = ref(props.patient.is_minor)
 const billToTutor = ref(props.patient.bill_to_tutor)
 const doNotContact = ref(props.patient.do_not_contact)
 
+// Closing with unsaved edits asks first (as AddPatientModal): the scrim does
+// nothing once the form is dirty, and Escape, the X and Cancel ask. Compared
+// against what the form held when editing began, not against the prop, so a
+// refresh of the patient underneath (a phone number added in the card above)
+// does not read as an edit. Phone numbers and the clinic's own fields save
+// themselves and are not part of this.
+const formState = () =>
+  JSON.stringify([
+    firstName.value, lastName.value, dateOfBirth.value, email.value, address.value, postalCode.value, city.value, country.value,
+    nationalId.value, clinicId.value, tagsInput.value, occupation.value, emergencyContact.value, referralSource.value,
+    preferredLanguage.value, defaultPractitionerId.value, invoiceEmailEnabled.value, reminderChannel.value, confirmationChannel.value,
+    reminderHours.value, marketingChannels.value, status.value, isMinor.value, billToTutor.value, doNotContact.value,
+    tutorChanged.value, referredByChanged.value,
+  ])
+const pristine = ref(formState())
+const dirty = computed(() => editing.value && formState() !== pristine.value)
+// What the person was doing when asked: closing the dialog, or Cancel, which
+// only drops the form back to the read view.
+const discardAsk = ref<'close' | 'view' | null>(null)
+function leave(how: 'close' | 'view') {
+  discardAsk.value = null
+  if (how === 'view') editing.value = false
+  else emit('close')
+}
+function requestClose(how: 'close' | 'view') {
+  if (dirty.value) discardAsk.value = how
+  else leave(how)
+}
+function onScrimClick() {
+  if (!dirty.value) emit('close')
+}
+
 async function startEditing() {
   firstName.value = props.patient.first_name
   lastName.value = props.patient.last_name ?? ''
@@ -257,6 +289,7 @@ async function startEditing() {
   selectedTutor.value = null
   tutorChanged.value = false
   referredByChanged.value = false
+  pristine.value = formState()
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
     // Only if they have not already changed it: a Remove (or another pick)
@@ -404,7 +437,8 @@ const fieldId = useId()
 <template>
   <div
     class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-start lg:overflow-y-auto lg:p-8"
-    @click.self="emit('close')"
+    data-cy="patient-details-scrim"
+    @click.self="onScrimClick"
   >
     <div
       ref="dialogPanel" role="dialog"
@@ -418,7 +452,7 @@ const fieldId = useId()
           type="button"
           :aria-label="t('Close', 'Cerrar')"
           class="flex h-9 w-9 items-center justify-center rounded-ctl text-ink-muted outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus"
-          @click="emit('close')"
+          @click="requestClose('close')"
         >
           <svg viewBox="0 0 14 14" aria-hidden="true" class="h-3.5 w-3.5">
             <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
@@ -743,7 +777,7 @@ const fieldId = useId()
         <p v-if="error" class="text-[13px] text-danger-text" data-cy="patient-details-error">{{ error }}</p>
         <div class="flex gap-2">
           <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
-          <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          <UiBtn type="button" variant="ghost" @click="requestClose('view')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
     </div>
@@ -784,5 +818,16 @@ const fieldId = useId()
       </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="discardAsk"
+      :title="t('Discard changes?', '¿Descartar los cambios?')"
+      :confirm-label="t('Discard', 'Descartar')"
+      :cancel-label="t('Keep editing', 'Seguir editando')"
+      @confirm="leave(discardAsk ?? 'close')"
+      @cancel="discardAsk = null"
+    >
+      <p class="text-[14px] leading-relaxed text-ink-500">{{ t('Your changes will be lost.', 'Tus cambios se perderán.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

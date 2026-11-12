@@ -72,8 +72,11 @@ function practitionerLabel(note: VisitNoteRow) {
 // visit_notes_scope is 'all' -- can() here just avoids showing a button
 // that would fail, not the actual access control. The same goes for the
 // edit ('staff update visit_notes', visit_notes_edit).
-async function deleteNote(note: VisitNoteRow) {
-  if (!confirm(t('Delete this note? This cannot be undone.', '¿Eliminar esta nota? Esta acción no se puede deshacer.'))) return
+const deleteAsk = ref<VisitNoteRow | null>(null)
+async function deleteNote() {
+  const note = deleteAsk.value
+  if (!note) return
+  deleteAsk.value = null
   deletingId.value = note.id
   const { error } = await supabase.from('visit_notes').delete().eq('id', note.id)
   if (!error) notes.value = notes.value.filter((n) => n.id !== note.id)
@@ -139,9 +142,23 @@ async function deleteNote(note: VisitNoteRow) {
           tone="danger"
           :disabled="deletingId === note.id"
           :label="deletingId === note.id ? t('Deleting…', 'Eliminando…') : t('Delete note', 'Eliminar nota')"
-          @click="deleteNote(note)"
+          @click="deleteAsk = note"
         />
       </div>
     </div>
+
+    <!-- !mt-0: the parent's space-y would push the fixed scrim down. -->
+    <UiConfirmDialog
+      v-if="deleteAsk"
+      class="!mt-0"
+      tone="danger"
+      :title="t('Delete this note?', '¿Eliminar esta nota?')"
+      :confirm-label="t('Delete note', 'Eliminar nota')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="deleteNote"
+      @cancel="deleteAsk = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('This can\'t be undone.', 'Esta acción no se puede deshacer.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

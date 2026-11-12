@@ -85,12 +85,52 @@ function reloadForNewVersion() {
 // one per query: a page whose data is gone fails several reads at once, and
 // one notice says all of it. Only the staff app says so -- the booking page,
 // the portal and the shared documents use other layouts.
-const { failure: supabaseFailure } = useSupabaseFailureNotice()
-const { showToast } = useToast()
+const { failure: supabaseFailure, refusedWrites } = useSupabaseFailureNotice()
+const { showToast, lastErrorToastAt } = useToast()
 let dataNoticeShown = false
+// Waits a moment and speaks only if the screen has not: the ones that check
+// their writes say why in a toast of their own.
+function sayNotSaved() {
+  const failedAt = Date.now()
+  setTimeout(() => {
+    if (lastErrorToastAt() >= failedAt) return
+    showToast(t('That change could not be saved. Check it and try again.', 'Ese cambio no se ha podido guardar. Revísalo y vuelve a intentarlo.'), 'error', 8000)
+  }, 600)
+}
+// The same for a write the database refused on purpose (a permission, a
+// guard): not a failure, but silence leaves the screen looking as if it took.
+// Only when it follows something the person just did on this page: a
+// best-effort write a screen makes for itself (marking a thread read, say)
+// can be refused for a restricted role, and that is nobody's lost work.
+let lastActedAt = 0
+function noteAction(e: Event) {
+  if (e.type === 'keydown' && (e as KeyboardEvent).key !== 'Enter') return
+  lastActedAt = Date.now()
+}
+onMounted(() => {
+  window.addEventListener('pointerup', noteAction, { capture: true, passive: true })
+  window.addEventListener('keydown', noteAction, { capture: true, passive: true })
+})
+onUnmounted(() => {
+  window.removeEventListener('pointerup', noteAction, { capture: true })
+  window.removeEventListener('keydown', noteAction, { capture: true })
+})
+onUnmounted(router.afterEach(() => (lastActedAt = 0)))
+watch(refusedWrites, () => {
+  if (Date.now() - lastActedAt < 2000) sayNotSaved()
+})
 onUnmounted(router.afterEach(() => (dataNoticeShown = false)))
 watch(supabaseFailure, (f) => {
-  if (!f?.read || dataNoticeShown) return
+  if (!f) return
+  if (!f.read) {
+    // A WRITE that failed. Some ninety call sites await an insert, update or
+    // delete and never look at the result, so a payment or a note that was
+    // not saved left the screen exactly as it was, with nothing said. The
+    // screens that do check say why themselves, usually in a toast.
+    sayNotSaved()
+    return
+  }
+  if (dataNoticeShown) return
   dataNoticeShown = true
   showToast(t('Some data could not be loaded. Reload the page to try again.', 'Algunos datos no se han podido cargar. Recarga la página para volver a intentarlo.'), 'error', 8000)
 })

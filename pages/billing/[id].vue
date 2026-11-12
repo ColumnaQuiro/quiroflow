@@ -233,13 +233,19 @@ function goToRefund() {
   navigateTo(`/patients/${patientId}?tab=money&refund=${invoiceId}`)
 }
 
+const { showToast } = useToast()
 async function voidInvoice() {
   if (hasPayments.value) {
-    alert(
+    // A re-check: the button is disabled with a tooltip while there are
+    // payments, so this is only reached if that state is stale. A toast, not
+    // a dialog -- there is nothing to choose.
+    showToast(
       t(
         'This invoice has payments recorded against it and cannot be voided. Refund or remove the payments first, then void it.',
         'Esta factura tiene pagos registrados y no se puede anular. Reembolsa o elimina primero los pagos y después anúlala.',
       ),
+      'error',
+      8000,
     )
     return
   }

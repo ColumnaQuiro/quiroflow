@@ -135,7 +135,10 @@ describe('Letters', () => {
           cy.contains('button', 'Merge with another record').click()
           cy.get('#merge-search').type('Duplicada')
           cy.contains('button', 'Paloma Duplicada').click()
-          cy.contains('button', 'Merge').click()
+          cy.get('[data-cy=merge-submit]').click()
+          // The app's own question, which says the merge cannot be undone.
+          cy.get('[data-cy=confirm-dialog]').should('contain.text', 'undone')
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
           cy.contains('Patients merged').should('be.visible')
           cy.task('db:patientByName', { accountId: account.accountId, firstName: 'Paloma', lastName: 'Duplicada' }).should('eq', null)
           cy.task<{ title: string }[]>('db:selectRows', { table: 'patient_letters', columns: 'title', match: { patient_id: survivor.id } }).then((rows) => {

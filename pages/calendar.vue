@@ -114,6 +114,8 @@ interface AppointmentRow {
   source: string
   confirmation_sent_at: string | null
   reminder_sent_at: string | null
+  /** Set once the reminder cron has dealt with this time (utils/appointmentReminderDue). */
+  reminder_claimed_at?: string | null
   same_day_info_sent_at: string | null
   created_at: string
   /** pending_forms: the computed field (20261020065435_patient_pending_forms.sql). */
@@ -529,7 +531,7 @@ async function loadRooms() {
 // row), so "has forms to complete" rides in this same read -- no request of
 // its own per range, none per block.
 const APPOINTMENT_SELECT =
-  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms, red_flags, tags), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, reminder_claimed_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms, red_flags, tags), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
 
 // `keepClasses` is for the reload after a write to an appointment: the class
 // sessions themselves only change through the class panels, which reload the
@@ -1063,6 +1065,7 @@ onMounted(async () => {
   const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
   if (stored) practitionerFilter.value = stored
   const reference = loadReferenceData()
+  ensureReminderSettings().catch((e) => console.error('calendar: reminder settings failed', e))
   const early = stored ? rangeKey() : null
   if (early) loadRange()
   await reference.catch((e) => console.error('calendar: reference data failed', e))
@@ -1325,9 +1328,13 @@ function skeletonInColumn(roomId: string) {
 
 // --- Stage, block, counts ---
 // One stage per appointment, from utils/appointmentStage -- the block, the
-// counts row and the day headers all read it from there.
+// counts row and the day headers all read it from there. The clinic's
+// reminder setting decides whether a visit nobody has asked about yet is
+// "Sin confirmar" (a reminder is coming) or "Confirmada"; a class's block is
+// not a visit and has no reminder of its own.
+const { settings: reminderSettings, ensure: ensureReminderSettings } = useReminderSettings()
 function stageOf(appt: AppointmentRow): AppointmentStage {
-  return appointmentStage(appt)
+  return appointmentStage(appt, appt._class ? null : reminderSettings.value)
 }
 
 function firstName(full: string | null | undefined) {

@@ -19,7 +19,8 @@ import { visitPaymentsFromRows, type VisitPaymentRows } from '~/composables/useV
 // utils/visitPayment, effectivePriceCents), so the panel says the same thing
 // whichever screen opened it.
 //
-// Two requests, side by side: the row, and appointment_panel -- everything
+// Two requests, side by side (three on the first panel of a session, which
+// also reads the clinic's reminder setting): the row, and appointment_panel -- everything
 // else, which needs only the id. It was the row and then seven more (the
 // payments, the balance, the packs, the moves, the next visit, the
 // overrides), with the panel's audit trail as a ninth once it mounted.
@@ -46,15 +47,20 @@ interface AppointmentPanelRows {
 }
 
 const SELECT =
-  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms, red_flags, tags), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, reminder_claimed_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms, red_flags, tags), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
 
 export function useAppointmentPanelLoader() {
   const supabase = useSupabaseClient()
+  // Same setting the calendar reads, so a visit is "Sin confirmar" or
+  // "Confirmada" alike in both (utils/appointmentStage).
+  const reminders = useReminderSettings()
 
   async function load(appointmentId: string): Promise<AppointmentPanelInputs | null> {
-    const [{ data: row, error }, details] = await Promise.all([
+    const [{ data: row, error }, details, reminderSettings] = await Promise.all([
       supabase.from('appointments').select(SELECT).eq('id', appointmentId).maybeSingle(),
       supabase.rpc('appointment_panel' as never, { p_appointment_id: appointmentId } as never),
+      // Cached after the first visit opened; a failure draws it as before.
+      reminders.ensure().catch(() => null),
     ])
     // Thrown, not "no such visit": the panel's caller shows nothing for null.
     if (error) throw error
@@ -72,7 +78,7 @@ export function useAppointmentPanelLoader() {
     const payment: VisitPayment = payments[a.id] ?? { kind: 'none' }
     // Same rule as the calendar: the newest pack that is neither closed nor used up.
     const active = packages.find((p) => !p.is_closed && p.sessions_used < p.sessions_total) ?? null
-    const stage = appointmentStage(a)
+    const stage = appointmentStage(a, reminderSettings)
 
     const view: BlockView = {
       id: a.id,

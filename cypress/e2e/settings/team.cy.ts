@@ -211,6 +211,13 @@ describe('Settings > Team', () => {
         confirm()
         cy.contains('[data-cy=team-invite-row]', 'Dra. Pasado', { timeout: 20000 }).should('contain', 'gets the imported appointments of "Dra. Pasado"')
         cy.task<any>('db:latestInvite', { accountId: account.accountId }).its('link_practitioner_name').should('eq', 'Dra. Pasado')
+        // Spoken for: linking it to anyone now would leave the invitee with
+        // nothing when they accept, so the row no longer offers it.
+        cy.get('[data-cy=team-imported-row][data-name="Dra. Pasado"]').within(() => {
+          cy.get('[data-cy=team-imported-pending]').should('contain', 'they become theirs when they accept')
+          cy.get('[data-cy=team-imported-target]').should('not.exist')
+          cy.get('[data-cy=team-imported-link]').should('not.exist')
+        })
       })
     })
   })

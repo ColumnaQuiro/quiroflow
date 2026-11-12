@@ -1,4 +1,4 @@
-import { serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeForPlatform } from '~/server/utils/stripe'
 
@@ -23,19 +23,22 @@ export default defineEventHandler(async (event) => {
     return redirectTo({ stripe_error: 'Stripe did not return an authorization code.' })
   }
 
-  const supabase = await serverSupabaseClient<Database>(event)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  // .eq('user_id', ...) is required: team_members' RLS scopes SELECT by
-  // account membership, not row ownership, so an unfiltered query returns
-  // every team_members row for the account once there's more than one,
-  // and .maybeSingle() throws on that (see requirePermission.ts).
-  const { data: teamMember } = user
-    ? await supabase.from('team_members').select('id, account_id').eq('user_id', user.id).maybeSingle()
-    : { data: null }
-  if (!teamMember) {
-    return redirectTo({ stripe_error: 'You were signed out during the connection. Please log in and try again.' })
+  // The same gate connect/start.get.ts applied before sending them to Stripe.
+  // Checked again here because this is where the write happens, and the write
+  // is the service role's: stripe_connect_account_id is refused to every
+  // signed-in user (accounts_guard_server_written), since the only proof of
+  // which Stripe account a clinic owns is the code Stripe just returned.
+  let accountId: string
+  try {
+    const { teamMember } = await requireSettingsPermission(event, 'billing_config')
+    accountId = teamMember.account_id
+  } catch (err: any) {
+    const signedOut = err?.statusCode === 403 && /Not signed in/.test(err?.statusMessage ?? '')
+    return redirectTo({
+      stripe_error: signedOut
+        ? 'You were signed out during the connection. Please log in and try again.'
+        : (err?.statusMessage ?? 'You do not have permission to connect Stripe.'),
+    })
   }
 
   try {
@@ -43,14 +46,18 @@ export default defineEventHandler(async (event) => {
     const response = await platform.oauth.token({ grant_type: 'authorization_code', code: query.code })
 
     // Read back: the page said "connected" even when this was refused.
-    const { data: saved, error: saveError } = await supabase
+    const admin = serverSupabaseServiceRole<Database>(event)
+    const { data: saved, error: saveError } = await admin
       .from('accounts')
       .update({
         stripe_connect_account_id: response.stripe_user_id,
         stripe_publishable_key: response.stripe_publishable_key ?? null,
       })
-      .eq('id', teamMember.account_id)
+      .eq('id', accountId)
       .select('id')
+    if (saveError?.code === '23505') {
+      return redirectTo({ stripe_error: 'That Stripe account is already connected to another QuiroFlow account. Disconnect it there first.' })
+    }
     if (saveError || !saved?.length) {
       return redirectTo({ stripe_error: saveError?.message ?? 'Stripe connected, but QuiroFlow could not save it. Please try again.' })
     }

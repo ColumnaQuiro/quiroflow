@@ -111,7 +111,7 @@ async function handlePaymentEvent(supabase: Admin, request: GoCardlessRequest, a
       }
       await fireMembershipPaymentProcessed(supabase, accountId, schedule.patient_membership_id, origin)
     }
-    await countScheduleInstallment(supabase, schedule.id)
+    await countScheduleInstallment(supabase, accountId, schedule.id)
     if (schedule.status === 'past_due') await supabase.from('payment_schedules').update({ status: 'active' }).eq('id', schedule.id)
     return
   }

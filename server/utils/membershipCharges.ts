@@ -10,6 +10,11 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 // counted and the membership.payment_processed automations fired. Two copies
 // of this would drift, and the first difference would be a report that
 // counts one provider's money and not the other's.
+//
+// Every read and write is filtered by accountId, the account whose webhook
+// signature was verified. The ids come from the event body, and on Stripe's
+// legacy per-clinic route the clinic holds the signing secret itself, so
+// nothing in a body may reach another account's rows.
 
 export interface MembershipPeriodCharge {
   patientId: string
@@ -28,7 +33,7 @@ export interface MembershipPeriodCharge {
  * which case the invoice raised for it is taken back out).
  */
 export async function bookMembershipPeriod(supabase: SupabaseClient<Database>, accountId: string, charge: MembershipPeriodCharge): Promise<string | null> {
-  const { data: membership } = await supabase.from('patient_memberships').select('membership_name').eq('id', charge.membershipId).maybeSingle()
+  const { data: membership } = await supabase.from('patient_memberships').select('membership_name').eq('id', charge.membershipId).eq('account_id', accountId).maybeSingle()
   const periodLabel = new Date(charge.periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId })
@@ -68,7 +73,7 @@ export async function bookMembershipPeriod(supabase: SupabaseClient<Database>, a
     // invoice with no money under it -- which reads as settled and is not.
     // Take it back out (its line items cascade) rather than leave that behind.
     console.error('[membership charge] payment insert failed, removing its invoice', invoice.id, paymentError?.message)
-    await supabase.from('invoices').delete().eq('id', invoice.id)
+    await supabase.from('invoices').delete().eq('id', invoice.id).eq('account_id', accountId)
     return null
   }
 
@@ -90,9 +95,9 @@ export async function bookMembershipPeriod(supabase: SupabaseClient<Database>, a
  * otherwise re-reads and tries again. Two different collections of the same
  * schedule arriving together used to both write n+1.
  */
-export async function countScheduleInstallment(supabase: SupabaseClient<Database>, scheduleId: string) {
+export async function countScheduleInstallment(supabase: SupabaseClient<Database>, accountId: string, scheduleId: string) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: current } = await supabase.from('payment_schedules').select('installments_paid, installments_total').eq('id', scheduleId).maybeSingle()
+    const { data: current } = await supabase.from('payment_schedules').select('installments_paid, installments_total').eq('id', scheduleId).eq('account_id', accountId).maybeSingle()
     if (!current) return
     const installmentsPaid = current.installments_paid + 1
     const completed = current.installments_total != null && installmentsPaid >= current.installments_total
@@ -100,6 +105,7 @@ export async function countScheduleInstallment(supabase: SupabaseClient<Database
       .from('payment_schedules')
       .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
       .eq('id', scheduleId)
+      .eq('account_id', accountId)
       .eq('installments_paid', current.installments_paid)
       .select('id')
     if (updated?.length) return
@@ -114,12 +120,13 @@ export async function countScheduleInstallment(supabase: SupabaseClient<Database
  * client trigger -- same direct-call pattern as birthday-cron.post.ts.
  */
 export async function fireMembershipPaymentProcessed(supabase: SupabaseClient<Database>, accountId: string, membershipId: string, origin: string) {
-  const { data: membership } = await supabase.from('patient_memberships').select('patient_id').eq('id', membershipId).maybeSingle()
+  const { data: membership } = await supabase.from('patient_memberships').select('patient_id').eq('id', membershipId).eq('account_id', accountId).maybeSingle()
   if (!membership) return
   const { data: patient } = await supabase
     .from('patients')
     .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
     .eq('id', membership.patient_id)
+    .eq('account_id', accountId)
     .maybeSingle()
   if (!patient) return
 

@@ -119,7 +119,7 @@ describe('Settings permissions match the menu', () => {
         cy.contains('a', 'Messages').should('have.attr', 'href', '/settings/messages')
         // The Settings cards, in the page itself: the sidebar has a "Team"
         // link of its own (team messages), open to everyone.
-        for (const hidden of ['Online Booking', 'Services & Products', 'Team', 'VeriFactu', 'API & Tokens']) {
+        for (const hidden of ['Online Booking', 'Products & stock', 'Team', 'VeriFactu', 'API & Tokens']) {
           cy.get('main').contains('a', hidden).should('not.exist')
         }
       })

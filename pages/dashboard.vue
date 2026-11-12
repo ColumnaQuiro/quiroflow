@@ -1,43 +1,39 @@
 <script setup lang="ts">
 import { computePresetRange } from '~/composables/useDateRangePresets'
 import type { DateRange } from '~/composables/useDateRangePresets'
+import type { AsyncComponentLoader, Component } from 'vue'
 import { widgetDef, NEXT_SIZE } from '~/utils/dashboardWidgets'
-import DashboardWeeklyVisitsWidget from '~/components/dashboard/WeeklyVisitsWidget.vue'
-import DashboardTotalPatientsWidget from '~/components/dashboard/TotalPatientsWidget.vue'
-import DashboardActivePatientsWidget from '~/components/dashboard/ActivePatientsWidget.vue'
-import DashboardVisitSummaryWidget from '~/components/dashboard/VisitSummaryWidget.vue'
-import DashboardIncomeMiniWidget from '~/components/dashboard/IncomeMiniWidget.vue'
-import DashboardAppointmentDistributionMiniWidget from '~/components/dashboard/AppointmentDistributionMiniWidget.vue'
-import DashboardStatisticsMiniWidget from '~/components/dashboard/StatisticsMiniWidget.vue'
-import DashboardMembershipsMiniWidget from '~/components/dashboard/MembershipsMiniWidget.vue'
-import DashboardDebtorsMiniWidget from '~/components/dashboard/DebtorsMiniWidget.vue'
-import DashboardUpcomingVisitsMiniWidget from '~/components/dashboard/UpcomingVisitsMiniWidget.vue'
-import DashboardNoShowRateMiniWidget from '~/components/dashboard/NoShowRateMiniWidget.vue'
-import DashboardRecallsDueMiniWidget from '~/components/dashboard/RecallsDueMiniWidget.vue'
-import DashboardContinuityAlertsMiniWidget from '~/components/dashboard/ContinuityAlertsMiniWidget.vue'
-import DashboardNextUpTodayMiniWidget from '~/components/dashboard/NextUpTodayMiniWidget.vue'
-import DashboardMonthlyGoalsWidget from '~/components/dashboard/MonthlyGoalsWidget.vue'
+import DashboardWidgetLoading from '~/components/dashboard/WidgetLoading.vue'
 
 // <component :is="'StringName'"> doesn't resolve Nuxt's auto-imported
 // components at runtime -- auto-import only rewrites literal tags found in
-// templates at build time. Explicit imports + a local map are needed for
-// dynamic-by-string resolution.
-const WIDGET_COMPONENTS: Record<string, unknown> = {
-  DashboardWeeklyVisitsWidget,
-  DashboardTotalPatientsWidget,
-  DashboardActivePatientsWidget,
-  DashboardVisitSummaryWidget,
-  DashboardIncomeMiniWidget,
-  DashboardAppointmentDistributionMiniWidget,
-  DashboardStatisticsMiniWidget,
-  DashboardMembershipsMiniWidget,
-  DashboardDebtorsMiniWidget,
-  DashboardUpcomingVisitsMiniWidget,
-  DashboardNoShowRateMiniWidget,
-  DashboardRecallsDueMiniWidget,
-  DashboardContinuityAlertsMiniWidget,
-  DashboardNextUpTodayMiniWidget,
-  DashboardMonthlyGoalsWidget,
+// templates at build time. A local map is needed for dynamic-by-string
+// resolution.
+//
+// Each widget is its own chunk, fetched when a layout first shows it. They
+// were fifteen static imports, so every visit downloaded and parsed all of
+// them -- the charts among them -- for a layout that shows eleven or fewer.
+// Not suspensible: the page's own <Suspense> would otherwise take the wait
+// over and the frame would sit empty; this way it holds a skeleton until the
+// widget arrives and draws its own. A chunk that fails to load reaches
+// WidgetFrame like any widget error, with its "Try again".
+const widget = (loader: AsyncComponentLoader) => defineAsyncComponent({ loader, loadingComponent: DashboardWidgetLoading, delay: 0, suspensible: false })
+const WIDGET_COMPONENTS: Record<string, Component> = {
+  DashboardWeeklyVisitsWidget: widget(() => import('~/components/dashboard/WeeklyVisitsWidget.vue')),
+  DashboardTotalPatientsWidget: widget(() => import('~/components/dashboard/TotalPatientsWidget.vue')),
+  DashboardActivePatientsWidget: widget(() => import('~/components/dashboard/ActivePatientsWidget.vue')),
+  DashboardVisitSummaryWidget: widget(() => import('~/components/dashboard/VisitSummaryWidget.vue')),
+  DashboardIncomeMiniWidget: widget(() => import('~/components/dashboard/IncomeMiniWidget.vue')),
+  DashboardAppointmentDistributionMiniWidget: widget(() => import('~/components/dashboard/AppointmentDistributionMiniWidget.vue')),
+  DashboardStatisticsMiniWidget: widget(() => import('~/components/dashboard/StatisticsMiniWidget.vue')),
+  DashboardMembershipsMiniWidget: widget(() => import('~/components/dashboard/MembershipsMiniWidget.vue')),
+  DashboardDebtorsMiniWidget: widget(() => import('~/components/dashboard/DebtorsMiniWidget.vue')),
+  DashboardUpcomingVisitsMiniWidget: widget(() => import('~/components/dashboard/UpcomingVisitsMiniWidget.vue')),
+  DashboardNoShowRateMiniWidget: widget(() => import('~/components/dashboard/NoShowRateMiniWidget.vue')),
+  DashboardRecallsDueMiniWidget: widget(() => import('~/components/dashboard/RecallsDueMiniWidget.vue')),
+  DashboardContinuityAlertsMiniWidget: widget(() => import('~/components/dashboard/ContinuityAlertsMiniWidget.vue')),
+  DashboardNextUpTodayMiniWidget: widget(() => import('~/components/dashboard/NextUpTodayMiniWidget.vue')),
+  DashboardMonthlyGoalsWidget: widget(() => import('~/components/dashboard/MonthlyGoalsWidget.vue')),
 }
 
 // Widgets scoped to "this week" (rather than the period filter below) get a

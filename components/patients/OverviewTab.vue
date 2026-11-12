@@ -4,6 +4,7 @@ import { openEndedPlanLabel, planVisitsToBook } from '~/utils/planRenewal'
 import { patientAge } from '~/utils/patientAge'
 import { resolveVisitPayment, type VisitPayment } from '~/utils/visitPayment'
 import type { Tables } from '~/types/database.types'
+import type { CareStop } from '~/composables/useCareStopReasons'
 
 // Overview is a briefing, not a drawer.
 //
@@ -53,88 +54,124 @@ const apptLoading = ref(true)
 // -- three confident statements about a patient, all false. The layout's toast
 // says a query failed; these say which card cannot be trusted.
 const apptFailed = ref(false)
-// The payment walk behind the footnote is up to three more rounds, and none
-// of it is needed to say when the next appointment is. The card shows as soon
-// as its own two rows are in; only the footnote waits for this.
-const footnoteLoading = ref(true)
 
-const APPT_COLS =
-  'id, starts_at, ends_at, status, confirmation_status, clinic_id, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)'
+// -- One request for the whole tab ------------------------------------------
+// patient_overview (20261111192000) answers what this tab and the cards it
+// mounts used to ask in some twenty-five requests: on a two-core database
+// each costs 50-100 ms whatever it returns, and the ones fired together
+// queue. It only carries the rows -- the same columns, filters and order the
+// selects had, read under the viewer's own policies -- and everything shown
+// is still worked out here, from them.
+type BonoRow = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean; patients?: { first_name: string; last_name: string | null } | null }
+interface OverviewData {
+  next_appointment: ApptRow | null
+  last_visit: ApptRow | null
+  last_visit_payment: {
+    session: { amount_cents: number; external_reference: string | null; package_purchases: { package_name: string; sessions_total: number; sessions_used: number; external_reference: string | null } | null } | null
+    invoice: { id: string; invoice_number: string; total_cents: number; status: string } | null
+    payments: { id: string; method: string; amount_cents: number }[]
+    facturas: { number: string }[]
+  }
+  unpaid_invoices: { invoice_number: string; total_cents: number; created_at: string }[]
+  awaiting_docs: { id: string; title: string; created_at: string }[]
+  plan: PlanRow | null
+  plan_completed: number
+  plan_scheduled: number
+  plan_upcoming: number
+  plan_bono: { package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean } | null
+  plan_membership: { membership_name: string; price_cents: number; status: string; billing_interval: string | null; billing_interval_count: number | null } | null
+  plan_visits: { starts_at: string; status: string }[]
+  bonos_own: BonoRow[]
+  bonos_shared: { package_purchases: BonoRow | null }[]
+  // FamilyCard's own rows; it types them.
+  family_links: unknown[]
+  family_managers: unknown[]
+  care_stop: CareStop | null
+  care_stop_reasons: { id: string; name: string }[]
+  team_members: { id: string; full_name: string }[]
+}
+const overview = ref<OverviewData | null>(null)
+// The request failed and nothing has landed yet. The three cards say so; the
+// side cards are told to ask for their own (undefined), as they do anywhere
+// else they are mounted.
+const overviewFailed = ref(false)
 
-let apptRun = 0
-async function loadAppointments({ silent = false } = {}) {
-  const run = ++apptRun
+let overviewRun = 0
+async function loadOverview({ silent = false } = {}) {
+  const run = ++overviewRun
   if (!silent) {
     apptLoading.value = true
-    footnoteLoading.value = true
+    attentionLoading.value = true
+    planLoading.value = true
   }
-  const [{ data: upcoming, error: upcomingError }, { data: past, error: pastError }] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select(APPT_COLS)
-      .eq('patient_id', props.patient.id)
-      .eq('status', 'booked')
-      .gt('starts_at', new Date().toISOString())
-      .is('deleted_at', null)
-      .order('starts_at')
-      .limit(1),
-    supabase
-      .from('appointments')
-      .select(APPT_COLS)
-      .eq('patient_id', props.patient.id)
-      .eq('status', 'completed')
-      .is('deleted_at', null)
-      .order('starts_at', { ascending: false })
-      .limit(1),
-  ])
-  if (run !== apptRun) return
-  apptFailed.value = !!(upcomingError || pastError)
-  if (apptFailed.value) {
-    apptLoading.value = false
-    footnoteLoading.value = false
-    return
+  const { data, error } = await supabase.rpc('patient_overview' as never, { p_patient_id: props.patient.id, p_now: new Date().toISOString() } as never)
+  if (run !== overviewRun) return
+  // One request, so the cards fail together. What each held stays as it was:
+  // a silent reload after an edit should not wipe an unpaid charge off the
+  // screen because one request dropped.
+  const failed = !!error || !data
+  apptFailed.value = failed
+  attentionFailed.value = failed
+  planFailed.value = failed
+  if (failed) {
+    overviewFailed.value = !overview.value
+    teamLoaded.value = true
+  } else {
+    const o = data as unknown as OverviewData
+    overview.value = o
+    overviewFailed.value = false
+    nextAppt.value = o.next_appointment ?? null
+    lastVisit.value = o.last_visit ?? null
+    lastVisitPayment.value = o.last_visit ? paymentOf(o.last_visit_payment) : null
+    unpaid.value = o.unpaid_invoices ?? []
+    awaitingForms.value = o.awaiting_docs ?? []
+    plan.value = o.plan ?? null
+    // No plan, no counts: the three were only asked for once a plan was found.
+    planCompleted.value = o.plan ? o.plan_completed ?? 0 : 0
+    planScheduled.value = o.plan ? o.plan_scheduled ?? 0 : 0
+    planUpcoming.value = o.plan ? o.plan_upcoming ?? 0 : 0
+    teamMembers.value = o.team_members ?? []
+    teamLoaded.value = true
   }
-  nextAppt.value = (upcoming?.[0] as unknown as ApptRow) ?? null
-  const visit = (past?.[0] as unknown as ApptRow) ?? null
-  lastVisit.value = visit
   apptLoading.value = false
-  const payment = visit ? await resolvePaymentFor(visit.id) : null
-  // A reload may have landed a different last visit while this one resolved.
-  // Compared by run, not by object: the ref hands back a reactive proxy, so
-  // `lastVisit.value !== visit` held every time and the footnote never came.
-  if (run !== apptRun) return
-  lastVisitPayment.value = payment
-  footnoteLoading.value = false
+  attentionLoading.value = false
+  planLoading.value = false
 }
 
 // The same four-table walk the Appointments tab does, for one visit: the
-// footnote says how the last one was paid, and "paid" is not a column.
-async function resolvePaymentFor(appointmentId: string): Promise<VisitPayment> {
-  const [{ data: sessions }, { data: invoices }] = await Promise.all([
-    supabase
-      .from('package_sessions')
-      .select('amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
-      .eq('appointment_id', appointmentId)
-      .limit(1),
-    supabase.from('invoices').select('id, invoice_number, total_cents, status').eq('appointment_id', appointmentId).limit(1),
-  ])
-  const session = sessions?.[0] as any
-  const invoice = invoices?.[0]
-  const { data: payments } = invoice
-    ? await supabase.from('payments').select('id, method, amount_cents').eq('invoice_id', invoice.id).order('paid_at')
-    : { data: [] as { id: string; method: string; amount_cents: number }[] }
-  const paymentIds = (payments ?? []).map((p) => p.id)
-  const { data: facturas } = paymentIds.length
-    ? await supabase.from('facturas').select('number').in('payment_id', paymentIds)
-    : { data: [] as { number: string }[] }
+// footnote says how the last one was paid, and "paid" is not a column. The
+// rows arrive with the rest; they were four round trips, two of them waiting
+// on the one before.
+function paymentOf(raw: OverviewData['last_visit_payment'] | null | undefined): VisitPayment {
+  const session = raw?.session ?? null
+  const invoice = raw?.invoice ?? null
   return resolveVisitPayment({
     session: session ? { amount_cents: session.amount_cents, external_reference: session.external_reference } : null,
     purchase: session?.package_purchases ?? null,
     invoice: invoice ? { invoice_number: invoice.invoice_number, total_cents: invoice.total_cents, status: invoice.status } : null,
-    payments: (payments ?? []).map((p) => ({ method: p.method, amount_cents: p.amount_cents })),
-    facturaNumbers: (facturas ?? []).map((f) => f.number),
+    payments: (raw?.payments ?? []).map((p) => ({ method: p.method, amount_cents: p.amount_cents })),
+    facturaNumbers: (raw?.facturas ?? []).map((f) => f.number),
   })
 }
+
+// What the side cards are handed: null while the request is out (they wait),
+// the rows once it is in, undefined if it failed before anything landed (they
+// fetch their own, as they do when mounted anywhere else).
+const sideData = computed(() => (overview.value ? overview.value : overviewFailed.value ? undefined : null))
+const bonosPreload = computed(() => sideData.value && { own: sideData.value.bonos_own ?? [], shared: sideData.value.bonos_shared ?? [] })
+const familyPreload = computed(() => sideData.value && { links: sideData.value.family_links ?? [], managers: sideData.value.family_managers ?? [] })
+// The plan's cards are only mounted once the plan is in, so they never wait.
+const planPaymentPreload = computed(() => (overview.value ? { bono: overview.value.plan_bono ?? null, membership: overview.value.plan_membership ?? null } : undefined))
+const careStopPreload = computed(() => {
+  const o = sideData.value
+  if (!o) return o
+  const by = o.care_stop?.recorded_by ?? null
+  return {
+    current: o.care_stop ?? null,
+    reasons: o.care_stop_reasons ?? [],
+    recordedBy: by ? (o.team_members ?? []).find((m) => m.id === by)?.full_name ?? null : null,
+  }
+})
 
 const METHOD_LABELS = computed<Record<string, string>>(() => ({
   cash: t('cash', 'efectivo'),
@@ -186,33 +223,6 @@ const awaitingForms = ref<{ id: string; title: string; created_at: string }[]>([
 const attentionLoading = ref(true)
 const attentionFailed = ref(false)
 
-let attentionRun = 0
-async function loadAttention({ silent = false } = {}) {
-  const run = ++attentionRun
-  if (!silent) attentionLoading.value = true
-  const [{ data: invoices, error: invoicesError }, { data: docs, error: docsError }] = await Promise.all([
-    supabase
-      .from('invoices')
-      .select('invoice_number, total_cents, created_at')
-      .eq('patient_id', props.patient.id)
-      .eq('status', 'unpaid')
-      .order('created_at'),
-    supabase
-      .from('patient_docs')
-      .select('id, title, created_at')
-      .eq('patient_id', props.patient.id)
-      .is('completed_at', null)
-      .order('created_at'),
-  ])
-  if (run !== attentionRun) return
-  attentionFailed.value = !!(invoicesError || docsError)
-  // Kept as they were on a failure: a silent reload after an edit should not
-  // wipe an unpaid charge off the screen because one request dropped.
-  if (!invoicesError) unpaid.value = invoices ?? []
-  if (!docsError) awaitingForms.value = docs ?? []
-  attentionLoading.value = false
-}
-
 const attention = computed<AttentionRow[]>(() => {
   const rows: AttentionRow[] = []
   const owed = unpaid.value.reduce((sum, i) => sum + i.total_cents, 0)
@@ -261,58 +271,7 @@ const planFailed = ref(false)
 // Visits completed SINCE THE PLAN STARTED, and not deleted -- as
 // care_plan_continuity_alerts (0131), the Clinical tab's PhaseStats and the
 // app count them. Every completed visit ever put a returning patient's new
-// plan half done on day one.
-let planRun = 0
-async function loadPlan({ silent = false } = {}) {
-  const run = ++planRun
-  if (!silent) planLoading.value = true
-  const { data: plans, error: plansError } = await supabase
-    .from('care_plans')
-    .select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id')
-    .eq('patient_id', props.patient.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-  if (run !== planRun) return
-  if (plansError) {
-    planFailed.value = true
-    planLoading.value = false
-    return
-  }
-  const latest = (plans?.[0] as PlanRow) ?? null
-  let completed = 0
-  let scheduled = 0
-  let upcoming = 0
-  if (latest) {
-    const counted = (status: string) => {
-      let q = supabase
-        .from('appointments')
-        .select('id', { count: 'exact', head: true })
-        .eq('patient_id', props.patient.id)
-        .eq('status', status)
-        .is('deleted_at', null)
-      if (latest.started_at) q = q.gte('starts_at', latest.started_at)
-      return q
-    }
-    const [done, ahead, next] = await Promise.all([counted('completed'), counted('booked'), counted('booked').gte('starts_at', new Date().toISOString())])
-    if (run !== planRun) return
-    // A failed count would read as "visit 0 of 12" and a full row of visits
-    // left to book.
-    if (done.error || ahead.error || next.error) {
-      planFailed.value = true
-      planLoading.value = false
-      return
-    }
-    completed = done.count ?? 0
-    scheduled = ahead.count ?? 0
-    upcoming = next.count ?? 0
-  }
-  planFailed.value = false
-  plan.value = latest
-  planCompleted.value = completed
-  planScheduled.value = scheduled
-  planUpcoming.value = upcoming
-  planLoading.value = false
-}
+// plan half done on day one. Counted in patient_overview, with the plan.
 
 const planToBook = computed(() => (plan.value ? planVisitsToBook(plan.value, planCompleted.value, planScheduled.value) : 0))
 const planBookLabel = computed(() => {
@@ -379,23 +338,12 @@ const timeline = ref<{ reload: (opts?: { silent?: boolean }) => Promise<void> } 
 //
 // The timeline is reloaded only after an edit. It loads itself when it
 // mounts and when the patient changes (usePatientTimeline), so asking it
-// again from here ran its ten queries twice on every record opened --
-// 42 requests where 32 would do, measured on 18 Oct 2026.
+// again from here ran its queries twice on every record opened.
 async function loadAll(options: { silent?: boolean; timeline?: boolean } = {}) {
   const { timeline: withTimeline = true, ...rest } = options
-  await Promise.all([loadAppointments(rest), loadAttention(rest), loadPlan(rest), withTimeline ? timeline.value?.reload(rest) : null])
+  await Promise.all([loadOverview(rest), withTimeline ? timeline.value?.reload(rest) : null])
 }
-async function loadTeamMembers() {
-  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
-  teamMembers.value = data ?? []
-  teamLoaded.value = true
-}
-// The team list only names the practitioner in the details card, so it no
-// longer holds up the four cards above it.
-onMounted(() => {
-  loadTeamMembers()
-  loadAll({ timeline: false })
-})
+onMounted(() => loadAll({ timeline: false }))
 watch(() => props.patient.id, () => loadAll({ timeline: false }))
 
 const retryingCards = ref(false)
@@ -403,11 +351,7 @@ async function retryCards() {
   if (retryingCards.value) return
   retryingCards.value = true
   try {
-    await Promise.all([
-      apptFailed.value ? loadAppointments() : null,
-      attentionFailed.value ? loadAttention() : null,
-      planFailed.value ? loadPlan() : null,
-    ])
+    await loadOverview()
   } finally {
     retryingCards.value = false
   }
@@ -519,14 +463,9 @@ function onDetailsUpdated() {
         <p v-else class="mt-3 text-[13px] text-warning-text">{{ t('Nothing booked.', 'Nada reservado.') }}</p>
 
         <!-- The footnote §4 asks for: the last visit, and how it was paid. -->
-        <template v-if="!apptLoading && !apptFailed && lastVisit">
-          <div v-if="footnoteLoading" class="mt-3 border-t border-line-divider pt-2.5">
-            <UiSkeleton class="h-3 w-64 max-w-full rounded-ctlSm" />
-          </div>
-          <p v-else-if="lastVisitFootnote" class="mt-3 border-t border-line-divider pt-2.5 text-[12.5px] text-ink-muted">
-            {{ lastVisitFootnote }}
-          </p>
-        </template>
+        <p v-if="!apptLoading && !apptFailed && lastVisit && lastVisitFootnote" class="mt-3 border-t border-line-divider pt-2.5 text-[12.5px] text-ink-muted">
+          {{ lastVisitFootnote }}
+        </p>
       </section>
 
       <!-- 3. Care plan -->
@@ -565,7 +504,11 @@ function onDetailsUpdated() {
           <p v-if="plan.total_visits === null && planUpcoming === 0" class="mt-2 rounded-ctl bg-warning-bg px-2.5 py-1.5 text-[12.5px] font-medium text-warning-text" data-cy="overview-plan-no-next">
             {{ t('No next visit booked.', 'No tiene la próxima visita reservada.') }}
           </p>
-          <PatientsPlanPayment :plan="plan" :visits-left="plan.total_visits === null ? 0 : Math.max(0, plan.total_visits - planCompleted)" />
+          <PatientsPlanPayment
+            :plan="plan"
+            :visits-left="plan.total_visits === null ? 0 : Math.max(0, plan.total_visits - planCompleted)"
+            :preloaded="planPaymentPreload"
+          />
           <!-- The plan's visits not booked yet, in one go: the calendar opens
                with "repeat as the care plan" chosen, at the plan's cadence.
                It was only on the Clinical tab. -->
@@ -579,7 +522,12 @@ function onDetailsUpdated() {
           </NuxtLink>
           <!-- Period by period: only for someone who sees every visit, or a
                colleague's attended visit would read as one missed. -->
-          <PatientsPlanPeriods v-if="plan.started_at && seesAllVisits" :patient-id="patient.id" :plan="{ ...plan, started_at: plan.started_at }" />
+          <PatientsPlanPeriods
+            v-if="plan.started_at && seesAllVisits"
+            :patient-id="patient.id"
+            :plan="{ ...plan, started_at: plan.started_at }"
+            :preloaded-visits="overview?.plan_visits"
+          />
           <div v-if="goalChips.length > 0" class="mt-3 flex flex-wrap gap-1.5">
             <span v-for="goal in goalChips" :key="goal" class="max-w-full truncate rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] text-chip-text" :title="goal">{{ goal }}</span>
           </div>
@@ -623,15 +571,15 @@ function onDetailsUpdated() {
         </div>
       </section>
 
-      <PatientsBonosCard :patient-id="patient.id" />
+      <PatientsBonosCard :patient-id="patient.id" :preloaded="bonosPreload" />
 
       <PatientsPregnancyCard :patient="patient" @updated="emit('updated')" />
 
-      <PatientsFamilyCard :patient="patient" />
+      <PatientsFamilyCard :patient="patient" :preloaded="familyPreload" />
 
       <!-- After the bookings have loaded: the card leaves itself out for a
            patient with one coming (CareStopCard). -->
-      <PatientsCareStopCard v-if="!apptLoading && !apptFailed" :patient="patient" :booked="!!nextAppt" />
+      <PatientsCareStopCard v-if="!apptLoading && !apptFailed" :patient="patient" :booked="!!nextAppt" :preloaded="careStopPreload" />
 
       <section aria-labelledby="ov-details" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <h2 id="ov-details" class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</h2>

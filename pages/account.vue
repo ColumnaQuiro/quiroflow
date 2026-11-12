@@ -163,6 +163,7 @@ async function saveProfile() {
   }
   savingProfile.value = true
   const { error } = await supabase.from('team_members').update({ full_name: name, color: color.value }).eq('id', store.teamMember.id)
+  invalidateTeamDirectory()
   savingProfile.value = false
   if (error) {
     showToast(error.message, 'error')

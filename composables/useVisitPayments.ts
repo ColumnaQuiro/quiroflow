@@ -3,46 +3,60 @@ import type { Database } from '~/types/database.types'
 
 // How each of a set of visits was paid for, keyed by appointment id.
 //
-// Four tables in one round: the bono sessions, and the invoices with their
-// payments and each payment's factura embedded. It used to be three rounds --
-// payments waited for the invoice ids, facturas for the payment ids -- and
-// every screen that shows this (the calendar, the appointment panel, the
-// patient's visits) waited on all three in series. Shared by the patient's
-// Appointments tab and the calendar, which both need the same answer for a
-// screenful of visits -- see utils/visitPayment for the rules that turn the
-// rows into one.
+// Four tables in one request: the bono sessions with their pack, and the
+// invoices with their payments and each payment's factura (the
+// visit_payment_rows function, which nests them the way PostgREST embedded
+// them). It was three rounds once, then two selects side by side, each split
+// into chunks of 150 ids to fit a URL; the ids now travel in the body.
+// Shared by the patient's Appointments tab, the calendar and the appointment
+// panel, which all need the same answer -- see utils/visitPayment for the
+// rules that turn the rows into one.
 export function useVisitPayments() {
   const supabase = useSupabaseClient()
   return { fetchVisitPayments: (appointmentIds: string[]) => fetchVisitPayments(supabase, appointmentIds) }
 }
 
+/** What visit_payment_rows returns; also a key of calendar_range_details and appointment_panel. */
+export interface VisitPaymentRows {
+  package_sessions: {
+    appointment_id: string | null
+    amount_cents: number
+    external_reference: string | null
+    used_at: string
+    package_purchases: {
+      package_name: string
+      sessions_total: number
+      sessions_used: number
+      external_reference: string | null
+      package_sessions: { used_at: string }[]
+    } | null
+  }[]
+  // Payments in the order they were taken. One factura per payment
+  // (payment_id is unique), so an object rather than a list; the resolver
+  // accepts either.
+  invoices: {
+    id: string
+    appointment_id: string | null
+    invoice_number: string
+    total_cents: number
+    status: string
+    payments: { id: string; method: string; amount_cents: number; paid_at: string | null; facturas: { number: string } | { number: string }[] | null }[]
+  }[]
+}
+
 async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<Database>>, appointmentIds: string[]): Promise<Record<string, VisitPayment>> {
   if (appointmentIds.length === 0) return {}
+  const { data, error } = await supabase.rpc('visit_payment_rows' as never, { p_appointment_ids: appointmentIds } as never)
+  if (error) throw error
+  return visitPaymentsFromRows(appointmentIds, data as unknown as VisitPaymentRows | null)
+}
 
-  // Id lists go through fetchByIds: a calendar week can hold hundreds of
-  // visits, past what one URL carries.
-  const [sessions, invoices] = await Promise.all([
-    fetchByIds(appointmentIds, (chunk) =>
-      supabase
-        .from('package_sessions')
-        .select(
-          'appointment_id, amount_cents, external_reference, used_at, package_purchases(package_name, sessions_total, sessions_used, external_reference, package_sessions(used_at))',
-        )
-        .in('appointment_id', chunk),
-    ),
-    // Named foreign key: invoices and payments are related twice (a refund
-    // invoice also points at the payment it refunds). Payments in the order
-    // they were taken.
-    fetchByIds(appointmentIds, (chunk) =>
-      supabase
-        .from('invoices')
-        .select('id, appointment_id, invoice_number, total_cents, status, payments!payments_invoice_id_fkey(id, method, amount_cents, paid_at, facturas(number))')
-        .in('appointment_id', chunk)
-        .order('paid_at', { referencedTable: 'payments' }),
-    ),
-  ])
+/** The rows for a set of visits, resolved to one answer per appointment id. */
+export function visitPaymentsFromRows(appointmentIds: string[], rows: VisitPaymentRows | null | undefined): Record<string, VisitPayment> {
+  const sessions = rows?.package_sessions ?? []
+  const invoices = rows?.invoices ?? []
 
-  const sessionByAppointment = new Map<string, any>()
+  const sessionByAppointment = new Map<string, VisitPaymentRows['package_sessions'][number]>()
   for (const s of sessions) if (s.appointment_id) sessionByAppointment.set(s.appointment_id, s)
 
   const resolved: Record<string, VisitPayment> = {}
@@ -62,8 +76,6 @@ async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<
       purchase: session?.package_purchases ?? null,
       invoice: invoice ? { invoice_number: invoice.invoice_number, total_cents: invoice.total_cents, status: invoice.status } : null,
       payments: invoicePayments.map((p) => ({ method: p.method, amount_cents: p.amount_cents })),
-      // One factura per payment (payment_id is unique), so PostgREST embeds
-      // an object rather than a list; concat accepts either.
       facturaNumbers: invoicePayments.flatMap((p) => ([] as { number: string }[]).concat(p.facturas ?? []).map((f) => f.number)).filter((n): n is string => !!n),
     })
   }

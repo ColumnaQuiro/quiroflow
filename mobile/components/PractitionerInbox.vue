@@ -318,6 +318,36 @@ function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof f
   // Kept: what a search or "Load more" found earlier stays in the list.
   const fresh = new Set(list.map((c) => c.key))
   summaries.value = [...list, ...summaries.value.filter((c) => !fresh.has(c.key))]
+  if (leads) refileUnlistedLeads(leads.conversations.map((l) => l.leadId))
+}
+
+// A lead the Growth list has stopped naming was converted (or deleted) since
+// it was loaded here. Its row survives the "Kept" rule just above, and its
+// cached messages survive because a refresh only brings what is newer -- so
+// a conversion this app did not hear about in realtime (it was in the
+// background, the socket had dropped) left the person as two chats until the
+// app was killed. The database is asked only when such a lead exists, and a
+// lead found unconverted (deleted, or only just created) is not asked again.
+const leadsKnownUnconverted = new Set<string>()
+async function refileUnlistedLeads(listed: string[]) {
+  const held = [
+    ...threadExtra.value.map((m) => (m.patient_id ? null : m.lead_id)),
+    ...summaries.value.map((c) => c.leadId),
+  ]
+  const missing = leadsMissingFromList(held, listed).filter((id) => !leadsKnownUnconverted.has(id))
+  if (!missing.length) return
+  const { data, error } = await supabase.from('leads').select('id, patient_id').in('id', missing)
+  if (error) return
+  const patientByLead: Record<string, string> = {}
+  for (const l of (data ?? []) as { id: string; patient_id: string | null }[]) {
+    if (l.patient_id) patientByLead[l.id] = l.patient_id
+    else leadsKnownUnconverted.add(l.id)
+  }
+  if (!Object.keys(patientByLead).length) return
+  summaries.value = summaries.value.filter((c) => !(c.leadId && patientByLead[c.leadId]))
+  threadExtra.value = foldConvertedLeadMessages(threadExtra.value, patientByLead)
+  const openLead = selectedKey.value ? leadIdOfKey(selectedKey.value) : null
+  if (openLead && patientByLead[openLead]) selectedKey.value = patientByLead[openLead]
 }
 async function loadMoreSummaries() {
   if (loadingMore.value) return
@@ -1678,29 +1708,35 @@ function bubbleText(m: Message): string {
 // in place instead, as the web Inbox does. A message that changed
 // conversation (linked to a patient, a lead converted) is not a receipt and
 // still reloads; one that is not loaded here changes nothing on screen.
+//
+// A moved message is re-filed here as well, not only reloaded. The reload
+// fetches what is NEWER than a thread already has and never re-reads what it
+// holds, so a converted lead's cached messages used to keep patient_id null
+// and stay keyed lead:<id>: the person showed as two chats, the lead's with
+// everything from before and the patient's with everything after, until the
+// app was killed.
 function onMessageUpdate(payload: { new: Record<string, unknown> }) {
   const next = payload.new as Partial<Message>
   if (!next.id) return
-  const patch = (list: Message[]) => {
-    const i = list.findIndex((m) => m.id === next.id)
-    if (i === -1) return null
-    const current = list[i]!
-    if (keyOf({ patient_id: next.patient_id ?? null, phone_number: next.phone_number ?? null, external_contact_id: next.external_contact_id ?? null, lead_id: next.lead_id ?? null }) !== keyOf(current)) return 'moved'
-    // A receipt moves the ticks; a reaction (or one taken back) changes the
-    // chip on the bubble. Both in place.
-    const status = next.status ?? current.status
-    const reaction = 'contact_reaction' in next ? (next.contact_reaction ?? null) : (current.contact_reaction ?? null)
-    if (status === current.status && reaction === (current.contact_reaction ?? null)) return list
-    const copy = list.slice()
-    copy[i] = { ...current, status, contact_reaction: reaction }
-    return copy
-  }
-  const inThread = patch(threadExtra.value)
-  if (inThread === 'moved') {
-    scheduleLoad()
-    return
-  }
-  if (inThread) threadExtra.value = inThread
+  const i = threadExtra.value.findIndex((m) => m.id === next.id)
+  if (i === -1) return
+  const current = threadExtra.value[i]!
+  // A receipt moves the ticks; a reaction (or one taken back) changes the
+  // chip on the bubble. Both in place.
+  const status = next.status ?? current.status
+  const reaction = 'contact_reaction' in next ? (next.contact_reaction ?? null) : (current.contact_reaction ?? null)
+  const updated: Message = { ...withConversationOf(current, next), status, contact_reaction: reaction }
+  const from = keyOf(current)
+  const to = keyOf(updated)
+  if (from === to && status === current.status && reaction === (current.contact_reaction ?? null)) return
+  const copy = threadExtra.value.slice()
+  copy[i] = updated
+  threadExtra.value = copy
+  if (from === to) return
+  // The chat open on the lead follows them once the last of its messages
+  // has moved, rather than emptying under the person reading it.
+  if (selectedKey.value === from && !threadExtra.value.some((m) => keyOf(m) === from)) selectedKey.value = to
+  scheduleLoad()
 }
 
 let channel: ReturnType<typeof supabase.channel> | null = null

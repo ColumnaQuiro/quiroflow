@@ -1115,6 +1115,41 @@ async function changePaymentMethod(paymentId: string, method: string) {
   await loadAll()
 }
 
+// Corrects a payment recorded with the wrong amount, and its factura with
+// it: correct_payment_amount() issues a rectificativa for the difference in
+// the same transaction, so the payment and the fiscal record cannot end up
+// saying different things. The amount of a payment with a factura can no
+// longer be changed any other way (payments_amount_change).
+async function correctPaymentAmount(paymentId: string, amountCents: number, reason: string) {
+  const payment = ledgerPayments.value.find((p) => p.id === paymentId)
+  const { data, error } = await supabase.rpc(
+    'correct_payment_amount' as never,
+    { p_payment_id: paymentId, p_amount_cents: amountCents, p_reason: reason } as never,
+  )
+  if (error) {
+    showToast(t('The amount was not corrected', 'No se ha corregido el importe') + `: ${error.message}`, 'error', 10000)
+    return
+  }
+  const rectificativa = data as unknown as string | null
+  await Promise.all([loadAll(), loadFacturas()])
+
+  // A payment corrected down can leave its receipt short -- the visit was
+  // charged at 50 and 40 came in. Said here, because the receipt reopening
+  // is the database's doing and nothing else on screen points at it.
+  const invoice = payment?.invoice_id ? invoices.value.find((i) => i.id === payment.invoice_id) : null
+  const reopened = invoice && invoice.status === 'unpaid'
+  showToast(
+    (rectificativa
+      ? t(`Amount corrected to ${money(amountCents)}; rectifying factura ${rectificativa} issued.`, `Importe corregido a ${money(amountCents)}; emitida la factura rectificativa ${rectificativa}.`)
+      : t(`Amount corrected to ${money(amountCents)}.`, `Importe corregido a ${money(amountCents)}.`)) +
+      (reopened
+        ? ' ' + t(`${invoice.invoice_number} is no longer fully paid: collect the rest or write it off.`, `${invoice.invoice_number} ya no está pagado del todo: cobra el resto o condónalo.`)
+        : ''),
+    'success',
+    reopened ? 10000 : 5000,
+  )
+}
+
 async function deletePayment(paymentId: string, invoiceId: string | null, amountCents: number) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
 
@@ -3362,6 +3397,7 @@ const fieldId = useId()
       @write-off-invoice="writeOffInvoice"
       @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
       @change-payment-method="(p: { paymentId: string; method: string }) => changePaymentMethod(p.paymentId, p.method)"
+      @correct-payment-amount="(p: { paymentId: string; amountCents: number; reason: string }) => correctPaymentAmount(p.paymentId, p.amountCents, p.reason)"
       @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string; restock: { productId: string; units: number }[] }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method, payload.restock)"
       @credits-changed="onLedgerCreditsChanged"
     />

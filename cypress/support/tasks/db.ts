@@ -2569,13 +2569,14 @@ async function settingsWriteAsStaff(opts: {
 async function writeAsStaff(opts: {
   email: string
   password: string
-  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase' | 'setPaymentMethod'
+  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase' | 'setPaymentMethod' | 'setPaymentAmount'
   appointmentId?: string
   patientId?: string
   tags?: string[]
   purchase?: Record<string, unknown>
   paymentId?: string
   method?: string
+  amountCents?: number
 }) {
   const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
@@ -2589,6 +2590,8 @@ async function writeAsStaff(opts: {
     result = await userClient.from('patients').update({ tags: opts.tags ?? [] }).eq('id', opts.patientId!).select('id')
   } else if (opts.op === 'setPaymentMethod') {
     result = await userClient.from('payments').update({ method: opts.method! }).eq('id', opts.paymentId!).select('id')
+  } else if (opts.op === 'setPaymentAmount') {
+    result = await userClient.from('payments').update({ amount_cents: opts.amountCents! }).eq('id', opts.paymentId!).select('id')
   } else {
     result = await userClient.from('package_purchases').insert(opts.purchase as never).select('id')
   }

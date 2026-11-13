@@ -35,6 +35,7 @@ import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
 import { exerciseCount, fireTypeTriggers, notifyExerciseGroups, type ExerciseGroup, type TypeChange } from '~/server/utils/exerciseBulk'
+import { isBulkEmailRule, withEmailScope } from '~/server/utils/emailBudget'
 
 // The automation engine: walks one run of a rule through its steps.
 //
@@ -94,6 +95,7 @@ interface EngineRule {
   dry_run: boolean
   quiet_hours: QuietHours | null
   filters?: Record<string, unknown> | null
+  is_marketing?: boolean | null
 }
 
 type Subject =
@@ -103,9 +105,24 @@ type Subject =
 interface StepResult {
   status: ActionOutcome['status'] | 'applied'
   detail: string | null
+  /** For 'deferred': when the email budget allows another try. */
+  retryAt?: string
 }
 
 const isMessage = (action: { action_type: string }) => (MESSAGE_ACTIONS as readonly string[]).includes(action.action_type)
+
+/**
+ * Where a run parks while the day's email budget is spent. Not an event: no
+ * wait_until waits for it and nothing wakes it but the clock.
+ */
+export const EMAIL_QUOTA_WAIT = 'email_quota'
+
+/**
+ * The hours a deferred campaign email may go out in when its rule sets none:
+ * the budget resets at midnight UTC, and a newsletter should not land at one
+ * in the morning because that is when there was room for it.
+ */
+const BUDGET_SEND_WINDOW: QuietHours = { from: '09:00', to: '20:00' }
 
 // ------------------------------------------------------------------ rules
 
@@ -425,7 +442,7 @@ async function releaseRun(supabase: any, runId: string, until: string) {
 
 async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' }) {
   const [{ data: ruleRow }, { data: actionRows }] = await Promise.all([
-    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours, filters').eq('id', run.rule_id).maybeSingle(),
+    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours, filters, is_marketing').eq('id', run.rule_id).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', run.rule_id).order('position'),
   ])
   const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', enabled: true, dry_run: false, quiet_hours: null }
@@ -435,7 +452,8 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
   const root = chainOf(null, null)
   const nextInChain = (action: EngineAction) => chainOf(action.parent_id, action.branch).find((a) => a.position > action.position) ?? null
   const current = run.current_action_id ? (actions.find((a) => a.id === run.current_action_id) ?? null) : null
-  const waitingEvent = run.waiting_for && run.waiting_for !== 'delay' ? run.waiting_for : null
+  // A delay and the email budget are parked on the clock, not on an event.
+  const waitingEvent = run.waiting_for && run.waiting_for !== 'delay' && run.waiting_for !== EMAIL_QUOTA_WAIT ? run.waiting_for : null
 
   // Before the person is even re-checked: a paused rule does nothing to them,
   // including the lead checks that call out to PracticeHub.
@@ -572,7 +590,26 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
       }
     }
 
-    const result = isMessage(action) ? await sendStep(supabase, run, subject, action, origin) : await applyStep(supabase, run, rule, subject, action, origin)
+    const step = action
+    const result = isMessage(step)
+      ? await withEmailScope({ kind: isBulkEmailRule(rule) ? 'bulk' : 'transactional', accountId: run.account_id }, () => sendStep(supabase, run, subject, step, origin))
+      : await applyStep(supabase, run, rule, subject, action, origin)
+
+    // No room in today's email budget. Not a failure, so no attempt is spent:
+    // the run waits at this same step and sends it when there is room, inside
+    // the rule's sending hours (or, with none set, daytime hours) -- and
+    // everything the walk checks before a send is checked again then, consent
+    // and the stop conditions included.
+    if (result.status === 'deferred') {
+      const earliest = result.retryAt ? new Date(result.retryAt) : new Date(Date.now() + SEQUENCE_TICK_MINUTES * 60_000)
+      const resumeAt = nextAllowedSendTime(earliest, rule.quiet_hours ?? BUDGET_SEND_WINDOW, tz)
+      await supabase
+        .from('automation_sequence_runs')
+        .update({ current_action_id: action.id, waiting_for: EMAIL_QUOTA_WAIT, wait_deadline: null, resume_at: resumeAt.toISOString(), last_error: null })
+        .eq('id', run.id)
+      await logRunEvent(supabase, run, { outcome: 'deferred', position: eventPosition, action, detail: result.detail })
+      return
+    }
 
     if (result.status === 'failed') {
       attempts += 1
@@ -899,7 +936,7 @@ async function sendStep(supabase: any, run: SequenceRun, subject: Subject, actio
     // same consent gate, the same template resolution and the same message
     // log a patient would.
     const [outcome] = await runLeadRuleActions(supabase, run.account_id, run.rule_id, subject.lead, origin, undefined, step)
-    return { status: outcome?.status ?? 'sent', detail: outcome?.detail ?? null }
+    return { status: outcome?.status ?? 'sent', detail: outcome?.detail ?? null, retryAt: outcome?.retryAt }
   }
   const context = (run.context ?? {}) as { triggerBody?: TriggerBody | null; extraContext?: Partial<MergeContext> | null }
   const [outcome] = await runPatientRuleActions(
@@ -913,7 +950,7 @@ async function sendStep(supabase: any, run: SequenceRun, subject: Subject, actio
     context.extraContext ?? undefined,
     step,
   )
-  return { status: outcome?.status ?? 'sent', detail: outcome?.detail ?? null }
+  return { status: outcome?.status ?? 'sent', detail: outcome?.detail ?? null, retryAt: outcome?.retryAt }
 }
 
 /** The steps that do something inside QuiroFlow rather than send. */

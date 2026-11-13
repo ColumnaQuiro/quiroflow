@@ -75,6 +75,7 @@ const emit = defineEmits<{
   deleteInvoice: [invoiceId: string]
   deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
   changePaymentMethod: [payload: { paymentId: string; method: string }]
+  correctPaymentAmount: [payload: { paymentId: string; amountCents: number; reason: string }]
   writeOffInvoice: [invoiceId: string]
   refundInvoice: [payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string; restock: { productId: string; units: number }[] }]
   creditsChanged: []
@@ -135,6 +136,8 @@ interface LedgerRow {
   paymentMethod?: string
   /** Money recorded by hand, so its method is a choice somebody can correct. */
   paymentMethodChangeable?: boolean
+  /** Money taken against a receipt, not processor-charged, refunded, a bono or a top-up: what correct_payment_amount() accepts. */
+  paymentAmountCorrectable?: boolean
   isRefund?: boolean
   /** Deliberately moves no money -- renders an em dash in Debit and Credit. */
   noMoneyMoved?: boolean
@@ -270,6 +273,19 @@ const rows = computed<LedgerRow[]>(() => {
     // refuses the same three; this only keeps the button off rows it would
     // refuse.
     paymentMethodChangeable: !p.stripe_payment_intent_id && p.method !== 'credit' && p.method !== 'write_off',
+    // The same refusals correct_payment_amount() makes, so the button is only
+    // on rows it would accept. A bono payment or a top-up keeps books of its
+    // own that a changed amount would leave behind; a refunded payment is
+    // already corrected by its refund's rectificativa.
+    paymentAmountCorrectable:
+      !!p.invoice_id &&
+      !p.package_purchase_id &&
+      !p.stripe_payment_intent_id &&
+      p.method !== 'credit' &&
+      p.method !== 'write_off' &&
+      p.amount_cents > 0 &&
+      !creditPaymentIds.has(p.id) &&
+      !props.invoices.some((i) => i.refunds_payment_id === p.id),
     date: p.paid_at,
     // Negative only for the payments row createRefund() inserts alongside a
     // refund invoice, so this money goes back out belongs in Debit like any
@@ -483,6 +499,41 @@ function submitMethodChange() {
   closeMethodModal()
 }
 
+// Correcting the amount of a payment typed in wrongly -- 50 recorded, 40
+// taken. correct_payment_amount() changes the payment and, when a factura was
+// issued for it, issues a rectificativa for the difference naming it. The
+// factura itself is never edited: a fiscal record is corrected by another
+// one, so the reason is required -- it is printed on the rectificativa.
+const amountModalPaymentId = ref<string | null>(null)
+const amountModalCurrentCents = ref(0)
+const amountModalValue = ref('')
+const amountModalReason = ref('')
+
+function openAmountModal(paymentId: string, currentCents: number) {
+  amountModalPaymentId.value = paymentId
+  amountModalCurrentCents.value = currentCents
+  amountModalValue.value = (currentCents / 100).toFixed(2)
+  amountModalReason.value = ''
+}
+
+function closeAmountModal() {
+  amountModalPaymentId.value = null
+}
+
+const amountModalCents = computed(() => {
+  const n = Number(String(amountModalValue.value).replace(',', '.'))
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN
+})
+const amountModalValid = computed(
+  () => amountModalCents.value > 0 && amountModalCents.value !== amountModalCurrentCents.value && amountModalReason.value.trim().length > 0,
+)
+
+function submitAmountCorrection() {
+  if (!amountModalPaymentId.value || !amountModalValid.value) return
+  emit('correctPaymentAmount', { paymentId: amountModalPaymentId.value, amountCents: amountModalCents.value, reason: amountModalReason.value.trim() })
+  closeAmountModal()
+}
+
 // A receipt that sold products (Settings > Products & stock): what can still
 // come back to the shelf -- sold on it, less returned against it already --
 // offered with the refund, all of it by default. Read from the receipt's own
@@ -639,6 +690,9 @@ useFocusTrap(transferPanel, () => (transferModalOpen.value = false), () => trans
 const methodTitleId = useId()
 const methodPanel = ref<HTMLElement | null>(null)
 useFocusTrap(methodPanel, closeMethodModal, () => !!methodModalPaymentId.value)
+const amountTitleId = useId()
+const amountPanel = ref<HTMLElement | null>(null)
+useFocusTrap(amountPanel, closeAmountModal, () => !!amountModalPaymentId.value)
 const refundTitleId = useId()
 const refundPanel = ref<HTMLElement | null>(null)
 useFocusTrap(refundPanel, closeRefundModal, () => refundModalOpen.value)
@@ -756,7 +810,7 @@ const fieldId = useId()
                   </template>
                 </dl>
                 <div
-                  v-if="row.paymentId && (canDeletePayments || (canChangePaymentMethod && row.paymentMethodChangeable) || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
+                  v-if="row.paymentId && (canDeletePayments || (canChangePaymentMethod && (row.paymentMethodChangeable || row.paymentAmountCorrectable)) || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
                   class="mt-2 flex flex-wrap items-center gap-3 border-t border-line-divider pt-2 text-[12px]"
                 >
                   <button
@@ -767,6 +821,15 @@ const fieldId = useId()
                     @click="openMethodModal(row.paymentId!, row.paymentMethod ?? '')"
                   >
                     {{ t('Change method…', 'Cambiar método…') }}
+                  </button>
+                  <button
+                    v-if="canChangePaymentMethod && row.paymentAmountCorrectable"
+                    type="button"
+                    data-cy="payment-correct-amount"
+                    class="text-ink-faint hover:text-ink-muted"
+                    @click="openAmountModal(row.paymentId!, row.paymentAmountCents ?? 0)"
+                  >
+                    {{ t('Correct amount…', 'Corregir importe…') }}
                   </button>
                   <template v-if="canDeletePayments">
                     <button
@@ -913,6 +976,60 @@ const fieldId = useId()
         <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="closeMethodModal">{{ t('Cancel', 'Cancelar') }}</button>
         <UiBtn variant="primary" size="sm" data-cy="payment-method-save" :disabled="!methodModalChoice || methodModalChoice === methodModalCurrent" @click="submitMethodChange">
           {{ t('Save', 'Guardar') }}
+        </UiBtn>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="amountModalPaymentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="closeAmountModal">
+    <div ref="amountPanel" role="dialog" aria-modal="true" :aria-labelledby="amountTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-amount-modal">
+      <p :id="amountTitleId" class="text-[13.5px] font-semibold text-ink-700">{{ t('Correct payment amount', 'Corregir importe del pago') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">
+        {{
+          t(
+            'For a payment recorded with the wrong amount. If a factura was issued for it, a rectifying factura is issued for the difference; the original factura does not change. If money went back to the patient, record a refund instead.',
+            'Para un pago registrado con un importe equivocado. Si se emitió factura, se emite una factura rectificativa por la diferencia; la factura original no cambia. Si se devolvió dinero al paciente, registra un reembolso.',
+          )
+        }}
+      </p>
+      <div class="mt-3">
+        <label :for="`${fieldId}-amountModalValue`" class="block text-[11px] text-ink-muted">
+          {{ t(`Amount actually received (recorded: ${money(amountModalCurrentCents)})`, `Importe cobrado de verdad (registrado: ${money(amountModalCurrentCents)})`) }}
+        </label>
+        <input
+          :id="`${fieldId}-amountModalValue`"
+          v-model="amountModalValue"
+          type="number"
+          min="0.01"
+          step="0.01"
+          data-cy="payment-amount-input"
+          class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]"
+        />
+      </div>
+      <div class="mt-3">
+        <label :for="`${fieldId}-amountModalReason`" class="block text-[11px] text-ink-muted">{{ t('Reason (on the rectifying factura)', 'Motivo (aparece en la rectificativa)') }}</label>
+        <input
+          :id="`${fieldId}-amountModalReason`"
+          v-model="amountModalReason"
+          type="text"
+          maxlength="200"
+          data-cy="payment-amount-reason"
+          :placeholder="t('e.g. typed 50 instead of 40', 'p. ej. se registró 50 en vez de 40')"
+          class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]"
+        />
+      </div>
+      <p v-if="amountModalCents > 0 && amountModalCents !== amountModalCurrentCents" class="mt-2 text-[12px] text-ink-muted">
+        {{
+          t(
+            `Difference: ${amountModalCents > amountModalCurrentCents ? '+' : '−'}${money(Math.abs(amountModalCents - amountModalCurrentCents))}`,
+            `Diferencia: ${amountModalCents > amountModalCurrentCents ? '+' : '−'}${money(Math.abs(amountModalCents - amountModalCurrentCents))}`,
+          )
+        }}
+      </p>
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="closeAmountModal">{{ t('Cancel', 'Cancelar') }}</button>
+        <UiBtn variant="primary" size="sm" data-cy="payment-amount-save" :disabled="!amountModalValid" @click="submitAmountCorrection">
+          {{ t('Correct amount', 'Corregir importe') }}
         </UiBtn>
       </div>
     </div>

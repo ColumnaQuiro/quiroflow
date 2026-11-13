@@ -14,7 +14,23 @@
 // webhook in server/api/webhooks/resend.post.ts matches on Resend's id. A
 // Brevo send is recorded with a "brevo:" id so it is counted as sent and is
 // never mistaken for a Resend message.
+//
+// Every send is also counted against the day's email budget (emailBudget.ts),
+// and a send made inside a campaign's scope first takes a slot from it: with
+// none left it throws EmailDeferred and the automation run waits for
+// tomorrow, rather than failing three times and stopping.
 import { alertOps, writePlatformStatus } from './opsAlert'
+import {
+  EmailDeferred,
+  claimBulkEmail,
+  currentEmailScope,
+  deferralRetryAt,
+  markProviderExhausted,
+  observeResendDailyUsage,
+  recordEmailSent,
+  releaseBulkEmail,
+  type EmailProvider,
+} from './emailBudget'
 
 export interface ResendAttachment {
   filename: string
@@ -30,15 +46,23 @@ export interface OutgoingEmail {
 }
 
 export class EmailSendError extends Error {
-  constructor(message: string, readonly provider: 'resend' | 'brevo', options?: { cause?: unknown }) {
+  constructor(
+    message: string,
+    readonly provider: EmailProvider,
+    options?: { cause?: unknown; quota?: boolean },
+  ) {
     super(message, options)
+    this.quota = options?.quota ?? false
   }
+
+  /** Refused on the provider's quota: the same email will go through once it resets. */
+  readonly quota: boolean
 }
 
 const FROM_NAME = 'QuiroFlow'
 const FROM_EMAIL = 'notifications@quiroflow.com'
 
-async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok: true; id: string | null } | { ok: false; status: number; detail: string }> {
+async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok: true; id: string | null } | { ok: false; status: number; detail: string; name: string | null }> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -57,13 +81,15 @@ async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok
     // Resend answers a refusal with {name, message}; the status alone says
     // nothing a person can act on.
     let detail = text
+    let name: string | null = null
     try {
       const body = JSON.parse(text) as { message?: string; name?: string }
       detail = body.message || body.name || text
+      name = body.name ?? null
     } catch {
       // Not JSON: the raw text is the most useful thing to show.
     }
-    return { ok: false, status: response.status, detail }
+    return { ok: false, status: response.status, detail, name }
   }
   // The mail has already gone by here, so a body that will not parse must not
   // turn a successful send into a failure.
@@ -90,6 +116,7 @@ async function recordResendQuota(response: Response) {
     const monthly = Number.parseInt(response.headers.get('x-resend-monthly-quota') ?? '', 10)
     if (!Number.isFinite(daily) && !Number.isFinite(monthly)) return
     const freePlan = Number.isFinite(daily)
+    if (freePlan) await observeResendDailyUsage(daily)
     await writePlatformStatus('resend.quota', {
       observed_at: new Date().toISOString(),
       daily_used: Number.isFinite(daily) ? daily : null,
@@ -139,12 +166,15 @@ async function sendViaBrevo(apiKey: string, senderEmail: string, email: Outgoing
   if (!response.ok) {
     const text = await response.text()
     let detail = text
+    let code = ''
     try {
-      detail = (JSON.parse(text) as { message?: string }).message || text
+      const body = JSON.parse(text) as { message?: string; code?: string }
+      detail = body.message || text
+      code = body.code ?? ''
     } catch {
       // Not JSON: the raw text is the most useful thing to show.
     }
-    throw new EmailSendError(`Brevo rejected the email: ${detail}`, 'brevo')
+    throw new EmailSendError(`Brevo rejected the email: ${detail}`, 'brevo', { quota: brevoRefusedOnQuota(response.status, code, detail) })
   }
   try {
     const body = (await response.json()) as { messageId?: string }
@@ -155,13 +185,35 @@ async function sendViaBrevo(apiKey: string, senderEmail: string, email: Outgoing
 }
 
 /**
+ * Whether Resend's refusal was its daily or monthly quota, as opposed to its
+ * per-second rate limit, which also answers 429 but is over in a second.
+ */
+export function resendRefusedOnQuota(status: number, name: string | null, detail: string): boolean {
+  if (status !== 429) return false
+  if (name === 'daily_quota_exceeded' || name === 'monthly_quota_exceeded') return true
+  return /quota/i.test(detail)
+}
+
+/**
+ * Whether Brevo's refusal was running out of sends. Its documentation does not
+ * say how the free plan's daily limit is refused -- only that the transactional
+ * endpoint answers 400 with a code, among them not_enough_credits -- so this
+ * takes any refusal that is about credits or a limit, and 402 and 429 too.
+ */
+export function brevoRefusedOnQuota(status: number, code: string, detail: string): boolean {
+  if (status === 402 || status === 429) return true
+  if (/not_enough_credits|insufficient/i.test(code)) return true
+  return /credit|quota|daily\b.*\blimit|sending limit/i.test(detail)
+}
+
+/**
  * Sends one email, falling back to Brevo when Resend answers 429 (daily or
  * monthly quota, or its per-second rate limit) and a Brevo key is configured.
  * Any other Resend refusal is NOT retried elsewhere: an unverified domain or a
  * suppressed address would fail the same way on Brevo, and hiding it behind a
  * second provider only makes it harder to see. Throws EmailSendError.
  */
-export async function deliverEmail(email: OutgoingEmail): Promise<{ id: string | null; provider: 'resend' | 'brevo' }> {
+async function sendWithFallback(email: OutgoingEmail): Promise<{ id: string | null; provider: EmailProvider }> {
   const config = useRuntimeConfig()
   const brevoKey = config.brevoApiKey as string | undefined
   const brevoSender = (config.brevoSenderEmail as string | undefined) || FROM_EMAIL
@@ -173,6 +225,8 @@ export async function deliverEmail(email: OutgoingEmail): Promise<{ id: string |
 
   const first = await sendViaResend(config.resendApiKey, email)
   if (first.ok) return { id: first.id, provider: 'resend' }
+  const resendQuota = resendRefusedOnQuota(first.status, first.name, first.detail)
+  if (resendQuota) await markProviderExhausted('resend')
 
   if (first.status === 429) {
     await alertOps(
@@ -192,7 +246,41 @@ export async function deliverEmail(email: OutgoingEmail): Promise<{ id: string |
     console.warn(`[email] Resend refused with 429 (${first.detail}); sending through Brevo instead`)
     return { ...(await sendViaBrevo(brevoKey, brevoSender, email)), provider: 'brevo' }
   }
-  throw new EmailSendError(`Resend rejected the email: ${first.detail}`, 'resend')
+  throw new EmailSendError(`Resend rejected the email: ${first.detail}`, 'resend', { quota: resendQuota })
+}
+
+/**
+ * Sends one email -- see sendWithFallback for the providers -- and counts it
+ * against the day's budget.
+ *
+ * Inside a campaign's scope (emailBudget.withEmailScope, kind 'bulk') it takes
+ * a slot first, and throws EmailDeferred instead of sending when there is
+ * none. Inside any scope, a refusal on quota from every provider throws
+ * EmailDeferred too: the run that sent it waits for the reset instead of
+ * spending its attempts on a refusal that cannot change until then. Outside a
+ * scope -- a person pressing Send, a reminder cron -- it behaves exactly as it
+ * always did and throws EmailSendError.
+ */
+export async function deliverEmail(email: OutgoingEmail): Promise<{ id: string | null; provider: EmailProvider }> {
+  const scope = currentEmailScope()
+  const bulk = scope?.kind === 'bulk'
+  if (bulk) {
+    const claim = await claimBulkEmail(scope.accountId)
+    if (claim !== 'ok') throw new EmailDeferred(claim, deferralRetryAt(claim))
+  }
+  let sent: { id: string | null; provider: EmailProvider }
+  try {
+    sent = await sendWithFallback(email)
+  } catch (e) {
+    if (bulk) await releaseBulkEmail(scope.accountId)
+    if (e instanceof EmailSendError && e.quota) {
+      await markProviderExhausted(e.provider)
+      if (scope) throw new EmailDeferred('quota', deferralRetryAt('quota'))
+    }
+    throw e
+  }
+  await recordEmailSent(sent.provider, bulk ? 'bulk' : 'transactional')
+  return sent
 }
 
 /**

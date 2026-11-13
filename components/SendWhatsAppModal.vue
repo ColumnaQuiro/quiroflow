@@ -8,7 +8,13 @@ interface Template {
   bodyText: string
   variableCount: number
   mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION' | null
+  /** The file the template was created with in QuiroFlow, when it was. */
+  headerMedia?: { filename: string }
 }
+
+// The attachment choice that means "the template's own file" rather than one
+// of the patient's -- the guide a template was made to send.
+const TEMPLATE_FILE = 'template'
 
 const props = withDefaults(
   defineProps<{
@@ -110,7 +116,7 @@ function selectTemplate(key: string) {
   const t = templates.value.find((tpl) => templateKey(tpl) === key)
   const count = t?.variableCount ?? 0
   variables.value = Array.from({ length: count }, (_, i) => guesses.value[i] ?? '')
-  attachmentFileId.value = ''
+  attachmentFileId.value = t?.headerMedia ? TEMPLATE_FILE : ''
   locationLatitude.value = ''
   locationLongitude.value = ''
   locationName.value = accountStore.currentClinic?.name ?? ''
@@ -142,7 +148,7 @@ const whyCannotSend = computed(() => {
   if (!selectedTemplate.value || canSend.value || sending.value) return ''
   if (variables.value.some((v) => !v.trim())) return t('Fill in every field to send it.', 'Rellena todos los campos para enviarla.')
   if (isLocationTemplate.value) return t('Add the latitude and longitude to send it.', 'Añade la latitud y la longitud para enviarla.')
-  if (files.value.length === 0) {
+  if (files.value.length === 0 && !selectedTemplate.value.headerMedia) {
     return props.patientId
       ? t("This template needs a file from the patient's record, and they have none yet.", 'Esta plantilla necesita un archivo de la ficha del paciente, y aún no tiene ninguno.')
       : t('This template needs a file from a patient record. Link this number to a patient first.', 'Esta plantilla necesita un archivo de una ficha. Vincula antes este número a un paciente.')
@@ -166,7 +172,8 @@ async function send() {
         templateLanguage: selectedTemplate.value.language,
         variables: variables.value,
         headerFormat: selectedTemplate.value.mediaHeaderFormat ?? undefined,
-        attachmentFileId: isLocationTemplate.value ? undefined : attachmentFileId.value || undefined,
+        attachmentFileId: isLocationTemplate.value || attachmentFileId.value === TEMPLATE_FILE ? undefined : attachmentFileId.value || undefined,
+        templateMedia: attachmentFileId.value === TEMPLATE_FILE || undefined,
         location: isLocationTemplate.value
           ? {
               latitude: Number(locationLatitude.value),
@@ -262,6 +269,7 @@ const fieldId = useId()
             <label :for="`${fieldId}-attachmentFileId`" class="block text-xs font-medium text-ink-muted">{{ t(`Attach ${headerFileName} (the template requires it)`, `Adjuntar ${headerFileName} (la plantilla lo pide)`) }}</label>
             <select :id="`${fieldId}-attachmentFileId`" v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
               <option value="">{{ t('No attachment', 'Sin adjunto') }}</option>
+              <option v-if="selectedTemplate.headerMedia" :value="TEMPLATE_FILE">{{ t(`The template's file: ${selectedTemplate.headerMedia.filename}`, `El archivo de la plantilla: ${selectedTemplate.headerMedia.filename}`) }}</option>
               <option v-for="f in files" :key="f.id" :value="f.id">{{ f.file_name }}</option>
             </select>
           </div>

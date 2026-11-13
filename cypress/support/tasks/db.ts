@@ -3390,6 +3390,15 @@ let metaGraphStubSubscriptions: string[] = []
 async function metaGraphStubSubscriptionsOf() {
   return metaGraphStubSubscriptions
 }
+// Templates submitted for review (POST /{waba}/message_templates), and the
+// sample files that went up before them through the Resumable Upload API:
+// how many bytes, and the Authorization scheme, which that endpoint alone
+// wants as "OAuth" rather than "Bearer".
+let metaGraphStubTemplateCreates: Record<string, unknown>[] = []
+let metaGraphStubUploads: { bytes: number; authorization: string; fileType: string | null }[] = []
+async function metaGraphStubTemplateCreatesOf() {
+  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads }
+}
 let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
@@ -3403,7 +3412,9 @@ async function startMetaGraphStub(opts: {
   /** The whole granular_scopes answer, when one scope is not enough to say it. */
   granularScopes?: { scope: string; target_ids: string[] }[]
   /** The template list Meta answers with, variants and statuses included. */
-  templates?: { name: string; language: string; status: string; body: string }[]
+  templates?: { name: string; language: string; status: string; body: string; header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO'; rejectedReason?: string }[]
+  /** Refuse a template submission, with the sentence Meta writes for a person. */
+  refuseTemplate?: string
   /** Refuse template sends, as Meta does for a paused template. */
   failSends?: boolean
   /**
@@ -3452,10 +3463,38 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/debug_token')) {
       if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
-      if (opts.granularScopes) return send(200, { data: { granular_scopes: opts.granularScopes } })
+      if (opts.granularScopes) return send(200, { data: { app_id: 'STUBAPP', granular_scopes: opts.granularScopes } })
       return send(200, {
-        data: { granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
+        data: { app_id: 'STUBAPP', granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
       })
+    }
+    // The Resumable Upload API: a session on the app, then the bytes to it.
+    if (path === '/STUBAPP/uploads' && req.method === 'POST') {
+      const fileType = new URL(req.url ?? '', 'http://stub').searchParams.get('file_type')
+      return send(200, { id: `upload:STUBSESSION?sig=${encodeURIComponent(fileType ?? '')}` })
+    }
+    if (path === '/upload:STUBSESSION' && req.method === 'POST') {
+      let bytes = 0
+      req.on('data', (chunk: Buffer) => (bytes += chunk.length))
+      req.on('end', () => {
+        const fileType = new URL(req.url ?? '', 'http://stub').searchParams.get('sig')
+        metaGraphStubUploads.push({ bytes, authorization: String(req.headers.authorization ?? ''), fileType })
+        send(200, { h: `STUB-HANDLE-${metaGraphStubUploads.length}` })
+      })
+      return
+    }
+    if (path.endsWith('/message_templates') && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (chunk) => (raw += chunk))
+      req.on('end', () => {
+        if (opts.refuseTemplate) {
+          return send(400, { error: { message: 'Invalid parameter', error_user_title: 'Template refused', error_user_msg: opts.refuseTemplate, code: 100 } })
+        }
+        const body = JSON.parse(raw || '{}')
+        metaGraphStubTemplateCreates.push({ ...body, _path: path })
+        send(200, { id: `tpl-${metaGraphStubTemplateCreates.length}`, status: 'PENDING', category: body.category })
+      })
+      return
     }
     if (path.endsWith('/message_templates')) {
       // The error branch is the point: an expired token and a wrong Business
@@ -3465,7 +3504,14 @@ async function startMetaGraphStub(opts: {
       }
       if (opts.templates) {
         return send(200, {
-          data: opts.templates.map((t) => ({ name: t.name, language: t.language, category: 'UTILITY', status: t.status, components: [{ type: 'BODY', text: t.body }] })),
+          data: opts.templates.map((t) => ({
+            name: t.name,
+            language: t.language,
+            category: 'UTILITY',
+            status: t.status,
+            ...(t.rejectedReason ? { rejected_reason: t.rejectedReason } : {}),
+            components: [...(t.header ? [{ type: 'HEADER', format: t.header }] : []), { type: 'BODY', text: t.body }],
+          })),
         })
       }
       return send(200, {
@@ -3551,6 +3597,8 @@ async function startMetaGraphStub(opts: {
 async function stopMetaGraphStub() {
   metaGraphStubSends = []
   metaGraphStubSubscriptions = []
+  metaGraphStubTemplateCreates = []
+  metaGraphStubUploads = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }
@@ -4853,6 +4901,7 @@ export const dbTasks = {
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:metaGraphStubSends': metaGraphStubSendsOf,
   'db:metaGraphStubSubscriptions': metaGraphStubSubscriptionsOf,
+  'db:metaGraphStubTemplateCreates': metaGraphStubTemplateCreatesOf,
   'db:setAutomaticMessages': setAutomaticMessages,
   'db:appointmentMessageState': appointmentMessageState,
   'db:readAsStaff': readAsStaff,

@@ -7,6 +7,8 @@ interface Template {
   bodyText: string
   variableCount: number
   mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION' | null
+  /** The file the template was created with in QuiroFlow, when it was: the same for everyone. */
+  headerMedia?: { filename: string }
 }
 
 const props = defineProps<{ targets: Target[]; defaultTemplateName?: string }>()
@@ -41,7 +43,10 @@ const selectedTemplate = computed(() => templates.value.find((t) => templateKey(
 const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')
 // A file header is chosen from one patient's own files, so a batch has
 // nothing to put in it -- and WhatsApp refuses the template without one.
-const needsAttachment = computed(() => !!selectedTemplate.value?.mediaHeaderFormat && !isLocationTemplate.value)
+// Unless the template was made in QuiroFlow with its own file (a guide, a
+// flyer), which is the same for everyone and goes to each of them.
+const usesTemplateFile = computed(() => !!selectedTemplate.value?.headerMedia && !isLocationTemplate.value)
+const needsAttachment = computed(() => !!selectedTemplate.value?.mediaHeaderFormat && !isLocationTemplate.value && !usesTemplateFile.value)
 const canSend = computed(() => {
   if (!selectedTemplate.value) return false
   if (needsAttachment.value) return false
@@ -104,6 +109,7 @@ async function send() {
           templateLanguage: selectedTemplate.value.language,
           variables,
           headerFormat: selectedTemplate.value.mediaHeaderFormat ?? undefined,
+          templateMedia: usesTemplateFile.value || undefined,
           location,
         },
       })
@@ -158,6 +164,9 @@ const fieldId = useId()
 
             <p v-if="needsAttachment" class="mt-3 text-[13px] text-danger-text" data-cy="bulk-whatsapp-needs-attachment">
               {{ t('This template needs an attachment, which can only be sent to one patient at a time.', 'Esta plantilla necesita un adjunto, que solo se puede enviar a un paciente cada vez.') }}
+            </p>
+            <p v-else-if="usesTemplateFile && selectedTemplate?.headerMedia" class="mt-3 text-[13px] text-ink-muted" data-cy="bulk-whatsapp-template-file">
+              {{ t(`Everyone gets the template's file: ${selectedTemplate.headerMedia.filename}`, `Todos reciben el archivo de la plantilla: ${selectedTemplate.headerMedia.filename}`) }}
             </p>
 
             <div v-if="isLocationTemplate" class="mt-3 space-y-2">

@@ -200,6 +200,26 @@ select {
   background: rgb(var(--qf-sheet-surface));
 }
 
+/* A header that stays put while the content scrolls under it: the content
+   fades out over the first 18px below the lip instead of being cut off at
+   it. Over the scroller, never catching a tap. */
+.qf-fade {
+  z-index: 3;
+}
+.qf-fade::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 18px;
+  pointer-events: none;
+  background: linear-gradient(rgb(var(--qf-sheet)), rgb(var(--qf-sheet) / 0));
+}
+.qf-fade.qf-lip-surface::before {
+  background: linear-gradient(rgb(var(--qf-sheet-surface)), rgb(var(--qf-sheet-surface) / 0));
+}
+
 /* The figures the planes lead with: large, tight and tabular. */
 .qf-figure {
   font-weight: 650;

@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { ensureSpanishInvoices, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 import { isSupersededSubscriptionEvent } from '~/utils/billing'
 import type Stripe from 'stripe'
 
@@ -203,6 +203,12 @@ export default defineEventHandler(async (event) => {
     .select('account_id')
   if (updateError) fail('Could not update the subscription row', updateError)
   if (!updated?.length) fail('No subscription row for this account')
+
+  // After the row is written, so it can never hold up access, and only when
+  // the subscription is new: one retrieve per new customer, not per event.
+  if (stripeEvent.type === 'customer.subscription.created') {
+    await ensureSpanishInvoices(stripe, typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id)
+  }
 
   return { received: true }
 })

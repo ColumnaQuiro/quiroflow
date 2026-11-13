@@ -18,6 +18,33 @@ export async function stripeForPlatformBilling(): Promise<Stripe> {
 }
 
 /**
+ * Makes Stripe render this customer's invoices, receipts and billing emails
+ * in Spanish (Spain).
+ *
+ * Stripe picks the language from the customer's preferred_locales, which
+ * Checkout fills from the browser. A clinic owner with an English browser
+ * therefore got English invoices -- "Invoice", "Bill to", "Date due" -- which
+ * is the wrong document for a Spanish B2B sale. Only the first locale is
+ * checked, so a customer someone deliberately set to Catalan or Spanish is
+ * left alone.
+ *
+ * Never throws: the caller is the billing webhook, and a failed cosmetic
+ * update must not make Stripe retry (and eventually disable) the event that
+ * unlocks a clinic that has just paid.
+ */
+export async function ensureSpanishInvoices(stripe: Stripe, customerId: string): Promise<void> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId)
+    if (customer.deleted) return
+    const first = customer.preferred_locales?.[0] ?? ''
+    if (first.startsWith('es') || first.startsWith('ca')) return
+    await stripe.customers.update(customerId, { preferred_locales: ['es-ES'] })
+  } catch (err) {
+    console.error(`[platform-billing] could not set Spanish invoices for ${customerId}`, err)
+  }
+}
+
+/**
  * The account's Stripe subscription, if it is one that can still be changed
  * in place -- or null, meaning "start a new one through Checkout".
  *

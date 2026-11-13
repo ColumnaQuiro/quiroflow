@@ -1989,6 +1989,21 @@ async function issueReceiptNumber(opts: { accountId: string }) {
 }
 
 /**
+ * The posture fixture (a 300 x 600 standing figure) stored at each path, so a
+ * seeded posture_assessments row has photos the screens can show and the
+ * reports can draw on.
+ */
+async function storePosturePhotos(opts: { paths: string[] }) {
+  const { readFileSync } = await import('node:fs')
+  const figure = readFileSync('cypress/fixtures/posture-figure.png')
+  for (const path of opts.paths) {
+    const { error } = await admin.storage.from('patient-files').upload(path, figure, { contentType: 'image/png', upsert: true })
+    if (error) throw error
+  }
+  return null
+}
+
+/**
  * A patient file with real content in storage, as an upload leaves it.
  *
  * As an upload leaves it means visibility 'generic' (the column default):
@@ -4845,6 +4860,7 @@ export const dbTasks = {
   'db:rpcAsStaff': rpcAsStaff,
   'db:storageSignAsUser': storageSignAsUser,
   'db:storageObjectExists': storageObjectExists,
+  'db:storePosturePhotos': storePosturePhotos,
   'db:insertRows': insertRows,
   'db:updateRows': updateRows,
   'db:deleteRows': deleteRows,

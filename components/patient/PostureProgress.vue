@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { VIEW_LABELS, type Points, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { ghostPoints } from '../../utils/postureCompare'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
 
 // "Progreso" for the patient, in the app and the portal: the posture
 // assessments their practitioner shared ("Lo ve el paciente"), as a chart of
-// the number they choose, their first and latest photos side by side, and
-// the report for each. The same numbers and scale as the staff chart
+// the number they choose, two of them compared -- the first and the latest
+// unless they pick others: photos side by side, each measure then and now
+// (components/posture/Compare.vue) and that comparison as a PDF -- and the
+// report for each. The same numbers and scale as the staff chart
 // (utils/postureTrend.ts), in plainer words. Shared with mobile/, so its
 // imports are relative.
 const t = useT()
@@ -101,15 +104,36 @@ const withUnit = (n: number, unit: string) => `${num(n)}${unit === '°' ? '°' :
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 const longDay = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'long' })
 
-// The first and the latest photos, in a view both have.
+// Two of them compared, in a view both have: the first and the latest until
+// the patient picks others. "Before" is always the earlier of the two, so
+// each list only offers what keeps it that way.
 const first = computed(() => list.value[0] ?? null)
 const latest = computed(() => list.value[list.value.length - 1] ?? null)
-const pair = computed(() => (list.value.length > 1 ? [first.value!, latest.value!] : latest.value ? [latest.value] : []))
+const beforeId = ref<string | null>(null)
+const afterId = ref<string | null>(null)
+watch(list, (l) => {
+  beforeId.value = l.length > 1 ? l[0]!.id : null
+  afterId.value = l.length ? l[l.length - 1]!.id : null
+})
+const before = computed(() => list.value.find((a) => a.id === beforeId.value) ?? null)
+const after = computed(() => list.value.find((a) => a.id === afterId.value) ?? latest.value)
+const beforeChoices = computed(() => list.value.filter((a) => !after.value || a.takenAt < after.value.takenAt))
+const afterChoices = computed(() => list.value.filter((a) => !before.value || a.takenAt > before.value.takenAt))
+const pair = computed(() => (before.value && after.value ? [before.value, after.value] : after.value ? [after.value] : []))
+const measure = (a: Assessment) => remeasure({ takenAt: a.takenAt, heightCm: Number(a.heightCm ?? 0), views: a.views as unknown as StoredViews, metrics: a.metrics })
+const compared = computed(() => (before.value && after.value ? [measure(before.value), measure(after.value)] : null))
 const views = computed(() => (['right', 'left', 'front', 'back'] as PostureView[]).filter((v) => pair.value.length && pair.value.every((a) => a.views[v]?.url)))
 const view = ref<PostureView>('right')
 watch(views, (vs) => {
   if (vs.length && !vs.includes(view.value)) view.value = vs[0]!
 }, { immediate: true })
+
+// The earlier figure, dashed, over the later photo (utils/postureCompare.ts).
+const ghost = computed(() => {
+  const bv = before.value?.views[view.value]
+  const av = after.value?.views[view.value]
+  return bv && av ? ghostPoints(view.value, bv, av) : null
+})
 
 // The report for one assessment, the same PDF the clinic hands out
 // (api/portal/posture/[id]/report), opened from a link so it works in the
@@ -128,6 +152,26 @@ function openReport(id: string) {
       return null
     } finally {
       reporting.value = null
+    }
+  })
+}
+// The comparison of the two chosen, as a PDF (api/portal/posture/[id]/comparison).
+const comparing = ref(false)
+const compareError = ref('')
+function openComparison() {
+  const b = before.value
+  const a = after.value
+  if (!a || !b) return
+  comparing.value = true
+  compareError.value = ''
+  openWhenReady(async () => {
+    try {
+      return (await authedFetch<{ url: string }>(`/api/portal/posture/${a.id}/comparison`, { method: 'POST', body: { withId: b.id } })).url
+    } catch {
+      compareError.value = t('The comparison could not be prepared. Try again in a moment.', 'No se ha podido preparar la comparativa. Inténtalo de nuevo en un momento.')
+      return null
+    } finally {
+      comparing.value = false
     }
   })
 }
@@ -198,16 +242,41 @@ const showAll = ref(false)
       </section>
 
       <section v-if="views.length" class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-posture-photos">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your photos', 'Tus fotos') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ pair.length > 1 ? t('Before and now', 'Antes y ahora') : t('Your photos', 'Tus fotos') }}</p>
+        <!-- With only two there is nothing to choose. -->
+        <div v-if="list.length > 2" class="grid grid-cols-2 gap-2.5">
+          <label class="flex min-w-0 flex-col gap-1 text-[12px] text-ink-muted">
+            {{ t('Before', 'Antes') }}
+            <select v-model="beforeId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900" data-cy="patient-posture-before">
+              <option v-for="a in beforeChoices" :key="a.id" :value="a.id">{{ longDay(a.takenAt) }}</option>
+            </select>
+          </label>
+          <label class="flex min-w-0 flex-col gap-1 text-[12px] text-ink-muted">
+            {{ t('Now', 'Ahora') }}
+            <select v-model="afterId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900" data-cy="patient-posture-after">
+              <option v-for="a in afterChoices" :key="a.id" :value="a.id">{{ longDay(a.takenAt) }}</option>
+            </select>
+          </label>
+        </div>
         <div class="grid gap-2.5" :class="pair.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
-          <figure v-for="a in pair" :key="a.id" class="m-0 flex flex-col gap-1">
-            <PostureOverlay :src="a.views[view]!.url!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :labels="false" />
+          <figure v-for="(a, i) in pair" :key="a.id" class="m-0 flex flex-col gap-1">
+            <PostureOverlay :src="a.views[view]!.url!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :labels="false" :ghost="i === 1 ? ghost : null" />
             <figcaption class="text-center text-[12px] text-ink-muted">{{ longDay(a.takenAt) }}</figcaption>
           </figure>
         </div>
         <div v-if="views.length > 1" class="flex flex-wrap gap-1.5" role="group" :aria-label="t('View', 'Vista')">
           <button v-for="v in views" :key="v" type="button" class="h-9 rounded-pill border px-3 text-[13px] font-semibold" :class="view === v ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'" :aria-pressed="view === v" @click="view = v">{{ VIEW_LABELS[v] }}</button>
         </div>
+        <p v-if="ghost" class="text-[12px] text-ink-muted">{{ t(`Dashed white line: your posture on ${longDay(before!.takenAt)}, over the later photo.`, `Línea blanca discontinua: tu postura del ${longDay(before!.takenAt)}, sobre la foto posterior.`) }}</p>
+      </section>
+
+      <section v-if="compared" class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-posture-comparison">
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('What has changed', 'Qué ha cambiado') }}</p>
+        <PostureCompare :before="compared[0]!" :after="compared[1]!" :before-at="before!.takenAt" :after-at="after!.takenAt" audience="patient" />
+        <button type="button" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[13.5px] font-semibold text-ink-900 disabled:opacity-60" :disabled="comparing" data-cy="patient-posture-comparison-report" @click="openComparison">
+          {{ comparing ? t('Preparing…', 'Preparando…') : t('Download the comparison (PDF)', 'Descargar la comparativa (PDF)') }}
+        </button>
+        <p v-if="compareError" role="alert" class="text-[12.5px] text-danger-text" data-cy="patient-posture-comparison-error">{{ compareError }}</p>
       </section>
 
       <section class="flex items-center gap-3 rounded-card border border-line bg-surface p-4 shadow-card">

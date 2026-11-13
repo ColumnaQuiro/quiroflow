@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { ghostPoints } from '../../utils/postureCompare'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
 
 // "Postura" on the record's Progreso tab: the patient's posture assessments
 // (posture_assessments), two of them side by side in any view with the same
-// points and vertical drawn, the headline numbers then and now, how the head
-// has moved over time, and whether the patient may see each one in their
+// points and vertical drawn, the headline numbers then and now, every measure
+// of the two compared (Compare.vue) with a PDF of that comparison, how the
+// head has moved over time, and whether the patient may see each one in their
 // app. A new one is taken on /patients/posture/<id>. The numbers are part of
 // the "Informe de revisión" PDF (data-pdf-*), the photos are not.
 // `can`: the staff app passes its own (usePractitionerContext). It has no
@@ -67,6 +69,19 @@ watch(pair, (as) => {
 })
 watch(views, (vs) => {
   if (vs.length && !vs.includes(view.value)) view.value = vs.includes('right') ? 'right' : vs[0]!
+})
+
+// The two compared, measure by measure (Compare.vue), measured again from
+// their points like the chart below, so an older one has the knees too.
+const compared = computed(() => (pair.value.length === 2 ? pair.value.map((a) => remeasure({ takenAt: a.taken_at, heightCm: Number(a.height_cm), views: a.views, metrics: a.metrics })) : null))
+// The earlier figure, dashed, over the later photo: what moved, not where
+// the camera stood (utils/postureCompare.ts).
+const showGhost = ref(true)
+const ghost = computed(() => {
+  const [b, a] = pair.value
+  const bv = b?.views[view.value]
+  const av = a?.views[view.value]
+  return showGhost.value && bv && av ? ghostPoints(view.value, bv, av) : null
 })
 
 const first = computed(() => (pair.value[0] ? postureHeadline(pair.value[0].metrics) : null))
@@ -155,6 +170,26 @@ function openReport(a: Assessment) {
   })
 }
 
+// The same for the two compared (server/api/posture/[id]/comparison): their
+// photos side by side, every measure then and now, and what improved.
+const comparing = ref(false)
+function openComparison() {
+  const [b, a] = pair.value
+  if (!a || !b) return
+  comparing.value = true
+  openWhenReady(async () => {
+    try {
+      const { url } = await useStaffFetch<{ url: string }>(`/api/posture/${a.id}/comparison`, { method: 'POST', body: { withId: b.id } })
+      return url
+    } catch (e) {
+      showToast((e as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not prepare the report.', 'No se ha podido preparar el informe.'), 'error')
+      return null
+    } finally {
+      comparing.value = false
+    }
+  })
+}
+
 const removing = ref<Assessment | null>(null)
 async function remove() {
   const a = removing.value
@@ -220,11 +255,23 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             </div>
           </div>
           <div class="grid gap-3" :class="pair.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-[360px]'">
-            <figure v-for="a in pair" :key="a.id" class="m-0 flex flex-col gap-1" data-cy="posture-compare-photo">
-              <PostureOverlay v-if="a.views[view] && urls[a.views[view]!.photo]" :src="urls[a.views[view]!.photo]!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :labels="false" />
+            <figure v-for="(a, i) in pair" :key="a.id" class="m-0 flex flex-col gap-1" data-cy="posture-compare-photo">
+              <PostureOverlay v-if="a.views[view] && urls[a.views[view]!.photo]" :src="urls[a.views[view]!.photo]!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :labels="false" :ghost="i === 1 ? ghost : null" />
               <figcaption class="text-center text-[12px] text-ink-muted">{{ day(a.taken_at) }}</figcaption>
             </figure>
           </div>
+          <template v-if="compared">
+            <label v-if="views.length" class="flex items-center gap-1.5 text-[12.5px] text-ink-700">
+              <input v-model="showGhost" type="checkbox" data-cy="posture-ghost-toggle" />
+              {{ t(`Draw the posture of ${day(pair[0]!.taken_at)} over the later photo (dashed white)`, `Dibujar la postura del ${day(pair[0]!.taken_at)} sobre la foto posterior (blanco discontinuo)`) }}
+            </label>
+            <div class="mt-1 flex flex-wrap items-center gap-2 border-t border-line-divider pt-3">
+              <h4 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Comparison', 'Comparativa') }}</h4>
+              <button type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60 touch:h-11" :disabled="comparing" data-cy="posture-comparison-report" @click="openComparison">{{ comparing ? t('Preparing…', 'Preparando…') : t('Comparison report (PDF)', 'Informe comparativo (PDF)') }}</button>
+            </div>
+            <PostureCompare :before="compared[0]!" :after="compared[1]!" :before-at="pair[0]!.taken_at" :after-at="pair[1]!.taken_at" />
+          </template>
+          <p v-else-if="list.length > 1" class="text-[12.5px] text-ink-muted">{{ t('Tick two assessments in the list to compare them measure by measure.', 'Marca dos valoraciones en la lista para compararlas medida a medida.') }}</p>
         </div>
       </div>
 

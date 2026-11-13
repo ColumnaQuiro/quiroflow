@@ -3259,6 +3259,7 @@ export type Database = {
           frequency_value: number
           id: string
           name: string
+          next_phases: Json
           package_purchase_id: string | null
           patient_membership_id: string | null
           payment_kind: string
@@ -3276,6 +3277,7 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          next_phases?: Json
           package_purchase_id?: string | null
           patient_membership_id?: string | null
           payment_kind?: string
@@ -3293,6 +3295,7 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          next_phases?: Json
           package_purchase_id?: string | null
           patient_membership_id?: string | null
           payment_kind?: string

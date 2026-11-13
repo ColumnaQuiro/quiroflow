@@ -345,6 +345,19 @@ export default defineNuxtConfig({
     // Shared secret for /api/webhooks/brevo (Brevo does not sign webhooks).
     // Unset means that endpoint refuses everything.
     brevoWebhookSecret: '',
+    // The daily email budget (server/utils/emailBudget.ts). Empty means the
+    // free plans: 100 a day on Resend, 300 on Brevo (counted only when
+    // NUXT_BREVO_API_KEY is set). "0" means the provider has no daily limit
+    // -- every paid Resend plan -- and a number is that many a day; on a
+    // monthly plan, the month divided by 30 spreads a big campaign evenly
+    // instead of letting it spend the month in a day. Campaign emails wait
+    // for the next day once the budget is spent; confirmations, reminders and
+    // anything a person sends from the app never wait.
+    emailDailyLimitResend: '',
+    emailDailyLimitBrevo: '',
+    // Kept back from campaigns every day for everything else. Empty means a
+    // quarter of the day's budget.
+    emailTransactionalReserve: '',
     // Where "someone just signed up" goes. Empty means no notification is
     // sent and onboarding is unaffected -- same contract as the Netlify
     // token above: a missing integration must never break an account being

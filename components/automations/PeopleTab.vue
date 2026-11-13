@@ -103,6 +103,8 @@ const paused = computed(() => !b.isNew.value && !b.draft.value.enabled)
 function nextLabel(r: RunRow) {
   if (r.status !== 'running') return '—'
   if (paused.value) return t('when you resume it', 'cuando la reanudes')
+  // The day's email budget is spent: it goes out when there is room again.
+  if (r.waitingFor === 'email_quota' && r.resumeAt) return t(`email limit · sends ${when(r.resumeAt)}`, `límite de emails · sale el ${when(r.resumeAt)}`)
   if (r.waitingFor && r.waitingFor !== 'delay' && r.waitDeadline) return t(`until ${when(r.waitDeadline)}`, `hasta el ${when(r.waitDeadline)}`)
   if (r.resumeAt && new Date(r.resumeAt).getTime() > Date.now()) return t(`continues ${when(r.resumeAt)}`, `sigue el ${when(r.resumeAt)}`)
   return t('any moment', 'en breve')

@@ -1822,36 +1822,37 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       <!-- Above the list only, so an open conversation still covers the whole
            screen on a phone (pages/inbox.vue puts the Team switch here). -->
       <slot v-if="!selectionMode" name="list-top" />
-      <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
+      <!-- On the back plane, like the Team switch above it (pages/inbox.vue). -->
+      <div v-if="!selectionMode" class="qf-plane flex shrink-0 items-center gap-2 px-3 py-2">
         <input
           v-model="search"
           type="search"
           :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
-          class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+          class="h-11 flex-1 rounded-full border border-transparent bg-surface px-4 text-[14px] text-ink-900 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         />
         <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
       </div>
-      <div v-if="!selectionMode" class="shrink-0 border-b border-line bg-surface px-3 pb-2.5 pt-1" data-cy="inbox-chips">
+      <div v-if="!selectionMode" class="qf-plane qf-lip qf-lip-surface shrink-0 px-3 pt-1" data-cy="inbox-chips">
         <div class="flex items-center gap-2">
-          <div role="tablist" :aria-label="t('View', 'Vista')" class="grid flex-1 grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
+          <div role="tablist" :aria-label="t('View', 'Vista')" class="grid flex-1 grid-cols-3 gap-[3px] rounded-full bg-chip-bg p-[3px]">
             <button
               v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('Needs reply', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
               :key="s[0]"
               type="button"
               role="tab"
               :aria-selected="segment === s[0]"
-              class="flex h-9 min-w-0 items-center justify-center gap-1 rounded-[7px] px-1 text-[13px]"
-              :class="segment === s[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'"
+              class="flex h-9 min-w-0 items-center justify-center gap-1 rounded-full px-1 text-[13px]"
+              :class="segment === s[0] ? 'bg-brand font-semibold text-brand-on' : 'font-medium text-ink-muted'"
               :data-cy="`inbox-view-${s[0]}`"
               @click="setSegment(s[0])"
             >
               <span class="truncate">{{ s[1] }}</span>
-              <span v-if="s[2]" class="shrink-0 text-[11.5px] font-bold" :class="s[0] === 'ai' ? 'text-brand-text' : 'text-ink-muted2'">{{ s[2] }}</span>
+              <span v-if="s[2]" class="shrink-0 text-[11.5px] font-bold" :class="segment === s[0] ? 'text-brand-on' : 'text-ink-muted2'">{{ s[2] }}</span>
             </button>
           </div>
           <button
             type="button"
-            class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700"
+            class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-ink-900"
             :aria-label="activeFilterChips.length ? t(`Filters, ${activeFilterChips.length} on`, `Filtros, ${activeFilterChips.length} activos`) : t('Filters', 'Filtros')"
             data-cy="inbox-filters-open"
             @click="filtersOpen = true"
@@ -1875,7 +1876,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </button>
         </div>
       </div>
-      <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
+      <div v-else class="qf-plane qf-lip qf-lip-surface flex shrink-0 items-center justify-between gap-2 px-3 pt-2">
         <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
         <p class="truncate text-[13px] text-ink-700">{{ t(`${selectedKeys.size} selected`, `${selectedKeys.size} seleccionadas`) }}</p>
         <div class="flex shrink-0 items-center gap-3">

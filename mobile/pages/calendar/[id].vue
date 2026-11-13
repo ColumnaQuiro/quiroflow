@@ -813,11 +813,13 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 md:px-5">
-      <button type="button" class="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" :aria-label="t('Back', 'Atrás')" @click="goBack">
+    <!-- The back plane (assets/css/main.css): who the visit is with, and
+         where it stands. -->
+    <div class="qf-plane qf-lip flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5">
+      <button type="button" class="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-900 active:bg-surface" :aria-label="t('Back', 'Atrás')" @click="goBack">
         <AppChevron dir="left" :size="24" />
       </button>
-      <h1 class="min-w-0 flex-1 truncate text-[17px] font-semibold text-ink-900" data-cy="visit-patient-name">{{ appointment ? fullName : t('Visit', 'Visita') }}</h1>
+      <h1 class="min-h-14 min-w-0 flex-1 truncate py-3.5 text-[22px] font-[650] leading-tight tracking-[-0.02em] text-ink-900" data-cy="visit-patient-name">{{ appointment ? fullName : t('Visit', 'Visita') }}</h1>
       <AppStagePill v-if="stage" :stage="stage" :arrived-at="arrivedAt" data-cy="visit-status" />
     </div>
 

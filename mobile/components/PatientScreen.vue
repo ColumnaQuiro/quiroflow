@@ -26,18 +26,23 @@ function goBack() {
 </script>
 
 <template>
-  <!-- A readable column on an iPad rather than cards stretched across it. -->
-  <div class="p-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
-    <header class="mb-4">
+  <!-- The back plane with the title, then the sheet the screen's content sits
+       on (assets/css/main.css). A readable column on an iPad rather than
+       cards stretched across it. -->
+  <div class="flex min-h-full flex-1 flex-col">
+    <header class="qf-plane qf-lip shrink-0 px-5 pt-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
       <!-- A button, not a NuxtLink: RouterLink navigates to `to` in its own
            click handler, before a listener added here could stop it. -->
-      <button v-if="back" type="button" class="-ml-1 mb-1 inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-brand-text" data-cy="patient-screen-back" @click="goBack">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5" /></svg>
+      <button v-if="back" type="button" class="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-[14px] font-semibold text-ink-900 active:bg-surface" data-cy="patient-screen-back" @click="goBack">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5" /></svg>
         {{ backLabel ?? t('Plan', 'Plan') }}
       </button>
-      <h1 class="text-[19px] font-[640] tracking-tightTitle text-ink-900">{{ title }}</h1>
-      <p v-if="lead" class="mt-1 text-[13px] text-ink-muted">{{ lead }}</p>
+      <h1 class="text-[30px] font-[650] leading-[1.1] tracking-[-0.03em] text-ink-900" :class="back ? 'mt-1' : 'pt-4'">{{ title }}</h1>
+      <p v-if="lead" class="mt-1.5 text-[15px] text-ink-muted">{{ lead }}</p>
+      <div class="h-4" />
     </header>
-    <slot />
+    <div class="flex-1 px-4 pb-6 pt-1 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
+      <slot />
+    </div>
   </div>
 </template>

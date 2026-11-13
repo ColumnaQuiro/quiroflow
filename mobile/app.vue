@@ -60,7 +60,7 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
     apply their own bottom inset instead; see layouts/default.vue.
   -->
   <div
-    class="flex h-screen flex-col overflow-x-hidden overflow-y-auto bg-surface-page font-sans text-ink-700"
+    class="qf-root flex h-screen flex-col overflow-x-hidden overflow-y-auto bg-surface-page font-sans text-ink-700"
     style="padding-top: env(safe-area-inset-top)"
   >
     <NuxtLayout>
@@ -99,6 +99,12 @@ body {
 html.auth-screen,
 html.auth-screen body,
 html.auth-screen #__nuxt > div {
-  background-color: rgb(var(--color-surface));
+  background: rgb(var(--color-surface));
+}
+/* The strip behind the status bar is the back plane's colour, so a screen's
+   plane runs up under the clock instead of stopping at a pale band. Every
+   signed-in screen opens with a plane (mobile/assets/css/main.css). */
+.qf-root {
+  background: linear-gradient(rgb(var(--plane)) 0 calc(env(safe-area-inset-top) + 1px), rgb(var(--color-surface-page)) 0);
 }
 </style>

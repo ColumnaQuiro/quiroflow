@@ -4,7 +4,21 @@ import { classifyPaymentForFilter } from '../../utils/incomeAttribution'
 import { isReceipt } from '../../utils/paymentReceipts'
 import type { DateRange } from '../../composables/useDateRangePresets'
 
-const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
+// `hero`: the figure at the size of a screen's headline (the app's Números,
+// where this sits on the back plane).
+const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string; hero?: boolean }>()
+
+// The payments behind the figure, for a caller that draws them over time
+// (the app's Números curve, mobile/components/AppIncomeCurve.vue): the same
+// rows the total is the sum of, so the curve ends exactly on the figure.
+interface IncomeSeries {
+  from: string
+  to: string
+  prevFrom: string
+  current: { at: string; cents: number }[]
+  previous: { at: string; cents: number }[]
+}
+const emit = defineEmits<{ series: [IncomeSeries] }>()
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null; created_at: string }
@@ -184,6 +198,21 @@ const prevPaidCents = computed(() =>
     .filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches')
     .reduce((sum, p) => sum + p.amount_cents, 0),
 )
+watch([filteredPayments, prevPayments, loading], () => {
+  if (loading.value) return
+  const { from, to } = rangeBounds(props.dateRange)
+  const { from: prevFrom } = previousRange(props.dateRange)
+  emit('series', {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    prevFrom: prevFrom.toISOString(),
+    current: filteredPayments.value.map((p) => ({ at: p.paid_at, cents: p.amount_cents })),
+    previous: prevPayments.value
+      .filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches')
+      .map((p) => ({ at: p.paid_at, cents: p.amount_cents })),
+  })
+})
+
 const deltaPct = computed(() => {
   // No previous period is not a 100% fall, and saying so about somebody's
   // first month reads as alarm about their best possible result.
@@ -198,12 +227,13 @@ function euros(cents: number) {
 
 <template>
   <div v-if="loading" class="space-y-1.5">
-    <UiSkeleton class="h-[23px] w-24 rounded-ctlSm" />
-    <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+    <UiSkeleton class="rounded-ctlSm" :class="hero ? 'h-[40px] w-40 opacity-30' : 'h-[23px] w-24'" />
+    <UiSkeleton class="h-3 w-40 rounded-ctlSm" :class="hero && 'opacity-30'" />
   </div>
   <div v-else>
-    <p class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ euros(totalPaid) }}</p>
-    <p v-if="deltaPct !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPct < 0 ? 'text-danger-text' : 'text-success-text'">
+    <p v-if="hero" class="text-[40px] font-[650] leading-[1.08] tracking-[-0.03em] text-ink-900 [font-variant-numeric:tabular-nums]">{{ euros(totalPaid) }}</p>
+    <p v-else class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ euros(totalPaid) }}</p>
+    <p v-if="deltaPct !== null" class="mt-1.5 font-medium" :class="[hero ? 'text-[14px]' : 'text-[12px]', deltaPct < 0 ? 'text-danger-text' : 'text-success-text']">
       {{ t(`${deltaPct > 0 ? '+' : ''}${deltaPct}% vs previous period`, `${deltaPct > 0 ? '+' : ''}${deltaPct}% frente al periodo anterior`) }}
     </p>
     <div class="mt-2.5 flex items-center gap-4 border-t border-line-row2 pt-2 text-[12px] text-ink-muted2">

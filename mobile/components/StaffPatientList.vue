@@ -65,9 +65,10 @@ watch(search, () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface">
-    <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
-      <div class="mb-2 flex items-center gap-2">
-        <h1 class="text-[17px] font-semibold text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
+    <!-- The back plane (assets/css/main.css): title, scan, new and search. -->
+    <div class="qf-plane qf-lip qf-lip-surface shrink-0 px-4 pt-3">
+      <div class="mb-3 flex min-h-11 items-center gap-2">
+        <h1 class="text-[22px] font-[650] tracking-[-0.02em] text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
         <span class="flex-1" />
         <!-- A bono pass's QR: straight to today's visit, or the record
         (usePassScan). Only in the app, where there is a camera to ask for. -->

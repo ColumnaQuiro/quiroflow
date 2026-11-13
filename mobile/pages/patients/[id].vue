@@ -389,7 +389,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
   <StaffPatientList class="hidden lg:flex lg:w-80 lg:shrink-0 lg:border-r lg:border-line" :selected-id="patientId" />
   <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
     <!-- Named for the patient, not "Patient", once they are loaded. -->
-    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" @back="goBack">
+    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" lip="surface" @back="goBack">
       <button v-if="patient && canEdit" type="button" class="h-9 shrink-0 rounded-ctl px-2 text-[14px] font-semibold text-brand-text" data-cy="patient-edit" @click="editOpen = true">{{ t('Edit', 'Editar') }}</button>
     </AppPageHeader>
 

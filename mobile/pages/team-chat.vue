@@ -142,7 +142,7 @@ function bubbleTime(iso: string) {
   <div class="relative flex h-full min-h-0 flex-col bg-surface-page">
     <!-- With the Inbox, Team is one side of its tab and this bar switches
          between them; without it, this page is the tab itself. -->
-    <div v-if="context && can('inbox_access')" class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 md:px-5">
+    <div v-if="context && can('inbox_access')" class="qf-plane qf-lip qf-lip-surface flex shrink-0 items-center gap-2 px-3 pt-2 md:px-5">
       <InboxTeamSwitch current="team" />
       <StaffHelpButton />
     </div>

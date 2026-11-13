@@ -11,8 +11,9 @@ const t = useT()
 </script>
 
 <template>
+  <!-- On an iPad the side menu is the back plane, beside the sheet. -->
   <nav
-    class="flex w-[220px] shrink-0 flex-col gap-0.5 border-r border-line bg-surface px-3 pt-4 lg:w-[236px]"
+    class="qf-plane flex w-[220px] shrink-0 flex-col gap-0.5 px-3 pt-4 lg:w-[236px]"
     style="padding-bottom: max(env(safe-area-inset-bottom), 1rem); padding-left: max(env(safe-area-inset-left), 0.75rem)"
     data-test="app-side-nav"
   >
@@ -27,8 +28,8 @@ const t = useT()
       v-for="item in items"
       :key="item.to"
       :to="item.to"
-      class="flex h-10 items-center gap-2.5 rounded-ctl px-2.5 text-[14px]"
-      :class="isActive(item.to) ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-700 active:bg-surface-subtle'"
+      class="flex h-11 items-center gap-2.5 rounded-full px-3 text-[14px]"
+      :class="isActive(item.to) ? 'bg-brand font-semibold text-brand-on' : 'text-ink-700 active:bg-surface'"
       :aria-current="isActive(item.to) ? 'page' : undefined"
     >
       <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(item.to) ? 1.6 : 1.3" stroke-linejoin="round" aria-hidden="true">

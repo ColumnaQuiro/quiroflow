@@ -80,6 +80,35 @@ export const LINKABLE_PATIENT_FIELDS = [
 // answer, not a checkbox/choice/scale/rating/signature.
 export const LINKABLE_FIELD_TYPES: DocFieldType[] = ['short_text', 'long_text', 'date']
 
+// The patient column a question imported from another system should be
+// linked to, read from its wording. A form built here is linked by hand in
+// Settings > Docs; an imported one arrives with no links at all, so its
+// "DNI" question filled nothing -- 755 imported intake forms holding 519
+// patients' DNI, and not one on a profile (13 Nov 2026).
+//
+// Only the patient's OWN identity document, and only a short label that is
+// the question itself. "DNI Madre/Padre/Tutor legal" sits on the same intake
+// form and is somebody else's number; a legal paragraph mentioning "documento
+// oficial que lo identifique" is not a question at all.
+const OWN_ID_QUESTION = /\b(dni|nie|nif|pasaporte|passport|documento de identidad|numero de identidad|national id|id number|carte d'identite)\b/
+const SOMEONE_ELSES = /\b(madre|padre|tutor|tutora|tutores|representante|responsable|progenitor|parent|parents|guardian|mother|father|pere|mere|tuteur|representant|empresa|company|entreprise)\b/
+
+export function patientFieldForQuestion(label: string | null | undefined): string | undefined {
+  const text = (label ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+  if (!text || text.length > 60) return undefined
+  if (OWN_ID_QUESTION.test(text) && !SOMEONE_ELSES.test(text)) return 'national_id'
+  return undefined
+}
+
+// An answer worth putting on patients.national_id: the same test
+// save_public_patient_doc applies when a patient completes a form here, so
+// an imported answer and a typed one are held to one rule.
+export function nationalIdAnswer(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  return /^[A-Za-z0-9][A-Za-z0-9 .-]{3,19}$/.test(text) ? text : null
+}
+
 export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [
   { type: 'heading', label: 'Heading' },
   { type: 'text', label: 'Text' },

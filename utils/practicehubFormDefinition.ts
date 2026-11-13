@@ -1,4 +1,4 @@
-import type { DocField } from './docFields'
+import { patientFieldForQuestion, type DocField } from './docFields'
 
 // A PracticeHub form as its own editor describes it, turned into a template
 // here with every field the type it was there.
@@ -219,9 +219,12 @@ export function practiceHubDefinitionBlocks(
         case 'textarea':
           blocks.push({ id: newId(), type: 'long_text', label: label || 'Respuesta', required, value: null })
           break
-        default:
+        default: {
           // text, and anything PracticeHub adds later: a question that can at least be answered.
-          if (label) blocks.push({ id: newId(), type: 'short_text', label, required, value: null })
+          // The patient's DNI is linked to their profile, as a form built here would be.
+          const patientField = patientFieldForQuestion(text)
+          if (label) blocks.push({ id: newId(), type: 'short_text', label, required, value: null, ...(patientField ? { patientField } : {}) })
+        }
       }
     }
   })

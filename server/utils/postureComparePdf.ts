@@ -29,6 +29,8 @@ export interface PostureCompareData {
   timeZone: string
   lang: ReportLang
   comparison: PostureComparison
+  /** What the practitioner wrote when they sent this pair to the patient, and who they are; null when it was never sent. */
+  note: { text: string; by: string | null } | null
   /** The views both have, in the order they are taken, each with its two photos. */
   views: { view: PostureView; before: PosturePhoto; after: PosturePhoto }[]
   clinic: { name: string; address: string | null; phone: string | null; email: string | null } | null
@@ -52,6 +54,7 @@ const COPY = {
     intro:
       'Este informe compara tu postura en dos valoraciones, con las fotos tomadas en consulta en el mismo sitio y de la misma forma. Cada medida es su distancia a la postura alineada: cuanto más pequeña, mejor. Un cambio de menos de medio grado o medio centímetro se da por igual, porque una foto no distingue menos que eso.',
     measure: 'Medida',
+    noteFrom: (by: string | null) => (by ? `Comentario de ${by}` : 'Comentario de tu clínica'),
     change: 'Cambio',
     better: 'Mejora',
     worse: 'A vigilar',
@@ -67,6 +70,7 @@ const COPY = {
     intro:
       'This report compares your posture at two assessments, with the photos taken at the clinic in the same place and the same way. Each measurement is its distance from aligned posture: the smaller, the better. A change under half a degree or half a centimetre counts as the same, because a photo cannot tell less than that.',
     measure: 'Measurement',
+    noteFrom: (by: string | null) => (by ? `A note from ${by}` : 'A note from your clinic'),
     change: 'Change',
     better: 'Better',
     worse: 'To watch',
@@ -87,8 +91,12 @@ export function postureCompareFileName(data: Pick<PostureCompareData, 'lang' | '
 /**
  * Both assessments, whichever way round they were named, as long as they are
  * the same patient's in this account. Null otherwise: the caller answers 404.
+ *
+ * `note`: whether the practitioner's comment on this pair (posture_comparisons,
+ * one row per pair) goes in. 'any' for staff; 'shared' for a patient comparing
+ * on their own, who must not read a comment that was withdrawn from them.
  */
-export async function loadPostureCompareData(supabase: SupabaseClient<Database>, accountId: string, idA: string, idB: string): Promise<PostureCompareData | null> {
+export async function loadPostureCompareData(supabase: SupabaseClient<Database>, accountId: string, idA: string, idB: string, note: 'any' | 'shared' = 'any'): Promise<PostureCompareData | null> {
   if (idA === idB) return null
   const { data: rows } = await supabase
     .from('posture_assessments')
@@ -99,11 +107,15 @@ export async function loadPostureCompareData(supabase: SupabaseClient<Database>,
   const [b, a] = rows ?? []
   if (!a || !b || a.patient_id !== b.patient_id) return null
 
-  const [{ data: patient }, { data: clinic }] = await Promise.all([
+  let saved = supabase.from('posture_comparisons').select('note, team_members(full_name)').eq('account_id', accountId).eq('before_assessment_id', b.id).eq('after_assessment_id', a.id)
+  if (note === 'shared') saved = saved.eq('shared_with_patient', true)
+  const [{ data: patient }, { data: clinic }, { data: sent }] = await Promise.all([
     supabase.from('patients').select('first_name, last_name, preferred_language').eq('id', a.patient_id).maybeSingle(),
     supabase.from('clinics').select('name, address, phone, email, timezone, logo_storage_path').eq('account_id', accountId).order('created_at').limit(1).maybeSingle(),
+    saved.maybeSingle(),
   ])
   if (!patient) return null
+  const noteText = sent?.note?.trim()
   const lang: ReportLang = patient.preferred_language === 'en' ? 'en' : 'es'
 
   const bViews = b.views as unknown as StoredViews
@@ -126,6 +138,7 @@ export async function loadPostureCompareData(supabase: SupabaseClient<Database>,
     timeZone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
     lang,
     comparison: comparePosture(measure(b), measure(a), lang),
+    note: noteText ? { text: noteText, by: (sent!.team_members as unknown as { full_name: string } | null)?.full_name ?? null } : null,
     views: common.flatMap((v) => {
       const before = beforePhotos.find((p) => p.view === v)
       const after = afterPhotos.find((p) => p.view === v)
@@ -205,6 +218,18 @@ export async function generatePostureComparePdf(data: PostureCompareData): Promi
     doc.font('Helvetica-Bold').fontSize(14).fillColor(tone.fg).text(compareHeadline(c, data.lang), M + 14, y + 12, { width: W - 28 })
     if (sentence) doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(sentence, M + 14, y + 34, { width: W - 28, lineGap: 2 })
     y += boxH + 16
+
+    // What the practitioner wrote when they sent it, in their name.
+    if (data.note) {
+      doc.font('Helvetica').fontSize(10)
+      const noteH = 34 + doc.heightOfString(data.note.text, { width: W - 34, lineGap: 2 })
+      ensure(noteH + 16)
+      doc.roundedRect(M, y, W, noteH, 5).fill(SAME_BG)
+      doc.rect(M, y, 3, noteH).fill(BRAND)
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(BRAND).text(copy.noteFrom(data.note.by).toUpperCase(), M + 17, y + 11, { characterSpacing: 0.4, lineBreak: false })
+      doc.font('Helvetica').fontSize(10).fillColor(INK).text(data.note.text, M + 17, y + 25, { width: W - 34, lineGap: 2 })
+      y += noteH + 16
+    }
 
     // The table: one row per measure, grouped as on the record.
     const VAL_W = 62

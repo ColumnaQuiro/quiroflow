@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   if (rows?.length !== 2 || rows[0]!.patient_id !== rows[1]!.patient_id || rows[0]!.account_id !== rows[1]!.account_id) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
 
   const service = serverSupabaseServiceRole<Database>(event)
-  const data = await loadPostureCompareData(service, rows[0]!.account_id, assessmentId, withId)
+  const data = await loadPostureCompareData(service, rows[0]!.account_id, assessmentId, withId, 'shared')
   if (!data) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
 
   const url = await storePostureComparison(service, rows[0]!.account_id, await generatePostureComparePdf(data), postureCompareFileName(data))

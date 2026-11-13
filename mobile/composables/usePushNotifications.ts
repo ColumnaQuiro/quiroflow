@@ -66,6 +66,8 @@ function routeTap(data: Record<string, string> | undefined) {
   // Cuidarme, where they are ticked.
   if (type === 'exercises') return navigateTo('/care')
   if (type === 'learn' && data?.sendId) return navigateTo(`/learn/${data.sendId}`)
+  // A posture comparison the practitioner sent (server/api/posture/comparisons.post.ts): Progreso, where it is the first card.
+  if (type === 'posture_comparison') return navigateTo('/progress')
   // "Avisar al publicar": something new in the clinic's library, on Cuidarme
   // (server/api/learn/announce.post.ts).
   if (type === 'learn_library') return navigateTo('/care')

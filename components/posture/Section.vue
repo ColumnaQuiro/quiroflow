@@ -6,8 +6,9 @@ import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type 
 // "Postura" on the record's Progreso tab: the patient's posture assessments
 // (posture_assessments), two of them side by side in any view with the same
 // points and vertical drawn, the headline numbers then and now, every measure
-// of the two compared (Compare.vue) with a PDF of that comparison, how the
-// head has moved over time, and whether the patient may see each one in their
+// of the two compared (Compare.vue) with a PDF of that comparison, sending
+// that comparison to the patient's app with a comment (posture_comparisons)
+// and the ones already sent, how the head has moved over time, and whether the patient may see each one in their
 // app. A new one is taken on /patients/posture/<id>. The numbers are part of
 // the "Informe de revisión" PDF (data-pdf-*), the photos are not.
 // `can`: the staff app passes its own (usePractitionerContext). It has no
@@ -49,6 +50,7 @@ async function load() {
     const { data: signed } = await supabase.storage.from('patient-files').createSignedUrls(paths, 3600)
     urls.value = Object.fromEntries((signed ?? []).flatMap((s) => (s.signedUrl && s.path ? [[s.path, s.signedUrl] as const] : [])))
   }
+  await loadSent()
   // Compare the first with the latest unless someone picked otherwise.
   picked.value = list.value.length >= 2 ? [list.value[0]!.id, list.value[list.value.length - 1]!.id] : list.value.map((a) => a.id)
   loading.value = false
@@ -190,6 +192,66 @@ function openComparison() {
   })
 }
 
+// "Enviar al paciente": the pair being compared, with what the practitioner
+// says about it, becomes a posture_comparisons row -- which is what shows it
+// in the patient's app, whether or not each assessment is shared on its own
+// -- and a push tells them (server/api/posture/comparisons.post.ts). One per
+// pair: sending the same two again edits the comment.
+interface SentComparison { id: string; before_assessment_id: string; after_assessment_id: string; note: string | null; shared_with_patient: boolean; updated_at: string; team_members: { full_name: string } | null }
+const sent = ref<SentComparison[]>([])
+async function loadSent() {
+  const { data } = await supabase
+    .from('posture_comparisons')
+    .select('id, before_assessment_id, after_assessment_id, note, shared_with_patient, updated_at, team_members(full_name)')
+    .eq('patient_id', props.patientId)
+    .order('updated_at', { ascending: false })
+  sent.value = (data as unknown as SentComparison[] | null) ?? []
+}
+const takenAt = (id: string) => list.value.find((a) => a.id === id)?.taken_at ?? null
+const currentSent = computed(() => {
+  const [b, a] = pair.value
+  return (a && b && sent.value.find((s) => s.before_assessment_id === b.id && s.after_assessment_id === a.id)) || null
+})
+const sending = ref(false)
+const sendNote = ref('')
+const sendBusy = ref(false)
+function startSend() {
+  sendNote.value = currentSent.value?.note ?? ''
+  sending.value = true
+}
+async function send() {
+  const [b, a] = pair.value
+  if (!a || !b) return
+  sendBusy.value = true
+  try {
+    const { notified } = await useStaffFetch<{ id: string; notified: boolean }>('/api/posture/comparisons', { method: 'POST', body: { beforeId: b.id, afterId: a.id, note: sendNote.value } })
+    sending.value = false
+    await loadSent()
+    showToast(notified ? t('Sent. The patient has been notified in their app.', 'Enviada. El paciente ha recibido un aviso en su app.') : t('Sent. The patient will find it under Progress in their app.', 'Enviada. El paciente la verá en Progreso, en su app.'), 'success')
+  } catch (e) {
+    showToast((e as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not send the comparison.', 'No se ha podido enviar la comparativa.'), 'error')
+  } finally {
+    sendBusy.value = false
+  }
+}
+async function setSentShared(c: SentComparison, shared: boolean) {
+  const { error } = await supabase.from('posture_comparisons').update({ shared_with_patient: shared }).eq('id', c.id)
+  if (error) return showToast(error.message, 'error')
+  c.shared_with_patient = shared
+}
+const unsending = ref<SentComparison | null>(null)
+async function unsend() {
+  const c = unsending.value
+  unsending.value = null
+  if (!c) return
+  const { error } = await supabase.from('posture_comparisons').delete().eq('id', c.id)
+  if (error) return showToast(error.message, 'error')
+  await loadSent()
+}
+function showSent(c: SentComparison) {
+  picked.value = [c.before_assessment_id, c.after_assessment_id]
+}
+
 const removing = ref<Assessment | null>(null)
 async function remove() {
   const a = removing.value
@@ -268,12 +330,35 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             <div class="mt-1 flex flex-wrap items-center gap-2 border-t border-line-divider pt-3">
               <h4 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Comparison', 'Comparativa') }}</h4>
               <button type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60 touch:h-11" :disabled="comparing" data-cy="posture-comparison-report" @click="openComparison">{{ comparing ? t('Preparing…', 'Preparando…') : t('Comparison report (PDF)', 'Informe comparativo (PDF)') }}</button>
+              <button type="button" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on touch:h-11" data-cy="posture-comparison-send" @click="startSend">{{ currentSent ? t('Edit what was sent', 'Editar lo enviado') : t('Send to the patient', 'Enviar al paciente') }}</button>
             </div>
+            <p v-if="currentSent" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-700" data-cy="posture-comparison-sent-note">
+              <span class="font-semibold text-ink-900">{{ currentSent.shared_with_patient ? t(`Sent to the patient on ${day(currentSent.updated_at)}`, `Enviada al paciente el ${day(currentSent.updated_at)}`) : t('Saved, but the patient cannot see it now', 'Guardada, pero el paciente no la ve ahora') }}</span><template v-if="currentSent.note"> · {{ currentSent.note }}</template>
+            </p>
             <PostureCompare :before="compared[0]!" :after="compared[1]!" :before-at="pair[0]!.taken_at" :after-at="pair[1]!.taken_at" />
           </template>
           <p v-else-if="list.length > 1" class="text-[12.5px] text-ink-muted">{{ t('Tick two assessments in the list to compare them measure by measure.', 'Marca dos valoraciones en la lista para compararlas medida a medida.') }}</p>
         </div>
       </div>
+
+      <section v-if="sent.length" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip data-cy="posture-sent">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <h4 class="text-[14px] font-semibold text-ink-900">{{ t('Comparisons sent to the patient', 'Comparativas enviadas al paciente') }}</h4>
+          <span class="text-[12px] text-ink-muted">{{ t('They see them under Progress in their app, with your comment', 'Las ve en Progreso, en su app, con tu comentario') }}</span>
+        </div>
+        <ul class="mt-1 flex flex-col divide-y divide-line-divider">
+          <li v-for="c in sent" :key="c.id" class="flex flex-wrap items-start gap-x-3 gap-y-1 py-2.5" data-cy="posture-sent-row">
+            <div class="min-w-0 flex-[1_1_260px]">
+              <p class="text-[13.5px] font-semibold text-ink-900">{{ [takenAt(c.before_assessment_id), takenAt(c.after_assessment_id)].map((d) => (d ? day(d) : '—')).join(t(' vs ', ' frente a ')) }}</p>
+              <p class="text-[12px] text-ink-muted">{{ [c.team_members?.full_name, t(`sent ${day(c.updated_at)}`, `enviada el ${day(c.updated_at)}`)].filter(Boolean).join(' · ') }}</p>
+              <p v-if="c.note" class="mt-0.5 whitespace-pre-line text-[13px] text-ink-700">{{ c.note }}</p>
+            </div>
+            <label class="flex h-9 items-center gap-1.5 text-[12.5px] text-ink-700 touch:h-11"><input type="checkbox" :checked="c.shared_with_patient" data-cy="posture-sent-share" @change="setSentShared(c, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
+            <button type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle touch:h-11" data-cy="posture-sent-show" @click="showSent(c)">{{ t('Show', 'Ver') }}</button>
+            <button type="button" class="inline-flex h-9 items-center px-1 text-[12.5px] font-semibold text-ink-muted hover:text-danger-text touch:h-11" data-cy="posture-sent-delete" @click="unsending = c">{{ t('Delete', 'Eliminar') }}</button>
+          </li>
+        </ul>
+      </section>
 
       <section v-if="chart && trendMetric" class="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5" data-pdf-block="image" data-pdf-span="12" data-cy="posture-evolution">
         <div class="flex flex-wrap items-center gap-2.5">
@@ -357,6 +442,38 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
     </section>
 
     <UiConfirmDialog
+      v-if="sending && pair.length === 2"
+      :title="t('Send this comparison to the patient', 'Enviar esta comparativa al paciente')"
+      :confirm-label="currentSent ? t('Save', 'Guardar') : t('Send', 'Enviar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="sendBusy"
+      @confirm="send"
+      @cancel="sending = false"
+    >
+      <div class="flex flex-col gap-2.5">
+        <p class="text-[14px] text-ink-700">
+          {{ t(`${day(pair[0]!.taken_at)} vs ${day(pair[1]!.taken_at)}. They will see both sets of photos, what changed and its PDF under Progress in their app, and get a notification.`, `${day(pair[0]!.taken_at)} frente a ${day(pair[1]!.taken_at)}. Verá las fotos de las dos, qué ha cambiado y su PDF en Progreso, en su app, y recibirá un aviso.`) }}
+        </p>
+        <label class="flex flex-col gap-1 text-[12.5px] font-semibold text-ink-700">
+          {{ t('Your comment (optional)', 'Tu comentario (opcional)') }}
+          <textarea v-model="sendNote" rows="4" maxlength="2000" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] font-normal text-ink-900 outline-none focus-visible:shadow-focus" :placeholder="t('What you want them to take from it', 'Lo que quieres que se lleve de ella')" data-cy="posture-comparison-note" />
+        </label>
+      </div>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="unsending"
+      tone="danger"
+      :title="t('Delete this sent comparison?', '¿Eliminar esta comparativa enviada?')"
+      :confirm-label="t('Delete', 'Eliminar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="unsend"
+      @cancel="unsending = null"
+    >
+      <p class="text-[14px] text-ink-700">{{ t('The patient stops seeing it. The two assessments and their photos stay.', 'El paciente deja de verla. Las dos valoraciones y sus fotos se conservan.') }}</p>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
       v-if="removing"
       tone="danger"
       :title="t(`Delete the assessment of ${day(removing.taken_at)}?`, `¿Eliminar la valoración del ${day(removing.taken_at)}?`)"
@@ -365,7 +482,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
       @confirm="remove"
       @cancel="removing = null"
     >
-      <p class="text-[14px] text-ink-700">{{ t('Its photos are deleted too.', 'Se borran también sus fotos.') }}</p>
+      <p class="text-[14px] text-ink-700">{{ t('Its photos are deleted too, and any comparison sent to the patient that uses it.', 'Se borran también sus fotos y las comparativas enviadas al paciente que la usen.') }}</p>
     </UiConfirmDialog>
   </section>
 </template>

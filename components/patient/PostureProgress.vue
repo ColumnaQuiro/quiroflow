@@ -8,7 +8,9 @@ import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type 
 // the number they choose, two of them compared -- the first and the latest
 // unless they pick others: photos side by side, each measure then and now
 // (components/posture/Compare.vue) and that comparison as a PDF -- and the
-// report for each. The same numbers and scale as the staff chart
+// report for each. First of all, the comparisons their practitioner sent
+// them (posture_comparisons), each with its comment: opening one shows that
+// pair in the same place, whether or not its assessments are shared one by one. The same numbers and scale as the staff chart
 // (utils/postureTrend.ts), in plainer words. Shared with mobile/, so its
 // imports are relative.
 const t = useT()
@@ -19,14 +21,23 @@ const lang = computed(() => t('en', 'es') as 'en' | 'es')
 
 interface View { url: string | null; width: number; height: number; points: Points; facing: 'right' | 'left' | null }
 interface Assessment { id: string; takenAt: string; heightCm: number | null; metrics: Partial<Record<PostureView, ViewMetrics>>; views: Partial<Record<PostureView, View>> }
+interface SentComparison { id: string; sentAt: string; note: string | null; by: string | null; before: Assessment; after: Assessment }
 const list = ref<Assessment[]>([])
+const sent = ref<SentComparison[]>([])
 const loading = ref(true)
 const loadError = ref(false)
+// The sent comparison being shown, or null while they compare on their own.
+const sentId = ref<string | null>(null)
+const opened = computed(() => sent.value.find((c) => c.id === sentId.value) ?? null)
 async function load() {
   loading.value = true
   loadError.value = false
   try {
-    list.value = (await authedFetch<{ assessments: Assessment[] }>('/api/portal/posture', { query: active.value ? { patientId: active.value.patientId } : {} })).assessments
+    const res = await authedFetch<{ assessments: Assessment[]; comparisons?: SentComparison[] }>('/api/portal/posture', { query: active.value ? { patientId: active.value.patientId } : {} })
+    sent.value = res.comparisons ?? []
+    // The newest one the clinic sent is what they came to see.
+    sentId.value = sent.value[0]?.id ?? null
+    list.value = res.assessments
   } catch {
     loadError.value = true
   } finally {
@@ -115,8 +126,8 @@ watch(list, (l) => {
   beforeId.value = l.length > 1 ? l[0]!.id : null
   afterId.value = l.length ? l[l.length - 1]!.id : null
 })
-const before = computed(() => list.value.find((a) => a.id === beforeId.value) ?? null)
-const after = computed(() => list.value.find((a) => a.id === afterId.value) ?? latest.value)
+const before = computed(() => (opened.value ? opened.value.before : (list.value.find((a) => a.id === beforeId.value) ?? null)))
+const after = computed(() => (opened.value ? opened.value.after : (list.value.find((a) => a.id === afterId.value) ?? latest.value)))
 const beforeChoices = computed(() => list.value.filter((a) => !after.value || a.takenAt < after.value.takenAt))
 const afterChoices = computed(() => list.value.filter((a) => !before.value || a.takenAt > before.value.takenAt))
 const pair = computed(() => (before.value && after.value ? [before.value, after.value] : after.value ? [after.value] : []))
@@ -166,7 +177,9 @@ function openComparison() {
   compareError.value = ''
   openWhenReady(async () => {
     try {
-      return (await authedFetch<{ url: string }>(`/api/portal/posture/${a.id}/comparison`, { method: 'POST', body: { withId: b.id } })).url
+      // A sent one is asked for by its own id: it is what lets them read its two assessments.
+      const sentOne = opened.value
+      return (await (sentOne ? authedFetch<{ url: string }>(`/api/portal/posture-comparisons/${sentOne.id}/report`, { method: 'POST' }) : authedFetch<{ url: string }>(`/api/portal/posture/${a.id}/comparison`, { method: 'POST', body: { withId: b.id } }))).url
     } catch {
       compareError.value = t('The comparison could not be prepared. Try again in a moment.', 'No se ha podido preparar la comparativa. Inténtalo de nuevo en un momento.')
       return null
@@ -183,11 +196,30 @@ const showAll = ref(false)
   <div class="flex flex-col gap-3" data-cy="patient-posture" :data-ready="loading ? undefined : 'true'">
     <div v-if="loading" class="space-y-3"><UiSkeleton class="h-64 w-full rounded-card" /></div>
     <PatientLoadError v-else-if="loadError" @retry="load" />
-    <p v-else-if="!list.length" class="rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13.5px] text-ink-muted" data-cy="patient-posture-empty">
+    <p v-else-if="!list.length && !sent.length" class="rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13.5px] text-ink-muted" data-cy="patient-posture-empty">
       {{ t('When your clinic shares a posture assessment with you, you will see it here, and how it changes over time.', 'Cuando tu clínica comparta contigo una valoración de postura, la verás aquí, y cómo cambia con el tiempo.') }}
     </p>
     <template v-else>
-      <p class="text-[13px] text-ink-muted">
+      <section v-if="sent.length" class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-posture-sent">
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('From your clinic', 'De tu clínica') }}</p>
+        <button
+          v-for="c in sent"
+          :key="c.id"
+          type="button"
+          class="flex min-h-11 flex-col gap-0.5 rounded-ctl border px-3 py-2.5 text-left"
+          :class="sentId === c.id ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"
+          :aria-pressed="sentId === c.id"
+          data-cy="patient-posture-sent-item"
+          @click="sentId = c.id"
+        >
+          <span class="text-[14px] font-semibold" :class="sentId === c.id ? 'text-brand-text' : 'text-ink-900'">{{ t(`Comparison: ${longDay(c.before.takenAt)} and ${longDay(c.after.takenAt)}`, `Comparativa: ${longDay(c.before.takenAt)} y ${longDay(c.after.takenAt)}`) }}</span>
+          <span v-if="c.by" class="text-[12px] text-ink-muted">{{ t(`Sent by ${c.by}`, `Te la envía ${c.by}`) }}</span>
+        </button>
+        <p v-if="opened?.note" class="whitespace-pre-line rounded-ctl bg-surface-subtle px-3 py-2.5 text-[14px] leading-relaxed text-ink-900" data-cy="patient-posture-sent-note">{{ opened.note }}</p>
+        <button v-if="opened && list.length > 1" type="button" class="h-11 self-start text-[13px] font-semibold text-brand-text" data-cy="patient-posture-own" @click="sentId = null">{{ t('Compare other dates myself', 'Comparar yo otras fechas') }}</button>
+      </section>
+
+      <p v-if="list.length" class="text-[13px] text-ink-muted">
         {{ list.length === 1
           ? t(`1 posture assessment, on ${longDay(latest!.takenAt)}`, `1 valoración de postura, el ${longDay(latest!.takenAt)}`)
           : t(`${list.length} posture assessments, ${longDay(first!.takenAt)} to ${longDay(latest!.takenAt)}`, `${list.length} valoraciones de postura, del ${longDay(first!.takenAt)} al ${longDay(latest!.takenAt)}`) }}
@@ -244,7 +276,7 @@ const showAll = ref(false)
       <section v-if="views.length" class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-posture-photos">
         <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ pair.length > 1 ? t('Before and now', 'Antes y ahora') : t('Your photos', 'Tus fotos') }}</p>
         <!-- With only two there is nothing to choose. -->
-        <div v-if="list.length > 2" class="grid grid-cols-2 gap-2.5">
+        <div v-if="!opened && list.length > 2" class="grid grid-cols-2 gap-2.5">
           <label class="flex min-w-0 flex-col gap-1 text-[12px] text-ink-muted">
             {{ t('Before', 'Antes') }}
             <select v-model="beforeId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900" data-cy="patient-posture-before">
@@ -279,7 +311,7 @@ const showAll = ref(false)
         <p v-if="compareError" role="alert" class="text-[12.5px] text-danger-text" data-cy="patient-posture-comparison-error">{{ compareError }}</p>
       </section>
 
-      <section class="flex items-center gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
+      <section v-if="latest" class="flex items-center gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
         <div class="min-w-0 flex-1">
           <p class="text-[14.5px] font-semibold text-ink-900">{{ t('Your posture report', 'Tu informe postural') }}</p>
           <p class="text-[12.5px] text-ink-muted">{{ t(`Assessment of ${longDay(latest!.takenAt)} · PDF`, `Valoración del ${longDay(latest!.takenAt)} · PDF`) }}</p>

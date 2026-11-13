@@ -49,6 +49,8 @@ export interface MergeContext {
   practitionerFirstName?: string
   /** When the patient's last completed visit started, for {{last_visit_month}}. */
   lastVisitAt?: string
+  /** referral.visit_completed: the first name of the patient they referred, for {{referred_first_name}}. */
+  referredFirstName?: string
   /** 'es' or 'en': the language the message goes out in, for month names. */
   language?: string
   /**
@@ -137,6 +139,7 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   // "Soy Léa" -- and "Soy Clínica Centro" for a patient with no practitioner
   // on their record, because Meta refuses a message with an empty parameter
   // and a recall that never goes out helps nobody.
+  if (source === 'referred_first_name') return (context?.referredFirstName ?? '').trim()
   if (source === 'practitioner_first_name') return (context?.practitionerFirstName ?? '').trim() || context?.clinicName || ''
   // "desde junio": the month of the last completed visit, in the language
   // the message goes out in. Empty for someone who has never completed one.

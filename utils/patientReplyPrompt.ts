@@ -330,7 +330,7 @@ export function buildPatientReplyPrompt(
     /** stop_follow_ups is on this request -- only ever with sendsItself. */
     canStopFollowUps?: boolean
     /** An earlier time for their first visit, offered now or to come (earlierVisitPromptSection). */
-    earlierVisit?: { status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null } | null
+    earlierVisit?: { status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null; lastOfferedAt?: string | null } | null
     /** stop_earlier_time_offers is on this request -- only ever with sendsItself. */
     canStopEarlier?: boolean
     /** add_to_waitlist is on this request -- only ever with sendsItself. */

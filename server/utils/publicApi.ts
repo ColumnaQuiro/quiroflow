@@ -195,7 +195,7 @@ async function authenticate(event: H3Event, supabase: ApiContext['supabase']) {
 
 function requireScopeOrThrow(scopes: string[], needed: ApiScope) {
   if (!scopes.includes(needed)) {
-    throw new ApiError('forbidden', `This token is missing the "${needed}" scope. Add it in QuiroFlow under Settings → Developers.`)
+    throw new ApiError('forbidden', `This token is missing the "${needed}" scope. A token's scopes are fixed when it is created: create a new one with this scope in QuiroFlow under Settings → Developers → API & Tokens, and revoke this one.`)
   }
 }
 

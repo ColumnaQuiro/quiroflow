@@ -15,7 +15,8 @@ import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type 
 // sharp and pdfkit are loaded inside the functions, not at the top: see
 // CLAUDE.md, a top-level import in server/utils runs on every cold start.
 
-interface Photo { view: PostureView; jpeg: Buffer; width: number; height: number }
+export interface PosturePhoto { view: PostureView; jpeg: Buffer; width: number; height: number }
+type Photo = PosturePhoto
 
 export interface PostureReportData {
   assessmentId: string
@@ -44,8 +45,12 @@ const WORSE = '#B45309'
 
 const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
 
-/** The same drawing as components/posture/Overlay.vue, as an SVG to lay over the photo, plus a grid. */
-export function postureOverlaySvg(view: PostureView, p: Points, width: number, height: number): string {
+/**
+ * The same drawing as components/posture/Overlay.vue, as an SVG to lay over
+ * the photo, plus a grid. `ghost`: another assessment's points already placed
+ * on this photo (utils/postureCompare.ts), drawn dashed white under these.
+ */
+export function postureOverlaySvg(view: PostureView, p: Points, width: number, height: number, ghost: Points | null = null): string {
   const paired = view === 'front' || view === 'back'
   const stroke = Math.max(2, Math.round(width / 300))
   const r = Math.max(6, Math.round(width / 90))
@@ -57,10 +62,19 @@ export function postureOverlaySvg(view: PostureView, p: Points, width: number, h
   for (let y = step; y < height; y += step) grid.push(`<line x1="0" y1="${y.toFixed(1)}" x2="${width}" y2="${y.toFixed(1)}"/>`)
   for (let x = plumbX % step; x < width; x += step) grid.push(`<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${height}"/>`)
   const pairs = paired ? joints.map((k) => `<line x1="${p[`${k}R`]![0]}" y1="${p[`${k}R`]![1]}" x2="${p[`${k}L`]![0]}" y2="${p[`${k}L`]![1]}"/>`) : []
+  const ghostAt = (k: string): Pt | null => (!ghost ? null : paired ? (ghost[`${k}R`] && ghost[`${k}L`] ? mid(ghost[`${k}R`]!, ghost[`${k}L`]!) : null) : (ghost[k] ?? null))
+  const ghostPts = joints.map(ghostAt)
+  const ghostChain = ghost && ghostPts.every(Boolean) ? ghostPts.map((g) => g!.map((n) => n.toFixed(1)).join(',')).join(' ') : ''
+  const ghostSvg = ghostChain
+    ? `<polyline points="${ghostChain}" fill="none" stroke="#000" stroke-opacity=".45" stroke-width="${stroke * 2.2}" stroke-linejoin="round"/>
+<polyline points="${ghostChain}" fill="none" stroke="#fff" stroke-width="${stroke * 1.2}" stroke-linejoin="round" stroke-dasharray="${stroke * 3} ${stroke * 2.5}"/>
+<g fill="none" stroke="#fff" stroke-width="${stroke}">${ghostPts.map((g) => `<circle cx="${g![0].toFixed(1)}" cy="${g![1].toFixed(1)}" r="${(r * 0.6).toFixed(1)}"/>`).join('')}</g>`
+    : ''
   const dots = VIEW_POINTS[view].map((n) => `<circle cx="${p[n]![0]}" cy="${p[n]![1]}" r="${r}"/>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <g stroke="#fff" stroke-opacity=".22" stroke-width="${Math.max(1, stroke / 2)}">${grid.join('')}</g>
 <line x1="${plumbX}" y1="0" x2="${plumbX}" y2="${height}" stroke="#7CC4FF" stroke-width="${stroke}" stroke-dasharray="${stroke * 5} ${stroke * 4}"/>
+${ghostSvg}
 <g stroke="#FFB020" stroke-width="${stroke}">${pairs.join('')}</g>
 <polyline points="${chain}" fill="none" stroke="#FFB020" stroke-width="${stroke}" stroke-linejoin="round"/>
 <g fill="#FFB020" stroke="#fff" stroke-width="${stroke}">${dots.join('')}</g>
@@ -111,6 +125,41 @@ function drawReferenceFigure(doc: Doc, view: PostureView, x: number, y: number, 
   }
 }
 
+/**
+ * Each view's photo with its points drawn on it, in the order they are taken.
+ * `ghosts`: per view, the points of another assessment to draw under them.
+ */
+export async function loadPosturePhotos(supabase: SupabaseClient<Database>, views: StoredViews, ghosts: Partial<Record<PostureView, Points | null>> = {}): Promise<PosturePhoto[]> {
+  const { default: sharp } = await import('sharp')
+  return (
+    await Promise.all(
+      POSTURE_VIEWS.filter((v) => views[v]).map(async (v): Promise<Photo | null> => {
+        const s = views[v]!
+        const { data: blob } = await supabase.storage.from('patient-files').download(s.photo)
+        if (!blob) return null
+        const jpeg = await sharp(Buffer.from(await blob.arrayBuffer()))
+          .resize(s.width, s.height, { fit: 'fill' })
+          .composite([{ input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height, ghosts[v] ?? null)), top: 0, left: 0 }])
+          .jpeg({ quality: 82 })
+          .toBuffer()
+        return { view: v, jpeg, width: s.width, height: s.height }
+      }),
+    )
+  ).filter((p): p is Photo => !!p)
+}
+
+/** The clinic's logo for the header; null when there is none or it will not load. */
+export async function loadPostureLogo(supabase: SupabaseClient<Database>, logoPath: string | null): Promise<Buffer | null> {
+  if (!logoPath) return null
+  try {
+    const { data: publicUrl } = supabase.storage.from('clinic-logos').getPublicUrl(logoPath)
+    const res = await fetch(publicUrl.publicUrl)
+    return res.ok ? Buffer.from(await res.arrayBuffer()) : null
+  } catch {
+    return null // a logo that will not load is not a reason to have no report
+  }
+}
+
 export async function loadPostureReportData(supabase: SupabaseClient<Database>, accountId: string, assessmentId: string): Promise<PostureReportData | null> {
   const { data: a } = await supabase
     .from('posture_assessments')
@@ -132,38 +181,14 @@ export async function loadPostureReportData(supabase: SupabaseClient<Database>, 
   ])
   if (!patient) return null
 
-  const { default: sharp } = await import('sharp')
-  const photos = (
-    await Promise.all(
-      POSTURE_VIEWS.filter((v) => views[v]).map(async (v): Promise<Photo | null> => {
-        const s = views[v]!
-        const { data: blob } = await supabase.storage.from('patient-files').download(s.photo)
-        if (!blob) return null
-        const jpeg = await sharp(Buffer.from(await blob.arrayBuffer()))
-          .resize(s.width, s.height, { fit: 'fill' })
-          .composite([{ input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height)), top: 0, left: 0 }])
-          .jpeg({ quality: 82 })
-          .toBuffer()
-        return { view: v, jpeg, width: s.width, height: s.height }
-      }),
-    )
-  ).filter((p): p is Photo => !!p)
+  const photos = await loadPosturePhotos(supabase, views)
 
   // Measured again from the stored points, so an assessment saved before a
   // measurement existed (the knees, 21 Oct 2026) has it in its report too.
   // The same functions as at save time: the numbers otherwise agree.
   const metrics = remeasure({ takenAt: a.taken_at, heightCm: Number(a.height_cm), views, metrics: (a.metrics ?? {}) as Partial<Record<PostureView, ViewMetrics>> })
 
-  let logo: Buffer | null = null
-  if (clinic?.logo_storage_path) {
-    try {
-      const { data: publicUrl } = supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path)
-      const res = await fetch(publicUrl.publicUrl)
-      if (res.ok) logo = Buffer.from(await res.arrayBuffer())
-    } catch {
-      logo = null // a logo that will not load is not a reason to have no report
-    }
-  }
+  const logo = await loadPostureLogo(supabase, clinic?.logo_storage_path ?? null)
 
   return {
     assessmentId: a.id,

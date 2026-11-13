@@ -8,7 +8,7 @@
 export function familyPushReach(type: string | undefined): 'any' | 'full' | null {
   if (!type) return null
   if (type.startsWith('appointment_')) return 'any'
-  if (type === 'patient_app_message' || type === 'exercises' || type === 'learn') return 'full'
+  if (type === 'patient_app_message' || type === 'exercises' || type === 'learn' || type === 'posture_comparison') return 'full'
   return null
 }
 

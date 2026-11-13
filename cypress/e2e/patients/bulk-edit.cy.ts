@@ -103,11 +103,11 @@ describe('Patient list bulk edits', () => {
     })
   })
 
-  it('refuses the whole change when the role cannot remove a membership tag', () => {
+  it('offers taking tags away only to a role that may remove them', () => {
     cy.seedStaffAccount().then((account) => {
       const base = { accountId: account.accountId, clinicId: account.clinicId }
       const email = `bulk-desk-${Date.now()}@example.test`
-      cy.task('db:createMembershipTemplate', { accountId: account.accountId, name: 'Mensual' })
+      cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Front Desk', patch: { patients_tags_remove: false } })
       cy.task('db:createTeamMemberWithRole', { ...base, roleName: 'Front Desk', email, password: 'Test1234!', fullName: 'Recepción' })
       cy.task<{ id: string }>('db:createPatient', { ...base, firstName: 'Dora', lastName: 'Socia' }).then((p) => {
         cy.task('db:setPatientTags', { patientId: p.id, tags: ['Mensual'] })
@@ -116,11 +116,15 @@ describe('Patient list bulk edits', () => {
         cy.visit('/patients')
         cy.contains('tr', 'Dora Socia', { timeout: 15000 }).find('[data-cy=select-row]').check()
         cy.get('[data-cy=bulk-tags]').click()
-        cy.get('[data-cy=bulk-edit-tag-mode-remove]').click()
-        cy.get('[data-cy=bulk-edit-tag-remove]').select('Mensual')
+        cy.get('[data-cy=bulk-edit-tag-mode-remove]').should('not.exist')
+
+        // Adding still works, picked from the clinic's tags or typed.
+        cy.get('[data-cy=bulk-edit-tag-suggestion]').should('have.length', 1).and('have.text', 'Mensual')
+        cy.get('[data-cy=bulk-edit-tag-input]').type('Seguimiento')
+        cy.get('[data-cy=bulk-edit-tag-suggestion]').should('not.exist')
         cy.get('[data-cy=confirm-dialog-confirm]').click()
-        cy.get('[data-cy=bulk-edit-error]').should('contain', 'cannot remove a bono or membership tag')
-        state(p.id).its('tags').should('deep.equal', ['Mensual'])
+        cy.contains('Tag added to 1 patient').should('be.visible')
+        state(p.id).its('tags').should('deep.equal', ['Mensual', 'Seguimiento'])
       })
     })
   })

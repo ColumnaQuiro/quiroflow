@@ -7712,7 +7712,7 @@
   "Your role can't give sessions back to a bono.": "Ihre Rolle darf keine Sitzungen an ein Paket zurückgeben.",
   "Your role can't send templates.": "Ihre Rolle darf keine Vorlagen senden.",
   "Your role cannot make this change. Nothing was changed.": "Ihre Rolle kann diese Änderung nicht vornehmen. Es wurde nichts geändert.",
-  "Your role cannot remove a bono or membership tag. Nothing was changed.": "Ihre Rolle kann kein Paket- oder Mitgliedschafts-Tag entfernen. Es wurde nichts geändert.",
+  "Your role cannot remove tags. Nothing was changed.": "Ihre Rolle kann keine Tags entfernen. Es wurde nichts geändert.",
   "Your role can’t give sessions back to a bono.": "Ihre Rolle kann keine Sitzungen an ein Paket zurückgeben.",
   "Your role does not include clinical records.": "Ihre Rolle umfasst keine klinischen Unterlagen.",
   "Your role does not include recalls.": "Ihre Rolle umfasst keine Recalls.",

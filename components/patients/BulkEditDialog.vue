@@ -7,7 +7,7 @@ import type { PatientSelection } from '~/composables/usePatientTypes'
 // by bulk_update_patients (20261113143728_patients_bulk_edit.sql) as the
 // caller, so their role and patient scope apply row by row exactly as they
 // would on each record -- and the whole change is refused, not half done,
-// when a row trips a guard (a bono tag without patients_tags_remove).
+// when a row trips a guard (a tag removed without patients_tags_remove).
 export type BulkEditKind = 'archive' | 'reactivate' | 'practitioner' | 'tags'
 
 const props = defineProps<{
@@ -30,6 +30,8 @@ const NONE = '__none__'
 const practitioner = ref('')
 
 // Tags: give one (typed or picked) or take one away (picked).
+const { can } = usePermission()
+const canRemoveTags = computed(() => can('patients_tags_remove'))
 const tagMode = ref<'add' | 'remove'>('add')
 const tagInput = ref('')
 const tagToRemove = ref('')
@@ -39,6 +41,11 @@ onMounted(async () => {
   const { data } = await supabase.rpc('patient_tags')
   knownTags.value = (data ?? []).map((r) => r.tag)
   tagToRemove.value = knownTags.value[0] ?? ''
+})
+// The known tags containing what is typed (all of them while empty).
+const tagSuggestions = computed(() => {
+  const typed = tagInput.value.trim().toLocaleLowerCase('es')
+  return knownTags.value.filter((tag) => tag.toLocaleLowerCase('es').includes(typed)).slice(0, 12)
 })
 
 function patientsN(n: number) {
@@ -126,11 +133,8 @@ async function confirm() {
   })
   busy.value = false
   if (err || !data) {
-    if (err?.message?.includes('bono or membership tags')) {
-      error.value = t(
-        'Your role cannot remove a bono or membership tag. Nothing was changed.',
-        'Tu rol no puede quitar una etiqueta de bono o membresía. No se ha cambiado nada.',
-      )
+    if (err?.message?.includes('cannot remove patient tags')) {
+      error.value = t('Your role cannot remove tags. Nothing was changed.', 'Tu rol no puede quitar etiquetas. No se ha cambiado nada.')
     } else if (err?.message?.startsWith('Too many patients')) {
       error.value = t('Too many patients at once. Narrow the filter (5000 at most).', 'Demasiados pacientes a la vez. Acota el filtro (5000 como máximo).')
     } else if (err?.code === '42501') {
@@ -182,7 +186,10 @@ async function confirm() {
     </label>
 
     <template v-else>
-      <div class="flex gap-1" role="group" :aria-label="t('Add or remove', 'Añadir o quitar')">
+      <!-- Removing any tag needs patients_tags_remove (the trigger in
+      20260925094121_roles_tags_any_and_front_desk_bonos.sql); a role without
+      it is not offered the choice, as the record's form does not. -->
+      <div v-if="canRemoveTags" class="flex gap-1" role="group" :aria-label="t('Add or remove', 'Añadir o quitar')">
         <button
           v-for="m in (['add', 'remove'] as const)"
           :key="m"
@@ -196,22 +203,39 @@ async function confirm() {
           {{ m === 'add' ? t('Add', 'Añadir') : t('Remove', 'Quitar') }}
         </button>
       </div>
-      <label v-if="tagMode === 'add'" :for="`${fieldId}-tag`" class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
-        {{ t('Tag', 'Etiqueta') }}
-        <input
-          :id="`${fieldId}-tag`"
-          v-model="tagInput"
-          :list="`${fieldId}-known`"
-          maxlength="60"
-          data-cy="bulk-edit-tag-input"
-          :placeholder="t('Type or pick a tag', 'Escribe o elige una etiqueta')"
-          class="h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
-          @keydown.enter.prevent="confirm"
-        />
-        <datalist :id="`${fieldId}-known`">
-          <option v-for="tag in knownTags" :key="tag" :value="tag" />
-        </datalist>
-      </label>
+      <template v-if="tagMode === 'add'">
+        <label :for="`${fieldId}-tag`" class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+          {{ t('Tag', 'Etiqueta') }}
+          <input
+            :id="`${fieldId}-tag`"
+            v-model="tagInput"
+            maxlength="60"
+            autocomplete="off"
+            data-cy="bulk-edit-tag-input"
+            :placeholder="t('Type or pick a tag', 'Escribe o elige una etiqueta')"
+            class="h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
+            @keydown.enter.prevent="confirm"
+          />
+        </label>
+        <!-- The clinic's tags as buttons rather than a <datalist>: its native
+        dropdown takes headless Electron down with a segfault (exit 139) the
+        moment Cypress types into the field, and the chips are what the
+        tag filter already looks like. -->
+        <div v-if="tagSuggestions.length" class="flex flex-wrap gap-1.5">
+          <button
+            v-for="tag in tagSuggestions"
+            :key="tag"
+            type="button"
+            data-cy="bulk-edit-tag-suggestion"
+            :aria-pressed="tag === tagInput.trim()"
+            class="h-7 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
+            :class="tag === tagInput.trim() ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+            @click="tagInput = tag"
+          >
+            {{ tag }}
+          </button>
+        </div>
+      </template>
       <template v-else>
         <label v-if="knownTags.length" :for="`${fieldId}-remove`" class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t('Tag', 'Etiqueta') }}

@@ -7712,7 +7712,7 @@
   "Your role can't give sessions back to a bono.": "A sua função não permite devolver sessões a um pack.",
   "Your role can't send templates.": "A sua função não pode enviar modelos.",
   "Your role cannot make this change. Nothing was changed.": "A sua função não pode fazer esta alteração. Nada foi alterado.",
-  "Your role cannot remove a bono or membership tag. Nothing was changed.": "A sua função não pode remover uma etiqueta de pacote ou assinatura. Nada foi alterado.",
+  "Your role cannot remove tags. Nothing was changed.": "A sua função não pode remover etiquetas. Nada foi alterado.",
   "Your role can’t give sessions back to a bono.": "A sua função não pode devolver sessões a um pack.",
   "Your role does not include clinical records.": "A sua função não inclui os registos clínicos.",
   "Your role does not include recalls.": "A sua função não inclui as reativações.",

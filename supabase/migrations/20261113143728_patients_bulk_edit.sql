@@ -6,8 +6,8 @@
 -- Security invoker, on purpose. The update runs under the patients RLS
 -- policies as the caller, so a row outside their scope is not changed (and
 -- counted as skipped, not as done); the two-factor restrictive policy still
--- applies; the tag trigger still demands patients_tags_remove before a bono
--- or membership tag goes; and the patients audit trigger records each row.
+-- applies; the tag trigger still demands patients_tags_remove before any
+-- tag goes; and the patients audit trigger records each row.
 --
 -- p_changes holds exactly one of:
 --   {"status": "active" | "inactive"}

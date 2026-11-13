@@ -405,6 +405,39 @@ PDFs, the receptionist. Those follow `patients.preferred_language`, not the
 interface. The public booking page has its own es/en/fr set
 (`utils/bookingLanguage.ts`) for the same reason.
 
+## Email has a daily budget, and campaigns wait for it
+
+Resend's free plan sends 100 emails a day and Brevo's 300 (the fallback in
+`server/utils/resend.ts`); past that each one refuses. Every send through
+`deliverEmail` is counted per UTC day in `email_daily_usage`
+(`20261113062158_email_send_budget.sql`), because Resend's quota resets at
+00:00 UTC.
+
+Two kinds of email share that budget. **Transactional** -- confirmations,
+reminders, invoices, anything a person sends from the app -- goes out at
+once, as it always did. **Campaign** email -- a step of a marketing
+automation, or of one aimed at a segment or a list (`isBulkEmailRule`) --
+first takes a slot via `claim_bulk_email`, which never hands out the reserve
+kept for transactional email and splits the rest fairly between clinics that
+are waiting. With no slot the run parks (`waiting_for = 'email_quota'`) at the
+same step and resumes tomorrow, inside the rule's sending hours or 09:00-20:00
+clinic time. So a 900-patient newsletter goes out over three days instead of
+failing after 400 and taking the day's reminders down with it. The runs table
+is the queue: consent and stop conditions are re-checked when it sends.
+
+The kind is set by `withEmailScope` around the engine's send step and read
+back in `deliverEmail`, so nothing in between takes a parameter for it. A send
+outside any scope is transactional. Everything that touches the budget tables
+fails open: a budget that cannot be read never stops an email.
+
+**Moving to a paid plan is an environment change, not a code change:**
+`NUXT_EMAIL_DAILY_LIMIT_RESEND` / `NUXT_EMAIL_DAILY_LIMIT_BREVO` (empty = the
+free plan's 100 / 300, `0` = no daily limit, a number = that many a day; on a
+monthly plan, the month / 30 spreads a big campaign instead of spending the
+month in a day) and `NUXT_EMAIL_TRANSACTIONAL_RESERVE` (empty = a quarter of
+the day). A provider that refuses on quota is marked exhausted for the day
+whatever the config says, so a wrong limit costs a deferral, not lost email.
+
 ## A top-level import in `server/utils` runs on every cold start
 
 Nitro bundles every module under `server/utils` into the one chunk the

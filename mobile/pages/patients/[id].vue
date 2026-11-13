@@ -161,7 +161,7 @@ const planError = ref('')
 async function loadPlan() {
   planError.value = ''
   const [{ data: plans, error: planErr }, { data: upcoming, error: apptErr }] = await Promise.all([
-    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id, next_phases').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('id, starts_at, appointment_types(name)')

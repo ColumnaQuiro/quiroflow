@@ -407,3 +407,49 @@ async function dateSourceRows(service: any, accountId: string, source: string, d
   }
   return []
 }
+
+/**
+ * "Referred patient completes a visit": raised beside appointment.completed,
+ * wherever that is raised on the server (fire.post.ts for the calendar, the
+ * visit's charge screen and the app; appPayments.ts for a visit paid in the
+ * app). The visit is the referred patient's; the message goes to the patient
+ * who referred them (patients.referred_by_patient_id).
+ *
+ * The rule's filters are checked against the REFERRED patient and their
+ * visit -- "Completed visits = 1" means their first, an appointment type
+ * means the type of this visit -- because that is what the trigger is about.
+ * Who receives it is fixed. The run itself belongs to the referrer, so its
+ * steps (a branch on tags, a wait for a booking) are about them, and it
+ * carries no appointment: the visit is not theirs.
+ *
+ * automation_rule_sends is the claim, one per (rule, visit), so a visit
+ * reopened and completed again thanks nobody twice.
+ */
+export async function fireReferredVisitTrigger(service: any, accountId: string, appointmentId: string, origin: string): Promise<number> {
+  const event = 'referral.visit_completed'
+  try {
+    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', event).eq('enabled', true)
+    if (!rules?.length) return 0
+    // Read here rather than taken from the caller: only a visit of this
+    // account that really is completed, and its patient as the record says.
+    const { data: visit } = await service.from('appointments').select('id, patient_id').eq('id', appointmentId).eq('account_id', accountId).eq('status', 'completed').is('deleted_at', null).maybeSingle()
+    if (!visit?.patient_id) return 0
+    const { data: referred } = await service.from('patients').select('id, first_name, referred_by_patient_id').eq('id', visit.patient_id).eq('account_id', accountId).maybeSingle()
+    const referrerId = referred?.referred_by_patient_id as string | null | undefined
+    if (!referred || !referrerId || referrerId === referred.id) return 0
+    const { data: referrer } = await service.from('patients').select(PATIENT_FOR_RULE_COLUMNS).eq('id', referrerId).eq('account_id', accountId).maybeSingle()
+    if (!referrer) return 0
+    let fired = 0
+    for (const rule of rules as { id: string; filters: Record<string, unknown> | null }[]) {
+      if (!(await ruleFiltersMatch(service, referred.id, rule.filters as AutomationFilters, visit.id))) continue
+      const { error: claimError } = await service.from('automation_rule_sends').insert({ rule_id: rule.id, appointment_id: visit.id })
+      if (claimError) continue
+      await dispatchPatientRule(service, service, accountId, rule.id, referrer, origin, undefined, { triggerEvent: event, patientId: referrer.id }, { referredFirstName: String(referred.first_name ?? '').trim() || undefined })
+      fired += 1
+    }
+    return fired
+  } catch (err) {
+    console.error(`[automations] ${event} failed to fire:`, (err as Error)?.message ?? err)
+    return 0
+  }
+}

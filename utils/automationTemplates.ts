@@ -254,6 +254,20 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
     ],
   },
   {
+    // To whoever referred them, once the person they sent has actually come:
+    // "Completed visits = 1" on the referred patient is their first visit.
+    key: 'referral-thanks',
+    section: 'flows',
+    name: ['Thanks for referring', 'Gracias por recomendarnos'],
+    description: [
+      'When someone a patient referred finishes their first visit, a WhatsApp to the patient who referred them.',
+      'Cuando alguien a quien refirió un paciente termina su primera visita, un WhatsApp a quien le refirió.',
+    ],
+    summary: ['Referred patient completes a visit · 1 step', 'Paciente referido completa una cita · 1 paso'],
+    rule: baseRule('referral.visit_completed', { filters: { total_visits: 1 }, quiet_hours: DEFAULT_QUIET_HOURS }),
+    steps: [wa(['first_name', 'referred_first_name'])],
+  },
+  {
     key: 'satisfaction-check',
     section: 'flows',
     name: ['How did we do?', '¿Qué tal te hemos atendido?'],

@@ -49,6 +49,8 @@ async function patient(opts: {
   /** The Recalls queue's Posponer (a date) and Descartar. */
   recallSnoozedUntil?: string
   recallDismissedAt?: string
+  /** "Referido por": the patient who referred them. */
+  referredByPatientId?: string
 }) {
   const row = check(
     await admin
@@ -68,6 +70,7 @@ async function patient(opts: {
         ...(opts.preferredLanguage ? { preferred_language: opts.preferredLanguage } : {}),
         ...(opts.recallSnoozedUntil ? { recall_snoozed_until: opts.recallSnoozedUntil } : {}),
         ...(opts.recallDismissedAt ? { recall_status: 'dismissed', recall_dismissed_at: opts.recallDismissedAt } : {}),
+        ...(opts.referredByPatientId ? { referred_by_patient_id: opts.referredByPatientId } : {}),
       })
       .select('id')
       .single(),

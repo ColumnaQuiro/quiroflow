@@ -71,7 +71,7 @@ function answerOps(c: Cond) {
 const conditions = computed<Cond[]>(() => (Array.isArray(config.value.conditions) ? config.value.conditions : []))
 const fields = computed(() =>
   BRANCH_FIELDS.filter((f) => (f.subject === 'lead' ? b.isLead.value : f.subject === 'patient' ? !b.isLead.value : true)).filter(
-    (f) => !f.appointment || !['patient.birthday', 'patient.referred', 'segment', 'membership.new_member', 'membership.removed', 'membership.payment_processed', 'waitlist.slot_offered'].includes(b.draft.value.rule.trigger_event),
+    (f) => !f.appointment || !['patient.birthday', 'patient.referred', 'referral.visit_completed', 'segment', 'membership.new_member', 'membership.removed', 'membership.payment_processed', 'waitlist.slot_offered'].includes(b.draft.value.rule.trigger_event),
   ),
 )
 

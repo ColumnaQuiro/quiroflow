@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
+import { fireReferredVisitTrigger } from '~/server/utils/automationTriggers'
 import { triggerTagMatches, triggerTypeMatches } from '~/utils/automationTriggerMatch'
 
 // Fires every enabled automation_rule matching a trigger event -- called
@@ -52,6 +53,13 @@ export default defineEventHandler(async (event) => {
   // a patient of the caller's own account.
   const { data: inAccount } = await supabase.from('patients').select('id').eq('id', body.patientId).eq('account_id', accountId).maybeSingle()
   if (inAccount) await automationEvent(service, accountId, { patientId: body.patientId }, body.triggerEvent, origin)
+
+  // A referred patient's visit also thanks whoever referred them, by their
+  // own rules (referral.visit_completed) -- before the early return below,
+  // which is about this event's rules only.
+  if (inAccount && body.triggerEvent === 'appointment.completed' && body.appointmentId) {
+    await fireReferredVisitTrigger(service, accountId, body.appointmentId, origin)
+  }
 
   const { data: rules } = await supabase
     .from('automation_rules')

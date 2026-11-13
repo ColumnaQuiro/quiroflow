@@ -39,7 +39,7 @@ const tag = computed(() => (props.to ? NuxtLink : props.href ? 'a' : 'button'))
     :to="to"
     :href="href"
     :type="to || href ? undefined : type"
-    class="flex shrink-0 items-center justify-center gap-1.5 rounded-card border text-center leading-tight disabled:opacity-50"
+    class="flex shrink-0 items-center justify-center gap-1.5 rounded-full border text-center leading-tight disabled:opacity-50"
     :class="[
       size === 'lg' ? 'min-h-12 px-6 py-2.5 text-[16px]' : 'min-h-11 px-4 py-2 text-[15px]',
       variant === 'primary' && 'border-brand bg-brand font-semibold text-brand-on active:opacity-90',

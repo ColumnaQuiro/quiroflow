@@ -441,6 +441,13 @@ function canCheckIn(a: Appointment) {
 }
 
 type RowState = 'done' | 'in' | 'noshow' | 'upcoming'
+// The day bar on the plane: every visit today in order, one segment each.
+const daySegments = computed(() =>
+  [...appointments.value]
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    .map((a) => ({ id: a.id, state: rowState(a), minutes: 1 })),
+)
+
 function rowState(a: Appointment): RowState {
   const stage = stageOf(a)
   if (stage === 'completed') return 'done'
@@ -550,14 +557,13 @@ function initialsOf(a: Appointment) {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface-page">
-    <AppPageHeader :title="t('My Day', 'Mi día')">
-      <span class="text-[12.5px] text-ink-muted" data-test="myday-date">{{ dateLabel }}</span>
+    <AppPageHeader :title="t('My Day', 'Mi día')" :sub="dateLabel" lip="none">
       <StaffHelpButton v-if="context" />
-      <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
+      <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
       </button>
       <!-- Profile, which is no longer a tab of its own on a phone -->
-      <NuxtLink v-if="context" to="/profile" class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-[12.5px] font-bold text-brand-text md:hidden" :aria-label="t('Profile', 'Perfil')" data-cy="myday-profile">
+      <NuxtLink v-if="context" to="/profile" class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface text-[13px] font-bold text-ink-900 md:hidden" :aria-label="t('Profile', 'Perfil')" data-cy="myday-profile">
         <img v-if="profilePhotoUrl" :src="profilePhotoUrl" alt="" class="h-full w-full object-cover" />
         <template v-else>{{ profileInitials }}</template>
       </NuxtLink>
@@ -566,7 +572,7 @@ function initialsOf(a: Appointment) {
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div
         v-if="pulling || refreshing || pullDistance > 0"
-        class="flex items-center justify-center overflow-hidden transition-[height]"
+        class="qf-plane flex items-center justify-center overflow-hidden transition-[height]"
         :style="{ height: refreshing ? '56px' : `${pullDistance}px` }"
       >
         <!-- A thumb-sized disc, turning as it is pulled: the bare 16px icon was
@@ -577,6 +583,67 @@ function initialsOf(a: Appointment) {
           <path d="M17.5 3v5h-5M6.5 21v-5h5" />
         </svg>
           </span>
+      </div>
+
+      <!-- The back plane, carried on from the header and scrolling away with
+           the day: the day's figures, the day as a bar, and who is in the
+           room now or comes next (assets/css/main.css, "three planes"). -->
+      <div class="qf-plane qf-lip px-3.5 pt-1 lg:px-5">
+        <div class="grid gap-3" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
+          <div class="min-w-0">
+            <p class="text-[13px] font-semibold text-ink-muted">{{ t('Visits', 'Visitas') }}</p>
+            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[26px] w-14 rounded-ctlSm opacity-30" />
+            <p v-else class="qf-figure mt-0.5 text-[26px] text-ink-900" data-test="myday-visits">
+              {{ visitsDone }} <span class="text-[14px] font-medium tracking-normal text-ink-muted">{{ t(`of ${visitsTotal}`, `de ${visitsTotal}`) }}</span>
+            </p>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[13px] font-semibold text-ink-muted">{{ t('New', 'Nuevos') }}</p>
+            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[26px] w-10 rounded-ctlSm opacity-30" />
+            <p v-else class="qf-figure mt-0.5 text-[26px] text-ink-900" data-test="myday-new">
+              {{ newDone }} <span v-if="newBooked > newDone" class="text-[14px] font-medium tracking-normal text-ink-muted">{{ t(`of ${newBooked}`, `de ${newBooked}`) }}</span>
+            </p>
+          </div>
+          <div v-if="seesMoney" class="min-w-0">
+            <p class="text-[13px] font-semibold text-ink-muted">{{ t('Taken', 'Cobrado') }}</p>
+            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[26px] w-14 rounded-ctlSm opacity-30" />
+            <p v-else class="qf-figure mt-0.5 truncate text-[26px] text-ink-900" data-test="myday-taken">{{ takingsCents === null ? '—' : shortEur(takingsCents) }}</p>
+          </div>
+        </div>
+
+        <!-- The day as a bar: one segment per visit in order, done ones
+             solid, whoever is in the room in teal, the rest to come. -->
+        <div v-if="!loading && daySegments.length > 0" class="mt-4 flex h-3 gap-1" role="img" :aria-label="t(`${visitsDone} of ${visitsTotal} visits done`, `${visitsDone} de ${visitsTotal} visitas hechas`)" data-test="myday-daybar">
+          <span
+            v-for="s in daySegments"
+            :key="s.id"
+            class="min-w-[4px] rounded-full"
+            :class="s.state === 'done' ? 'bg-ink-900' : s.state === 'in' ? 'bg-[rgb(var(--plane-live))]' : s.state === 'noshow' ? 'bg-danger-text' : 'bg-surface-subtle'"
+            :style="{ flexGrow: s.minutes }"
+          />
+        </div>
+
+        <!-- Now: who is in the room with their last note, or who is next -->
+        <section v-if="inClinicNow" class="mt-4 rounded-card bg-surface px-4 py-3.5" data-test="myday-in-clinic">
+          <p class="flex items-center gap-1.5 text-[13px] font-semibold text-[rgb(var(--plane-live))]"><span class="h-2 w-2 rounded-full bg-[rgb(var(--plane-live))]" aria-hidden="true" />{{ t('In clinic now', 'Ahora en consulta') }}</p>
+          <p class="mt-1 truncate text-[20px] font-[650] tracking-[-0.02em] text-ink-900">{{ shown(patientName(inClinicNow)) }}</p>
+          <p class="truncate text-[14px] text-ink-muted">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
+          <p v-if="lastNote" class="mt-2.5 text-[14px] leading-[1.45] text-ink-600">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="flex h-11 items-center justify-center rounded-full bg-brand text-[14px] font-semibold text-brand-on">{{ t('Open visit', 'Abrir visita') }}</NuxtLink>
+            <NuxtLink :to="`/patients/${inClinicNow.patient_id}`" class="flex h-11 items-center justify-center rounded-full bg-surface-subtle text-[14px] font-semibold text-ink-900">{{ t('Record', 'Ficha') }}</NuxtLink>
+          </div>
+        </section>
+        <section v-else-if="nextUp" class="mt-4 rounded-card bg-surface px-4 py-3.5" data-test="myday-next">
+          <p class="text-[13px] font-semibold text-ink-muted">{{ t('Next', 'Siguiente') }} · {{ clinicTime(nextUp.starts_at) }}</p>
+          <p class="mt-1 truncate text-[20px] font-[650] tracking-[-0.02em] text-ink-900">{{ shown(patientName(nextUp)) }}</p>
+          <p class="truncate text-[14px] text-ink-muted">{{ nextUp.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
+          <div class="mt-3 grid gap-2" :class="canCheckIn(nextUp) ? 'grid-cols-2' : 'grid-cols-1'">
+            <button v-if="canCheckIn(nextUp)" type="button" class="h-11 rounded-full bg-brand text-[14px] font-semibold text-brand-on" data-test="myday-next-checkin" @click="checkIn(nextUp)">{{ t('Check in', 'Registrar llegada') }}</button>
+            <NuxtLink :to="`/patients/${nextUp.patient_id}`" class="flex h-11 items-center justify-center rounded-full bg-surface-subtle text-[14px] font-semibold text-ink-900">{{ t('Record', 'Ficha') }}</NuxtLink>
+          </div>
+        </section>
+        <div class="h-4" />
       </div>
 
       <!-- One column on a phone, in this order: the clock, who is in now (or
@@ -597,29 +664,6 @@ function initialsOf(a: Appointment) {
         </div>
 
         <div class="contents lg:flex lg:flex-col lg:gap-2.5">
-        <!-- Figures for the viewer's own day -->
-        <div class="order-2 grid gap-2 lg:order-none" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
-          <div class="rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
-            <p class="text-[12px] text-ink-muted">{{ t('Visits', 'Visitas') }}</p>
-            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-14 rounded-ctlSm" />
-            <p v-else class="mt-0.5 text-[20px] font-bold leading-tight text-ink-900" data-test="myday-visits">
-              {{ visitsDone }} <span class="text-[12.5px] font-normal text-ink-muted2">{{ t(`of ${visitsTotal}`, `de ${visitsTotal}`) }}</span>
-            </p>
-          </div>
-          <div class="rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
-            <p class="text-[12px] text-ink-muted">{{ t('New', 'Nuevos') }}</p>
-            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-10 rounded-ctlSm" />
-            <p v-else class="mt-0.5 text-[20px] font-bold leading-tight text-ink-900" data-test="myday-new">
-              {{ newDone }} <span v-if="newBooked > newDone" class="text-[12.5px] font-normal text-ink-muted2">{{ t(`of ${newBooked}`, `de ${newBooked}`) }}</span>
-            </p>
-          </div>
-          <div v-if="seesMoney" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
-            <p class="text-[12px] text-ink-muted">{{ t('Taken', 'Cobrado') }}</p>
-            <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-14 rounded-ctlSm" />
-            <p v-else class="mt-0.5 truncate text-[20px] font-bold leading-tight text-ink-900" data-test="myday-taken">{{ takingsCents === null ? '—' : shortEur(takingsCents) }}</p>
-          </div>
-        </div>
-
         <!-- Today's visits: what is still to come, the done ones folded away -->
         <section class="order-3 rounded-card border border-line bg-surface shadow-card lg:order-none" data-test="myday-visits-list">
           <div class="flex min-h-11 items-center justify-between gap-2 px-3.5">
@@ -678,27 +722,6 @@ function initialsOf(a: Appointment) {
         </div>
 
         <div class="contents lg:flex lg:flex-col lg:gap-2.5">
-        <!-- Now: who is in the room with their last note, or who is next -->
-        <section v-if="inClinicNow" class="order-1 rounded-card border-[1.5px] border-brand bg-brand-tint px-4 py-3.5 lg:order-none" data-test="myday-in-clinic">
-          <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-brand-text"><span class="h-2 w-2 rounded-full bg-brand" aria-hidden="true" />{{ t('In clinic now', 'Ahora en consulta') }}</p>
-          <p class="mt-1 truncate text-[19px] font-bold text-ink-900">{{ shown(patientName(inClinicNow)) }}</p>
-          <p class="truncate text-[13px] text-ink-muted">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
-          <p v-if="lastNote" class="mt-2.5 rounded-ctl bg-surface px-3 py-2 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
-          <div class="mt-3 grid grid-cols-2 gap-2">
-            <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="flex h-11 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-brand-on">{{ t('Open visit', 'Abrir visita') }}</NuxtLink>
-            <NuxtLink :to="`/patients/${inClinicNow.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
-          </div>
-        </section>
-        <section v-else-if="nextUp" class="order-1 rounded-card border border-brand-tintBorder bg-brand-tint px-4 py-3.5 lg:order-none" data-test="myday-next">
-          <p class="text-[11px] font-semibold uppercase tracking-[.06em] text-brand-text">{{ t('Next', 'Siguiente') }} · {{ clinicTime(nextUp.starts_at) }}</p>
-          <p class="mt-1 truncate text-[18px] font-bold text-ink-900">{{ shown(patientName(nextUp)) }}</p>
-          <p class="truncate text-[13px] text-ink-muted">{{ nextUp.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
-          <div class="mt-3 grid gap-2" :class="canCheckIn(nextUp) ? 'grid-cols-2' : 'grid-cols-1'">
-            <button v-if="canCheckIn(nextUp)" type="button" class="h-11 rounded-ctl bg-brand text-[14px] font-semibold text-brand-on" data-test="myday-next-checkin" @click="checkIn(nextUp)">{{ t('Check in', 'Registrar llegada') }}</button>
-            <NuxtLink :to="`/patients/${nextUp.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
-          </div>
-        </section>
-
         <!-- Pending: who left without a next visit, who has not confirmed,
              and the tasks -->
         <p class="order-4 px-0.5 pt-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted lg:order-none lg:pt-0">{{ t('Pending', 'Pendientes') }}</p>

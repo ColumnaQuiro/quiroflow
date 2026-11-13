@@ -243,7 +243,7 @@ The staff app is a fixed left sidebar beside a scrolling content column. The sid
 
 Content sits in white cards on the cool page with 16px padding (24px for settings forms and roomy panels), gaps of 8 to 16px, and the 4px Tailwind spacing scale throughout. Density is high: controls are 36px, compact chips and segments 32px, rows tight.
 
-The `touch:` variant (`@media (pointer: coarse)`, in `tailwind.tokens.ts`) grows every control to 44px on a touch screen while a mouse keeps the dense 36px. The `short:` variant (`@media (max-height: 600px)`) folds away secondary chrome, such as the Inbox filters, on a zoomed laptop or a phone on its side. Breakpoints are Tailwind's defaults (`sm` 640, `md` 768, `lg` 1024, `xl` 1280). Dialogs dock to the bottom of the screen on phones and centre from `sm`. The mobile app in `mobile/` compiles the same tokens and components.
+The `touch:` variant (`@media (pointer: coarse)`, in `tailwind.tokens.ts`) grows every control to 44px on a touch screen while a mouse keeps the dense 36px. The `short:` variant (`@media (max-height: 600px)`) folds away secondary chrome, such as the Inbox filters, on a zoomed laptop or a phone on its side. Breakpoints are Tailwind's defaults (`sm` 640, `md` 768, `lg` 1024, `xl` 1280). Dialogs dock to the bottom of the screen on phones and centre from `sm`. The mobile app in `mobile/` compiles the same tokens and components, with its own look on top of them: see [The mobile app: three planes](#the-mobile-app-three-planes).
 
 ### Named Rules
 **The Two-Pointer Rule.** Every interactive control declares both sizes: `h-9 touch:h-11` (or `h-8 touch:h-11` for compact ones). A control sized only for a mouse is too small on the front-desk iPad.
@@ -308,6 +308,17 @@ The signature "nothing here yet" panel (`UiEmptyState`), so an empty screen neve
 
 ### Skeleton
 Loading placeholders (`UiSkeleton`) are chip-grey blocks with a slow 1.6s highlight sweep. Under `prefers-reduced-motion` every animation and transition in the app lands in its end state at once; only spinners keep turning, because they are the one sign something is still loading.
+
+## The mobile app: three planes
+
+The app in `mobile/` (staff and patients, iOS and Android) keeps every role, token name and component above, and adds depth the web deliberately does not have. Everything here lives in `mobile/assets/css/main.css` and `mobile/tailwind.config.ts`, which only the app compiles, so the web app and the patient portal are unchanged.
+
+- **The back plane** (`.qf-plane`): deep indigo `--plane` (`#1E1A5C`; `#0D0C22` in dark) ruled with a 26px grid at 6.5% white, like the wall a posture photo is taken against. It carries what the screen is opened for: the title on every screen, and on the home screens the next visit (patient), the day's figures, the day bar and who is in the room (My Day), the income and its curve (Números). It re-defines the colour variables for everything inside it, so shared components dropped onto it read on indigo without knowing: ink turns white, `bg-surface` becomes a raised step of the plane (`--plane-raised`), the brand fill turns white with the plane as its text, status tints become deep with light text.
+- **The sheet**: the content, on `surface-page` (`#F3F4FA`), whose 24px rounded top edge is drawn at the foot of the plane (`.qf-lip`; `.qf-lip-surface` where the content starts on white). Cards on it are white, 20px corners, lifted by a soft shadow rather than a hairline.
+- **The floating bar**: the tab bar is a capsule (`shadow-float`) over the sheet, the current tab a brand-tint pill. It stays in the layout's flow, so no screen pads its own bottom for it.
+- **Clinic colour**: on the patient side the plane is a deep shade of the clinic's colour (`mobile/utils/planePalette.ts`, walked dark until white text reaches 7:1); staff keep QuiroFlow's indigo.
+- **Shapes and type**: controls 14px corners and buttons fully round; headlines 22px (30px on the patient tabs); figures on the plane 26 to 40px, 650, -0.03em, tabular (`.qf-figure`). The 18px ceiling of the Small Type Rule is a web rule and does not apply here.
+- **Live colour**: `--plane-live` (teal `#5EE0C8`) marks what is happening now on the plane, the patient in the room and today's bar, and nothing else.
 
 ## Do's and Don'ts
 

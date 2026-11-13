@@ -15,10 +15,21 @@ export default defineNuxtPlugin(() => {
   const { initFromStorage, resolved } = useTheme()
   initFromStorage()
   if (!Capacitor.isNativePlatform()) return
+
+  // The status bar sits on the back plane (app.vue paints the strip behind it
+  // in the plane's colour), which is dark in both themes, so its text is
+  // white -- except on the sign-in screens, which are the theme's own
+  // surface edge to edge (html.auth-screen, components/onboarding/Layout.vue).
+  const authScreen = ref(document.documentElement.classList.contains('auth-screen'))
+  new MutationObserver(() => {
+    authScreen.value = document.documentElement.classList.contains('auth-screen')
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+
   watch(
-    resolved,
-    (theme) => {
-      StatusBar.setStyle({ style: theme === 'dark' ? Style.Dark : Style.Light }).catch(() => {})
+    [resolved, authScreen],
+    ([theme, auth]) => {
+      const lightText = theme === 'dark' || !auth
+      StatusBar.setStyle({ style: lightText ? Style.Dark : Style.Light }).catch(() => {})
       if (Capacitor.getPlatform() === 'ios') Keyboard.setStyle({ style: theme === 'dark' ? KeyboardStyle.Dark : KeyboardStyle.Light }).catch(() => {})
     },
     { immediate: true },

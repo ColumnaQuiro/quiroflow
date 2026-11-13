@@ -719,56 +719,57 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
 <template>
   <div class="flex h-full min-h-0 select-none flex-col bg-surface-page" style="-webkit-touch-callout: none" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="onPointerUp">
-    <!-- Day bar -->
-    <div class="flex shrink-0 items-center gap-1.5 border-b border-line bg-surface px-3 py-2 md:px-5">
+    <!-- Day bar, on the back plane (assets/css/main.css), with the diary's
+         controls; the plane carries on into the who/view bar below it. -->
+    <div class="qf-plane flex shrink-0 items-center gap-1.5 px-3 pb-1.5 pt-2.5 md:px-5">
       <div class="relative min-w-0 flex-1">
         <button type="button" class="flex max-w-full items-center gap-1 rounded-ctl py-1 text-left" :aria-label="t(`${title}. Choose a date`, `${title}. Elegir fecha`)" data-cy="agenda-day" @click="openPicker">
-          <span class="truncate text-[17px] font-semibold text-ink-900">{{ title }}</span>
+          <span class="truncate text-[22px] font-[650] tracking-[-0.02em] text-ink-900">{{ title }}</span>
           <AppChevron dir="down" class="text-ink-muted" />
         </button>
         <!-- Over the title, invisible: a tap on it is a tap on the native picker
              wherever showPicker() is not supported. -->
         <input ref="datePicker" type="date" :value="day" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" tabindex="-1" aria-hidden="true" data-cy="agenda-date-input" @change="jumpTo" />
       </div>
-      <button v-if="!shownToday" type="button" class="h-9 rounded-ctl border border-line-control px-3 text-[13px] font-medium text-ink-700" data-cy="agenda-today" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : isThree ? t('Previous three days', 'Tres días antes') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
+      <button v-if="!shownToday" type="button" class="h-11 rounded-full bg-surface px-3.5 text-[14px] font-semibold text-ink-900" data-cy="agenda-today" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
+      <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-900" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : isThree ? t('Previous three days', 'Tres días antes') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Next week', 'Semana siguiente') : isThree ? t('Next three days', 'Tres días después') : t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
+      <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-900" :aria-label="isWeek ? t('Next week', 'Semana siguiente') : isThree ? t('Next three days', 'Tres días después') : t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
       <template v-if="!readOnly">
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
         </button>
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700 md:w-auto md:gap-1.5 md:px-3" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: scopePractitioner }">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-900 md:w-auto md:gap-1.5 md:px-3.5" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: scopePractitioner }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M6 6l12 12" /></svg>
           <span class="hidden text-[13px] font-medium md:inline">{{ t('Block', 'Bloquear') }}</span>
         </button>
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl bg-brand text-brand-on md:w-auto md:gap-1.5 md:px-3.5" :aria-label="t('New visit', 'Nueva cita')" data-cy="agenda-new" @click="startNew">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-brand-on md:w-auto md:gap-1.5 md:px-4" :aria-label="t('New visit', 'Nueva cita')" data-cy="agenda-new" @click="startNew">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           <span class="hidden text-[13.5px] font-semibold md:inline">{{ t('New visit', 'Nueva cita') }}</span>
         </button>
       </template>
     </div>
 
-    <div class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
+    <div class="qf-plane qf-lip flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
       <!-- Whose diary, as the web calendar's practitioner tabs. -->
       <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
-        <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-8 shrink-0 rounded-ctlSm px-3 text-[13px] font-medium" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
+        <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-10 shrink-0 rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
           {{ t('Whole clinic', 'Toda la clínica') }}
         </button>
         <span class="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
-        <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === pr.id ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
+        <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-10 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === pr.id ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
           <span class="inline-flex items-center gap-1.5"><CalendarPractitionerBadge :initials="badgeLabels.get(pr.id) ?? ''" :color="pr.color || null" :name="pr.full_name" :class="who === pr.id ? 'ring-1 ring-brand-on' : ''" />{{ pr.full_name }}</span>
         </button>
-        <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-brand-on' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
+        <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-10 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-brand-on' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
           {{ t('No practitioner', 'Sin profesional') }}
         </button>
       </div>
       <div v-else class="flex-1" />
-      <div role="tablist" :aria-label="t('View', 'Vista')" class="grid shrink-0 gap-1 rounded-ctl bg-chip-bg p-[3px]" :class="wide ? 'w-[148px] grid-cols-2' : 'w-[156px] grid-cols-3'">
-        <button v-for="v in viewOptions" :key="v" type="button" role="tab" :aria-selected="activeView === v" class="h-8 rounded-ctlSm px-0.5 text-[13px] font-semibold" :class="activeView === v ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
+      <div role="tablist" :aria-label="t('View', 'Vista')" class="grid shrink-0 gap-1 rounded-full bg-chip-bg p-[3px]" :class="wide ? 'w-[152px] grid-cols-2' : 'w-[164px] grid-cols-3'">
+        <button v-for="v in viewOptions" :key="v" type="button" role="tab" :aria-selected="activeView === v" class="h-9 rounded-full px-0.5 text-[13px] font-semibold" :class="activeView === v ? 'bg-brand text-brand-on' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
           {{ v === 'day' ? t('Day', 'Día') : v === 'three' ? t('3 days', '3 días') : t('Week', 'Semana') }}
         </button>
       </div>

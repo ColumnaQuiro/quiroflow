@@ -39,7 +39,10 @@ async function usePassword() {
 </script>
 
 <template>
-  <div v-if="lock.locked.value" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-surface-page px-8 text-center" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" role="dialog" aria-modal="true" data-cy="app-lock">
+  <!-- On the back plane (assets/css/main.css): the status bar's text is
+       white everywhere but the sign-in screens, so a pale lock screen would
+       hide the clock above it. -->
+  <div v-if="lock.locked.value" class="qf-plane fixed inset-0 z-[100] flex flex-col items-center justify-center px-8 text-center" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" role="dialog" aria-modal="true" data-cy="app-lock">
     <img v-if="brand?.logoUrl" :src="brand.logoUrl" alt="" class="h-16 w-16 rounded-[18px] object-contain" data-cy="app-lock-clinic-logo" />
     <img v-else src="/logo/quiroflow-app-icon.svg" alt="" class="h-16 w-16 rounded-[18px]" />
     <p class="mt-5 text-[19px] font-[640] tracking-tightTitle text-ink-900">{{ brand?.name ?? 'QuiroFlow' }}</p>

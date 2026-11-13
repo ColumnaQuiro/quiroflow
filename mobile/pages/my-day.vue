@@ -557,38 +557,46 @@ function initialsOf(a: Appointment) {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface-page">
-    <AppPageHeader :title="t('My Day', 'Mi día')" :sub="dateLabel" lip="none">
-      <StaffHelpButton v-if="context" />
-      <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
-      </button>
-      <!-- Profile, which is no longer a tab of its own on a phone -->
-      <NuxtLink v-if="context" to="/profile" class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface text-[13px] font-bold text-ink-900 md:hidden" :aria-label="t('Profile', 'Perfil')" data-cy="myday-profile">
-        <img v-if="profilePhotoUrl" :src="profilePhotoUrl" alt="" class="h-full w-full object-cover" />
-        <template v-else>{{ profileInitials }}</template>
-      </NuxtLink>
-    </AppPageHeader>
-
-    <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
-      <div
-        v-if="pulling || refreshing || pullDistance > 0"
-        class="qf-plane flex items-center justify-center overflow-hidden transition-[height]"
-        :style="{ height: refreshing ? '56px' : `${pullDistance}px` }"
-      >
-        <!-- A thumb-sized disc, turning as it is pulled: the bare 16px icon was
-             hard to see under a finger. -->
-          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+    <!-- One back plane from the top of the screen to the lip: the header, the
+         refresh disc and the day's figures share one grid, and scroll away
+         with the day. The scroller's own background is the plane's colour at
+         the top, so pulling past the top shows the plane, never a dark band. -->
+    <div
+      ref="scroller"
+      class="min-h-0 flex-1 overflow-y-auto"
+      style="background: linear-gradient(rgb(var(--plane)) 50%, rgb(var(--color-surface-page)) 50%)"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
+    >
+      <div class="qf-plane qf-lip px-3.5 lg:px-5">
+        <AppPageHeader :title="t('My Day', 'Mi día')" :sub="dateLabel" lip="none" class="-mx-3.5 lg:-mx-5">
+          <StaffHelpButton v-if="context" />
+          <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
+          </button>
+          <!-- Profile, which is no longer a tab of its own on a phone -->
+          <NuxtLink v-if="context" to="/profile" class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface text-[13px] font-bold text-ink-900 md:hidden" :aria-label="t('Profile', 'Perfil')" data-cy="myday-profile">
+            <img v-if="profilePhotoUrl" :src="profilePhotoUrl" alt="" class="h-full w-full object-cover" />
+            <template v-else>{{ profileInitials }}</template>
+          </NuxtLink>
+        </AppPageHeader>
+        <!-- The refresh disc slides out of the plane itself. While the finger is
+             down its height follows it exactly; only the release animates. -->
+        <div
+          class="flex items-center justify-center overflow-hidden"
+          :class="pullDistance > 0 && !refreshing ? '' : 'transition-[height] duration-300 ease-out'"
+          :style="{ height: refreshing ? '56px' : `${pullDistance}px` }"
+          :aria-hidden="!refreshing"
+        >
+          <span class="flex h-10 w-10 items-center justify-center rounded-full bg-surface ring-1 ring-inset ring-line">
             <svg viewBox="0 0 24 24" class="h-[22px] w-[22px] text-brand" :class="{ 'animate-spin': refreshing }" :style="refreshing ? undefined : { transform: `rotate(${pullDistance * 3}deg)` }" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
-          <path d="M17.5 3v5h-5M6.5 21v-5h5" />
-        </svg>
+              <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
+              <path d="M17.5 3v5h-5M6.5 21v-5h5" />
+            </svg>
           </span>
-      </div>
-
-      <!-- The back plane, carried on from the header and scrolling away with
-           the day: the day's figures, the day as a bar, and who is in the
-           room now or comes next (assets/css/main.css, "three planes"). -->
-      <div class="qf-plane qf-lip px-3.5 pt-1 lg:px-5">
+        </div>
+        <div class="h-1" />
         <div class="grid gap-3" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
           <div class="min-w-0">
             <p class="text-[13px] font-semibold text-ink-muted">{{ t('Visits', 'Visitas') }}</p>

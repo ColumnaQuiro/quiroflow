@@ -66,7 +66,7 @@ watch(search, () => {
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface">
     <!-- The back plane (assets/css/main.css): title, scan, new and search. -->
-    <div class="qf-plane qf-lip qf-lip-surface shrink-0 px-4 pt-3">
+    <div class="qf-plane qf-lip qf-lip-surface qf-fade shrink-0 px-4 pt-3">
       <div class="mb-3 flex min-h-11 items-center gap-2">
         <h1 class="text-[22px] font-[650] tracking-[-0.02em] text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
         <span class="flex-1" />

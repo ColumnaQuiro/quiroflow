@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DocField } from '~/utils/docFields'
+import { nationalIdAnswer, type DocField } from '~/utils/docFields'
 import { practiceHubFormBlocks, practiceHubFormOptions } from '~/utils/practicehubFormFields'
 import type { Json } from '~/types/database.types'
 
@@ -51,6 +51,7 @@ const skippedUnmatched = ref(0)
 
 const importedCount = ref(0)
 const templatesCreated = ref(0)
+const dniFilled = ref(0)
 const importErrors = ref<string[]>([])
 
 function formatDate(value: string): string {
@@ -185,6 +186,7 @@ async function apply() {
   stage.value = 'importing'
   importedCount.value = 0
   templatesCreated.value = 0
+  dniFilled.value = 0
   importErrors.value = []
   progress.value = { done: 0, total: candidates.value.length }
 
@@ -212,24 +214,65 @@ async function apply() {
     }
 
     phase.value = t('Importing…', 'Importando…')
+    // Each patient's DNI from the newest saved form that asks for it. A form
+    // filled in here writes its linked answers onto the profile as it is
+    // completed (save_public_patient_doc); an imported one arrives already
+    // completed and never passes through that, so it is done here instead.
+    const dniByPatient = new Map<string, { value: string; at: string }>()
     const CHUNK_SIZE = 100
     for (let i = 0; i < candidates.value.length; i += CHUNK_SIZE) {
-      const rows = candidates.value.slice(i, i + CHUNK_SIZE).map((c) => ({
+      const chunk = candidates.value.slice(i, i + CHUNK_SIZE).map((c) => ({
+        candidate: c,
+        blocks: practiceHubFormBlocks(c.response.data, { options: optionsByFormId.get(c.response.form_id) }),
+      }))
+      const rows = chunk.map(({ candidate: c, blocks }) => ({
         account_id: store.accountId!,
         patient_id: c.patientId,
         template_id: templateIdByFormId.get(c.response.form_id) ?? null,
         title: c.response.form_name,
-        fields: practiceHubFormBlocks(c.response.data, { options: optionsByFormId.get(c.response.form_id) }) as unknown as Json,
+        fields: blocks as unknown as Json,
         completed_at: c.response.created,
         external_reference: c.externalRef,
         created_at: c.response.created,
       }))
 
       const { error } = await supabase.from('patient_docs').insert(rows)
-      if (error) importErrors.value.push(t(`Forms ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron los formularios ${i + 1}-${i + rows.length}: ${error.message}`))
-      else importedCount.value += rows.length
+      if (error) {
+        importErrors.value.push(t(`Forms ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron los formularios ${i + 1}-${i + rows.length}: ${error.message}`))
+      } else {
+        importedCount.value += rows.length
+        for (const { candidate: c, blocks } of chunk) {
+          const value = nationalIdAnswer(blocks.find((b) => b.patientField === 'national_id' && nationalIdAnswer(b.value))?.value)
+          const known = dniByPatient.get(c.patientId)
+          if (value && (!known || c.response.created > known.at)) dniByPatient.set(c.patientId, { value, at: c.response.created })
+        }
+      }
 
       progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }
+    }
+
+    // Only a blank DNI is filled: one already on the profile was typed or
+    // checked by the clinic, and an old form is no reason to replace it.
+    phase.value = t('Adding DNI to patient profiles…', 'Añadiendo el DNI a las fichas de los pacientes…')
+    const dniPatientIds = [...dniByPatient.keys()]
+    progress.value = { done: 0, total: dniPatientIds.length }
+    for (let i = 0; i < dniPatientIds.length; i += 200) {
+      const ids = dniPatientIds.slice(i, i + 200)
+      const { data: current, error: readError } = await supabase.from('patients').select('id, national_id').in('id', ids)
+      if (readError) {
+        importErrors.value.push(t(`DNI was not added to ${ids.length} patients: ${readError.message}`, `No se añadió el DNI a ${ids.length} pacientes: ${readError.message}`))
+        continue
+      }
+      const blank = (current ?? []).filter((p) => !p.national_id?.trim())
+      // One row per request (each patient's value differs), twenty at a time.
+      for (let j = 0; j < blank.length; j += 20) {
+        await Promise.all(blank.slice(j, j + 20).map(async (p) => {
+          const { error } = await supabase.from('patients').update({ national_id: dniByPatient.get(p.id)!.value }).eq('id', p.id)
+          if (error) importErrors.value.push(t(`DNI was not added to a patient: ${error.message}`, `No se añadió el DNI a un paciente: ${error.message}`))
+          else dniFilled.value++
+        }))
+      }
+      progress.value = { done: Math.min(i + 200, dniPatientIds.length), total: dniPatientIds.length }
     }
   } catch (err) {
     // Re-running is safe: forms and templates already written are skipped as
@@ -243,8 +286,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Imported ${importedCount.value} forms (${templatesCreated.value} new templates). Skipped ${skippedDuplicate.value} already imported and ${skippedUnmatched.value} with no matching patient.`,
-      `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas). Se omitieron ${skippedDuplicate.value} ya importados y ${skippedUnmatched.value} sin paciente coincidente.`,
+      `Imported ${importedCount.value} forms (${templatesCreated.value} new templates) and added the DNI to ${dniFilled.value} patients. Skipped ${skippedDuplicate.value} already imported and ${skippedUnmatched.value} with no matching patient.`,
+      `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas) y se añadió el DNI a ${dniFilled.value} pacientes. Se omitieron ${skippedDuplicate.value} ya importados y ${skippedUnmatched.value} sin paciente coincidente.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )

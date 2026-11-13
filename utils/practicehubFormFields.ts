@@ -1,4 +1,4 @@
-import type { DocField } from '~/utils/docFields'
+import { patientFieldForQuestion, type DocField } from './docFields'
 
 // Turns one PracticeHub form response into the blocks of a document here.
 //
@@ -132,7 +132,17 @@ export function practiceHubFormBlocks(
     } else if (key.includes('checkbox')) {
       blocks.push({ id: newId(), type: 'checkbox', label: label || text || 'Consent', value: blank ? false : !!f.value })
     } else {
-      blocks.push({ id: newId(), type: text.length > 80 ? 'long_text' : 'short_text', label: label || 'Answer', value: blank ? null : text || null })
+      // A question about the patient's own details is linked to that column,
+      // so the template keeps filling the profile and the import can fill it
+      // from the answer (see patientFieldForQuestion).
+      const patientField = patientFieldForQuestion(label)
+      blocks.push({
+        id: newId(),
+        type: text.length > 80 ? 'long_text' : 'short_text',
+        label: label || 'Answer',
+        value: blank ? null : text || null,
+        ...(patientField ? { patientField } : {}),
+      })
     }
   }
   return blocks

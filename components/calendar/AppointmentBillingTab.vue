@@ -110,21 +110,31 @@ const fieldId = useId()
         <p v-else class="text-ink-faint">{{ t('No active membership', 'Sin membresía activa') }}</p>
         <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-1">
           <span class="text-ink-muted2">{{ t('Bonos:', 'Bonos:') }}</span>
-          <UiPill
-            v-for="p in activePackages"
-            :key="p.id"
-            tone="brand"
-          >
-            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}
-            <UiPill
-              v-if="p.shared"
-              tone="info"
-              class="-my-0.5 -mr-1.5 border border-info-border"
-              :title="p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido')"
-            >
-              {{ t('Shared', 'Compartido') }}
+          <template v-for="p in activePackages" :key="p.id">
+            <UiPill tone="brand">
+              {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}
+              <UiPill
+                v-if="p.shared"
+                tone="info"
+                class="-my-0.5 -mr-1.5 border border-info-border"
+                :title="p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido')"
+              >
+                {{ t('Shared', 'Compartido') }}
+              </UiPill>
             </UiPill>
-          </UiPill>
+            <!-- Money still owed on the bono -- paid half, owes half -- so the
+            front desk sees it at the visit rather than only on the patient's
+            Billing tab. Due, not merely owed: a plazo not yet due is not a
+            debt, the same rule the Billing tab's card and Debtors apply. -->
+            <UiPill
+              v-if="!p.shared && (p.dueCents ?? 0) > 0"
+              tone="danger"
+              data-cy="appointment-bono-owed"
+              :title="t(`Still owed on ${p.package_name}`, `Pendiente de pago en ${p.package_name}`)"
+            >
+              {{ formatEur(p.dueCents ?? 0) }} {{ t('owed', 'pendiente') }}
+            </UiPill>
+          </template>
         </div>
       </div>
     </div>

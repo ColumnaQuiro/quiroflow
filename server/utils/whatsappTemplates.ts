@@ -21,6 +21,7 @@ interface MetaTemplate {
   language: string
   category: string
   status: string
+  rejected_reason?: string
   components: MetaTemplateComponent[]
 }
 
@@ -36,6 +37,8 @@ export interface WhatsAppTemplateSummary {
   mediaHeaderFormat: string | null
   /** Every button, in order; `dynamic` marks a URL button that takes a per-recipient parameter. */
   buttons: { type: string; text: string; dynamic: boolean }[]
+  /** Meta's reason when it REJECTED the template ("INVALID_FORMAT", "TAG_CONTENT_MISMATCH"...); null otherwise. */
+  rejectedReason: string | null
 }
 
 export class WhatsAppTemplatesError extends Error {
@@ -69,6 +72,7 @@ function summarise(t: MetaTemplate): WhatsAppTemplateSummary {
     urlButtonCount: buttons.filter(isDynamic).length,
     mediaHeaderFormat: header?.format && header.format !== 'TEXT' ? header.format : null,
     buttons: buttons.map((b) => ({ type: b.type, text: b.text ?? '', dynamic: isDynamic(b) })),
+    rejectedReason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null,
   }
 }
 
@@ -96,7 +100,7 @@ export async function fetchWhatsAppTemplates(supabase: any, accountId: string): 
   let response: { data: MetaTemplate[] }
   try {
     response = await $fetch<{ data: MetaTemplate[] }>(url, {
-      params: { fields: 'name,language,category,status,components', limit: 100 },
+      params: { fields: 'name,language,category,status,rejected_reason,components', limit: 100 },
       headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
     })
   } catch (err: any) {

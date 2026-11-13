@@ -91,10 +91,27 @@ interface Template {
   language: string
   category: string
   bodyText: string
+  status?: string
+  rejectedReason?: string | null
 }
 const templates = ref<Template[]>([])
+// Submitted and not approved: pending, rejected or paused at Meta.
+const inReview = ref<Template[]>([])
 const loadingTemplates = ref(false)
 const templatesError = ref('')
+const creatingTemplate = ref(false)
+const justCreated = ref('')
+function templateCreated(created: { name: string }) {
+  creatingTemplate.value = false
+  justCreated.value = created.name
+  loadTemplates()
+}
+function reviewLabel(status: string | undefined) {
+  if (status === 'REJECTED') return t('Rejected', 'Rechazada')
+  if (status === 'PAUSED') return t('Paused by Meta', 'Pausada por Meta')
+  if (status === 'DISABLED') return t('Disabled by Meta', 'Desactivada por Meta')
+  return t('In review', 'En revisión')
+}
 
 async function load() {
   loading.value = true
@@ -155,8 +172,9 @@ async function loadTemplates() {
   loadingTemplates.value = true
   templatesError.value = ''
   try {
-    const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    const { templates: list, inReview: pending } = await useStaffFetch<{ templates: Template[]; inReview?: Template[] }>('/api/whatsapp/templates')
     templates.value = list
+    inReview.value = pending ?? []
   } catch (err: any) {
     templatesError.value = err?.data?.statusMessage ?? t('Failed to load templates', 'Error al cargar las plantillas')
   } finally {
@@ -431,11 +449,32 @@ async function save() {
                   <h2 id="h-templates" class="text-[16px] font-bold text-ink-900">{{ t('Message templates', 'Plantillas de mensaje') }}</h2>
                   <p class="mt-1 text-[13px] leading-snug text-ink-muted">{{ t('WhatsApp only lets a business start a conversation with a template Meta has approved. Pick which one each message uses.', 'WhatsApp solo deja a una empresa iniciar una conversación con una plantilla aprobada por Meta. Elige cuál usa cada mensaje.') }}</p>
                 </div>
-                <UiBtn :disabled="loadingTemplates || !hasStoredToken || !businessAccountId" data-cy="whatsapp-templates-refresh" @click="loadTemplates">
-                  {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Refresh from Meta', 'Actualizar desde Meta') }}
-                </UiBtn>
+                <div class="flex flex-wrap gap-2">
+                  <UiBtn :disabled="loadingTemplates || !hasStoredToken || !businessAccountId" data-cy="whatsapp-templates-refresh" @click="loadTemplates">
+                    {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Refresh from Meta', 'Actualizar desde Meta') }}
+                  </UiBtn>
+                  <UiBtn variant="primary" :disabled="!hasStoredToken || !businessAccountId" data-cy="whatsapp-template-create" @click="creatingTemplate = true">
+                    {{ t('Create template', 'Crear plantilla') }}
+                  </UiBtn>
+                </div>
               </div>
               <p v-if="templatesError" class="border-t border-line-row px-[18px] py-2.5 text-[13px] font-semibold text-danger-text">{{ templatesError }}</p>
+              <p v-if="justCreated" class="border-t border-line-row bg-success-bg px-[18px] py-2.5 text-[13px] text-success-text" data-cy="whatsapp-template-created">
+                {{ t(`"${justCreated}" was sent to Meta. Once it is approved you can choose it here and in your automations.`, `«${justCreated}» se ha enviado a Meta. Cuando la aprueben podrás elegirla aquí y en tus automatizaciones.`) }}
+              </p>
+              <!-- Submitted but not usable yet: a template does not vanish
+              between creating it and Meta approving it, and a rejection says
+              why. -->
+              <div v-if="inReview.length" class="flex flex-col gap-1.5 border-t border-line-row px-[18px] py-3" data-cy="whatsapp-templates-in-review">
+                <span class="text-[12.5px] font-semibold text-ink-700">{{ t('Waiting on Meta', 'Pendientes de Meta') }}</span>
+                <div v-for="tpl in inReview" :key="tpl.name + tpl.language" class="flex flex-wrap items-center gap-2 text-[13px]">
+                  <span class="font-mono text-ink-900">{{ tpl.name }}</span>
+                  <span class="text-ink-muted">· {{ tpl.language }}</span>
+                  <UiPill :tone="tpl.status === 'REJECTED' || tpl.status === 'DISABLED' ? 'danger' : 'warning'" dot>{{ reviewLabel(tpl.status) }}</UiPill>
+                  <span v-if="tpl.rejectedReason" class="text-[12px] text-ink-muted">{{ t(templateRejectionReason(tpl.rejectedReason).en, templateRejectionReason(tpl.rejectedReason).es) }}</span>
+                </div>
+              </div>
+              <SettingsWhatsAppTemplateDialog v-if="creatingTemplate" @close="creatingTemplate = false" @created="templateCreated" />
 
               <div v-for="u in USES" :key="u.key" :data-template-use="u.key" class="grid grid-cols-1 items-start gap-2 border-t border-line-row px-[18px] py-3 md:grid-cols-[1fr_1.15fr] md:gap-4">
                 <div class="flex flex-col gap-0.5">

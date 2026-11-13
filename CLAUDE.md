@@ -58,6 +58,23 @@ the sync-before-merge rule above has to be followed by hand. Measured over
 the last 13 merges, 11 were up to date and 2 went in 2–3 commits stale;
 neither broke anything, but nothing would have caught it if they had.
 
+## Typechecks and builds queue, one at a time per machine
+
+A typecheck of this project takes about 4.5 GB and a production build is in
+the same range. Several sessions, each in its own worktree, used to run them
+together: six at once on a 16 GB machine on 13 Nov 2026 swapped it to a
+standstill, and a build whose server step takes a minute took fourteen.
+
+`scripts/with-node.sh` now sends `nuxt build`, `nuxt generate` and
+`nuxi typecheck` through `scripts/heavy-queue.sh`, which runs one at a time
+across every checkout on the machine and prints who it is waiting for. So a
+`[queue] waiting for the heavy check in …` line is the system working, not a
+hang: do not kill it and do not start a second copy. `QUIROFLOW_NO_QUEUE=1`
+skips the queue for one command; CI never queues.
+
+It only covers checkouts that have the script, so a branch cut before it
+merged does not wait and is not waited for until it is synced with `main`.
+
 ## Migrations — timestamped filenames, never the next free number
 
 New migrations get a **timestamped** filename, which is what

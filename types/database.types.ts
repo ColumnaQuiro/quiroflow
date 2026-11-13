@@ -287,6 +287,71 @@ export type Database = {
           },
         ]
       }
+      email_daily_usage: {
+        Row: {
+          brevo_exhausted_at: string | null
+          brevo_sent: number
+          bulk_sent: number
+          day: string
+          resend_exhausted_at: string | null
+          resend_observed: number | null
+          resend_sent: number
+          transactional_sent: number
+          updated_at: string
+        }
+        Insert: {
+          brevo_exhausted_at?: string | null
+          brevo_sent?: number
+          bulk_sent?: number
+          day: string
+          resend_exhausted_at?: string | null
+          resend_observed?: number | null
+          resend_sent?: number
+          transactional_sent?: number
+          updated_at?: string
+        }
+        Update: {
+          brevo_exhausted_at?: string | null
+          brevo_sent?: number
+          bulk_sent?: number
+          day?: string
+          resend_exhausted_at?: string | null
+          resend_observed?: number | null
+          resend_sent?: number
+          transactional_sent?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_bulk_usage: {
+        Row: {
+          account_id: string
+          day: string
+          deferred: number
+          sent: number
+        }
+        Insert: {
+          account_id: string
+          day: string
+          deferred?: number
+          sent?: number
+        }
+        Update: {
+          account_id?: string
+          day?: string
+          deferred?: number
+          sent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_bulk_usage_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_status: {
         Row: {
           key: string
@@ -10739,6 +10804,15 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      claim_bulk_email: {
+        Args: { p_account_id: string; p_resend_limit: number | null; p_brevo_limit: number | null; p_reserve: number }
+        Returns: string
+      }
+      release_bulk_email: { Args: { p_account_id: string }; Returns: undefined }
+      record_email_sent: { Args: { p_provider: string; p_kind: string }; Returns: undefined }
+      observe_resend_daily_usage: { Args: { p_used: number }; Returns: undefined }
+      mark_email_provider_exhausted: { Args: { p_provider: string }; Returns: undefined }
+      email_budget_day: { Args: never; Returns: string }
       my_pain_trend: { Args: { p_patient_id?: string }; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
       open_library_article: { Args: { p_article_id: string; p_patient_id?: string }; Returns: string }
       mark_staff_document_viewed: {

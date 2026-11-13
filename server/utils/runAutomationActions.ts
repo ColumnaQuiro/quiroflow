@@ -10,6 +10,7 @@ import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignToken
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
 import { contactableTutor, tutorEmailNote } from '~/server/utils/minorTutor'
+import { EmailDeferred } from '~/server/utils/emailBudget'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -173,8 +174,14 @@ export class ActionSkipped extends Error {}
 export interface ActionOutcome {
   actionId: string
   actionType: ActionRow['action_type']
-  status: 'sent' | 'dry_run' | 'skipped' | 'failed'
+  /**
+   * 'deferred': not sent because the day's email budget is spent (or the
+   * providers refused on quota). Only ever inside an emailBudget scope, which
+   * only the automation engine opens: it parks the run until `retryAt`.
+   */
+  status: 'sent' | 'dry_run' | 'skipped' | 'failed' | 'deferred'
   detail: string | null
+  retryAt?: string
 }
 
 export interface TriggerBody {
@@ -480,8 +487,8 @@ async function runForRecipient(
       : `${channel}: this is a marketing rule and the recipient has not opted in to ${channel}.`
 
   for (const action of actions) {
-    const outcome = (status: ActionOutcome['status'], detail: string | null) =>
-      outcomes.push({ actionId: action.id, actionType: action.action_type, status, detail })
+    const outcome = (status: ActionOutcome['status'], detail: string | null, retryAt?: Date) =>
+      outcomes.push({ actionId: action.id, actionType: action.action_type, status, detail, ...(retryAt ? { retryAt: retryAt.toISOString() } : {}) })
     try {
       if (action.action_type === 'whatsapp_template') {
         if (canContact && channelAllowed('whatsapp')) {
@@ -520,6 +527,8 @@ async function runForRecipient(
       problems.push(`${action.action_type}: ${message}`)
       if (e instanceof ActionSkipped) {
         outcome('skipped', message)
+      } else if (e instanceof EmailDeferred) {
+        outcome('deferred', message, e.retryAt)
       } else {
         outcome('failed', message)
         console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
@@ -1264,6 +1273,8 @@ async function runEmailAction(
       if (error) console.error(`[automations] could not record email ${sent.id}: ${error.message}`)
     }
   } catch (e: any) {
+    // Not a failure: there is no budget for it today, and the run waits.
+    if (e instanceof EmailDeferred) throw e
     // deliverEmail already names the provider and carries its own message.
     throw new Error(e?.message || 'The email provider rejected the email.', { cause: e })
   }

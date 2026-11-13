@@ -147,8 +147,11 @@ async function toggleLog(w: Webhook) {
 }
 
 const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
-const verifyExample = `const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).end()`
+// Constant-time, as the developer portal insists: a plain !== leaks through
+// its timing how much of a forged signature was right.
+const verifyExample = `const expected = Buffer.from(crypto.createHmac('sha256', secret).update(rawBody).digest('hex'))
+const received = Buffer.from(req.headers['x-quiroflow-signature'] ?? '')
+if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return res.status(401).end()`
 </script>
 
 <template>

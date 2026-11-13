@@ -1,3 +1,4 @@
+import { PATIENT_LANGUAGES } from '~/utils/apiContract'
 import { API_SCOPES, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SECONDS, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from '~/server/utils/publicApi'
 import { API_RESOURCES } from '~/server/utils/publicApiResources'
 import type { ApiResource } from '~/server/utils/publicApiResources'
@@ -141,7 +142,7 @@ function collection(path: string, resource: ApiResource, tag: string, label: [st
                 200: objectResponse(schema),
                 400: errorResponse('Validation failed. `error.field` names the offending field.'),
                 404: errorResponse(`No ${one} with that id in this account.`),
-                409: errorResponse('The change would double-book the practitioner.'),
+                409: errorResponse('The change would double-book the practitioner or the room, or falls in blocked time (a closure, a public holiday, the practitioner’s leave).'),
               },
             },
           }
@@ -152,7 +153,7 @@ function collection(path: string, resource: ApiResource, tag: string, label: [st
               tags: [tag],
               summary: `Cancel ${a} ${one}`,
               description:
-                'Sets `status` to `cancelled`. The appointment is **not** erased — it stays in the record and in reporting. Idempotent: cancelling an already-cancelled appointment returns 200.',
+                'Sets `status` to `cancelled`. The appointment is **not** erased — it stays in the record and in reporting. Idempotent: cancelling an already-cancelled appointment returns 200. A cancellation here — or a `PATCH` to `status: cancelled` — does what a patient cancelling does: the practitioner is told, the clinic’s cancellation automations run, and the freed time is offered to the waiting list when the clinic has that on.',
               security: [{ bearerAuth: [resource.scope.replace(':read', ':write')] }],
               responses: { 200: objectResponse(schema), 404: errorResponse('No appointment with that id in this account.') },
             },
@@ -173,7 +174,11 @@ function createOperation(tag: string, label: string, schema: string, scope: stri
     responses: {
       201: objectResponse(schema),
       400: errorResponse('Validation failed. `error.field` names the offending field.'),
-      409: errorResponse(`A conflicting ${label} already exists.`),
+      409: errorResponse(
+        label === 'appointment'
+          ? 'The practitioner or the room is already booked then, or the time is blocked (a closure, a public holiday, the practitioner’s leave). `GET /availability` lists free slots.'
+          : `A ${label} with that \`external_reference\` already exists.`,
+      ),
     },
   }
 }
@@ -199,13 +204,12 @@ function leadsPath() {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['full_name'],
               properties: {
-                full_name: { type: 'string', description: 'Or send first_name / last_name and they are joined.' },
+                full_name: { type: 'string', description: 'Required unless first_name or last_name is sent; they are then joined.' },
                 first_name: text(),
                 last_name: text(),
                 phone: { type: 'string', description: 'E.164, or a local number with phone_country_code. Required unless email is given.' },
-                phone_country_code: { type: 'string', default: '+34' },
+                phone_country_code: { type: 'string', example: 'ES', description: 'Two-letter country of a local `phone`. Defaults to the clinic’s own country (Settings), usually ES.' },
                 email: { type: 'string', format: 'email', description: 'Required unless phone is given.' },
                 channel: { type: 'string', enum: ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in', 'messenger', 'webchat'], default: 'facebook' },
                 source: { type: 'string', description: 'Campaign or referrer, e.g. "Meta Ads · Sciatica". The dashboard groups spend by the part before the "·".' },
@@ -213,8 +217,10 @@ function leadsPath() {
                 clinic_id: uuid(),
                 estimated_value_cents: { type: 'integer', minimum: 0 },
                 external_id: { type: 'string', description: 'The platform\'s own id for this submission. Send it — see above.' },
-                external_source: { type: 'string', default: 'facebook', description: 'Which platform external_id belongs to.' },
+                external_source: { type: 'string', description: 'Which platform external_id belongs to. Defaults to `facebook` when external_id is sent.' },
                 occurred_at: { type: 'string', format: 'date-time', description: 'When the person submitted, if that differs from now.' },
+                marketing_consent: { type: 'boolean', default: false, description: 'True only if the person ticked a marketing-consent box on the form. Without it the lead gets service messages only.' },
+                marketing_consent_source: { type: 'string', description: 'Where consent was given, e.g. the form’s name. Kept as the record of consent.' },
                 attribution: {
                   type: 'object',
                   properties: {
@@ -271,6 +277,7 @@ function leadsPath() {
           },
         },
         200: { description: 'This external_id was already received; the existing lead is returned with `deduplicated: true`. Nothing was created.' },
+        403: errorResponse('The token lacks `leads:write`, or the clinic’s subscription does not include Growth.'),
         400: errorResponse('Neither phone nor email was given, a field failed validation, or an unknown field was sent.'),
       },
     },
@@ -524,7 +531,7 @@ function schemas() {
         tutor_patient_id: { ...uuid(), nullable: true, description: 'For a minor, the patient record of their guardian.' },
         is_minor: { type: 'boolean' },
         do_not_contact: { type: 'boolean', description: 'When true, messaging and API booking for this patient are refused.' },
-        preferred_language: { type: 'string', enum: ['es', 'en'] },
+        preferred_language: { type: 'string', enum: [...PATIENT_LANGUAGES] },
         reminder_channel: { type: 'string' },
         confirmation_channel: { type: 'string' },
         marketing_channels: { type: 'array', items: { type: 'string' } },
@@ -578,7 +585,7 @@ function schemas() {
         ends_at: { type: 'string', format: 'date-time' },
         status: { type: 'string', enum: ['booked', 'completed', 'cancelled', 'no_show'] },
         note: text(),
-        source: { type: 'string', enum: ['staff', 'online', 'api', 'waitlist'], description: '`api` for anything booked through this API; `online` means the clinic’s own booking page; `waitlist` a patient taking a slot offered to them from the waitlist.' },
+        source: { type: 'string', enum: ['staff', 'online', 'api', 'waitlist', 'receptionist'], description: '`api` for anything booked through this API; `online` means the clinic’s own booking page; `waitlist` a patient taking a slot offered to them from the waitlist; `receptionist` QuiroFlow’s AI receptionist booking over WhatsApp.' },
         rescheduled: { type: 'boolean' },
         checked_in_at: datetime(),
         confirmation_status: text(),
@@ -743,9 +750,9 @@ function schemas() {
       type: 'object',
       properties: {
         id: uuid(),
-        invoice_id: uuid(),
+        invoice_id: { ...uuid(), nullable: true, description: 'Null for a payment that settles no single invoice, such as a bono or membership sale.' },
         amount_cents: cents('Amount paid.'),
-        method: { type: 'string' },
+        method: { type: 'string', description: 'How it was paid, e.g. `card`, `cash`, `transfer`, or the clinic’s own methods. `credit` (spending the patient’s balance) and `write_off` are not money received.' },
         paid_at: { type: 'string', format: 'date-time' },
         stripe_payment_intent_id: text(),
       },
@@ -778,8 +785,8 @@ function createPatientProperties(): Record<string, unknown> {
     first_name: { type: 'string', maxLength: 120 },
     last_name: { type: 'string', maxLength: 120 },
     email: { type: 'string', format: 'email' },
-    phone: { type: 'string', description: 'E.164 (`+34612345678`) or a local number alongside `phone_country_code`.' },
-    phone_country_code: { type: 'string', default: '+34' },
+    phone: { type: 'string', description: 'E.164 (`+34612345678`) or a local number alongside `phone_country_code`. Saved as a WhatsApp number.' },
+    phone_country_code: { type: 'string', example: 'ES', description: 'Two-letter country of a local `phone`. Defaults to the clinic’s own country (Settings), usually ES. A dial code (`+34`) is also accepted.' },
     date_of_birth: { type: 'string', format: 'date' },
     gender: { type: 'string' },
     status: { type: 'string', enum: ['active', 'inactive'] },
@@ -795,7 +802,7 @@ function createPatientProperties(): Record<string, unknown> {
     referral_source: { type: 'string' },
     is_minor: { type: 'boolean' },
     do_not_contact: { type: 'boolean' },
-    preferred_language: { type: 'string', enum: ['es', 'en'] },
+    preferred_language: { type: 'string', enum: [...PATIENT_LANGUAGES] },
     tags: { type: 'array', items: { type: 'string' } },
     external_reference: { type: 'string', description: 'Rejected with 409 if another patient in this account already has it.' },
   }

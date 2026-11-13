@@ -187,6 +187,182 @@ describe('Posture assessment', () => {
     })
   })
 
+  // La comparativa: two assessments read together, measure by measure, with
+  // the earlier figure drawn over the later photo and a PDF of it. Nothing is
+  // stored about it, so the patient can compare whichever were shared.
+  it('compares two assessments measure by measure, for staff and for the patient, with its PDF', () => {
+    const email = `comparativa-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Comparativa', lastName: 'Postura' }).then((patient) => {
+        const folder = (n: number) => `${account.accountId}/posture/e2e-${patient.id}-${n}`
+        const side = (n: number, earX: number) => ({ photo: `${folder(n)}/right.jpg`, width: 300, height: 600, facing: 'right', points: { ear: [earX, 40], shoulder: [150, 110], hip: [150, 300], knee: [150, 430], ankle: [150, 560] } })
+        // The right shoulder drops less each time; the pelvis tilts more at the end.
+        const front = (n: number, shoulderDrop: number, hipDrop: number) => ({
+          photo: `${folder(n)}/front.jpg`, width: 300, height: 600, facing: null,
+          points: { earR: [140, 40], earL: [160, 40], shoulderR: [110, 110 + shoulderDrop], shoulderL: [190, 110], hipR: [125, 300 + hipDrop], hipL: [175, 300], kneeR: [130, 430], kneeL: [170, 430], ankleR: [130, 560], ankleL: [170, 560] },
+        })
+        const row = (n: number, takenAt: string, earX: number, shoulderDrop: number, hipDrop: number, shared: boolean) => ({
+          account_id: account.accountId, patient_id: patient.id, taken_at: takenAt, height_cm: 170, views: { right: side(n, earX), front: front(n, shoulderDrop, hipDrop) }, metrics: {}, shared_with_patient: shared,
+        })
+        cy.task('db:storePosturePhotos', { paths: [1, 2, 3].flatMap((n) => [`${folder(n)}/right.jpg`, `${folder(n)}/front.jpg`]) })
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
+        cy.task('db:insertRows', {
+          table: 'posture_assessments',
+          rows: [row(1, '2026-06-02T09:00:00Z', 185, 8, 0, true), row(2, '2026-07-14T09:00:00Z', 170, 4, 0, false), row(3, '2026-09-08T09:00:00Z', 160, 1, 6, true)],
+        })
+
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=progress`)
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        // The first against the latest until someone picks otherwise.
+        cy.get('[data-cy=posture-comparison]').should('exist')
+        cy.get('[data-cy=posture-comparison-row-headWeight]').should('have.attr', 'data-verdict', 'better')
+        cy.get('[data-cy=posture-comparison-row-shoulderTilt]').should('have.attr', 'data-verdict', 'better')
+        cy.get('[data-cy=posture-comparison-row-hipTilt]').should('have.attr', 'data-verdict', 'worse')
+        // What a photo cannot tell apart reads as the same, not as progress.
+        cy.get('[data-cy=posture-comparison-row-kneeForward]').should('have.attr', 'data-verdict', 'same')
+        cy.get('[data-cy=posture-comparison-headline]').invoke('text').should('match', /^\d+ of \d+ measurements improved$/)
+        cy.get('[data-cy=posture-comparison-sentence]').should('contain', 'What improved most').and('contain', 'To watch: pelvic tilt')
+        // The earlier figure, dashed, on the later photo only.
+        cy.get('[data-cy=posture-compare-photo]').eq(1).find('[data-cy=posture-ghost]', { timeout: 20000 }).should('exist')
+        cy.get('[data-cy=posture-compare-photo]').eq(0).find('[data-cy=posture-ghost]').should('not.exist')
+        cy.get('[data-cy=posture-ghost-toggle]').uncheck()
+        cy.get('[data-cy=posture-ghost]').should('not.exist')
+
+        // Another pair: the middle one against the latest.
+        cy.get('[data-cy=posture-row]').eq(2).find('input[type=checkbox]').first().uncheck()
+        cy.get('[data-cy=posture-comparison]').should('not.exist')
+        cy.get('[data-cy=posture-row]').eq(1).find('input[type=checkbox]').first().check()
+        cy.get('[data-cy=posture-comparison-row-shoulderTilt]').should('have.attr', 'data-verdict', 'better')
+
+        // Its PDF: both photos of each view, drawn by the server, as a link.
+        const tab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(tab))
+        cy.intercept('POST', '/api/posture/*/comparison').as('comparison')
+        cy.get('[data-cy=posture-comparison-report]').click()
+        cy.wait('@comparison', { timeout: 40000 }).then(({ response }) => {
+          expect(response!.statusCode).to.eq(200)
+          expect(response!.body.fileName).to.match(/^(posture-comparison|comparativa-postural)-2026-07-14-2026-09-08\.pdf$/)
+        })
+        cy.wrap(tab).its('location.href').should('contain', `${account.accountId}/exports/`)
+        cy.then(() => cy.request({ url: tab.location.href, encoding: 'binary' })).then((res) => {
+          expect(res.headers['content-type']).to.contain('application/pdf')
+          expect(String(res.body).slice(0, 5)).to.eq('%PDF-')
+          // The summary and the table, then one page per view both have.
+          expect(String(res.body).match(/\/Type\s*\/Page\b/g)).to.have.length(3)
+        })
+        // And it is in the patient's access log, like any file that leaves.
+        cy.task<{ detail: { file?: string } }[]>('db:selectRows', { table: 'patient_access_log', columns: 'detail', match: { patient_id: patient.id, kind: 'file_downloaded' } }).then((rows) => {
+          expect(rows.some((r) => r.detail?.file === 'posture_comparison')).to.eq(true)
+        })
+
+        // "Enviar al paciente": this pair with a comment, as a row of its own.
+        // The middle assessment is NOT shared on its own; the comparison is
+        // what will let the patient see it.
+        cy.get('[data-cy=posture-comparison-send]').should('contain', 'Send to the patient').click()
+        cy.get('[data-cy=posture-comparison-note]').type('Mucho mejor el cuello. Seguimos con la pelvis.')
+        cy.intercept('POST', '/api/posture/comparisons').as('send')
+        cy.get('[data-cy=confirm-dialog-confirm]').click()
+        cy.wait('@send').its('response.statusCode').should('eq', 200)
+        cy.get('[data-cy=posture-sent-row]').should('have.length', 1).and('contain', 'Mucho mejor el cuello')
+        cy.get('[data-cy=posture-comparison-sent-note]').should('contain', 'Sent to the patient')
+        // The same two again edit the comment: one card for the patient, not two.
+        cy.get('[data-cy=posture-comparison-send]').should('contain', 'Edit what was sent').click()
+        cy.get('[data-cy=posture-comparison-note]').should('have.value', 'Mucho mejor el cuello. Seguimos con la pelvis.').type(' Nos vemos en un mes.')
+        cy.get('[data-cy=confirm-dialog-confirm]').click()
+        cy.wait('@send').its('response.statusCode').should('eq', 200)
+        cy.get('[data-cy=posture-sent-row]').should('have.length', 1).and('contain', 'Nos vemos en un mes.')
+        cy.task<{ id: string; note: string; shared_with_patient: boolean; created_by: string | null }[]>('db:selectRows', { table: 'posture_comparisons', columns: 'id, note, shared_with_patient, created_by', match: { patient_id: patient.id } }).then((rows) => {
+          expect(rows).to.have.length(1)
+          expect(rows[0]!.shared_with_patient).to.eq(true)
+          expect(rows[0]!.created_by).to.be.a('string')
+          cy.wrap(rows[0]!.id).as('comparisonId')
+        })
+        // It is in the audit trail, filed under the patient.
+        cy.task<{ action: string }[]>('db:selectRows', { table: 'audit_logs', columns: 'action', match: { entity_type: 'posture_comparison', patient_id: patient.id } }).should('have.length.at.least', 2)
+
+        // The patient: what the clinic sent comes first, with its comment.
+        cy.clearAllCookies()
+        cy.clearAllLocalStorage()
+        cy.login(email, password)
+        cy.visit('/portal/progress')
+        cy.get('[data-cy=patient-posture][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=patient-posture-sent-item]').should('have.length', 1).and('have.attr', 'aria-pressed', 'true')
+        cy.get('[data-cy=patient-posture-sent-note]').should('contain', 'Nos vemos en un mes.')
+        // The pair the practitioner chose (the middle one and the last), in the
+        // patient's four measures and words.
+        cy.get('[data-cy=patient-posture-before]').should('not.exist')
+        cy.get('[data-cy=patient-posture-comparison] [data-cy^=posture-comparison-row-]').should('have.length', 4)
+        cy.get('[data-cy=patient-posture-comparison] [data-cy=posture-comparison-row-shoulderTilt]').should('have.attr', 'data-verdict', 'better')
+        cy.get('[data-cy=patient-posture-comparison] [data-cy=posture-comparison-row-hipTilt]').should('have.attr', 'data-verdict', 'worse')
+        cy.get('[data-cy=patient-posture-photos] [data-cy=posture-overlay]').should('have.length', 2)
+        cy.get('[data-cy=patient-posture-photos] [data-cy=posture-ghost]', { timeout: 20000 }).should('have.length', 1)
+        const sentTab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(sentTab))
+        cy.intercept('POST', '/api/portal/posture-comparisons/*/report').as('sentReport')
+        cy.get('[data-cy=patient-posture-comparison-report]').click()
+        cy.wait('@sentReport', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+        cy.wrap(sentTab).its('location.href').should('contain', '/exports/')
+
+        // On their own: the two shared one by one, and nothing to choose between.
+        cy.get('[data-cy=patient-posture-own]').click()
+        cy.get('[data-cy=patient-posture-sent-item]').should('have.attr', 'aria-pressed', 'false')
+        cy.get('[data-cy=patient-posture-sent-note]').should('not.exist')
+        cy.get('[data-cy=patient-posture-before]').should('not.exist')
+        cy.get('[data-cy=patient-posture-comparison] [data-cy=posture-comparison-row-headWeight]').should('have.attr', 'data-verdict', 'better')
+        cy.intercept('POST', '/api/portal/posture/*/comparison').as('patientComparison')
+        cy.get('[data-cy=patient-posture-comparison-report]').click()
+        cy.wait('@patientComparison', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+
+        // One that was not shared cannot be compared freely from the patient's
+        // side, whatever id is sent: only the comparison it was sent in opens it.
+        cy.task<{ id: string; shared_with_patient: boolean }[]>('db:selectRows', { table: 'posture_assessments', columns: 'id, shared_with_patient', match: { patient_id: patient.id } }).then((rows) => {
+          const hidden = rows.find((r) => !r.shared_with_patient)!
+          const shown = rows.find((r) => r.shared_with_patient)!
+          cy.request({ method: 'POST', url: `/api/portal/posture/${shown.id}/comparison`, body: { withId: hidden.id }, failOnStatusCode: false }).its('status').should('eq', 404)
+        })
+
+        // Withdrawn by the clinic: gone from the app, and its PDF with it.
+        cy.task('db:updateRows', { table: 'posture_comparisons', match: { patient_id: patient.id }, values: { shared_with_patient: false } })
+        cy.get<string>('@comparisonId').then((id) => {
+          cy.request({ method: 'POST', url: `/api/portal/posture-comparisons/${id}/report`, failOnStatusCode: false }).its('status').should('eq', 404)
+        })
+
+        // With a third one shared there is a choice, and "before" stays before.
+        cy.task('db:updateRows', { table: 'posture_assessments', match: { patient_id: patient.id }, values: { shared_with_patient: true } })
+        cy.visit('/portal/progress')
+        cy.get('[data-cy=patient-posture][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=patient-posture-sent]').should('not.exist')
+        cy.get('[data-cy=patient-posture-before] option').should('have.length', 2)
+        cy.get('[data-cy=patient-posture-after] option').should('have.length', 2)
+        cy.get('[data-cy=patient-posture-before]').select(1)
+        cy.get('[data-cy=patient-posture-after] option').should('have.length', 1)
+        cy.get('[data-cy=patient-posture-comparison] [data-cy=posture-comparison-row-shoulderTilt]').should('have.attr', 'data-verdict', 'better')
+      })
+    })
+  })
+
+  // A merge is the one operation whose promise is that nothing is lost
+  // (CLAUDE.md): the comparisons move with their assessments.
+  it('keeps sent comparisons through a merge', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Superviviente', lastName: 'Postura' }).then((survivor) => {
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Duplicada', lastName: 'Postura' }).then((duplicate) => {
+          const row = (takenAt: string) => ({ account_id: account.accountId, patient_id: duplicate.id, taken_at: takenAt, height_cm: 170, views: {}, metrics: {} })
+          cy.task<{ id: string }[]>('db:insertRows', { table: 'posture_assessments', rows: [row('2026-06-02T09:00:00Z'), row('2026-09-08T09:00:00Z')] }).then(([before, after]) => {
+            cy.task('db:insertRows', { table: 'posture_comparisons', rows: [{ account_id: account.accountId, patient_id: duplicate.id, before_assessment_id: before!.id, after_assessment_id: after!.id, note: 'Para conservar' }] })
+            cy.task<{ data: unknown; error: string | null }>('db:rpcAsStaff', { email: account.email, password: account.password, fn: 'merge_patients', args: { p_survivor_id: survivor.id, p_duplicate_id: duplicate.id } }).then((r) => {
+              expect(r.error ?? null).to.eq(null)
+            })
+            cy.task<{ note: string }[]>('db:selectRows', { table: 'posture_comparisons', columns: 'note', match: { patient_id: survivor.id } }).should('have.length', 1)
+            cy.task('db:selectRows', { table: 'posture_comparisons', columns: 'id', match: { patient_id: duplicate.id } }).should('have.length', 0)
+          })
+        })
+      })
+    })
+  })
+
   it('lets the points be placed by hand when nobody is found', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Mano', lastName: 'Puntos' }).then((patient) => {

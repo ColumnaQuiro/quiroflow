@@ -8536,6 +8536,95 @@ export type Database = {
           },
         ]
       }
+      posture_comparisons: {
+        Row: {
+          account_id: string
+          after_assessment_id: string
+          before_assessment_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          patient_id: string
+          shared_with_patient: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          after_assessment_id: string
+          before_assessment_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          patient_id: string
+          shared_with_patient?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          after_assessment_id?: string
+          before_assessment_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          patient_id?: string
+          shared_with_patient?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "posture_comparisons_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_after_assessment_id_fkey"
+            columns: ["after_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "posture_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_before_assessment_id_fkey"
+            columns: ["before_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "posture_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "posture_comparisons_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_stock_movements: {
         Row: {
           account_id: string

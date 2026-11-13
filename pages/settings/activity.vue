@@ -39,7 +39,7 @@ async function loadMembers() {
 const memberFilter = ref('')
 
 const AREAS = computed(() => [
-  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc', 'patient_letter'] },
+  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc', 'patient_letter', 'posture_comparison'] },
   { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'care_stop', 'recall_assignment', 'patient_segment', 'patient_attribute_value', 'patient_third_party'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },

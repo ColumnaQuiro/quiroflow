@@ -15,8 +15,14 @@ const props = withDefaults(
     points: Points
     editable?: boolean
     labels?: boolean
+    /**
+     * Another assessment's points already placed on THIS photo
+     * (utils/postureCompare.ts ghostPoints): drawn as a dashed white figure
+     * under this one's, so the two postures can be read against each other.
+     */
+    ghost?: Points | null
   }>(),
-  { editable: false, labels: true },
+  { editable: false, labels: true, ghost: null },
 )
 const emit = defineEmits<{ 'update:points': [Points] }>()
 
@@ -52,6 +58,14 @@ const chain = computed(() => {
   if (!p) return ''
   if (!paired.value) return ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => p[k]!.join(',')).join(' ')
   return ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => mid(p[`${k}R`]!, p[`${k}L`]!).join(',')).join(' ')
+})
+// The ghost belongs to the photo in the props, so it waits for that photo.
+const ghostChain = computed(() => {
+  const g = props.ghost
+  if (!g || !f.value || f.value.src !== props.src) return ''
+  const at = (k: string) => (paired.value ? (g[`${k}R`] && g[`${k}L`] ? mid(g[`${k}R`]!, g[`${k}L`]!) : null) : (g[k] ?? null))
+  const pts = ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map(at)
+  return pts.every(Boolean) ? pts.map((p) => p!.join(',')).join(' ') : ''
 })
 const pairs = computed(() => (paired.value && f.value ? ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => [f.value!.points[`${k}R`]!, f.value!.points[`${k}L`]!] as [Pt, Pt]) : []))
 const drawnWidth = computed(() => f.value?.width ?? props.width)
@@ -186,6 +200,11 @@ const loupe = computed(() => {
       <template v-if="f">
         <image :href="f.src" x="0" y="0" :width="f.width" :height="f.height" preserveAspectRatio="none" />
         <line :x1="plumbX" y1="0" :x2="plumbX" :y2="f.height" stroke="#7CC4FF" :stroke-width="stroke" :stroke-dasharray="`${stroke * 5} ${stroke * 4}`" />
+        <g v-if="ghostChain" data-cy="posture-ghost">
+          <polyline :points="ghostChain" fill="none" stroke="rgba(0,0,0,.45)" :stroke-width="stroke * 2.2" stroke-linejoin="round" />
+          <polyline :points="ghostChain" fill="none" stroke="#fff" :stroke-width="stroke * 1.2" stroke-linejoin="round" :stroke-dasharray="`${stroke * 3} ${stroke * 2.5}`" />
+          <circle v-for="(pt, i) in ghostChain.split(' ')" :key="i" :cx="pt.split(',')[0]" :cy="pt.split(',')[1]" :r="radius * 0.6" fill="none" stroke="#fff" :stroke-width="stroke" />
+        </g>
         <line v-for="(p, i) in pairs" :key="i" :x1="p[0][0]" :y1="p[0][1]" :x2="p[1][0]" :y2="p[1][1]" stroke="#FFB020" :stroke-width="stroke" />
         <polyline :points="chain" fill="none" stroke="#FFB020" :stroke-width="stroke" stroke-linejoin="round" />
         <g v-for="name in VIEW_POINTS[f.view]" :key="name">

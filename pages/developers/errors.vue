@@ -91,10 +91,12 @@ const retry = `async function callWithRetry(url, options, attempt = 0) {
 
     <h2>Writes and partial failure</h2>
     <p>
-      Each write endpoint acts on a single record and either succeeds fully or changes nothing — there are no partial writes to unwind. What
-      is <em>not</em> guaranteed is that a request which times out on your side didn't succeed on ours. For creates, set
-      <code>external_reference</code> to your own identifier: a repeat with the same value returns <code>409</code> rather than creating a
-      duplicate, which makes retries safe.
+      Each write endpoint acts on a single record, and a request refused with a <code>4xx</code> changes nothing. The one exception to
+      watch for is <code>POST /patients</code> with a <code>phone</code>: the number is saved just after the patient, and if that second
+      step fails you get a <code>500</code> whose message gives the id of the patient that was created. What
+      is <em>not</em> guaranteed is that a request which times out on your side didn't succeed on ours. For patients and
+      appointments, set <code>external_reference</code> to your own identifier: a repeat with the same value returns <code>409</code> rather than
+      creating a duplicate, which makes retries safe. For leads, send <code>external_id</code>: a repeat returns the lead already created.
     </p>
     <p>
       Cancelling an appointment is idempotent — cancelling one that's already cancelled returns <code>200</code>, not an error. See

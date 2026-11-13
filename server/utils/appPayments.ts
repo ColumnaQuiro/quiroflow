@@ -7,6 +7,7 @@ import { issueFacturaServer, issueRectificativaServer } from '~/server/utils/fac
 import { pushPatientAction } from '~/server/utils/staffPush'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { fireReferredVisitTrigger } from '~/server/utils/automationTriggers'
 import { isVisitUpcoming } from '~/utils/visitCharging'
 import { refundedAgainstPaymentCents, type RefundInvoice } from '~/utils/paymentRefund'
 import { refundDescription } from '~/utils/billingDescriptions'
@@ -379,7 +380,10 @@ export async function recordAppVisitPayment(service: Service, accountId: string,
   // the desk does -- and fires appointment.completed exactly once.
   if (!upcoming && purpose === 'visit') {
     const { completedNow } = await completeVisit(service, visit.id)
-    if (completedNow) await fireVisitRules(service, accountId, visit.id, visit.patient_id, 'appointment.completed', origin)
+    if (completedNow) {
+      await fireVisitRules(service, accountId, visit.id, visit.patient_id, 'appointment.completed', origin)
+      await fireReferredVisitTrigger(service, accountId, visit.id, origin)
+    }
   }
 }
 

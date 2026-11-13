@@ -70,7 +70,13 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
   })
 
   // The overlap check and the insert, as one step: see saveAppointmentIfFree.
-  const createdId = await saveAppointmentIfFree(supabase, accountId, null, insert, { checkOverlap: true })
+  // Blocks (closures, public holidays, leave) and the room as well, for a
+  // visit that will hold the time: GET /availability leaves blocked time out,
+  // and a booking here used to land in it anyway. A visit written as already
+  // completed or cancelled -- history an integration is copying in -- is not
+  // held to a block that may have been added since.
+  const holdsTime = (insert.status ?? 'booked') === 'booked'
+  const createdId = await saveAppointmentIfFree(supabase, accountId, null, insert, { checkOverlap: true, checkBlocks: holdsTime, checkRoom: holdsTime })
   const { data: created, error } = await loose(supabase).from('appointments').select(appointmentsResource.select).eq('id', createdId).single()
   if (error) throw new ApiError('server_error', error.message)
 

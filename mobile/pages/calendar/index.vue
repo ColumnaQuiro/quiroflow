@@ -753,7 +753,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       </template>
     </div>
 
-    <div class="qf-plane qf-lip flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
+    <div class="qf-plane qf-lip qf-fade flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
       <!-- Whose diary, as the web calendar's practitioner tabs. -->
       <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
         <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-10 shrink-0 rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">

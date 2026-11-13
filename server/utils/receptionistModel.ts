@@ -10,7 +10,8 @@ import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/recep
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
 import { findTypeByName } from '~/utils/receptionistTypes'
-import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
+import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
+import { colleaguePromise, colleaguePromiseReason } from '~/utils/receptionistFollowThrough'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -240,6 +241,8 @@ export async function runReceptionistModel(
   // stating a booking they did not make has already been sent back once.
   const done = new Set<string>()
   let claimRewritten = false
+  // Whether a reply misstating the time of their own visit was sent back once.
+  let timeRewritten = false
   // Whether a reply breaking the house style (styleProblems) was already
   // sent back once to be reworded.
   let styleRewritten = false
@@ -295,7 +298,22 @@ export async function runReceptionistModel(
         claimRewritten = true
         checks.push('claim_rewritten')
         messages.push({ role: 'assistant', content: message.content })
-        messages.push({ role: 'user', content: unbookedClaimNote(claim) })
+        messages.push({ role: 'user', content: unbookedClaimNote(claim, { noVisits: (opts.standingTimes?.size ?? 0) === 0 }) })
+        continue
+      }
+      // Their visit's time is the diary's: a reply giving it another, because
+      // they insisted, goes back once and is refused the second time.
+      const misstated = opts.standingTimes && text ? misstatedVisitTime(text, done, opts.standingTimes) : null
+      if (misstated) {
+        if (timeRewritten) {
+          console.warn(`[receptionist] withheld a reply for ${opts.logLabel}: it gives a visit a time the diary does not have`)
+          checks.push('visit_time_withheld')
+          return run('', true)
+        }
+        timeRewritten = true
+        checks.push('visit_time_rewritten')
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: misstatedVisitNote(misstated, opts.standingTimes!) })
         continue
       }
       // The house style, checked in code (utils/receptionistStyle.ts): what
@@ -315,6 +333,13 @@ export async function runReceptionistModel(
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
         checks.push('briefing_withheld')
         return run('', true)
+      }
+      // A promise that a colleague will do something is kept by telling one:
+      // the reply goes with a handover whether or not the model called it.
+      const promise = opts.handOver && !handedOver && reply && !isNoReply(reply) ? colleaguePromise(reply) : null
+      if (promise) {
+        handedOver = colleaguePromiseReason(promise)
+        checks.push('promise_handed_over')
       }
       return run(reply, false)
     }

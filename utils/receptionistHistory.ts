@@ -118,7 +118,9 @@ export function cleanReply(text: string): string {
  * it is a range only after "entre".
  */
 const RANGE = /\bentre\s+las\s+\d{1,2}[:.h]\d{2}\s+y\s+las\s+\d{1,2}[:.h]\d{2}\b|\b\d{1,2}[:.h]\d{2}\s*(?:-|–|a|hasta)\s*(?:las\s+)?\d{1,2}[:.h]\d{2}\b/gi
-const TIME = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/g
+// "18:30h" too: written that way, the time was invisible to every check
+// that reads one (11 Nov 2026).
+const TIME = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)(?:\s?h)?\b/g
 
 /**
  * How many different clock times a reply offers. Counted rather than trusted
@@ -138,10 +140,10 @@ export function clockTimes(text: string): Set<string> {
 // "Te confirmo tu cita", "queda reservada", "tu cita queda a las 18:30",
 // "queda todo listo": a visit stated as booked. A question ("¿Te confirmo
 // las 18:00?") offers it, and is not one.
-const BOOKED_CLAIM = /\b(?:te\s+confirmo|confirmad[oa]s?\b|te\s+(?:he\s+)?(?:reservado|apuntado|movido|cambiado)|he\s+(?:reservado|movido|cambiado|apuntado)|queda(?:n)?\s+(?:reservad|confirmad|movid|cambiad|apuntad|cancelad|todo\s+listo|para\s+el|el\s|a\s+las)|(?:tu|su|la)\s+cita\s+(?:queda|pasa)\b|pasa\s+al?\s)/i
+const BOOKED_CLAIM = /\b(?:(?:no\s+)?(?:te\s+)?la\s+dejo\s+(?:reservad|cancelad|anulad)|te\s+la\s+(?:quito|anulo|cancelo)\b|te\s+confirmo|confirmad[oa]s?\b|te\s+(?:he\s+)?(?:reservado|apuntado|movido|cambiado)|he\s+(?:reservado|movido|cambiado|apuntado)|queda(?:n)?\s+(?:reservad|confirmad|movid|cambiad|apuntad|cancelad|todo\s+listo|para\s+el|el\s|a\s+las)|(?:tu|su|la)\s+cita\s+(?:queda|pasa)\b|pasa\s+al?\s)/i
 // A claim with no time in it is checked only when it is unmistakably a
 // booking -- "Confirmado" alone may answer "¿lo tenéis apuntado?".
-const UNTIMED_CLAIM = /\b(?:queda(?:n)?\s+(?:reservad|movid|cambiad|todo\s+listo)|te\s+(?:he\s+)?(?:reservado|movido)|he\s+(?:reservado|movido))/i
+const UNTIMED_CLAIM = /\b(?:(?:no\s+)?(?:te\s+)?la\s+dejo\s+(?:reservad|cancelad|anulad)|te\s+la\s+(?:quito|anulo|cancelo)\b|queda(?:n)?\s+(?:reservad|movid|cambiad|todo\s+listo)|te\s+(?:he\s+)?(?:reservado|movido)|he\s+(?:reservado|movido))/i
 // A change to a visit: cancelled or moved. A visit they already have may be
 // restated freely ("sigue en pie"), but it may only be said to be cancelled
 // or moved when a tool did it in this reply.
@@ -184,6 +186,36 @@ export function unbookedClaim(text: string, done: Set<string>, standing: Set<str
   return null
 }
 
+// A sentence about THEIR visit: "tu cita", "la tuya", "te esperamos".
+const OWN_VISIT = /\b(?:tu|su)\s+(?:cita|visita|sesi[oó]n|primera\s+visita|revisi[oó]n)\b|\bla\s+tuya\b|\bte\s+esperamos\b|\byour\s+(?:appointment|visit)\b/i
+// ...that offers a time rather than stating one: those are checked as offers.
+const OFFER_WORDS = /\b(?:tengo|tenemos|hay|hueco|huecos|libre|libres|disponib\w*|puedo\s+ofrecer|te\s+puedo|podr[ií]a|ser[ií]a|alternativa|otra\s+hora|have|free|available|could)\b/i
+
+/**
+ * The sentence of a finished reply that states a time for their own visit
+ * that is not the time it has in the diary (and that no tool set in this
+ * reply) -- or null.
+ *
+ * Told "it is at 18:00 for him and 18:30 for me, isn't it?", it first gave
+ * the diary's 18:15, then "Tienes razón... la tuya a las 18:30h" (11 Nov
+ * 2026). The visit was still at 18:15. A visit's time is the diary's, not
+ * whatever the person insists it is.
+ */
+export function misstatedVisitTime(text: string, done: Set<string>, standing: Set<string>): string | null {
+  if (standing.size === 0) return null
+  for (const sentence of text.split(/(?<=[.!?;])\s+|\n+/)) {
+    const s = sentence.trim()
+    if (!s || s.startsWith('¿') || s.endsWith('?') || !OWN_VISIT.test(s) || OFFER_WORDS.test(s)) continue
+    for (const t of clockTimes(s)) if (!done.has(t) && !standing.has(t)) return s
+  }
+  return null
+}
+
+/** What is said to the model when its reply misstates the time of their visit. */
+export function misstatedVisitNote(sentence: string, standing: Set<string>): string {
+  return `[Note from the clinic system, not from the patient] Your reply says "${sentence.slice(0, 200)}", but the visits they have in the diary are at ${[...standing].join(', ')}, and nothing in this reply changed them. Never give a visit a time the diary does not have, even when they insist they were told another: tell them the time the diary has. If they are sure it was another time, call hand_over_to_colleague so a colleague checks it with them. Write only the message.`
+}
+
 /** The clinic-clock times ("H:MM") of visits they already have, for unbookedClaim. */
 export function standingClockTimes(visits: { startsAt: string }[], timeZone: string): Set<string> {
   return new Set(visits.map((v) => {
@@ -193,7 +225,11 @@ export function standingClockTimes(visits: { startsAt: string }[], timeZone: str
 }
 
 /** What is said to the model when its reply states a booking it did not make. */
-export function unbookedClaimNote(sentence: string): string {
+export function unbookedClaimNote(sentence: string, opts: { noVisits?: boolean } = {}): string {
+  // Told "mañana no podré asistir" by someone with nothing booked, it said
+  // "no la dejo reservada entonces" (11 Nov 2026): nothing was cancelled
+  // because there was nothing to cancel, and they were never told.
+  if (opts.noVisits) return `[Note from the clinic system, not from the patient] Your reply says "${sentence.slice(0, 200)}", but they have no upcoming visit in the diary, so there is nothing to cancel, move or keep. Tell them plainly that you do not see any visit booked for them, and ask whether it might be under someone else's name. Never say a visit is cancelled, moved or kept. Write only the message.`
   return `[Note from the clinic system, not from the patient] Your reply says "${sentence.slice(0, 200)}", but nothing was booked, moved or cancelled at that time in this reply. Never say a visit is booked, moved or cancelled unless the tool confirmed it in this reply. If they asked to cancel or move a visit they have at that time, call cancel_appointment or book_appointment for it now -- once for each visit. If they accepted that time, call book_appointment for it now (for someone else, with what the tool asks for that person, such as their name and mobile). If you cannot, call hand_over_to_colleague and tell them your colleague will book it and confirm. Write only the message.`
 }
 

@@ -7,7 +7,7 @@ import { practiceHubDefinitionBlocks } from '../../utils/practicehubFormDefiniti
 // not linked to the profile, so none of the answers reached it (13 Nov 2026).
 describe('imported forms fill the patient DNI', () => {
   it('links a question for the patient’s own document', () => {
-    for (const label of ['DNI', 'DNI/NIE', 'NIF', 'Nº de DNI', 'DNI o pasaporte', 'Documento de identidad', 'Passport', 'ID number'])
+    for (const label of ['DNI', 'DNI/NIE', 'DNI/NIE/Pasaporte', 'DNI:', 'NIF *', 'Nº de DNI', 'Número de DNI', 'DNI o pasaporte', 'Documento de identidad', 'Passport', 'ID number', 'Your ID number'])
       expect(patientFieldForQuestion(label), label).toBe('national_id')
   })
 
@@ -17,6 +17,11 @@ describe('imported forms fill the patient DNI', () => {
       'DNI/NIF/NIE du père/mère/représentant et/ou tuteur légal',
       "Parent or guardian's ID number",
       'NIF de la empresa',
+      // A minors' consent: "D/Dña. ..., mayor de edad, con NIF ..., representante del menor ..., con NIF ..."
+      'mayor de edad, con NIF',
+      'con NIF',
+      'of legal age, with NIF',
+      'Documento',
       'Nombre y teléfono de contacto',
       '¿A qué te dedicas?',
       'Todo ello, por escrito acompañado de copia del documento oficial que lo identifique dirigido al responsable',

@@ -86,18 +86,23 @@ export const LINKABLE_FIELD_TYPES: DocFieldType[] = ['short_text', 'long_text', 
 // "DNI" question filled nothing -- 755 imported intake forms holding 519
 // patients' DNI, and not one on a profile (13 Nov 2026).
 //
-// Only the patient's OWN identity document, and only a short label that is
-// the question itself. "DNI Madre/Padre/Tutor legal" sits on the same intake
-// form and is somebody else's number; a legal paragraph mentioning "documento
-// oficial que lo identifique" is not a question at all.
-const OWN_ID_QUESTION = /\b(dni|nie|nif|pasaporte|passport|documento de identidad|numero de identidad|national id|id number|carte d'identite)\b/
-const SOMEONE_ELSES = /\b(madre|padre|tutor|tutora|tutores|representante|responsable|progenitor|parent|parents|guardian|mother|father|pere|mere|tuteur|representant|empresa|company|entreprise)\b/
+// Only a label that is nothing BUT the question for an identity document:
+// "DNI", "DNI/NIE/Pasaporte", "Nº de DNI". Any other word in it means the
+// number may be somebody else's, and that is not guessable from a word list:
+// "DNI Madre/Padre/Tutor legal" sits on the same intake form, and a minors'
+// consent form reads "D/Dña. ..., mayor de edad, con NIF ..., representante
+// del menor ..., con NIF ...", where the first NIF is the parent's and the
+// document belongs to the child. A wrong DNI on a profile ends up on a
+// factura, so an unlinked question is the safe miss.
+const ID_DOCUMENT = /\b(dni|nie|nif|pasaporte|passport|documento de identidad|numero de identidad|national id|id number|carte d'identite)\b/g
+const ID_FILLER = /\b(n|no|num|numero|de|del|o|or|y|and|tu|su|your)\b/g
 
 export function patientFieldForQuestion(label: string | null | undefined): string | undefined {
-  const text = (label ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-  if (!text || text.length > 60) return undefined
-  if (OWN_ID_QUESTION.test(text) && !SOMEONE_ELSES.test(text)) return 'national_id'
-  return undefined
+  const text = (label ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const withoutDocument = text.replace(ID_DOCUMENT, ' ')
+  if (withoutDocument === text) return undefined
+  const rest = withoutDocument.replace(/[^a-z0-9]+/g, ' ').replace(ID_FILLER, ' ').trim()
+  return rest === '' ? 'national_id' : undefined
 }
 
 // An answer worth putting on patients.national_id: the same test

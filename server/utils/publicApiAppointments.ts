@@ -116,7 +116,10 @@ export async function saveAppointmentIfFree(
   // `checkBlocks`: refuse a time inside a block too (availability_blocks), in
   // the same transaction. The receptionist checks the free times just before
   // writing, but a block added in between used to be booked over.
-  opts: { checkOverlap: boolean; checkBlocks?: boolean },
+  //
+  // `checkRoom`: refuse a room already taken then (the waitlist and the
+  // earlier-visit offers pass it too).
+  opts: { checkOverlap: boolean; checkBlocks?: boolean; checkRoom?: boolean },
 ): Promise<string> {
   const { data, error } = await (supabase as any).rpc('save_appointment_if_free', {
     p_account_id: accountId,
@@ -124,6 +127,7 @@ export async function saveAppointmentIfFree(
     p_values: values,
     p_check_overlap: opts.checkOverlap,
     ...(opts.checkBlocks ? { p_check_blocks: true } : {}),
+    ...(opts.checkRoom ? { p_check_room: true } : {}),
   })
   if (error) {
     if (error.message === 'appointment_overlap') {
@@ -139,7 +143,25 @@ export async function saveAppointmentIfFree(
         'starts_at',
       )
     }
+    // A public holiday, a closure or a practitioner's leave: all of them are
+    // availability blocks, which GET /availability already leaves out. The
+    // API used to book straight into them all the same.
+    if (error.message === 'slot_blocked') {
+      throw new ApiError(
+        'conflict',
+        'That time is blocked in the clinic\'s calendar (a closure, a public holiday or the practitioner\'s leave). Call GET /availability to find a free slot.',
+        'starts_at',
+      )
+    }
+    if (error.message === 'room_taken') {
+      throw new ApiError('conflict', 'That room is already taken at that time. Choose another room or time.', 'room_id')
+    }
     if (error.message === 'appointment_not_found') throw notFound('appointment')
+    // appointments_external_reference_uniq: the 409 the docs promise, so a
+    // retried create is told it already happened instead of getting a 500.
+    if (error.code === '23505' && /external_reference/.test(`${error.message} ${error.details ?? ''}`)) {
+      throw new ApiError('conflict', 'Another appointment in this account already has that external_reference.', 'external_reference')
+    }
     throw new ApiError('server_error', error.message)
   }
   return data as string

@@ -132,7 +132,7 @@ function toggle(id: string) {
 
 function curlFor(method: string, path: string) {
   const url = `${serverUrl.value}${path.replace('{id}', '{id}')}`
-  if (method === 'GET') return `curl "${url}" \\\n  -H "Authorization: Bearer qf_live_..."`
+  if (method === 'GET' || method === 'DELETE') return `curl${method === 'DELETE' ? ' -X DELETE' : ''} "${url}" \\\n  -H "Authorization: Bearer qf_live_..."`
   return `curl -X ${method} "${url}" \\\n  -H "Authorization: Bearer qf_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d '{ ... }'`
 }
 </script>

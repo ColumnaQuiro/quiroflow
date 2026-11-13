@@ -12,7 +12,10 @@ import {
   earlierVisitWhen,
   firstFreeCandidate,
   mayOfferToday,
+  patientOfferTurn,
+  visitSettled,
 } from '../../utils/earlierVisitOffer'
+import { styleProblems } from '../../utils/receptionistStyle'
 import { automationFieldValue } from '../../utils/automationFields'
 import { receptionistSlotGroups } from '../../utils/receptionistSlots'
 
@@ -55,6 +58,36 @@ describe('mayOfferToday', () => {
     expect(mayOfferToday({ offers_made: 1, lastOfferedDay: '2026-11-10' }, '2026-11-10')).toBe(false)
     expect(mayOfferToday({ offers_made: 1, lastOfferedDay: '2026-11-09' }, '2026-11-10')).toBe(true)
     expect(mayOfferToday({ offers_made: EARLIER_VISIT_MAX_OFFERS, lastOfferedDay: '2026-11-01' }, '2026-11-10')).toBe(false)
+  })
+})
+
+describe('visitSettled', () => {
+  // 12 Nov 2026: offers went out an hour, twenty minutes and five minutes
+  // after a visit was booked or moved.
+  it('waits a day after the visit was booked or moved', () => {
+    expect(visitSettled(new Date(now.getTime() - 5 * MINUTE), now)).toBe(false)
+    expect(visitSettled(new Date(now.getTime() - 23 * HOUR), now)).toBe(false)
+    expect(visitSettled(new Date(now.getTime() - 24 * HOUR), now)).toBe(true)
+  })
+
+  it('treats a row with no stamp as settled', () => {
+    expect(visitSettled(null, now)).toBe(true)
+  })
+})
+
+describe('patientOfferTurn', () => {
+  it('offers when they have no other first visit', () => {
+    expect(patientOfferTurn([], '2026-11-12')).toBe('offer')
+  })
+
+  it('makes one offer a day to the person, not one per visit they booked', () => {
+    expect(patientOfferTurn([{ status: 'offered', lastOfferedDay: '2026-11-12' }], '2026-11-12')).toBe('wait')
+    expect(patientOfferTurn([{ status: 'waiting', lastOfferedDay: '2026-11-12' }], '2026-11-12')).toBe('wait')
+    expect(patientOfferTurn([{ status: 'waiting', lastOfferedDay: '2026-11-11' }], '2026-11-12')).toBe('offer')
+  })
+
+  it('takes a no on one of their visits as a no to all of them', () => {
+    expect(patientOfferTurn([{ status: 'declined', lastOfferedDay: '2026-11-11' }], '2026-11-12')).toBe('declined')
   })
 })
 
@@ -114,7 +147,7 @@ describe('language and wording', () => {
 
   it('says the time on the clinic\'s clock in each language', () => {
     const at = '2026-11-12T16:00:00Z' // Thursday 17:00 in Madrid
-    expect(earlierVisitWhen(at, TZ, 'es')).toBe('jueves, 12 de noviembre, a las 17:00')
+    expect(earlierVisitWhen(at, TZ, 'es')).toBe('jueves 12 de noviembre a las 17:00')
     expect(earlierVisitWhen(at, TZ, 'fr')).toBe('jeudi 12 novembre à 17:00')
     expect(earlierVisitWhen(at, TZ, 'en')).toBe('Thursday 12 November at 17:00')
   })
@@ -123,7 +156,15 @@ describe('language and wording', () => {
     const recipient = { firstName: 'Ana', lastName: null, email: null }
     const context = { clinicTimezone: TZ, earlierSlotAt: '2026-11-12T16:00:00Z', earlierVisitAt: '2026-11-18T16:00:00Z' }
     expect(automationFieldValue(recipient, 'earlier_slot_datetime', { ...context, language: 'fr' })).toBe('jeudi 12 novembre à 17:00')
-    expect(automationFieldValue(recipient, 'earlier_visit_datetime', { ...context, language: 'es' })).toBe('miércoles, 18 de noviembre, a las 17:00')
+    expect(automationFieldValue(recipient, 'earlier_visit_datetime', { ...context, language: 'es' })).toBe('miércoles 18 de noviembre a las 17:00')
+  })
+
+  it('answers a tap without an exclamation to open', () => {
+    for (const language of ['es', 'fr', 'en'] as const) {
+      for (const outcome of ['moved', 'taken', 'declined', 'gone'] as const) {
+        expect(styleProblems(earlierVisitReplyText(outcome, language, { moved: 'jueves', kept: 'miércoles' }))).toEqual([])
+      }
+    }
   })
 
   it('answers a tap in their language', () => {
@@ -155,6 +196,22 @@ describe('earlierVisitPromptSection', () => {
     const text = earlierVisitPromptSection({ status: 'waiting', visitAt: '2026-11-18T16:00:00Z', offeredAt: null, expiresAt: null }, TZ, { canStop: true })
     expect(text).toContain('If an earlier time frees up')
     expect(text).not.toContain('move_visit_on')
+  })
+
+  // 12 Nov 2026: "el 19 a las 15:00 está bien" three hours after an offer
+  // lapsed was read as a bare confirmation and got no reply at all.
+  it('keeps a lapsed offer in view, so a late answer to it gets a reply', () => {
+    const facts = { status: 'waiting' as const, visitAt: '2026-11-19T14:00:00Z', offeredAt: null, expiresAt: null, lastOfferedAt: '2026-11-12T08:00:00Z' }
+    const text = earlierVisitPromptSection(facts, TZ, { canStop: true, now: new Date('2026-11-12T12:00:00Z') })
+    expect(text).toContain('that offer has lapsed')
+    expect(text).toContain('el jueves 19 de noviembre está bien')
+    expect(text).toContain('Never leave it unanswered')
+    expect(text).toContain('call stop_earlier_time_offers')
+  })
+
+  it('forgets an offer that lapsed days ago', () => {
+    const facts = { status: 'waiting' as const, visitAt: '2026-11-19T14:00:00Z', offeredAt: null, expiresAt: null, lastOfferedAt: '2026-11-09T08:00:00Z' }
+    expect(earlierVisitPromptSection(facts, TZ, { canStop: true, now: new Date('2026-11-12T12:00:00Z') })).not.toContain('lapsed')
   })
 
   it('is empty with nothing to say', () => {

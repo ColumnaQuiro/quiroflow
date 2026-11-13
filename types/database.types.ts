@@ -11097,6 +11097,10 @@ export type Database = {
         Args: { p_clinic_id: string; p_filters: Json; p_patient_ids: string[] }
         Returns: string[]
       }
+      bulk_update_patients: {
+        Args: { p_account_id: string; p_changes: Json; p_clinic_id: string; p_filters: Json; p_patient_ids: string[] }
+        Returns: Json
+      }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }
         Returns: boolean

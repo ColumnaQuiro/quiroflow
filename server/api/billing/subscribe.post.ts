@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { planIncludesGrowth, receptionistLineWanted } from '~/utils/growthPlans'
 import { checkoutTrialEnd } from '~/utils/billing'
-import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { billingLanguage, retrieveChangeableSubscription, stripeForPlatformBilling, stripeLocale } from '~/server/utils/platformBillingStripe'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
@@ -231,14 +231,12 @@ export default defineEventHandler(async (event) => {
     // checkout for that reason, not for our own records.
     billing_address_collection: 'required',
     tax_id_collection: { enabled: true },
-    // Spanish, not the browser's language. A Checkout that creates the
-    // customer records the browser locale as its preferred_locales, and
-    // Stripe renders every invoice and receipt in that language: the first
-    // clinic to subscribe came out as "en-US" and was sent English invoices
-    // ("Invoice", "Bill to") for a Spanish B2B sale. The webhook also sets
-    // the locale on the customer (ensureSpanishInvoices), for customers this
-    // does not create.
-    locale: 'es',
+    // The clinic's language, not the browser's. A Checkout that creates the
+    // customer records its locale as preferred_locales, and Stripe renders
+    // every invoice and receipt in that language. The webhook keeps it in
+    // line afterwards (syncInvoiceLanguage); see billingLanguage for why
+    // this is the language to follow.
+    locale: stripeLocale(await billingLanguage(serviceRole, teamMember.account_id)),
     // Only valid alongside an existing `customer`; without it Stripe collects
     // the address and then discards it instead of saving it to the customer.
     ...(subscription?.stripe_customer_id ? { customer_update: { address: 'auto' as const, name: 'auto' as const } } : {}),

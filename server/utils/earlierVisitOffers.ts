@@ -19,6 +19,8 @@ import {
   earlierVisitWhen,
   firstFreeCandidate,
   mayOfferToday,
+  patientOfferTurn,
+  visitSettled,
 } from '~/utils/earlierVisitOffer'
 
 // Offering an earlier time to someone whose first visit is days away, and
@@ -42,6 +44,7 @@ interface OfferRow {
   status: string
   offers_made: number
   last_offered_at: string | null
+  visit_changed_at: string | null
   appointments: {
     id: string
     clinic_id: string
@@ -80,7 +83,7 @@ export async function sweepEarlierVisitOffers(event: H3Event, service: any, orig
 
     const { data: rows } = await service
       .from('earlier_visit_offers')
-      .select('id, account_id, status, offers_made, last_offered_at, appointments!inner(id, clinic_id, patient_id, practitioner_id, appointment_type_id, starts_at, status, clinics(timezone, business_hours))')
+      .select('id, account_id, status, offers_made, last_offered_at, visit_changed_at, appointments!inner(id, clinic_id, patient_id, practitioner_id, appointment_type_id, starts_at, status, clinics(timezone, business_hours))')
       .in('account_id', accountIds)
       .eq('status', 'waiting')
       .order('created_at', { ascending: true })
@@ -108,6 +111,26 @@ async function offerEarlierTime(service: any, origin: string, row: OfferRow, now
   if (clinicOpenAt(now, timeZone, appt.clinics?.business_hours) === false) return false
   const today = clinicDateOf(now, timeZone)
   if (!mayOfferToday({ offers_made: row.offers_made, lastOfferedDay: row.last_offered_at ? clinicDateOf(new Date(row.last_offered_at), timeZone) : null }, today)) return false
+  // Just booked or moved: they have only now said which day suits them.
+  if (!visitSettled(row.visit_changed_at, now)) return false
+
+  // Their other first visits, if they have booked more than one: one offer
+  // a day to the person, and a "no" to one is a no to all of them.
+  const { data: siblings } = await service
+    .from('earlier_visit_offers')
+    .select('status, last_offered_at, appointments!inner(patient_id)')
+    .eq('account_id', row.account_id)
+    .eq('appointments.patient_id', appt.patient_id)
+    .neq('id', row.id)
+  const turn = patientOfferTurn(
+    ((siblings ?? []) as { status: string; last_offered_at: string | null }[]).map((s) => ({ status: s.status, lastOfferedDay: s.last_offered_at ? clinicDateOf(new Date(s.last_offered_at), timeZone) : null })),
+    today,
+  )
+  if (turn === 'declined') {
+    await service.from('earlier_visit_offers').update({ status: 'declined', ...CLEARED, closed_reason: 'patient_said_no', updated_at: now.toISOString() }).eq('id', row.id).eq('status', 'waiting')
+    return false
+  }
+  if (turn === 'wait') return false
 
   const window = earlierSearchWindow(now, new Date(appt.starts_at))
   if (!window) return false
@@ -261,7 +284,7 @@ export async function answerEarlierVisitTap(event: H3Event, service: any, accoun
 
   const [{ data: row }, { data: appt }, { data: writer }] = await Promise.all([
     service.from('earlier_visit_offers').select('id, status, offered_starts_at, offered_ends_at, offer_expires_at').eq('account_id', accountId).eq('appointment_id', appointmentId).maybeSingle(),
-    service.from('appointments').select('id, starts_at, ends_at, status, clinics(timezone)').eq('id', appointmentId).maybeSingle(),
+    service.from('appointments').select('id, patient_id, starts_at, ends_at, status, clinics(timezone)').eq('id', appointmentId).maybeSingle(),
     service.from('patients').select('preferred_language').eq('id', writerId).maybeSingle(),
   ])
   if (!row || !appt) return false
@@ -280,6 +303,9 @@ export async function answerEarlierVisitTap(event: H3Event, service: any, accoun
   if (answer === 'decline') {
     if (row.status === 'waiting' || row.status === 'offered') {
       await service.from('earlier_visit_offers').update({ status: 'declined', ...CLEARED, closed_reason: 'patient_said_no', updated_at: new Date().toISOString() }).eq('id', row.id)
+      // And any other first visit they have booked: "no te escribiremos más"
+      // is about the person, not one row (two were booked by mistake, 12 Nov 2026).
+      if (appt.patient_id) await stopEarlierVisitOffers(service, accountId, [appt.patient_id], 'patient_said_no')
       await reply(earlierVisitReplyText('declined', language, { kept }))
     }
     return true
@@ -335,24 +361,26 @@ export async function loadEarlierVisitFacts(
   service: any,
   accountId: string,
   patientId: string,
-): Promise<{ status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null } | null> {
+): Promise<{ status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null; lastOfferedAt: string | null } | null> {
   const { data } = await service
     .from('earlier_visit_offers')
-    .select('status, offered_starts_at, offer_expires_at, appointments!inner(patient_id, starts_at)')
+    .select('status, offered_starts_at, offer_expires_at, last_offered_at, appointments!inner(patient_id, starts_at)')
     .eq('account_id', accountId)
     .eq('appointments.patient_id', patientId)
     .in('status', ['waiting', 'offered'])
+    // With two first visits booked, the one they were written to about.
+    .order('last_offered_at', { ascending: false, nullsFirst: false })
     .limit(1)
     .maybeSingle()
   if (!data) return null
   const appt = data.appointments as { starts_at: string } | null
   if (!appt) return null
   const offered = data.status === 'offered' && data.offer_expires_at && new Date(data.offer_expires_at).getTime() > Date.now()
-  return { status: offered ? 'offered' : 'waiting', visitAt: appt.starts_at, offeredAt: offered ? data.offered_starts_at : null, expiresAt: offered ? data.offer_expires_at : null }
+  return { status: offered ? 'offered' : 'waiting', visitAt: appt.starts_at, offeredAt: offered ? data.offered_starts_at : null, expiresAt: offered ? data.offer_expires_at : null, lastOfferedAt: data.last_offered_at ?? null }
 }
 
 /** They told the receptionist they do not want earlier times offered. True when there was something to stop. */
-export async function stopEarlierVisitOffers(service: any, accountId: string, patientIds: string[]): Promise<boolean> {
+export async function stopEarlierVisitOffers(service: any, accountId: string, patientIds: string[], reason = 'told_the_receptionist'): Promise<boolean> {
   if (patientIds.length === 0) return false
   const { data: rows } = await service
     .from('earlier_visit_offers')
@@ -362,7 +390,7 @@ export async function stopEarlierVisitOffers(service: any, accountId: string, pa
     .in('status', ['waiting', 'offered'])
   const ids = ((rows ?? []) as { id: string }[]).map((r) => r.id)
   if (ids.length === 0) return false
-  const { error } = await service.from('earlier_visit_offers').update({ status: 'declined', ...CLEARED, closed_reason: 'told_the_receptionist', updated_at: new Date().toISOString() }).in('id', ids)
+  const { error } = await service.from('earlier_visit_offers').update({ status: 'declined', ...CLEARED, closed_reason: reason, updated_at: new Date().toISOString() }).in('id', ids)
   if (error) {
     console.error('[earlier-visit] could not stop offers:', error.message)
     return false

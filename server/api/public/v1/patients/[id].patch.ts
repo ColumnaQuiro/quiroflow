@@ -1,3 +1,4 @@
+import { PATIENT_LANGUAGES } from '~/utils/apiContract'
 import { ApiError, defineApiHandler, notFound } from '~/server/utils/publicApi'
 import { assertUuid } from '~/server/utils/publicApiQuery'
 import { bool, dateOnly, definedOnly, email, enumValue, readApiBody, rejectUnknownFields, str, stringArray, uuid } from '~/server/utils/publicApiBody'
@@ -47,7 +48,7 @@ export default defineApiHandler({ scope: 'patients:write' }, async ({ event, sup
     referral_source: str(body, 'referral_source', { max: 120 }),
     is_minor: bool(body, 'is_minor'),
     do_not_contact: bool(body, 'do_not_contact'),
-    preferred_language: enumValue(body, 'preferred_language', ['es', 'en'] as const),
+    preferred_language: enumValue(body, 'preferred_language', PATIENT_LANGUAGES),
     tags: stringArray(body, 'tags'),
     external_reference: str(body, 'external_reference', { max: 255 }),
   })
@@ -63,6 +64,9 @@ export default defineApiHandler({ scope: 'patients:write' }, async ({ event, sup
     .eq('id', id)
     .select(patientsResource.select)
     .single()
+  if (error?.code === '23505' && /external_reference/.test(`${error.message} ${error.details ?? ''}`)) {
+    throw new ApiError('conflict', 'Another patient in this account already has that external_reference.', 'external_reference')
+  }
   if (error) throw new ApiError('server_error', error.message)
 
   return { data: patientsResource.serialize(updated) }

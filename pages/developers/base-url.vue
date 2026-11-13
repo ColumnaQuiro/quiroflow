@@ -61,7 +61,7 @@ const example = `${base}/appointments?starts_at=gte:2026-03-01T00:00:00Z`
 
     <h2>Conventions</h2>
     <ul>
-      <li><strong>Timestamps</strong> are UTC ISO 8601 (<code>2026-03-14T09:30:00.000Z</code>) everywhere, in both directions.</li>
+      <li><strong>Timestamps</strong> are UTC ISO 8601 everywhere, in both directions. Responses write the offset as <code>+00:00</code> (<code>2026-03-14T09:30:00+00:00</code>); requests may use <code>Z</code> or an offset.</li>
       <li>
         <strong>Money</strong> is an integer number of cents, in fields ending <code>_cents</code>. There are no floats — <code>4500</code>
         is €45.00.

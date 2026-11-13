@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { markerVisitNumbers, visitMarkerLabel, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
 import { openEndedPlanLabel, planVisitsToBook } from '~/utils/planRenewal'
+import { nextPhaseLabel, readNextPhases } from '~/utils/carePlanPhases'
 
 const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: true })
 
@@ -16,6 +17,7 @@ interface CarePlan {
   total_visits: number | null
   started_at: string
   visit_markers?: CarePlanVisitMarker[] | null
+  next_phases?: unknown
 }
 
 const supabase = useSupabaseClient()
@@ -48,13 +50,17 @@ const markerLines = computed(() =>
   }),
 )
 
+// "Then: weekly · 4 visits" for each phase queued after this one; the first
+// starts by itself when this one's last visit is marked done.
+const nextPhaseLines = computed(() => readNextPhases(plan.value?.next_phases).map((p) => nextPhaseLabel(p, t)))
+
 async function load() {
   loading.value = true
   const [{ data: appts }, { data: plans }] = await Promise.all([
     supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId).is('deleted_at', null),
     supabase
       .from('care_plans')
-      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, payment_kind, package_purchase_id, patient_membership_id, visit_markers')
+      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, payment_kind, package_purchase_id, patient_membership_id, visit_markers, next_phases')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -133,6 +139,9 @@ function bookPlan() {
         </p>
         <p v-for="(line, i) in markerLines" :key="i" class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-muted2" data-cy="care-plan-marker">
           <CalendarVisitMarkerIcon class="text-brand-text" />{{ line }}
+        </p>
+        <p v-for="(line, i) in nextPhaseLines" :key="`next-${i}`" class="mt-1 text-[12px] text-ink-muted2" data-cy="care-plan-next-phase">
+          <span class="font-medium text-ink-600">{{ i === 0 ? t('Then', 'Después') : t('And then', 'Y luego') }}:</span> {{ line }}
         </p>
         <PatientsPlanPayment :plan="plan" :visits-left="remaining" />
       </template>

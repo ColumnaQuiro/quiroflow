@@ -18,7 +18,7 @@ const t = useT()
 </script>
 
 <template>
-  <div class="qf-plane shrink-0 px-3 md:px-5" :class="[lip !== 'none' && 'qf-lip', lip === 'surface' && 'qf-lip-surface']">
+  <div class="qf-plane shrink-0 px-3 md:px-5" :class="[lip !== 'none' && 'qf-lip qf-fade', lip === 'surface' && 'qf-lip-surface']">
     <div class="flex min-h-14 items-center gap-2 pt-1">
       <button
         v-if="back"

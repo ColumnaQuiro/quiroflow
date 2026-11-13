@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Json } from '~/types/database.types'
 import { cleanVisitMarkers, markerVisitNumbers, MAX_VISIT_MARKERS, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
+import { cleanNextPhases, MAX_NEXT_PHASES, nextPhaseLabel, readNextPhases, type CarePlanNextPhase } from '~/utils/carePlanPhases'
 
 interface CarePlan {
   id: string
@@ -14,6 +15,7 @@ interface CarePlan {
   package_purchase_id?: string | null
   patient_membership_id?: string | null
   visit_markers?: CarePlanVisitMarker[] | null
+  next_phases?: unknown
 }
 
 const props = defineProps<{ patientId: string; plan?: CarePlan | null }>()
@@ -66,6 +68,30 @@ function markerPreview(m: MarkerRow) {
   return m.repeat ? t(`Visits ${nums.join(', ')}…`, `Visitas ${nums.join(', ')}…`) : t(`Visit ${nums[0]} only`, `Solo la visita ${nums[0]}`)
 }
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
+
+// What the plan goes on to (care_plan_next_phases migration): "2 a week for
+// 8 visits, then 1 a week for 4". The first starts by itself, as a plan of
+// its own, when this one's last visit is marked done. Only the last may have
+// no end, and a plan with no end queues nothing. An edit is a new phase, so
+// they are copied over, as the markers are.
+const nextPhases = ref<CarePlanNextPhase[]>(readNextPhases(props.plan?.next_phases))
+function addNextPhase() {
+  const last = nextPhases.value[nextPhases.value.length - 1]
+  if (last && last.total_visits === null) last.total_visits = 4
+  const prev = last ?? { visits_per_period: visitsPerPeriod.value || 1, frequency_value: frequencyValue.value || 1, frequency_unit: frequencyUnit.value }
+  // One step less often than the phase before: 2 a week -> 1 a week -> every 2 weeks.
+  const fewer = prev.visits_per_period > 1
+  nextPhases.value.push({
+    visits_per_period: fewer ? prev.visits_per_period - 1 : 1,
+    frequency_value: fewer ? prev.frequency_value : Math.min(52, prev.frequency_value + 1),
+    frequency_unit: prev.frequency_unit,
+    total_visits: 4,
+  })
+}
+const phasesSummary = computed(() => {
+  const first = nextPhaseLabel({ visits_per_period: visitsPerPeriod.value || 1, frequency_value: frequencyValue.value || 1, frequency_unit: frequencyUnit.value, total_visits: Math.max(1, Math.round(totalVisits.value || 1)) }, t)
+  return [first, ...cleanNextPhases(nextPhases.value).map((p) => nextPhaseLabel(p, t))].join(' → ')
+})
 
 // How it is paid: at the normal prices visit by visit, from one of the
 // patient's bonos, or under one of their memberships -- what the clinic
@@ -121,6 +147,7 @@ async function save() {
     visit_markers: cleanVisitMarkers(
       markers.value.map((m) => ({ at: m.at, every: m.repeat ? m.every : null, appointment_type_id: m.appointment_type_id || null, label: m.label })),
     ) as unknown as Json,
+    next_phases: (noEnd.value ? [] : cleanNextPhases(nextPhases.value)) as unknown as Json,
     created_by: store.teamMember?.id ?? null,
   })
   saving.value = false
@@ -176,6 +203,46 @@ const fieldId = useId()
           <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-ink-700">{{ t('Start date', 'Fecha de inicio') }}</label>
           <input :id="`${fieldId}-startedAt`" v-model="startedAt" type="date" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
+
+        <fieldset v-if="!noEnd" data-cy="plan-next-phases">
+          <legend class="block text-sm font-medium text-ink-700">{{ t('Then', 'Después') }}</legend>
+          <p class="text-[12px] text-ink-muted">{{ t('Each phase starts by itself the day after the last visit of the one before is marked done.', 'Cada fase empieza sola el día después de marcar como hecha la última visita de la anterior.') }}</p>
+          <div v-for="(p, i) in nextPhases" :key="i" class="mt-2 space-y-1.5 rounded-ctl border border-line p-2" data-cy="plan-next-phase">
+            <div class="flex flex-wrap items-center gap-1.5 text-sm text-ink-700">
+              <input v-model.number="p.visits_per_period" type="number" min="1" max="7" :aria-label="t('Visits', 'Visitas')" class="w-14 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-next-per-period" />
+              <span>{{ p.visits_per_period === 1 ? t('visit every', 'visita cada') : t('visits every', 'visitas cada') }}</span>
+              <input v-model.number="p.frequency_value" type="number" min="1" max="52" :aria-label="t('Every how many', 'Cada cuántas')" class="w-14 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-next-every" />
+              <select v-model="p.frequency_unit" :aria-label="t('Period', 'Periodo')" class="rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-next-unit">
+                <option value="week">{{ p.frequency_value > 1 ? t('weeks', 'semanas') : t('week', 'semana') }}</option>
+                <option value="month">{{ p.frequency_value > 1 ? t('months', 'meses') : t('month', 'mes') }}</option>
+              </select>
+              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:text-ink-600 focus-visible:shadow-focus touch:h-10 touch:w-10" data-cy="plan-next-remove" @click="nextPhases.splice(i, 1)"><UiCloseIcon /></button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 text-sm text-ink-700">
+              <span>{{ t('for', 'durante') }}</span>
+              <input
+                :value="p.total_visits ?? 4"
+                type="number"
+                min="1"
+                max="200"
+                :disabled="p.total_visits === null"
+                :aria-label="t('Visits in this phase', 'Visitas de esta fase')"
+                class="w-16 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900 disabled:opacity-50"
+                data-cy="plan-next-total"
+                @change="p.total_visits = Math.min(200, Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)))"
+              />
+              <span>{{ t('visits', 'visitas') }}</span>
+              <label v-if="i === nextPhases.length - 1" class="ml-2 inline-flex items-center gap-1 text-[13px]">
+                <input type="checkbox" :checked="p.total_visits === null" class="h-4 w-4 accent-brand" data-cy="plan-next-no-end" @change="p.total_visits = ($event.target as HTMLInputElement).checked ? null : 4" />
+                {{ t('No end', 'Sin fin') }}
+              </label>
+            </div>
+          </div>
+          <button v-if="nextPhases.length < MAX_NEXT_PHASES" type="button" class="mt-2 text-[12.5px] font-medium text-brand-text hover:underline" data-cy="plan-next-add" @click="addNextPhase">
+            {{ t('+ Add a next phase', '+ Añadir fase siguiente') }}
+          </button>
+          <p v-if="nextPhases.length" class="mt-1.5 text-[12px] text-ink-muted" data-cy="plan-phases-summary">{{ phasesSummary }}</p>
+        </fieldset>
 
         <fieldset data-cy="plan-markers">
           <legend class="block text-sm font-medium text-ink-700">{{ t('Re-exams', 'Revisiones') }}</legend>

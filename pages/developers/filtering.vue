@@ -13,7 +13,7 @@ const OPERATORS = [
   { op: 'like', meaning: 'contains', example: 'last_name=like:ferrer', note: 'Case-insensitive, matches anywhere in the value. Text fields only.' },
   { op: 'in', meaning: 'IN (…)', example: 'status=in:booked,completed', note: 'Comma-separated.' },
   { op: 'not-in', meaning: 'NOT IN (…)', example: 'status=not-in:cancelled,no_show', note: '' },
-  { op: 'between', meaning: 'BETWEEN', example: 'starts_at=between:2026-03-01,2026-03-31', note: 'Inclusive at both ends.' },
+  { op: 'between', meaning: 'BETWEEN', example: 'starts_at=between:2026-03-01T00:00:00Z,2026-03-31T23:59:59Z', note: 'Inclusive at both ends. A bare date means midnight, so give the end as a full timestamp or most of the last day is left out.' },
   { op: 'null', meaning: 'IS NULL', example: 'practitioner_id=null:', note: 'The value after the colon is ignored.' },
   { op: 'not-null', meaning: 'IS NOT NULL', example: 'external_reference=not-null:', note: '' },
 ]

@@ -98,4 +98,18 @@ describe('Settings-only endpoints require settings_access too', () => {
       })
     })
   })
+
+  // The pass over EVERY clinic's files belongs to QuiroFlow alone: being the
+  // owner of a clinic, with every permission there is, is not enough.
+  it('refuses the all-accounts file pass to a clinic owner', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.request({ method: 'POST', url: '/api/internal/compress-all-accounts', body: { limit: 1 }, failOnStatusCode: false }).then((res) => {
+        expect(res.status, 'POST /api/internal/compress-all-accounts').to.eq(403)
+      })
+      cy.request({ method: 'POST', url: '/api/internal/compress-all-accounts', body: { limit: 1, write: true }, failOnStatusCode: false }).then((res) => {
+        expect(res.status, 'POST /api/internal/compress-all-accounts (write)').to.eq(403)
+      })
+    })
+  })
 })

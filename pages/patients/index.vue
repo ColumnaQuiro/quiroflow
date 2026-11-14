@@ -17,6 +17,7 @@ import {
 import { usePatientSegments, type PatientSegment } from '~/composables/usePatientSegments'
 import { listFilters as filtersOfList, usePatientLists, type PatientList } from '~/composables/usePatientLists'
 import type { PatientSelection } from '~/composables/usePatientTypes'
+import type { BulkEditKind } from '~/components/patients/BulkEditDialog.vue'
 import type { AudienceView } from '~/components/patients/AudienceTabs.vue'
 import type { AudienceRow } from '~/components/patients/AudienceTable.vue'
 
@@ -524,7 +525,13 @@ const bulkBusy = ref(false)
 // exercises to the selection (the same dialogs as the Exercises section).
 const patientTypes = usePatientTypes()
 onMounted(patientTypes.load)
-const bulkDialog = ref<'' | 'type' | 'exercises'>('')
+const bulkDialog = ref<'' | 'type' | 'exercises' | BulkEditKind>('')
+const bulkEditKind = computed(() => (['archive', 'reactivate', 'practitioner', 'tags'] as const).find((k) => k === bulkDialog.value) ?? null)
+// Archive only offers itself where archived patients are not all that is
+// shown, Reactivate where some can be (an "Archived"/"Any status" filter, or
+// a search, which finds archived patients too).
+const canArchiveSelection = computed(() => listFilters.value.status !== 'inactive')
+const canReactivateSelection = computed(() => !!listFilters.value.status)
 const bulkSelection = computed<PatientSelection>(() =>
   allMatchingSelected.value ? { filters: listFilters.value as Record<string, unknown>, clinicId: store.currentClinicId ?? null } : { patientIds: [...selectedIds.value] },
 )
@@ -966,6 +973,15 @@ function tagTone(tag: string) {
 
     <PatientsTypeAssignDialog v-if="bulkDialog === 'type'" :selection="bulkSelection" :count="selectionCount" @done="onBulkDone" @cancel="bulkDialog = ''" />
     <ExercisesBulkAssignDialog v-if="bulkDialog === 'exercises'" :selection="bulkSelection" :count="selectionCount" @done="onBulkDone" @cancel="bulkDialog = ''" />
+    <PatientsBulkEditDialog
+      v-if="bulkEditKind"
+      :kind="bulkEditKind"
+      :selection="bulkSelection"
+      :count="selectionCount"
+      :practitioners="teamMembers"
+      @done="onBulkDone"
+      @cancel="bulkDialog = ''"
+    />
 
     <PatientsAddToListDialog
       v-if="addingToList"
@@ -1215,6 +1231,12 @@ function tagTone(tag: string) {
           {{ t(`Select all ${totalCount} that match`, `Seleccionar los ${totalCount} que coinciden`) }}
         </button>
         <div class="ml-auto flex items-center gap-1.5">
+          <template v-if="can('patients_edit')">
+            <UiBtn v-if="canArchiveSelection" variant="secondary" size="sm" data-cy="bulk-archive" :disabled="bulkBusy" @click="bulkDialog = 'archive'">{{ t('Archive', 'Archivar') }}</UiBtn>
+            <UiBtn v-if="canReactivateSelection" variant="secondary" size="sm" data-cy="bulk-reactivate" :disabled="bulkBusy" @click="bulkDialog = 'reactivate'">{{ t('Reactivate', 'Reactivar') }}</UiBtn>
+            <UiBtn variant="secondary" size="sm" data-cy="bulk-practitioner" :disabled="bulkBusy" @click="bulkDialog = 'practitioner'">{{ t('Practitioner', 'Profesional') }}</UiBtn>
+            <UiBtn variant="secondary" size="sm" data-cy="bulk-tags" :disabled="bulkBusy" @click="bulkDialog = 'tags'">{{ t('Tags', 'Etiquetas') }}</UiBtn>
+          </template>
           <UiBtn v-if="can('patients_edit') && patientTypes.active.value.length" variant="secondary" size="sm" data-cy="bulk-patient-type" :disabled="bulkBusy" @click="bulkDialog = 'type'">{{ t('Patient type', 'Tipo de paciente') }}</UiBtn>
           <UiBtn v-if="can('exercises_manage')" variant="secondary" size="sm" data-cy="bulk-assign-exercises" :disabled="bulkBusy" @click="bulkDialog = 'exercises'">{{ t('Assign exercises', 'Asignar ejercicios') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="bulk-add-to-list" :disabled="bulkBusy" @click="addingToList = true">{{ t('Add to list', 'Añadir a lista') }}</UiBtn>

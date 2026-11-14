@@ -18,6 +18,39 @@ export const EARLIER_VISIT_REPLY_MINUTES = 45
 export const EARLIER_VISIT_CUTOFF_MINUTES = 20
 /** The most times one visit is offered an earlier time, at one a day. */
 export const EARLIER_VISIT_MAX_OFFERS = 3
+/**
+ * No offer within this long of the visit being booked or moved
+ * (earlier_visit_offers.visit_changed_at). Whoever has just chosen a day has
+ * said what suits them: on 12 Nov 2026 offers went out an hour, twenty
+ * minutes and five minutes after one, one of them for that same afternoon to
+ * a patient who had just put that afternoon off.
+ */
+export const EARLIER_VISIT_SETTLE_HOURS = 24
+/** How long after an offer lapses the receptionist still reads a message as an answer to it. */
+export const EARLIER_VISIT_ANSWER_HOURS = 48
+
+/** Whether the visit has kept its day long enough to be offered another. */
+export function visitSettled(visitChangedAt: string | Date | null | undefined, now: Date): boolean {
+  if (!visitChangedAt) return true
+  return now.getTime() - new Date(visitChangedAt).getTime() >= EARLIER_VISIT_SETTLE_HOURS * 60 * 60 * 1000
+}
+
+/**
+ * Whether a patient may be offered an earlier time for this visit, given
+ * their other enrolled first visits (`siblings`, this one left out). One
+ * person is one conversation: with two first visits booked -- a duplicate
+ * from booking twice -- they got two offers at once and a third the next
+ * morning, after being told "no te escribiremos más" (12 Nov 2026).
+ * 'declined' when they already said no on another: close this one too.
+ */
+export function patientOfferTurn(
+  siblings: { status: string; lastOfferedDay: string | null }[],
+  today: string,
+): 'offer' | 'wait' | 'declined' {
+  if (siblings.some((s) => s.status === 'declined')) return 'declined'
+  if (siblings.some((s) => s.status === 'offered' || s.lastOfferedDay === today)) return 'wait'
+  return 'offer'
+}
 
 /**
  * The WhatsApp template, approved by Meta in es, fr and en under this one
@@ -140,12 +173,16 @@ export function earlierOfferReply(text: string): 'accept' | 'decline' | null {
 
 const LOCALE: Record<EarlierVisitLanguage, string> = { es: 'es-ES', fr: 'fr-FR', en: 'en-GB' }
 
-/** "miércoles, 12 de noviembre, 17:00" / "mercredi 12 novembre à 17:00" / "Wednesday 12 November at 17:00". */
+/**
+ * "miércoles 12 de noviembre a las 17:00" / "mercredi 12 novembre à 17:00" /
+ * "Wednesday 12 November at 17:00". Spanish without the commas the locale
+ * puts after the weekday: the house style writes "el jueves 19 de noviembre".
+ */
 export function earlierVisitWhen(iso: string | Date, timeZone: string, language: EarlierVisitLanguage): string {
   const at = new Date(iso)
-  const day = at.toLocaleDateString(LOCALE[language], { weekday: 'long', day: 'numeric', month: 'long', timeZone })
+  const day = at.toLocaleDateString(LOCALE[language], { weekday: 'long', day: 'numeric', month: 'long', timeZone }).replace(/^(\p{L}+),\s*/u, '$1 ')
   const time = at.toLocaleTimeString(LOCALE[language], { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
-  return language === 'es' ? `${day}, a las ${time}` : language === 'fr' ? `${day} à ${time}` : `${day} at ${time}`
+  return language === 'es' ? `${day} a las ${time}` : language === 'fr' ? `${day} à ${time}` : `${day} at ${time}`
 }
 
 /** What they are told after tapping, in their language. */
@@ -156,21 +193,21 @@ export function earlierVisitReplyText(
 ): string {
   const text: Record<EarlierVisitLanguage, Record<typeof outcome, string>> = {
     es: {
-      moved: `¡Hecho! Tu primera visita queda adelantada al ${when.moved}. Te esperamos.`,
+      moved: `Hecho: tu primera visita queda adelantada al ${when.moved}. Te esperamos.`,
       taken: `Vaya, ese hueco se acaba de ocupar. Mantienes tu primera visita del ${when.kept}.`,
-      declined: `Perfecto, mantienes tu primera visita del ${when.kept}. No te escribiremos más para adelantarla.`,
+      declined: `De acuerdo, mantienes tu primera visita del ${when.kept}. No te escribiremos más para adelantarla.`,
       gone: `Ese hueco ya no está disponible. Mantienes tu primera visita del ${when.kept}.`,
     },
     fr: {
       moved: `C'est fait ! Votre première visite est avancée au ${when.moved}. À bientôt.`,
       taken: `Désolés, ce créneau vient d'être pris. Vous gardez votre première visite du ${when.kept}.`,
-      declined: `Parfait, vous gardez votre première visite du ${when.kept}. Nous ne vous écrirons plus pour l'avancer.`,
+      declined: `Entendu, vous gardez votre première visite du ${when.kept}. Nous ne vous écrirons plus pour l'avancer.`,
       gone: `Ce créneau n'est plus disponible. Vous gardez votre première visite du ${when.kept}.`,
     },
     en: {
       moved: `Done! Your first visit is now on ${when.moved}. See you then.`,
       taken: `Sorry, that time has just been taken. You keep your first visit on ${when.kept}.`,
-      declined: `Of course, you keep your first visit on ${when.kept}. We won't write again about moving it.`,
+      declined: `All right, you keep your first visit on ${when.kept}. We won't write again about moving it.`,
       gone: `That time is no longer available. You keep your first visit on ${when.kept}.`,
     },
   }
@@ -194,11 +231,12 @@ function clockStamp(iso: string, timeZone: string): { date: string; time: string
  * 18?" in answer to it would read as out of nowhere.
  */
 export function earlierVisitPromptSection(
-  facts: { status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null } | null | undefined,
+  facts: { status: 'waiting' | 'offered'; visitAt: string; offeredAt: string | null; expiresAt: string | null; lastOfferedAt?: string | null } | null | undefined,
   timeZone: string,
-  opts: { canBook?: boolean; canStop?: boolean },
+  opts: { canBook?: boolean; canStop?: boolean; now?: Date },
 ): string {
   if (!facts) return ''
+  const now = opts.now ?? new Date()
   const visit = clockStamp(facts.visitAt, timeZone)
   const visitWords = earlierVisitWhen(facts.visitAt, timeZone, 'en')
   const stop = opts.canStop ? ' If they say they would rather keep theirs, or do not want these messages, call stop_earlier_time_offers.' : ''
@@ -214,5 +252,12 @@ export function earlierVisitPromptSection(
       stop.trim(),
     ].filter(Boolean).join('\n')
   }
-  return `# Earlier times for their first visit\nTheir first visit is on ${visitWords}. If an earlier time frees up, the clinic will offer it to them by WhatsApp.${stop}`
+  // An offer that lapsed unanswered is still what a late "me quedo con la
+  // mía" or "el 19 está bien" answers. Read as a bare confirmation, one was
+  // left with no reply at all (12 Nov 2026).
+  const lapsed = facts.lastOfferedAt && now.getTime() - new Date(facts.lastOfferedAt).getTime() < EARLIER_VISIT_ANSWER_HOURS * 60 * 60 * 1000
+  const answer = lapsed
+    ? `\nOn ${earlierVisitWhen(facts.lastOfferedAt!, timeZone, 'en')} the clinic offered them an earlier time by WhatsApp (the "${EARLIER_VISIT_TEMPLATE}" message); that offer has lapsed. A message that answers it -- they keep theirs, or they name their own day ("el ${earlierVisitWhen(facts.visitAt, timeZone, 'es').split(' a las ')[0]} está bien") -- always gets a reply: one sentence saying they keep their first visit on that day and time${opts.canStop ? ', and call stop_earlier_time_offers' : ''}. Never leave it unanswered.`
+    : ''
+  return `# Earlier times for their first visit\nTheir first visit is on ${visitWords}. If an earlier time frees up, the clinic will offer it to them by WhatsApp.${stop}${answer}`
 }

@@ -3,6 +3,7 @@
 // which does not exist, and Xcode Cloud died on it. Nothing in CI compiles
 // the mobile app, so the only signal was a red cloud build four days later.
 import { bonoOwedCents } from '../utils/bonoOwed'
+import { bonoDueCents, installmentPlanOf } from '../utils/bonoInstallments'
 import { outstandingCentsOf } from '../utils/owing'
 
 // What patient_ledger (20261111192200) answers: the rows the six selects
@@ -76,6 +77,14 @@ interface ActivePackage {
   // is excluded from that sum anyway.
   invoice_id?: string | null
   owed_cents?: number | null
+  // What is still owed on the bono (utils/bonoOwed), and how much of that is
+  // due now (utils/bonoInstallments: a plazo not yet due is not a debt). The
+  // same two figures the patient's Billing tab card reads, so the
+  // appointment panel can say "EUR X owed" beside the bono without a second
+  // request. Absent on a shared package: what it is owed is the owner's
+  // business, and their record says it.
+  owedCents?: number
+  dueCents?: number
   shared?: boolean
   // Set only on a shared package (shared: true) -- whose bono this actually
   // is, so a beneficiary's own billing view can say "shared by X" instead of
@@ -258,21 +267,49 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
     const bonoPaymentsFromOthers = (packages ?? []).flatMap((p) => p.payments ?? []).filter((pay) => pay.patient_id !== currentId)
     // The columns this summary has always carried for a bono, named: the
     // ledger's rows hold a few more for the Billing tab's card.
-    const ownPackages = (packages ?? []).map((p) => ({
-      id: p.id,
-      package_name: p.package_name,
-      sessions_total: p.sessions_total,
-      sessions_used: p.sessions_used,
-      price_cents: p.price_cents,
-      invoice_id: p.invoice_id,
-      owed_cents: p.owed_cents,
-      is_closed: p.is_closed,
-      purchased_at: p.purchased_at,
-    }))
+    const liveInvoices = (invoices ?? []).filter((i) => i.status !== 'void')
+    // What is still owed on one of the patient's own bonos -- read the way
+    // the Billing tab's card and the Debtors report read it.
+    const bonoPayments = [
+      ...(payments ?? []).map((pay) => ({
+        amount_cents: pay.amount_cents,
+        invoice_id: pay.invoice_id,
+        package_purchase_id: pay.package_purchase_id,
+        external_reference: pay.external_reference,
+        purpose: (pay as { purpose: string | null }).purpose,
+      })),
+      ...bonoPaymentsFromOthers,
+    ]
+    const owedOn = (p: LedgerPackageRow): number => {
+      const saleInvoice = liveInvoices.find((i) => i.id === p.invoice_id)
+      return bonoOwedCents({
+        purchaseId: p.id,
+        invoiceId: p.invoice_id ?? null,
+        priceCents: p.price_cents,
+        owedCents: p.owed_cents ?? null,
+        invoice: saleInvoice ? { status: saleInvoice.status, total_cents: saleInvoice.total_cents } : null,
+        payments: bonoPayments,
+      })
+    }
+    const ownPackages = (packages ?? []).map((p) => {
+      const owedCents = owedOn(p)
+      return {
+        id: p.id,
+        package_name: p.package_name,
+        sessions_total: p.sessions_total,
+        sessions_used: p.sessions_used,
+        price_cents: p.price_cents,
+        invoice_id: p.invoice_id,
+        owed_cents: p.owed_cents,
+        is_closed: p.is_closed,
+        purchased_at: p.purchased_at,
+        owedCents,
+        dueCents: bonoDueCents(owedCents, installmentPlanOf(p)),
+      }
+    })
 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
-    const liveInvoices = (invoices ?? []).filter((i) => i.status !== 'void')
     const invoicedCents = liveInvoices.reduce((sum, i) => sum + i.total_cents, 0)
     // The PracticeHub cutover wrote one negative entry per patient holding an
     // unused bono, to take that value off the balance -- PracticeHub carries a
@@ -406,25 +443,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
         if (!p.sessions_total) return sum
         const perSessionCents = Math.round(p.price_cents / p.sessions_total)
         const remainingCents = perSessionCents * Math.max(0, p.sessions_total - p.sessions_used)
-        const saleInvoice = liveInvoices.find((i) => i.id === p.invoice_id)
-        const owedCents = bonoOwedCents({
-          purchaseId: p.id,
-          invoiceId: p.invoice_id ?? null,
-          priceCents: p.price_cents,
-          owedCents: p.owed_cents ?? null,
-          invoice: saleInvoice ? { status: saleInvoice.status, total_cents: saleInvoice.total_cents } : null,
-          payments: [
-            ...(payments ?? []).map((pay) => ({
-              amount_cents: pay.amount_cents,
-              invoice_id: pay.invoice_id,
-              package_purchase_id: pay.package_purchase_id,
-              external_reference: pay.external_reference,
-              purpose: (pay as { purpose: string | null }).purpose,
-            })),
-            ...bonoPaymentsFromOthers,
-          ],
-        })
-        return sum + Math.max(0, remainingCents - owedCents)
+        return sum + Math.max(0, remainingCents - (p.owedCents ?? 0))
       }, 0)
     state.availableCents.value = state.creditLedgerCents.value + state.bonoValueCents.value
   }

@@ -240,7 +240,10 @@ export function cleanAiAutomationDraft(
   for (const s of rawSteps) {
     const ref = str(s.ref).trim()
     if (!ref || idOf.has(ref)) continue
-    const config = stepConfig(s, { lead, appointment: !!triggerDef(trigger)?.appointmentContext, templates: ctx.templates, emailFieldKeys: ctx.emailFieldKeys })
+    // referral.visit_completed filters on the referred patient's visit, but
+    // its run is the referrer's and carries no appointment to notify about.
+    const appointment = !!triggerDef(trigger)?.appointmentContext && trigger !== 'referral.visit_completed'
+    const config = stepConfig(s, { lead, appointment, templates: ctx.templates, emailFieldKeys: ctx.emailFieldKeys })
     if (!config) continue
     const id = makeId()
     idOf.set(ref, id)

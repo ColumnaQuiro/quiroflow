@@ -16,7 +16,10 @@ describe('Calendar of a clinic with no rooms', () => {
       )
 
       cy.login(account.email, account.password)
-      cy.visit('/calendar')
+      // The full week, not the default work week: the visit is today, and on
+      // a Saturday or Sunday the work week has no column for it. This failed
+      // every weekend run since it was written.
+      cy.visit('/calendar', { onBeforeLoad: (win) => win.localStorage.setItem('quiroflow-calendar-view-mode', 'week') })
       cy.contains('Sinsala').should('be.visible')
       cy.get('[data-cy=grid-scroller]').should('not.contain.text', 'Unassigned')
 

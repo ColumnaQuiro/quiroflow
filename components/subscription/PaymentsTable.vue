@@ -8,6 +8,7 @@ export interface PaymentEntry {
   status: 'success' | 'failed' | 'pending'
   method: { brand: string; last4: string } | null
   invoiceUrl: string | null
+  pdfUrl: string | null
 }
 
 const props = defineProps<{ payments: PaymentEntry[]; loading: boolean; firstChargeDate: string | null }>()
@@ -80,6 +81,7 @@ watch(year, () => (shown.value = PAGE))
           :status="payment.status"
           :method="payment.method"
           :invoice-url="payment.invoiceUrl"
+          :pdf-url="payment.pdfUrl"
         />
       </div>
 

@@ -64,8 +64,8 @@ function ticketKey(appSecret: string): string {
 }
 
 export default defineEventHandler(async (event) => {
-  // The same permission as the rest of Settings > WhatsApp, where the
-  // Instagram section lives.
+  // The same permission as the rest of Settings > Communication, where
+  // Instagram & Messenger lives.
   const { teamMember } = await requireSettingsPermission(event, 'communication_config')
 
   const body = await readBody<{ code?: string; ticket?: string; instagramUserId?: string }>(event)

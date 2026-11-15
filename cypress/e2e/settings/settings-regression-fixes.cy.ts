@@ -104,6 +104,8 @@ describe('Settings review fixes, second round', () => {
     // It was bound to the account ID itself, so the first character folded
     // the section shut around the field being typed in.
     cy.seedStaffAccount().then((account) => {
+      // The manual setup is only offered to a clinic on its own Meta app.
+      cy.task('db:setWhatsappAppSecret', { accountId: account.accountId, appSecret: 'own-app-secret' })
       cy.login(account.email, account.password)
       cy.visit('/settings/whatsapp')
       cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')

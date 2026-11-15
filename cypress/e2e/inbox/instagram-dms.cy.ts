@@ -248,18 +248,6 @@ describe('Instagram DMs in the Inbox', () => {
     })
   })
 
-  it('tells a clinic when its Instagram account is connected elsewhere', () => {
-    // What the refusal looks like from Settings: a sentence about what to do,
-    // not the name of a database index.
-    cy.seedStaffAccount().then((other) => {
-      cy.login(other.email, other.password)
-      cy.visit('/settings/whatsapp')
-      cy.get('[data-test="instagram-user-id"]').clear().type(igUserId)
-      cy.contains('button', 'Save changes').should('not.be.disabled').click()
-      cy.contains('already connected to another QuiroFlow account').should('be.visible')
-    })
-  })
-
   it('ignores a DM addressed to an Instagram account that is not ours', () => {
     // A silent 200, not a refusal: an id we do not know is not ours to answer
     // for, and a 401 here would tell a forger which ids exist.

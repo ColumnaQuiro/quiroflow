@@ -4,15 +4,17 @@ import { loadFacebookSdk } from './useEmbeddedSignup'
 // FB.login() popup as WhatsApp's Embedded Signup, on the same platform app,
 // but a different Login for Business configuration per purpose -- lead ads
 // asks for Pages and the lead permissions, Instagram for the Instagram
-// account behind a Page and instagram_manage_messages.
+// account behind a Page and instagram_manage_messages, Meta Ads for an ad
+// account and ads_read.
 //
 // As there, what comes back is a short-lived code, and only the server can
-// turn it into a token (/api/meta/lead-pages/connect, /api/meta/instagram/connect).
+// turn it into a token (/api/meta/lead-pages/connect, /api/meta/instagram/connect,
+// /api/meta/ads/connect).
 
-export function useFacebookPageConnect(purpose: 'leadAds' | 'instagram' = 'leadAds') {
+export function useFacebookPageConnect(purpose: 'leadAds' | 'instagram' | 'metaAds' = 'leadAds') {
   const config = useRuntimeConfig()
   const appId = config.public.metaPlatformAppId
-  const configId = purpose === 'instagram' ? config.public.metaInstagramConfigId : config.public.metaLeadAdsConfigId
+  const configId = { leadAds: config.public.metaLeadAdsConfigId, instagram: config.public.metaInstagramConfigId, metaAds: config.public.metaAdsConfigId }[purpose]
 
   const available = computed(() => Boolean(appId && configId))
 

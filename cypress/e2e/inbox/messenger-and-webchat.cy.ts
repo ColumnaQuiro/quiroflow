@@ -202,9 +202,9 @@ describe('The chat on the clinic\'s website', () => {
 
   it('gives the clinic the code to paste once the chat is on', () => {
     cy.login(staff!.email, staff!.password)
-    cy.visit('/settings/whatsapp')
-    cy.get('[data-cy="whatsapp-settings"][data-ready="true"]').should('exist')
-    cy.get('[data-cy="webchat-enabled"]').should('be.checked')
+    cy.visit('/settings/webchat')
+    cy.get('[data-cy="webchat-settings"][data-ready="true"]').should('exist')
+    cy.get('[data-cy="webchat-enabled"]').should('have.attr', 'aria-checked', 'true')
     cy.get('[data-cy="webchat-snippet"]').should('contain', '/webchat.js').and('contain', `data-clinic="${slug}"`)
   })
 })

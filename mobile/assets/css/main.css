@@ -175,8 +175,10 @@ select {
    below continues on the sheet's own ground, so a screen does not need its
    first element to know it is the sheet. `qf-lip-surface` for a screen whose
    content starts on white rather than the sheet's tint. */
+/* 25px of that is the lip itself; the rest is air between the plane's last
+   control and the sheet, which at 1px read as the controls sitting on it. */
 .qf-lip {
-  padding-bottom: 26px;
+  padding-bottom: 38px;
 }
 /* The plane redefines --color-surface-page for what is inside it, so the lip
    reads the sheet's colours as the root has them: a var() in a custom

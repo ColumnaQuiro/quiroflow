@@ -132,6 +132,9 @@ const STAGES = computed(() => [
             <!-- Where leads come from: first, because nothing below matters until they arrive -->
             <SettingsFacebookLeadAdsCard />
 
+            <!-- What those ads cost, read in so cost per lead fills itself in -->
+            <SettingsMetaAdsCard />
+
             <!-- The pipeline, drawn: which steps move on their own -->
             <section aria-labelledby="h-pipe" class="overflow-hidden rounded-card border border-line bg-surface">
               <div class="px-[18px] pb-3 pt-4">

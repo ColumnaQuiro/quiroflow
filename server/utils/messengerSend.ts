@@ -63,7 +63,7 @@ export async function sendMessengerToLead(supabase: SupabaseClient<Database>, ac
   // The Page token is the one stored when Instagram was connected: the same
   // Page answers both.
   if (!account?.messenger_page_id || !account?.instagram_access_token) {
-    throw createError({ statusCode: 400, statusMessage: 'Messenger is not connected. Connect Instagram in Settings > WhatsApp.' })
+    throw createError({ statusCode: 400, statusMessage: 'Messenger is not connected. Connect it in Settings > Instagram & Messenger.' })
   }
 
   // Checked here because Meta's refusal is a bare code, and somebody who has

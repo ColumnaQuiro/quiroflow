@@ -64,7 +64,7 @@ const CHANNEL_TONE: Record<string, 'success' | 'warning' | 'neutral'> = {
 }
 // Where a channel is set up. Instagram is connected from the WhatsApp page
 // too (the same Meta app); the two that are not built have nowhere to go.
-const CHANNEL_LINK: Record<string, string> = { whatsapp: '/settings/whatsapp', instagram: '/settings/whatsapp', messenger: '/settings/whatsapp', 'web-chat': '/settings/whatsapp' }
+const CHANNEL_LINK: Record<string, string> = { whatsapp: '/settings/whatsapp', instagram: '/settings/instagram', messenger: '/settings/instagram', 'web-chat': '/settings/webchat' }
 
 // The server sends statusLabel in English; the status is what the pill says,
 // so it is worded here in the reader's language.

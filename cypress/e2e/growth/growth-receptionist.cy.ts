@@ -189,7 +189,8 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="channel-instagram"]').should('not.contain', 'Not available yet')
     cy.get('[data-test="channel-messenger"]').should('contain', 'Not set up')
     cy.get('[data-test="channel-web-chat"]').should('contain', 'Not set up')
-    cy.get('[data-test="channel-web-chat-setup"]').should('have.attr', 'href', '/settings/whatsapp')
+    cy.get('[data-test="channel-web-chat-setup"]').should('have.attr', 'href', '/settings/webchat')
+    cy.get('[data-test="channel-instagram-setup"]').should('have.attr', 'href', '/settings/instagram')
     cy.get('[data-test="channel-sms"]').should('contain', 'Not available yet')
   })
 

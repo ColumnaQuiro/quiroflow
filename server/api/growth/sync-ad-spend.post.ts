@@ -18,6 +18,12 @@ const CHANNEL = 'Meta Ads'
 
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireGrowth(event)
+  // `month` is the month on the clinic's screen ("2026-11"): left to itself
+  // this would take the UTC one, and for the first hours of a month in Madrid
+  // that is still the previous month. `quiet` is the dashboard reading spend
+  // in as it loads: a clinic without Meta Ads connected is the normal case
+  // there, not an error to answer with a 400.
+  const body = await readBody<{ month?: string; quiet?: boolean } | null>(event).catch(() => null)
 
   const { data: account } = await supabase
     .from('accounts')
@@ -29,13 +35,14 @@ export default defineEventHandler(async (event) => {
   const adAccountId = account?.meta_ads_account_id?.trim()
   const token = account?.meta_ads_access_token?.trim()
   if (!adAccountId || !token) {
+    if (body?.quiet) return { imported: false as const, reason: 'not_connected' as const }
     throw createError({
       statusCode: 400,
-      statusMessage: 'Meta Ads is not connected. Add the ad account id and a read token under Settings > WhatsApp.',
+      statusMessage: 'Meta Ads is not connected. Connect it in Settings > Leads.',
     })
   }
 
-  const month = new Date()
+  const month = /^\d{4}-\d{2}$/.test(body?.month ?? '') ? new Date(`${body!.month}-01T12:00:00Z`) : new Date()
 
   let spend
   try {

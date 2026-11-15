@@ -516,7 +516,7 @@ export default defineNuxtConfig({
       // pages_read_engagement, pages_manage_metadata, pages_manage_ads and
       // ads_management. Blank hides the Connect card.
       metaLeadAdsConfigId: '2889323534772175',
-      // A third, for the Instagram section of Settings > WhatsApp: "QuiroFlow
+      // A third, for Settings > Instagram & Messenger: "QuiroFlow
       // Instagram DMs", created 28 Oct 2026. Pages and Instagram accounts
       // both required, and instagram_basic, instagram_manage_messages,
       // pages_show_list, pages_read_engagement, pages_manage_metadata and
@@ -525,8 +525,16 @@ export default defineNuxtConfig({
       // subscription is the only thing that delivers the DMs. Same never-expiring system-user
       // token as lead ads, for the same reason. Until instagram_manage_messages
       // passes App Review, Meta only offers it to people with a role on the
-      // app. Blank hides the Connect button and leaves the manual fields.
+      // app. Blank hides the Connect button.
       metaInstagramConfigId: '1399986838997555',
+      // A fourth, for the Meta Ads card in Settings > Leads: "QuiroFlow ad
+      // spend", created 15 Nov 2026. Ad accounts required, task permission
+      // ANALYZE only, and ads_read ONLY -- reading spend, never
+      // ads_management, so nothing it hands out can spend a clinic's money.
+      // Same never-expiring system-user token as the others. Until ads_read
+      // passes App Review, Meta only offers it to people with a role on the
+      // app. Blank hides the Connect button and leaves the paste-a-token fields.
+      metaAdsConfigId: '4726545360911121',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

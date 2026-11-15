@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   await withMessagingTokens(teamMember.account_id, account)
   if (!account?.instagram_user_id || !account?.instagram_access_token) {
-    throw createError({ statusCode: 400, statusMessage: 'Instagram is not connected. Set it up in Settings > WhatsApp.' })
+    throw createError({ statusCode: 400, statusMessage: 'Instagram is not connected. Connect it in Settings > Instagram & Messenger.' })
   }
 
   // The window is checked here rather than left to Meta because the refusal

@@ -8,16 +8,26 @@ const PASSWORD = 'Test1234!'
 describe('Messaging tokens are secrets', () => {
   it('saves the tokens where no member can read them, and says only that they are stored', () => {
     cy.seedStaffAccount().then((account) => {
+      // The two places a token is still typed by hand: WhatsApp for a clinic
+      // on its own Meta app (shown because it has an app secret stored), and
+      // Meta Ads' use-your-own-token fallback (shown while an ad account id
+      // has no token behind it).
+      cy.task('db:setWhatsappAppSecret', { accountId: account.accountId, appSecret: 'own-app-secret' })
+      cy.task('db:updateRows', { table: 'accounts', values: { meta_ads_account_id: '123' }, match: { id: account.accountId } })
       cy.intercept('PUT', '/api/whatsapp/tokens').as('saveTokens')
       cy.login(account.email, account.password)
       cy.visit('/settings/whatsapp')
       cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
-      // Unique per run: the Instagram id is unique across accounts.
-      cy.get('[data-test="instagram-user-id"]').scrollIntoView().type(`1784${Date.now()}`)
-      cy.get('[data-test="instagram-access-token"]').type('IG-SECRET-TOKEN')
-      cy.get('[data-test="meta-ads-account-id"]').type('act_123')
-      cy.get('[data-test="meta-ads-token"]').type('ADS-SECRET-TOKEN')
+      cy.get('#wa-token').scrollIntoView().type('WA-SECRET-TOKEN')
       cy.get('[data-cy="whatsapp-save"]').click()
+      cy.wait('@saveTokens').its('response.statusCode').should('eq', 200)
+
+      cy.visit('/settings/leads')
+      cy.get('[data-cy="meta-ads-manual"]').then(($d) => {
+        if ($d.attr('open') === undefined) cy.wrap($d).find('summary').click()
+      })
+      cy.get('[data-test="meta-ads-token"]').type('ADS-SECRET-TOKEN')
+      cy.get('[data-test="meta-ads-save"]').click()
       cy.wait('@saveTokens').its('response.statusCode').should('eq', 200)
 
       cy.task<Record<string, string | null>>('db:messagingTokenColumnsOf', { accountId: account.accountId }).should('deep.equal', {
@@ -25,11 +35,11 @@ describe('Messaging tokens are secrets', () => {
         instagram_access_token: null,
         meta_ads_access_token: null,
       })
+      cy.task('db:accountSecretOf', { accountId: account.accountId, name: 'meta_ads_access_token' }).should('eq', 'ADS-SECRET-TOKEN')
 
-      cy.reload()
+      cy.visit('/settings/whatsapp')
       cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
-      cy.get('[data-test="instagram-access-token"]').should('have.value', '').and('have.attr', 'placeholder', '••••••••••••••••••••')
-      cy.get('[data-test="meta-ads-token"]').should('have.value', '')
+      cy.get('#wa-token').should('have.value', '').and('have.attr', 'placeholder', '••••••••••••••••••••')
 
       cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Front Desk', patch: { settings_access: true, communication_config: true } })
       const email = `tokens-${Date.now()}@example.test`

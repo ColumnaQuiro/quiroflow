@@ -77,6 +77,8 @@ export function useSettingsNavItems() {
       items: [
         { label: t('Messages', 'Mensajes'), to: '/settings/messages', perm: 'communication_config' },
         { label: t('WhatsApp', 'WhatsApp'), to: '/settings/whatsapp', perm: 'communication_config' },
+        { label: t('Instagram & Messenger', 'Instagram y Messenger'), to: '/settings/instagram', perm: 'communication_config' },
+        { label: t('Website chat', 'Chat en tu web'), to: '/settings/webchat', perm: 'communication_config' },
         { label: t('Saved Replies', 'Respuestas guardadas'), to: '/settings/saved-replies', perm: 'communication_config' },
         { label: t('Docs', 'Documentos'), to: '/settings/docs', perm: 'communication_config' },
         { label: t('Letters', 'Cartas'), to: '/settings/letters', perm: 'communication_config' },

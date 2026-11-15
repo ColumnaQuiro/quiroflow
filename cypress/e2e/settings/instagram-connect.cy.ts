@@ -231,5 +231,49 @@ describe('Connecting Instagram', () => {
       connect().its('status').should('eq', 502)
       cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: null, token: null })
     })
+
+    it('shows the connected account by its @handle and Page, and disconnects both channels', () => {
+      // Settings > Instagram & Messenger has no fields to clear any more, so
+      // Disconnect is the only way out -- and it has to take Messenger with
+      // it, since they are one Page connection.
+      const igId = freshId()
+      const pageId = `1${Date.now()}`
+      cy.task('db:startMetaGraphStub', {
+        pages: [{ id: pageId, name: 'Clínica Demo', access_token: 'STUB-PAGE-TOKEN-IG', instagram_business_account: { id: igId, username: 'clinicademo' } }],
+      })
+      connect().its('status').should('eq', 200)
+
+      cy.visit('/settings/instagram')
+      cy.get('[data-cy="instagram-settings"][data-ready="true"]')
+      cy.get('[data-cy="instagram-account"]').should('have.text', '@clinicademo')
+      cy.get('[data-cy="instagram-status"]').should('contain', 'Receiving and replying')
+      cy.get('[data-cy="messenger-status"]').should('contain', 'Clínica Demo').and('contain', 'Receiving and replying')
+
+      cy.get('[data-cy="instagram-disconnect"]').click()
+      cy.get('[data-cy=confirm-dialog-confirm]').click()
+      cy.get('[data-cy="instagram-status"]').should('contain', 'Not connected')
+      cy.get('[data-cy="instagram-disconnect"]').should('not.exist')
+
+      cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: null, token: null })
+      cy.task<any[]>('db:selectRows', { table: 'accounts', columns: 'messenger_page_id', match: { id: account.accountId } }).its('0.messenger_page_id').should('eq', null)
+      // The Page is given up at Meta too, so it stops posting DMs nobody routes.
+      cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [`${pageId}:messages`, `${pageId}:-`])
+    })
+  })
+
+  it('does not let a member write an Instagram id from the browser', () => {
+    // The id routes every DM to the account holding it. With the paste-it-in
+    // field gone, only /api/meta/instagram/connect writes it, from the
+    // clinic's own Meta grant; a member typing one could only mean claiming
+    // somebody else's account.
+    cy.task<{ error: string | null }>('db:settingsWriteAsStaff', {
+      email: account.email,
+      password: account.password,
+      table: 'accounts',
+      op: 'update',
+      values: { instagram_user_id: freshId() },
+      match: { id: account.accountId },
+    }).its('error').should('contain', 'instagram_user_id is set by connecting Instagram')
+    cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
   })
 })

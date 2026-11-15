@@ -2482,6 +2482,12 @@ async function setAccountSecret(opts: { accountId: string; name: string; value: 
   return { stored: true }
 }
 
+/** One stored secret's value, or null: what a connect endpoint actually kept. */
+async function accountSecretOf(opts: { accountId: string; name: string }) {
+  const { data } = await admin.from('account_secrets').select('value').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  return (data as { value: string } | null)?.value ?? null
+}
+
 // What a signed-in staff member can actually read, using the same anon key and
 // session the browser holds. This is the real attack rather than a proxy for
 // it: `accounts` RLS is row-level, so before this change the same call
@@ -3438,6 +3444,8 @@ async function startMetaGraphStub(opts: {
    * for a token with leads_retrieval but no ads permission.
    */
   refuseAdNames?: boolean
+  /** Ad accounts the login grants (GET /me/adaccounts), for the Meta Ads connect. */
+  adAccounts?: { id: string; account_id: string; name: string; currency: string; account_status?: number }[]
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -3557,6 +3565,14 @@ async function startMetaGraphStub(opts: {
     if (path.endsWith('/me/accounts')) {
       return send(200, { data: opts.pages ?? [] })
     }
+    if (path.endsWith('/me/adaccounts')) {
+      return send(200, { data: opts.adAccounts ?? [] })
+    }
+    const adAccount = path.match(/\/act_(\d+)$/)
+    if (adAccount && req.method === 'GET') {
+      const found = (opts.adAccounts ?? []).find((a) => a.account_id === adAccount[1])
+      return found ? send(200, { id: found.id, name: found.name, currency: found.currency }) : refuse('(#100) Ad account does not exist or no permission.')
+    }
     const formsOf = path.match(/\/(\d+)\/leadgen_forms$/)
     if (formsOf) {
       return send(200, { data: (opts.leadForms ?? []).filter((f) => f.pageId === formsOf[1]).map((f) => ({ id: f.id })) })
@@ -3576,6 +3592,12 @@ async function startMetaGraphStub(opts: {
         if (refusesFields) return send(403, { error: { message: '(#200) Requires ads_management permission to read ad_name.', code: 200 } })
         return send(200, lead)
       }
+      // A Page or the Instagram account behind one, as Settings asks for
+      // them by id to show a name instead of a number.
+      const page = (opts.pages ?? []).find((p) => p.id === node[1])
+      if (page) return send(200, { id: page.id, name: page.name })
+      const ig = (opts.pages ?? []).find((p) => p.instagram_business_account?.id === node[1])?.instagram_business_account
+      if (ig) return send(200, { id: ig.id, username: ig.username })
     }
     if (path.endsWith('/phone_numbers')) {
       if (opts.failAt === 'phones') return refuse('Unsupported get request.')
@@ -3583,7 +3605,8 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/subscribed_apps')) {
       if (opts.failAt === 'subscribe') return refuse('Application does not have permission for this action.')
-      metaGraphStubSubscriptions.push(`${path.split('/').at(-2)}:${query.get('subscribed_fields') ?? ''}`)
+      // A DELETE is a Page given up, recorded as "<page>:-".
+      metaGraphStubSubscriptions.push(`${path.split('/').at(-2)}:${req.method === 'DELETE' ? '-' : (query.get('subscribed_fields') ?? '')}`)
       return send(200, { success: true })
     }
     return send(404, { error: { message: `stub has no route for ${path}` } })
@@ -4891,6 +4914,7 @@ export const dbTasks = {
   'db:patientContactNumbers': patientContactNumbers,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
+  'db:accountSecretOf': accountSecretOf,
   'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:messagingTokenColumnsOf': messagingTokenColumnsOf,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,

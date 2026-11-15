@@ -5,8 +5,31 @@
 # build-breaking type errors CI's typecheck job would, just before the push
 # leaves your machine instead of a few minutes later in a red PR check.
 #
+# Skipped when `npm run preflight` already passed on exactly the commit being
+# pushed (scripts/preflight-stamp.sh) -- the usual case, since preflight is
+# run by hand before opening a PR, and running it again on the same tree
+# only repeated the same answer.
+#
 # Still want the full local Cypress run against a real local Supabase before
 # pushing (Docker required)? `npm run test:e2e:local` runs it directly.
 # Skip this check entirely with `git push --no-verify` if you know what
 # you're doing.
+
+# stdin: "<local ref> <local sha> <remote ref> <remote sha>" per ref pushed.
+covered=yes
+pushed=0
+while read -r _ local_sha _ _; do
+  case "$local_sha" in
+    *[!0]*) ;;          # a commit
+    *) continue ;;      # all zeros: deleting a remote branch, nothing to check
+  esac
+  pushed=1
+  scripts/preflight-stamp.sh covers "$local_sha" || covered=no
+done
+
+if [ "$pushed" = 1 ] && [ "$covered" = yes ]; then
+  echo "pre-push: preflight already passed on this exact tree, not running it again"
+  exit 0
+fi
+
 npm run preflight

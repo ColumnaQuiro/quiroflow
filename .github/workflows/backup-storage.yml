@@ -1,0 +1,86 @@
+name: Back up Storage files
+
+# Copies every Supabase Storage object (patient documents, photos, WhatsApp
+# media, invoice PDFs) into an S3 bucket in a separate AWS account, in
+# Stockholm (eu-north-1). Supabase's daily backups cover the database only -- files had
+# no copy anywhere until this. See scripts/backup-storage.mjs for what is
+# copied and why nothing is ever deleted.
+#
+# AWS access is an IAM user's key in BACKUP_ACCESS_KEY_ID /
+# BACKUP_SECRET_ACCESS_KEY. That user can only list and write the backup
+# bucket and is denied every delete, so a leaked key can add versions but not
+# destroy any. (GitHub OIDC would avoid storing a key, but the AWS account's
+# organization policy forbids creating the OIDC provider -- see
+# scripts/backup-storage-aws-setup.sh.) The repository is public, so this runs
+# on schedule and manual dispatch only: a pull request from a fork never sees
+# the secrets.
+#
+# The log prints counts per bucket, never a file name: object keys carry the
+# uploaded filename and these logs are public.
+
+on:
+  schedule:
+    # 02:30 UTC, the quietest hour for the clinics (03:30-04:30 in Spain).
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List and compare only, copy nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: backup-storage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check the configuration is actually set
+        # A missing repository secret resolves to "" instead of failing, and
+        # the run would then report something unrelated -- or, worse, nothing.
+        env:
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          SUPABASE_S3_ENDPOINT: ${{ vars.SUPABASE_S3_ENDPOINT }}
+          BACKUP_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          BACKUP_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+        run: |
+          missing=""
+          for name in SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY SUPABASE_S3_ENDPOINT BACKUP_ACCESS_KEY_ID BACKUP_SECRET_ACCESS_KEY BACKUP_BUCKET; do
+            [ -z "${!name}" ] && missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Not set on this repository:$missing"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts: the script only needs @aws-sdk/client-s3, not
+      # nuxt prepare or any native build.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Copy new and changed files
+        env:
+          SUPABASE_S3_ENDPOINT: ${{ vars.SUPABASE_S3_ENDPOINT }}
+          SUPABASE_S3_REGION: eu-west-1
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+          BACKUP_REGION: eu-north-1
+          BACKUP_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          BACKUP_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: npm run backup:storage

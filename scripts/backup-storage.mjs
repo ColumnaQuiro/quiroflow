@@ -128,7 +128,12 @@ for (const { Name: bucket } of Buckets) {
   if (!DRY_RUN) {
     await pool(todo, async (key) => {
       try {
-        bytes += await copyOne(bucket, key)
+        // Await first, then add. `bytes += await copyOne()` reads `bytes`
+        // BEFORE the await, so eight copies in flight overwrote each other's
+        // totals: the first real run reported 1,467 MB for a bucket that
+        // holds, and had fully copied, 11,835 MB.
+        const written = await copyOne(bucket, key)
+        bytes += written
         copied++
       }
       catch (err) {

@@ -18,6 +18,7 @@ const tabs = computed(() => items.value.filter((x) => x.inTabBar !== false))
         v-for="tab in tabs"
         :key="tab.to"
         :to="tab.to"
+        :data-tour="tab.tour"
         class="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] font-semibold"
         :class="isActive(tab.to) ? 'bg-brand-tint text-brand-text' : 'text-ink-muted active:bg-surface-subtle'"
         :aria-current="isActive(tab.to) ? 'page' : undefined"

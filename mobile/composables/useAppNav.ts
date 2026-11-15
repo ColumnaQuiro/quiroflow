@@ -12,6 +12,8 @@ export interface AppNavItem {
    * a thumb can hit; Profile is reached from the avatar on My Day instead.
    */
   inTabBar?: boolean
+  /** Marks the item for the patient tour (components/PatientAppTour.vue). */
+  tour?: string
 }
 
 export function useStaffNav() {
@@ -75,11 +77,11 @@ export function usePatientNav() {
   const { canSeeClinical } = useFamily()
   const all = computed<(AppNavItem & { clinical?: boolean })[]>(() => [
     { label: t('Home', 'Inicio'), to: '/', icon: 'M2.5 7L8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z' },
-    { label: t('Plan', 'Plan'), to: '/visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
-    { clinical: true, label: t('Self-care', 'Cuidarme'), to: '/care', icon: 'M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 018 4.8a2.8 2.8 0 015.5 1.5C13.5 10.2 8 13.5 8 13.5z' },
+    { label: t('Plan', 'Plan'), to: '/visits', tour: 'visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+    { clinical: true, label: t('Self-care', 'Cuidarme'), to: '/care', tour: 'care', icon: 'M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 018 4.8a2.8 2.8 0 015.5 1.5C13.5 10.2 8 13.5 8 13.5z' },
     { clinical: true, label: t('Progress', 'Progreso'), to: '/progress', icon: 'M2 13.5h12M3.5 11l3-3.5 2.5 2 4-5' },
     { clinical: true, label: t('Messages', 'Mensajes'), to: '/messages', icon: 'M2 3.5h12v8h-7l-3 2.5v-2.5h-2z' },
-    { clinical: true, label: t('Documents', 'Documentos'), to: '/documents', inTabBar: false, icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
+    { clinical: true, label: t('Documents', 'Documentos'), to: '/documents', inTabBar: false, tour: 'documents', icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
   ])
   const items = computed<AppNavItem[]>(() => all.value.filter((i) => canSeeClinical.value || !i.clinical))
   // Home is an exact match -- every other path starts with '/', so a prefix

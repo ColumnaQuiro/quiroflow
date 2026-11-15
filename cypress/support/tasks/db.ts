@@ -3409,7 +3409,7 @@ let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
   /** Which step should fail, to prove a half-connection is never stored. */
-  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe' | 'templates'
+  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe' | 'templates' | 'adaccounts'
   wabaId?: string
   phoneNumberId?: string
   displayPhoneNumber?: string
@@ -3566,12 +3566,15 @@ async function startMetaGraphStub(opts: {
       return send(200, { data: opts.pages ?? [] })
     }
     if (path.endsWith('/me/adaccounts')) {
+      // What a system-user token from business login gets without
+      // business_management, which is every real clinic.
+      if (opts.failAt === 'adaccounts') return send(400, { error: { message: '(#200) Missing Permissions', code: 200 } })
       return send(200, { data: opts.adAccounts ?? [] })
     }
     const adAccount = path.match(/\/act_(\d+)$/)
     if (adAccount && req.method === 'GET') {
       const found = (opts.adAccounts ?? []).find((a) => a.account_id === adAccount[1])
-      return found ? send(200, { id: found.id, name: found.name, currency: found.currency }) : refuse('(#100) Ad account does not exist or no permission.')
+      return found ? send(200, { id: found.id, account_id: found.account_id, name: found.name, currency: found.currency, account_status: found.account_status ?? 1 }) : refuse('(#100) Ad account does not exist or no permission.')
     }
     const formsOf = path.match(/\/(\d+)\/leadgen_forms$/)
     if (formsOf) {

@@ -94,6 +94,31 @@ describe('Connecting Meta Ads', () => {
       connection(account.accountId).should('deep.equal', { adAccountId: '4444', token: 'STUB-BUSINESS-TOKEN' })
     })
 
+    it('finds the ad account from the grant itself, where /me/adaccounts is refused', () => {
+      // A system-user token from business login is refused GET /me/adaccounts
+      // without business_management -- the first real connection, 15 Nov
+      // 2026. The grant's own ads_read scope names the account instead.
+      cy.task('db:startMetaGraphStub', {
+        failAt: 'adaccounts',
+        granularScopes: [{ scope: 'ads_read', target_ids: ['5555'] }],
+        adAccounts: [{ id: 'act_5555', account_id: '5555', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 }],
+      })
+      connect().then((res) => {
+        expect(res.status).to.eq(200)
+        expect(res.body).to.deep.include({ connected: true, adAccountId: '5555', name: 'Clínica Demo Ads', currency: 'EUR' })
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: '5555', token: 'STUB-BUSINESS-TOKEN' })
+    })
+
+    it('says why when neither the grant nor /me/adaccounts names an account', () => {
+      cy.task('db:startMetaGraphStub', { failAt: 'adaccounts' })
+      connect().then((res) => {
+        expect(res.status).to.eq(502)
+        expect(res.body.message ?? res.body.statusMessage).to.contain('Missing Permissions')
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
+    })
+
     it('stores nothing when the grant has no ad account on it', () => {
       cy.task('db:startMetaGraphStub', { adAccounts: [] })
       connect().its('status').should('eq', 400)

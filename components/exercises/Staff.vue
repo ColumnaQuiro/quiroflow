@@ -469,7 +469,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
         <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-brand-text" data-cy="exercise-back" @click="creating = false; formError = ''">{{ t('← Back to the list', '← Volver a la lista') }}</button>
         <input v-model="name" :class="input" :placeholder="t('Name, e.g. Cat-camel', 'Nombre, p. ej. Gato-camello')" data-cy="exercise-name" />
         <textarea v-model="instructions" rows="2" :class="[input, 'h-auto py-2']" :placeholder="t('How to do it (optional)', 'Cómo hacerlo (opcional)')" />
-        <input v-model="mediaUrl" type="url" inputmode="url" :class="input" :placeholder="t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)')" data-cy="exercise-link" />
+        <input v-model="mediaUrl" type="url" inputmode="url" :class="input" :placeholder="t('YouTube or other video link (optional)', 'Enlace de YouTube u otro vídeo (opcional)')" data-cy="exercise-link" />
         <ExercisesMediaField v-model="mediaPath" :account-id="accountId" />
         <div class="grid grid-cols-3 gap-2">
           <template v-if="!progressive">

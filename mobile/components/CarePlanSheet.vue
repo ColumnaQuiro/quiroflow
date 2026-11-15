@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readNextPhases } from '../../utils/carePlanPhases'
 // A care plan from the record: "Añadir plan", or "Editar" the current one --
 // the web's EditCarePlanModal (behind PhaseStats on the Clinical tab), with
 // its write. Like the web, saving INSERTS a plan rather than updating the
@@ -19,6 +20,7 @@ const props = defineProps<{
     payment_kind?: string | null
     package_purchase_id?: string | null
     patient_membership_id?: string | null
+    next_phases?: unknown
   } | null
   /** The clinic's date today, the default start. */
   today: string
@@ -105,6 +107,9 @@ async function save() {
     payment_kind: paymentKind.value,
     package_purchase_id: paymentKind.value === 'bono' ? bonoId.value : null,
     patient_membership_id: paymentKind.value === 'membership' ? membershipId.value : null,
+    // The phases queued after this one (set up on the web) carry over, as an
+    // edit there keeps them; a plan with no end queues nothing.
+    next_phases: noEnd.value ? [] : readNextPhases(props.plan?.next_phases),
   } as never)
   saving.value = false
   if (e) {

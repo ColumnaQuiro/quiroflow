@@ -18,6 +18,11 @@ function noise(width: number, height: number, channels: number) {
 }
 const photo = (width: number, height: number, quality = 95) => sharp(noise(width, height, 3), { raw: { width, height, channels: 3 } }).jpeg({ quality }).toBuffer()
 
+// These encode and decode real megapixel images with sharp and pdf-lib: a
+// second or two each on an idle machine, well past vitest's 5 s default on a
+// busy one, where they failed three pushes in a row with nothing wrong.
+vi.setConfig({ testTimeout: 30_000 })
+
 describe('resizing a patient photo', () => {
   it('scales a large photo to 2000 px on its long edge and keeps it a JPEG', async () => {
     const big = await photo(3200, 2400)

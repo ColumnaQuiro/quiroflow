@@ -96,6 +96,23 @@ export function useGrowthDashboard(entitled: () => boolean | null) {
   }
 
   /**
+   * Reads this month's Meta Ads spend in, once per visit, after the dashboard
+   * is already on screen -- so a clinic with Meta Ads connected (Settings ›
+   * Leads) sees its cost per lead without typing anything, and nobody waits
+   * on Meta to see the rest. Quiet: not connected is the usual answer, and a
+   * failure leaves the figures as they were; Settings › Leads is where a
+   * broken connection says so.
+   */
+  async function readMetaAdSpend() {
+    try {
+      const result = await useStaffFetch<{ imported: boolean }>('/api/growth/sync-ad-spend', { method: 'POST', body: { month: payload.value?.month, quiet: true } })
+      if (result.imported) await load()
+    } catch {
+      // See above: the dashboard is already right without it.
+    }
+  }
+
+  /**
    * Records what was spent on a channel this month, then reloads -- cost per
    * lead, cost per new patient and ROAS all move the moment it lands, and
    * re-deriving them here would be a second implementation of the maths the
@@ -118,7 +135,9 @@ export function useGrowthDashboard(entitled: () => boolean | null) {
     watch(entitled, (on) => {
       if (on && !requested) {
         requested = true
-        load()
+        load().then(() => {
+          if (payload.value) readMetaAdSpend()
+        })
       }
     }, { immediate: true })
   })

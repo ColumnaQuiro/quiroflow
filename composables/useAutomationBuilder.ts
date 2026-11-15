@@ -49,6 +49,8 @@ export interface WhatsAppTemplate {
   urlButtonCount: number
   mediaHeaderFormat: string | null
   buttons?: { type: string; text: string; dynamic: boolean }[]
+  /** The file uploaded with the template when it was created in QuiroFlow: attached by default. */
+  headerMedia?: { type: string; storage_path: string; filename: string }
 }
 
 interface Draft {

@@ -197,9 +197,9 @@ async function loadRenewals(patientIds: string[]) {
     renewalPatients.value = new Set()
     return
   }
-  const { data: plans } = await supabase.from('care_plans').select('patient_id, total_visits, started_at').in('patient_id', patientIds).order('started_at', { ascending: false })
-  const latest = new Map<string, { total_visits: number; started_at: string }>()
-  for (const p of (plans as { patient_id: string; total_visits: number; started_at: string }[] | null) ?? []) if (!latest.has(p.patient_id)) latest.set(p.patient_id, p)
+  const { data: plans } = await supabase.from('care_plans').select('patient_id, total_visits, started_at, next_phases').in('patient_id', patientIds).order('started_at', { ascending: false })
+  const latest = new Map<string, { total_visits: number; started_at: string; next_phases: unknown }>()
+  for (const p of (plans as { patient_id: string; total_visits: number; started_at: string; next_phases: unknown }[] | null) ?? []) if (!latest.has(p.patient_id)) latest.set(p.patient_id, p)
   if (!latest.size) {
     renewalPatients.value = new Set()
     return

@@ -4,6 +4,7 @@ import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, 
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { APPOINTMENT_STATUSES, assertPractitionerWorksAt, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
+import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 
 const FIELDS = ['practitioner_id', 'appointment_type_id', 'room_id', 'starts_at', 'ends_at', 'status', 'note', 'external_reference']
 
@@ -17,7 +18,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
 
   const { data: existing } = await loose(supabase)
     .from('appointments')
-    .select('id, clinic_id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
+    .select('id, patient_id, clinic_id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
     .eq('account_id', accountId)
     .eq('id', id)
     .is('deleted_at', null)
@@ -93,12 +94,19 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
   const uncancelled = existing.status === 'cancelled' && finalStatus !== 'cancelled'
   const checkOverlap = window !== undefined || ((practitionerChanged || uncancelled) && finalStatus !== 'cancelled')
 
-  // The check and the update as one step: see saveAppointmentIfFree.
-  await saveAppointmentIfFree(supabase, accountId, id, patch, { checkOverlap })
+  // The check and the update as one step: see saveAppointmentIfFree. Blocks
+  // and the room are checked whenever the overlap is, for a visit that will
+  // still be booked -- the same rule POST applies.
+  const holdsTime = checkOverlap && finalStatus === 'booked'
+  await saveAppointmentIfFree(supabase, accountId, id, patch, { checkOverlap, checkBlocks: holdsTime, checkRoom: holdsTime || (roomId !== undefined && finalStatus === 'booked') })
   // An integration moving or cancelling a visit tells its practitioner, as a
-  // colleague doing it in the calendar does (staffPush.ts).
-  if (finalStatus === 'cancelled' && existing.status !== 'cancelled') await pushAppointmentEvent(supabase, id, 'cancelled')
-  else if (window && window.startsAt !== existing.starts_at && finalStatus !== 'cancelled') await pushAppointmentEvent(supabase, id, 'rescheduled')
+  // colleague doing it in the calendar does (staffPush.ts). A cancellation
+  // also runs what any cancellation nobody at the desk made runs: the
+  // clinic's appointment.cancelled automations, and the freed time to the
+  // waiting list -- DELETE did the second only, PATCH neither.
+  if (finalStatus === 'cancelled' && existing.status !== 'cancelled') {
+    await afterUnattendedCancellation(supabase, getRequestURL(event).origin, accountId, id, existing.patient_id)
+  } else if (window && window.startsAt !== existing.starts_at && finalStatus !== 'cancelled') await pushAppointmentEvent(supabase, id, 'rescheduled')
   const { data: updated, error } = await loose(supabase)
     .from('appointments')
     .select(appointmentsResource.select)

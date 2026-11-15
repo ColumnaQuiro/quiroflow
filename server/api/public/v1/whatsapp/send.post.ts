@@ -29,6 +29,14 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
   if (!body.to && !body.patientId) {
     throw badRequest('Provide "to" (an E.164 phone number) or "patient_id".', 'to')
   }
+  // Checked before anything is looked up with it: a malformed id made the
+  // queries below fail and read as "no phone number on file", and an id from
+  // another account was written onto this account's message as its patient.
+  if (body.patientId !== undefined) {
+    if (typeof body.patientId !== 'string' || !UUID_RE.test(body.patientId)) throw badRequest('"patient_id" must be a UUID.', 'patient_id')
+    const { data: own } = await supabase.from('patients').select('id').eq('id', body.patientId).eq('account_id', accountId).maybeSingle()
+    if (!own) throw badRequest(`No patient in this account with id "${body.patientId}".`, 'patient_id')
+  }
   if (!body.templateName && !body.text) {
     throw badRequest('Provide either "template_name" (with optional "template_language") or "text".', 'template_name')
   }
@@ -86,7 +94,7 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
       .eq('id', patientId)
       .eq('account_id', accountId)
       .maybeSingle()
-    if (error) throw error
+    if (error) throw new ApiError('server_error', error.message)
     if (patient?.is_minor || patient?.do_not_contact) {
       throw badRequest('This patient cannot be contacted (under age, or marked do not contact).', 'patient_id')
     }
@@ -148,3 +156,4 @@ function pick<T>(body: Record<string, unknown>, ...keys: string[]): T | undefine
   return undefined
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

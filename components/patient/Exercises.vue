@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { exerciseWeek } from '../../utils/exerciseWeek'
 import { exerciseDoseLabel, exerciseProgressiveHint } from '../../utils/exerciseDose'
+import { videoEmbedUrl } from '../../utils/learn'
 
 // "Tus ejercicios", in the app and the portal: what the clinic gave this
 // patient to do at home, how to do it, the last week at a glance, and "Hecho
 // hoy" to tick today off (the practitioner sees the ticks on the record).
 // A video or photo the clinic uploaded plays right here, from a signed URL;
-// a link they pasted opens outside the app as before. An exercise copied from
-// QuiroFlow's catalogue shows its demonstration as a picture to tap, so it
-// is plain that there is a video, unless the clinic uploaded its own. A
-// progressive one says how to build up instead of giving numbers.
+// so does a YouTube or Vimeo link they pasted, framed as Educación frames it
+// (utils/learn.ts videoEmbedUrl). Any other link opens outside the app. An
+// exercise copied from QuiroFlow's catalogue shows its demonstration as a
+// picture to tap, so it is plain that there is a video, unless the clinic
+// uploaded its own. A progressive one says how to build up instead of giving
+// numbers.
 const props = defineProps<{ patientId: string }>()
 
 const t = useT()
@@ -21,6 +24,7 @@ const catalog = useExerciseCatalog()
 function openMedia(url: string) {
   openWhenReady(async () => url)
 }
+const embedId = ref<string | null>(null)
 
 const exerciseMedia = useExerciseMedia()
 const playingId = ref<string | null>(null)
@@ -77,7 +81,13 @@ async function toggleUpload(pe: { id: string; exercises: { media_path?: string |
           <button v-if="pe.exercises?.media_path" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-upload-toggle" @click="toggleUpload(pe)">
             {{ playingId === pe.id ? t('Hide', 'Ocultar') : exerciseMediaKind(pe.exercises.media_path) === 'video' ? t('▶ Watch the video', '▶ Ver el vídeo') : t('See the photo', 'Ver la foto') }}
           </button>
-          <button v-if="pe.exercises?.media_url" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-media" @click="openMedia(pe.exercises!.media_url!)">{{ pe.exercises?.media_path ? t('Open the link', 'Abrir el enlace') : t('Watch the video', 'Ver el vídeo') }}</button>
+          <button v-if="videoEmbedUrl(pe.exercises?.media_url)" type="button" class="text-[12.5px] font-medium text-brand-text" :aria-expanded="embedId === pe.id" data-cy="exercise-embed-toggle" @click="embedId = embedId === pe.id ? null : pe.id">
+            {{ embedId === pe.id ? t('Hide the video', 'Ocultar el vídeo') : pe.exercises?.media_path ? t('▶ Watch the linked video', '▶ Ver el vídeo del enlace') : t('▶ Watch the video', '▶ Ver el vídeo') }}
+          </button>
+          <button v-else-if="pe.exercises?.media_url" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-media" @click="openMedia(pe.exercises!.media_url!)">{{ pe.exercises?.media_path ? t('Open the link', 'Abrir el enlace') : t('Watch the video', 'Ver el vídeo') }}</button>
+        </div>
+        <div v-if="embedId === pe.id && videoEmbedUrl(pe.exercises?.media_url)" class="relative mt-2.5 w-full overflow-hidden rounded-ctl bg-ink-900" style="padding-top: 56.25%" data-cy="exercise-embed-player">
+          <iframe :src="videoEmbedUrl(pe.exercises?.media_url)!" :title="pe.exercises?.name ?? ''" class="absolute inset-0 h-full w-full" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" />
         </div>
         <div v-if="playingId === pe.id && pe.exercises?.media_path" class="mt-2.5 overflow-hidden rounded-ctl bg-black/5" data-cy="exercise-upload-player">
           <p v-if="mediaError === pe.id" class="px-3 py-2 text-[12.5px] text-danger-text">{{ t("Couldn't load it. Try again.", 'No se ha podido cargar. Inténtalo de nuevo.') }}</p>

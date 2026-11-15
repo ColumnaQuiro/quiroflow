@@ -2482,6 +2482,12 @@ async function setAccountSecret(opts: { accountId: string; name: string; value: 
   return { stored: true }
 }
 
+/** One stored secret's value, or null: what a connect endpoint actually kept. */
+async function accountSecretOf(opts: { accountId: string; name: string }) {
+  const { data } = await admin.from('account_secrets').select('value').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  return (data as { value: string } | null)?.value ?? null
+}
+
 // What a signed-in staff member can actually read, using the same anon key and
 // session the browser holds. This is the real attack rather than a proxy for
 // it: `accounts` RLS is row-level, so before this change the same call
@@ -3390,11 +3396,20 @@ let metaGraphStubSubscriptions: string[] = []
 async function metaGraphStubSubscriptionsOf() {
   return metaGraphStubSubscriptions
 }
+// Templates submitted for review (POST /{waba}/message_templates), and the
+// sample files that went up before them through the Resumable Upload API:
+// how many bytes, and the Authorization scheme, which that endpoint alone
+// wants as "OAuth" rather than "Bearer".
+let metaGraphStubTemplateCreates: Record<string, unknown>[] = []
+let metaGraphStubUploads: { bytes: number; authorization: string; fileType: string | null }[] = []
+async function metaGraphStubTemplateCreatesOf() {
+  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads }
+}
 let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
   /** Which step should fail, to prove a half-connection is never stored. */
-  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe' | 'templates'
+  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe' | 'templates' | 'adaccounts'
   wabaId?: string
   phoneNumberId?: string
   displayPhoneNumber?: string
@@ -3403,7 +3418,9 @@ async function startMetaGraphStub(opts: {
   /** The whole granular_scopes answer, when one scope is not enough to say it. */
   granularScopes?: { scope: string; target_ids: string[] }[]
   /** The template list Meta answers with, variants and statuses included. */
-  templates?: { name: string; language: string; status: string; body: string }[]
+  templates?: { name: string; language: string; status: string; body: string; header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO'; rejectedReason?: string }[]
+  /** Refuse a template submission, with the sentence Meta writes for a person. */
+  refuseTemplate?: string
   /** Refuse template sends, as Meta does for a paused template. */
   failSends?: boolean
   /**
@@ -3427,6 +3444,8 @@ async function startMetaGraphStub(opts: {
    * for a token with leads_retrieval but no ads permission.
    */
   refuseAdNames?: boolean
+  /** Ad accounts the login grants (GET /me/adaccounts), for the Meta Ads connect. */
+  adAccounts?: { id: string; account_id: string; name: string; currency: string; account_status?: number }[]
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -3452,10 +3471,38 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/debug_token')) {
       if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
-      if (opts.granularScopes) return send(200, { data: { granular_scopes: opts.granularScopes } })
+      if (opts.granularScopes) return send(200, { data: { app_id: 'STUBAPP', granular_scopes: opts.granularScopes } })
       return send(200, {
-        data: { granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
+        data: { app_id: 'STUBAPP', granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
       })
+    }
+    // The Resumable Upload API: a session on the app, then the bytes to it.
+    if (path === '/STUBAPP/uploads' && req.method === 'POST') {
+      const fileType = new URL(req.url ?? '', 'http://stub').searchParams.get('file_type')
+      return send(200, { id: `upload:STUBSESSION?sig=${encodeURIComponent(fileType ?? '')}` })
+    }
+    if (path === '/upload:STUBSESSION' && req.method === 'POST') {
+      let bytes = 0
+      req.on('data', (chunk: Buffer) => (bytes += chunk.length))
+      req.on('end', () => {
+        const fileType = new URL(req.url ?? '', 'http://stub').searchParams.get('sig')
+        metaGraphStubUploads.push({ bytes, authorization: String(req.headers.authorization ?? ''), fileType })
+        send(200, { h: `STUB-HANDLE-${metaGraphStubUploads.length}` })
+      })
+      return
+    }
+    if (path.endsWith('/message_templates') && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (chunk) => (raw += chunk))
+      req.on('end', () => {
+        if (opts.refuseTemplate) {
+          return send(400, { error: { message: 'Invalid parameter', error_user_title: 'Template refused', error_user_msg: opts.refuseTemplate, code: 100 } })
+        }
+        const body = JSON.parse(raw || '{}')
+        metaGraphStubTemplateCreates.push({ ...body, _path: path })
+        send(200, { id: `tpl-${metaGraphStubTemplateCreates.length}`, status: 'PENDING', category: body.category })
+      })
+      return
     }
     if (path.endsWith('/message_templates')) {
       // The error branch is the point: an expired token and a wrong Business
@@ -3465,7 +3512,14 @@ async function startMetaGraphStub(opts: {
       }
       if (opts.templates) {
         return send(200, {
-          data: opts.templates.map((t) => ({ name: t.name, language: t.language, category: 'UTILITY', status: t.status, components: [{ type: 'BODY', text: t.body }] })),
+          data: opts.templates.map((t) => ({
+            name: t.name,
+            language: t.language,
+            category: 'UTILITY',
+            status: t.status,
+            ...(t.rejectedReason ? { rejected_reason: t.rejectedReason } : {}),
+            components: [...(t.header ? [{ type: 'HEADER', format: t.header }] : []), { type: 'BODY', text: t.body }],
+          })),
         })
       }
       return send(200, {
@@ -3511,6 +3565,17 @@ async function startMetaGraphStub(opts: {
     if (path.endsWith('/me/accounts')) {
       return send(200, { data: opts.pages ?? [] })
     }
+    if (path.endsWith('/me/adaccounts')) {
+      // What a system-user token from business login gets without
+      // business_management, which is every real clinic.
+      if (opts.failAt === 'adaccounts') return send(400, { error: { message: '(#200) Missing Permissions', code: 200 } })
+      return send(200, { data: opts.adAccounts ?? [] })
+    }
+    const adAccount = path.match(/\/act_(\d+)$/)
+    if (adAccount && req.method === 'GET') {
+      const found = (opts.adAccounts ?? []).find((a) => a.account_id === adAccount[1])
+      return found ? send(200, { id: found.id, account_id: found.account_id, name: found.name, currency: found.currency, account_status: found.account_status ?? 1 }) : refuse('(#100) Ad account does not exist or no permission.')
+    }
     const formsOf = path.match(/\/(\d+)\/leadgen_forms$/)
     if (formsOf) {
       return send(200, { data: (opts.leadForms ?? []).filter((f) => f.pageId === formsOf[1]).map((f) => ({ id: f.id })) })
@@ -3530,6 +3595,12 @@ async function startMetaGraphStub(opts: {
         if (refusesFields) return send(403, { error: { message: '(#200) Requires ads_management permission to read ad_name.', code: 200 } })
         return send(200, lead)
       }
+      // A Page or the Instagram account behind one, as Settings asks for
+      // them by id to show a name instead of a number.
+      const page = (opts.pages ?? []).find((p) => p.id === node[1])
+      if (page) return send(200, { id: page.id, name: page.name })
+      const ig = (opts.pages ?? []).find((p) => p.instagram_business_account?.id === node[1])?.instagram_business_account
+      if (ig) return send(200, { id: ig.id, username: ig.username })
     }
     if (path.endsWith('/phone_numbers')) {
       if (opts.failAt === 'phones') return refuse('Unsupported get request.')
@@ -3537,7 +3608,8 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/subscribed_apps')) {
       if (opts.failAt === 'subscribe') return refuse('Application does not have permission for this action.')
-      metaGraphStubSubscriptions.push(`${path.split('/').at(-2)}:${query.get('subscribed_fields') ?? ''}`)
+      // A DELETE is a Page given up, recorded as "<page>:-".
+      metaGraphStubSubscriptions.push(`${path.split('/').at(-2)}:${req.method === 'DELETE' ? '-' : (query.get('subscribed_fields') ?? '')}`)
       return send(200, { success: true })
     }
     return send(404, { error: { message: `stub has no route for ${path}` } })
@@ -3551,6 +3623,8 @@ async function startMetaGraphStub(opts: {
 async function stopMetaGraphStub() {
   metaGraphStubSends = []
   metaGraphStubSubscriptions = []
+  metaGraphStubTemplateCreates = []
+  metaGraphStubUploads = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }
@@ -4843,6 +4917,7 @@ export const dbTasks = {
   'db:patientContactNumbers': patientContactNumbers,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
+  'db:accountSecretOf': accountSecretOf,
   'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:messagingTokenColumnsOf': messagingTokenColumnsOf,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
@@ -4853,6 +4928,7 @@ export const dbTasks = {
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:metaGraphStubSends': metaGraphStubSendsOf,
   'db:metaGraphStubSubscriptions': metaGraphStubSubscriptionsOf,
+  'db:metaGraphStubTemplateCreates': metaGraphStubTemplateCreatesOf,
   'db:setAutomaticMessages': setAutomaticMessages,
   'db:appointmentMessageState': appointmentMessageState,
   'db:readAsStaff': readAsStaff,

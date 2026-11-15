@@ -1,4 +1,6 @@
-import { toE164 } from '~/utils/phone'
+import { PATIENT_LANGUAGES } from '~/utils/apiContract'
+import { looksLikePhoneNumber, splitDialPrefix, toE164 } from '~/utils/phone'
+import { COUNTRIES } from '~/utils/countries'
 import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi'
 import { asRow, assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, dateOnly, definedOnly, email, enumValue, readApiBody, rejectUnknownFields, str, stringArray, uuid } from '~/server/utils/publicApiBody'
@@ -41,10 +43,17 @@ export default defineApiHandler({ scope: 'patients:write' }, async ({ event, sup
     }
   }
 
-  const phone = str(body, 'phone', { max: 32 })
-  const phoneCountryCode = str(body, 'phone_country_code', { max: 8 }) ?? '+34'
-  if (phone && !toE164(phone, phoneCountryCode)) {
-    throw badRequest(`"phone" could not be read as a phone number. Send it in E.164 form (+34612345678) or pass phone_country_code alongside a local number.`, 'phone')
+  // phone_country_code is the two-letter country (ES), as QuiroFlow stores it
+  // -- the code defaulted to "+34", which countryByCode() does not know, so
+  // every local number ("612 345 678") was refused as unreadable and only
+  // full international numbers got through. "+34" / "34" are still accepted
+  // and read as the country they dial.
+  // "0034…" is the dialled form of "+34…"; splitDialPrefix only reads the "+".
+  const phone = str(body, 'phone', { max: 32 })?.replace(/^\s*00/, '+')
+  const { data: account } = await loose(supabase).from('accounts').select('default_phone_country').eq('id', accountId).maybeSingle()
+  const phoneCountryCode = countryFromApi(str(body, 'phone_country_code', { max: 8 })) ?? (account as { default_phone_country?: string } | null)?.default_phone_country ?? 'ES'
+  if (phone && (!toE164(phone, phoneCountryCode) || !looksLikePhoneNumber(phone, phoneCountryCode))) {
+    throw badRequest(`"phone" could not be read as a phone number. Send it in E.164 form (+34612345678), or a local number with phone_country_code as a two-letter country ("ES").`, 'phone')
   }
 
   const insert = definedOnly({
@@ -67,7 +76,7 @@ export default defineApiHandler({ scope: 'patients:write' }, async ({ event, sup
     referral_source: str(body, 'referral_source', { max: 120 }),
     is_minor: bool(body, 'is_minor'),
     do_not_contact: bool(body, 'do_not_contact'),
-    preferred_language: enumValue(body, 'preferred_language', ['es', 'en'] as const),
+    preferred_language: enumValue(body, 'preferred_language', PATIENT_LANGUAGES),
     tags: stringArray(body, 'tags'),
     external_reference: externalReference,
   })
@@ -79,15 +88,34 @@ export default defineApiHandler({ scope: 'patients:write' }, async ({ event, sup
   if (phone) {
     // Separate table, and its trigger is what flips patients.has_phone --
     // so this has to be a real insert, not a column on the patient.
-    await loose(supabase).from('patient_contact_numbers').insert({
+    // Country and national number apart, as every screen in QuiroFlow writes
+    // them: the screens print countryByCode(country_code).dial + number, so a
+    // number stored with its own "+34" read "+34 +34 612…" (see 0078).
+    const split = splitDialPrefix(phone, phoneCountryCode)
+    const { error: numberError } = await loose(supabase).from('patient_contact_numbers').insert({
       account_id: accountId,
       patient_id: created.id,
-      number: phone,
-      country_code: phoneCountryCode,
+      number: split.number,
+      country_code: split.countryCode,
       is_whatsapp: true,
     } as never)
+    // The patient exists by now; a number that silently failed to save is one
+    // nobody will ever message, so say so rather than answer 201 as if whole.
+    if (numberError) throw new ApiError('server_error', `The patient was created (id ${created.id}) but the phone number was not saved: ${numberError.message}`)
   }
 
   setResponseStatus(event, 201)
   return { data: patientsResource.serialize(created) }
 })
+
+// "ES", or a dial code ("+34", "34") read as the country it dials -- the API
+// documented "+34" as the default, so integrations may well be sending it.
+function countryFromApi(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (/^[a-z]{2}$/i.test(trimmed)) return trimmed.toUpperCase()
+  const digits = trimmed.replace(/\D/g, '')
+  const match = digits ? COUNTRIES.find((c) => c.dial.replace('+', '') === digits) : undefined
+  if (!match) throw badRequest('"phone_country_code" must be a two-letter country such as "ES".', 'phone_country_code')
+  return match.code
+}

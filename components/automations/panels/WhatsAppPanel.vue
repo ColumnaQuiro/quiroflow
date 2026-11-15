@@ -36,7 +36,10 @@ function selectTemplate(value: string) {
     // last body variable) for a template with none.
     doc_template_ids: Array.from({ length: Math.max(tpl.urlButtonCount, 1) }, () => null),
     button_params: undefined,
-    header: undefined,
+    // A template made in QuiroFlow brings the file it was made with, so the
+    // guide or picture goes out without being uploaded a second time. It is
+    // still a step setting: uploading another file below replaces it.
+    header: tpl.headerMedia ? { ...tpl.headerMedia } : undefined,
   })
 }
 
@@ -160,6 +163,15 @@ function setSlotText(i: number, text: string) {
 }
 
 const isMarketingTemplate = computed(() => current.value?.category === 'MARKETING')
+
+// ---- a new template, written here rather than in WhatsApp Manager
+const creating = ref(false)
+const submitted = ref('')
+function templateCreated(created: { name: string }) {
+  creating.value = false
+  submitted.value = created.name
+  b.loadTemplates()
+}
 </script>
 
 <template>
@@ -172,6 +184,11 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         <option v-for="tpl in b.templates.value" :key="key(tpl.name, tpl.language)" :value="key(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category === 'MARKETING' ? t('Marketing', 'Marketing') : tpl.category === 'UTILITY' ? t('Utility', 'Servicio') : tpl.category }}</option>
       </select>
     </label>
+    <button v-if="!b.templatesError.value" type="button" :class="LINK_BTN" class="-mt-2" data-test="template-create" @click="creating = true">+ {{ t('Create a new template', 'Crear una plantilla nueva') }}</button>
+    <p v-if="submitted" :class="NOTE" data-test="template-submitted">
+      {{ t(`"${submitted}" was sent to Meta for review. It appears in the list above once approved, usually within minutes.`, `«${submitted}» se ha enviado a Meta para revisión. Aparecerá en la lista de arriba cuando la aprueben, normalmente en unos minutos.`) }}
+    </p>
+    <SettingsWhatsAppTemplateDialog v-if="creating" @close="creating = false" @created="templateCreated" />
     <label v-if="!b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
       <input type="checkbox" class="mt-0.5" :checked="config.purpose === 'recall'" data-test="purpose-recall" @change="set({ purpose: ($event.target as HTMLInputElement).checked ? 'recall' : undefined })" />
       <span class="flex flex-col gap-0.5">

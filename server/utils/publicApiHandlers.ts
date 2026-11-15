@@ -52,6 +52,13 @@ export function listHandler(resource: ApiResource) {
       .range(pagination.offset, pagination.offset + pagination.pageSize - 1)
 
     const { data, error, count } = await query
+    // A page past the last one: PostgREST refuses the range (PGRST103) rather
+    // than returning nothing, which reached the caller as a 500. An empty
+    // page is the honest answer, with the total so they can see why.
+    if (error?.code === 'PGRST103') {
+      const { count: total } = await applyFilters(scoped(supabase, resource, accountId), filters).limit(0)
+      return listEnvelope(event, [], total ?? 0, pagination)
+    }
     if (error) throw new ApiError('server_error', error.message)
 
     return listEnvelope(event, (data ?? []).map(resource.serialize), count ?? 0, pagination)

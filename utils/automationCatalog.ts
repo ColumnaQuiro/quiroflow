@@ -150,6 +150,20 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    // The message goes to whoever referred them; the filters look at the
+    // referred patient and their visit (server/utils/automationTriggers.ts:
+    // fireReferredVisitTrigger). Every visit: "Completed visits" picks one.
+    value: 'referral.visit_completed',
+    label: ['Referred patient completes a visit', 'Paciente referido completa una cita'],
+    sentence: ['A patient someone referred completes a visit', 'Un paciente referido completa una cita'],
+    description: [
+      'Sent to the patient who referred them, after each visit of theirs. To thank them only after the first, add "Completed visits" = 1; the filters look at the referred patient and their visit.',
+      'Se envía a quien le refirió, tras cada cita suya. Para dar las gracias solo tras la primera, añade «Nº de visitas» = 1; los filtros miran al paciente referido y su cita.',
+    ],
+    group: 'patient',
+    appointmentContext: true,
+  },
+  {
     value: 'membership.new_member',
     label: ['Membership started', 'Alta de membresía'],
     sentence: ['A patient starts a membership', 'Un paciente inicia una membresía'],
@@ -814,6 +828,8 @@ export const VARIABLE_SOURCES: { value: string; label: Pair; group?: VariableGro
   // parameter (it refuses the whole message over one).
   { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'], group: 'patient' },
   { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'], group: 'patient' },
+  // Only on "Referred patient completes a visit": who they referred.
+  { value: 'referred_first_name', label: ['First name of who they referred', 'Nombre del paciente referido'], group: 'patient' },
   { value: 'text', label: ['Fixed text', 'Texto fijo'] },
 ]
 

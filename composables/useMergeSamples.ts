@@ -20,6 +20,7 @@ const SAMPLE: Record<string, string> = {
   invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
   practitioner_first_name: 'Ana',
   last_visit_month: 'julio',
+  referred_first_name: 'Marta',
 }
 
 const escapeHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

@@ -1,6 +1,6 @@
-// Settings > WhatsApp now leads with Connect -- Meta's Embedded Signup -- and
-// keeps the four manual credential fields below it for a clinic that already
-// runs its own Meta app.
+// Settings > WhatsApp leads with Connect -- Meta's Embedded Signup -- and
+// shows the four manual credential fields only to a clinic that already runs
+// its own Meta app.
 //
 // What these hold is the arrangement, not the popup: the Meta dialog is a
 // cross-origin window on facebook.com that Cypress cannot drive, and the only
@@ -22,25 +22,32 @@ describe('Connecting WhatsApp from Settings', () => {
     cy.get('[data-test="whatsapp-connected-state"]').should('not.exist')
   })
 
-  it('keeps the manual fields available underneath', () => {
-    // A clinic already set up by hand -- Columnaquiro -- must not find its
-    // route gone. Adding Connect is an addition, not a replacement, for as
-    // long as the direct model is still in use.
-    // Folded at the bottom of the page now, open until something is
-    // connected; scrolled to because the page scrolls inside its own panel.
-    cy.get('[data-cy="whatsapp-manual"]').should('have.attr', 'open')
-    cy.contains('label', 'Phone Number ID').scrollIntoView().should('be.visible')
-    cy.contains('label', 'WhatsApp Business Account ID').scrollIntoView().should('be.visible')
-    cy.contains('label', 'Access token').scrollIntoView().should('be.visible')
-    cy.contains('label', 'Meta App Secret').scrollIntoView().should('be.visible')
+  it('offers no manual fields to a clinic that would connect with the button', () => {
+    // Ids, a token and an app secret beside the button only invite pasting
+    // the wrong thing; nobody new needs them.
+    cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
+    cy.get('[data-cy="whatsapp-manual"]').should('not.exist')
+    cy.contains('label', 'Meta App Secret').should('not.exist')
   })
 
-  it('says the manual fields are the alternative, not the instructions', () => {
-    // The page's opening paragraph used to be the only instruction on it, and
-    // left unchanged it contradicted the card above ("nothing to copy
-    // across"). Worth a test because it is the kind of copy that silently
-    // rots back.
-    cy.contains('summary', 'Already have your own Meta app?').scrollIntoView().should('be.visible')
+  it('keeps the manual fields for a clinic already running its own Meta app', () => {
+    // A clinic set up by hand -- Columnaquiro -- must not find its route gone
+    // while it still runs that way. Its stored app secret is what says so.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setWhatsappAppSecret', { accountId: account.accountId, appSecret: 'own-app-secret' })
+      cy.login(account.email, account.password)
+      cy.visit('/settings/whatsapp')
+      cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
+      // Open until something is connected; scrolled to because the page
+      // scrolls inside its own panel.
+      cy.get('[data-cy="whatsapp-manual"]').should('have.attr', 'open')
+      cy.contains('summary', 'Your own Meta app').scrollIntoView().should('be.visible')
+      cy.contains('label', 'Phone Number ID').scrollIntoView().should('be.visible')
+      cy.contains('label', 'WhatsApp Business Account ID').scrollIntoView().should('be.visible')
+      cy.contains('label', 'Access token').scrollIntoView().should('be.visible')
+      cy.contains('label', 'Meta App Secret').scrollIntoView().should('be.visible')
+      cy.get('[data-cy="whatsapp-webhook"]').should('contain', '/api/whatsapp/webhook')
+    })
   })
 
   it('asks which number before opening Meta, keeping the app by default', () => {

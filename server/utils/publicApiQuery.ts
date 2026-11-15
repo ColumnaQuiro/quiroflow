@@ -16,8 +16,12 @@ export type FilterType = 'string' | 'number' | 'boolean' | 'date' | 'uuid'
 const OPERATORS = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'like', 'in', 'not-in', 'between', 'null', 'not-null'] as const
 type Operator = (typeof OPERATORS)[number]
 
-// Not filters -- consumed by pagination/ordering or by the endpoint itself.
-const RESERVED = new Set(['page', 'page_size', 'order', 'from', 'to', 'clinic_id_hint'])
+// Not filters -- consumed by pagination and ordering. Only list endpoints
+// parse filters, so nothing else belongs here: `from` and `to` used to be
+// reserved too (GET /availability takes them, but never reads filters), and
+// ?from=2026-03-01 on /appointments was then silently dropped and returned
+// the whole clinic -- the exact failure the 400 rule above exists to stop.
+const RESERVED = new Set(['page', 'page_size', 'order'])
 
 export interface Pagination {
   page: number

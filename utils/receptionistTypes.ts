@@ -284,6 +284,7 @@ export function referralSection(opts: { types: PromptType[]; canBook: boolean; s
   const list = quotedTypes(opts.types)
   return [
     `# Referred by a patient\n${list} is the clinic's first visit for someone a patient of the clinic referred: someone who has been to the clinic, not just booked. Offer it only when they say themselves that a patient of the clinic recommended it -- a friend, a relative who comes here -- never otherwise, and never ask how they found the clinic to find out. Someone recommended by a person who is not a patient here has the regular first visit.`,
+    `- Then just give that first visit and its price ("La primera visita son 70 €"). Never explain it: no "precio estándar" or "precio normal", and never say whether the person who recommended them is or is not a patient here.`,
     `- When they say so, ask the first name and surname of the patient who referred them, once.`,
     opts.canBook
       ? `- Book it with book_appointment, with referred_by set to that name exactly as they gave it. It checks the name against the clinic's patients: if it cannot match it, do as it says. Never tell them whether that person is a patient.`

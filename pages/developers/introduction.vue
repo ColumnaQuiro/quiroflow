@@ -19,7 +19,7 @@ const CAPABILITIES = [
   },
   {
     title: 'Keep records in sync',
-    body: 'Read and write patients, and read invoices and payments. Store your own identifier on any record with external_reference and look it up again by that.',
+    body: 'Read and write patients and appointments, and read invoices and payments. Store your own identifier on a patient or an appointment with external_reference and look it up again by that.',
     to: 'reference',
   },
   {
@@ -58,7 +58,7 @@ const CAPABILITIES = [
     <h2>Getting started</h2>
     <ol>
       <li>
-        In QuiroFlow, go to <strong>Settings → Developers</strong> and create a token, choosing the scopes your integration needs. The token
+        In QuiroFlow, go to <strong>Settings → Developers → API &amp; Tokens</strong> (in Spanish: <em>Ajustes → Desarrolladores → API y tokens</em>) and create a token, choosing the scopes your integration needs. The token
         is shown once.
       </li>
       <li>
@@ -80,8 +80,9 @@ const CAPABILITIES = [
     <h2>What this API does not do yet</h2>
     <p>
       Being explicit about the edges saves you finding them the hard way. In v1 there is no access to clinical notes, patient documents or
-      uploaded files; no writing of invoices, payments or refunds; and no endpoints for packages, memberships or care plans. Reading is
-      broad, writing is limited to patients and appointments.
+      uploaded files — neither through the API nor in webhook payloads; no writing of invoices, payments or refunds; no access to
+      facturas (the VeriFactu fiscal invoices) — the invoices here are the receipts QuiroFlow shows as <em>Recibos</em>; and no endpoints for
+      packages, memberships or care plans. Reading is broad; writing is limited to patients, appointments, leads and WhatsApp messages.
     </p>
     <p>
       If your integration needs one of those, say what you're building — the ordering is driven by what people are actually blocked on.

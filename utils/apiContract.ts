@@ -14,6 +14,11 @@ export const API_BASE_URL = `https://app.quiroflow.com/api/public/${API_VERSION}
 export const RATE_LIMIT_REQUESTS = 120
 export const RATE_LIMIT_WINDOW_SECONDS = 60
 
+// The languages a patient can be given in QuiroFlow itself
+// (components/patients/AddPatientModal.vue). The API accepted only es and en,
+// so a clinic's Catalan or French patients could not be written through it.
+export const PATIENT_LANGUAGES = ['es', 'en', 'ca', 'fr'] as const
+
 export const DEFAULT_PAGE_SIZE = 100
 export const MAX_PAGE_SIZE = 100
 

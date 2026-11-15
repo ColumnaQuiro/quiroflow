@@ -4,7 +4,7 @@ import { API_SCOPES } from '~/utils/apiContract'
 definePageMeta({ layout: 'developers' })
 const { link, useDocHead } = useDevPortal()
 
-useDocHead('Authentication', 'Authenticate with a scoped bearer token created in Settings → Developers.', 'authentication')
+useDocHead('Authentication', 'Authenticate with a scoped bearer token created in Settings → Developers → API & Tokens.', 'authentication')
 
 // Read from the same list the server authorises against, so a scope added to
 // the API can't be missing from the page that documents them.
@@ -33,7 +33,7 @@ const forbidden = `{
   "error": {
     "status": 403,
     "code": "forbidden",
-    "message": "This token is missing the \\"appointments:write\\" scope. Add it in QuiroFlow under Settings → Developers.",
+    "message": "This token is missing the \\"appointments:write\\" scope. A token's scopes are fixed when it is created: create a new one with this scope in QuiroFlow under Settings → Developers → API & Tokens, and revoke this one.",
     "request_id": "7b2d90a1-4e63-4f28-9c5a-3d81e6f04b17"
   }
 }`
@@ -45,7 +45,7 @@ const forbidden = `{
     lead="Every request carries a bearer token. The token identifies one clinic account and the set of things it is allowed to do."
   >
     <p>
-      Create a token in QuiroFlow under <strong>Settings → Developers</strong>. It's generated in your browser and we only ever store its
+      Create a token in QuiroFlow under <strong>Settings → Developers → API &amp; Tokens</strong> (<em>Ajustes → Desarrolladores → API y tokens</em>). It's generated in your browser and we only ever store its
       SHA-256 hash, so it's shown once at creation and cannot be retrieved afterwards — if you lose it, revoke it and make another.
     </p>
 
@@ -104,9 +104,9 @@ const forbidden = `{
 
     <h2>If a token leaks</h2>
     <p>
-      Revoke it in <strong>Settings → Developers</strong>. Revocation takes effect on the very next request — there's no cache to wait out.
-      Then create a replacement and deploy it. The usage log shows what the old token did while it was live, which is what you'll want when
-      working out the blast radius.
+      Revoke it in <strong>Settings → Developers → API &amp; Tokens</strong>. Revocation takes effect on the very next request — there's no cache to wait out.
+      Then create a replacement and deploy it. The usage log on the same page lists the most recent calls, with path, status and time, which is
+      where to start working out the blast radius; ask us for the full history of a token if you need more.
     </p>
   </DevportalPage>
 </template>

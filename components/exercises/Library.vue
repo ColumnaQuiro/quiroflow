@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { readSteps } from '~/utils/exerciseSchedule'
+import { videoEmbedUrl } from '~/utils/learn'
 // The clinic's library of home exercises (the Exercises section's Library
 // tab, pages/exercises/index.vue; it was Settings > Exercise Library until
 // the section existed, and that address redirects here): what a practitioner picks from
@@ -484,8 +485,11 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
             <textarea v-model="form.instructions" rows="6" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="library-instructions" />
           </label>
           <label class="block text-[12.5px] font-medium text-ink-700">
-            {{ t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)') }}
-            <input v-model="form.media_url" type="text" inputmode="url" autocapitalize="off" placeholder="https://" :class="[inputClass, 'mt-1']" data-cy="library-link" />
+            {{ t('Video link, e.g. YouTube (optional)', 'Enlace a un vídeo, p. ej. de YouTube (opcional)') }}
+            <input v-model="form.media_url" type="text" inputmode="url" autocapitalize="off" placeholder="https://youtu.be/…" :class="[inputClass, 'mt-1']" data-cy="library-link" />
+            <span v-if="form.media_url.trim()" class="mt-1 block font-normal text-ink-muted" data-cy="library-link-note">{{
+              videoEmbedUrl(form.media_url) ? t('Patients watch it inside the app and the portal.', 'Los pacientes lo verán dentro de la app y el portal.') : t('Only YouTube and Vimeo play inside the app; other links open separately.', 'Solo YouTube y Vimeo se ven dentro de la app; otros enlaces se abren aparte.')
+            }}</span>
           </label>
           <ExercisesMediaField v-if="store.accountId" v-model="form.media_path" :account-id="store.accountId" />
           <p v-if="editingCatalog && !form.media_path" class="text-[12.5px] text-ink-muted">{{ t('From the QuiroFlow catalogue: its demonstration video plays for patients unless you upload your own.', 'Del catálogo de QuiroFlow: los pacientes ven su vídeo de demostración salvo que subas uno propio.') }}</p>

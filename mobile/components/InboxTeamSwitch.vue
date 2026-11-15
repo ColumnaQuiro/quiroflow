@@ -22,15 +22,17 @@ function go(to: 'inbox' | 'team') {
 </script>
 
 <template>
-  <div role="tablist" :aria-label="t('Messages', 'Mensajes')" class="grid min-w-0 flex-1 grid-cols-2 gap-[3px] rounded-ctl bg-chip-bg p-[3px]" data-cy="inbox-team-switch">
+  <!-- Tabs under the Inbox title, on the back plane: the current one in white
+       with the plane's live-colour underline. -->
+  <div role="tablist" :aria-label="t('Messages', 'Mensajes')" class="flex min-w-0 gap-6" data-cy="inbox-team-switch">
     <button
       v-for="s in ([['inbox', t('Conversations', 'Conversaciones'), inboxUnread], ['team', t('Team', 'Equipo'), teamUnread]] as const)"
       :key="s[0]"
       type="button"
       role="tab"
       :aria-selected="current === s[0]"
-      class="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-[7px] px-2 text-[13.5px]"
-      :class="current === s[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'"
+      class="relative flex h-11 min-w-0 items-center gap-1.5 text-[16px] font-[650] after:absolute after:inset-x-0 after:bottom-0.5 after:h-[3px] after:rounded-full"
+      :class="current === s[0] ? 'text-ink-900 after:bg-[rgb(var(--plane-live))]' : 'text-ink-muted after:bg-transparent'"
       :data-cy="`inbox-switch-${s[0]}`"
       @click="go(s[0])"
     >

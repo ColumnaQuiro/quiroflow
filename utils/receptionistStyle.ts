@@ -13,7 +13,7 @@ import { teamCallNames } from './receptionistClinic'
 //
 // A plain module (no Nuxt auto-imports) so the unit tests can pin it.
 
-export type StyleProblem = 'emoji' | 'opener' | 'colleague' | 'numeric_date' | 'ad' | 'surname'
+export type StyleProblem = 'emoji' | 'opener' | 'colleague' | 'numeric_date' | 'ad' | 'surname' | 'price_reason'
 
 const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}]\u{FE0F}?/gu
 
@@ -33,6 +33,16 @@ const NUMERIC_DATE = /(?<![\d:.,])(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|20\d\d-\
 const AD = /(?<!\p{L})(?:anuncio|anuncios|publicidad|our ad|the ad)(?!\p{L})/iu
 
 /**
+ * A price explained instead of given: "a precio estándar", "como no es
+ * paciente nuestro". The price is the price. On 13 Nov 2026 a new patient
+ * recommended by someone from another clinic was told "como [quien te recomendó] no es
+ * paciente de nuestro centro, te reservo la primera visita a precio estándar
+ * (70 €)" -- which says who is and is not a patient here, and makes 70 €
+ * sound like the price for those who do not qualify.
+ */
+const PRICE_REASON = /(?<!\p{L})(?:precio|tarifa)s? (?:est[aá]ndar|normal|habitual|completo|completa|general|base)(?!\p{L})|(?<!\p{L})(?:standard|regular|normal|full) (?:price|rate|fee)s?(?!\p{L})|(?<!\p{L})no (?:es|era|sea) (?:un |una )?paciente(?!\p{L})|(?<!\p{L})(?:is not|isn['’]t|was not|wasn['’]t) (?:a )?patient(?!\p{L})/iu
+
+/**
  * What is wrong with a reply, in the order the rewrite note lists it.
  * `teamNames`: the practitioners' full names (loadTeamNames).
  */
@@ -44,6 +54,7 @@ export function styleProblems(text: string, teamNames: string[] = []): StyleProb
   if (NUMERIC_DATE.test(text)) found.push('numeric_date')
   if (AD.test(text)) found.push('ad')
   if (surnamesUsed(text, teamNames).length) found.push('surname')
+  if (PRICE_REASON.test(text)) found.push('price_reason')
   return found
 }
 
@@ -59,6 +70,7 @@ export function styleNote(problems: StyleProblem[]): string {
     numeric_date: 'It writes a date in figures ("20/10", "2026-10-20"): write it in words, with the weekday ("el martes 20 de octubre").',
     ad: 'It mentions the ad or advertising: never speak of an ad to them. The offer is simply an offer the clinic has right now.',
     surname: 'It calls a practitioner by their full name: use their first name only.',
+    price_reason: 'It explains a price ("precio estándar", "precio normal", "como no es paciente") or says whether someone is a patient of the clinic: give the price alone ("La primera visita son 70 €"), with no label and no reason, and never say whether anyone is or is not a patient.',
   }
   return `Rewrite your reply. ${problems.map((p) => lines[p]).join(' ')} Keep everything else exactly as it was, and do not call any tool again.`
 }

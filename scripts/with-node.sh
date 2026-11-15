@@ -13,4 +13,12 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
   . "$NVM_DIR/nvm.sh"
   nvm use --silent
 fi
+# A typecheck or a production build waits its turn behind any other one
+# running on this machine (scripts/heavy-queue.sh says why). Everything else
+# -- the dev server, lint, unit tests, the small checks -- starts at once.
+case "$(basename "$1") $2" in
+  "nuxt build" | "nuxt generate" | "nuxi typecheck")
+    exec "$(dirname "$0")/heavy-queue.sh" "$@"
+    ;;
+esac
 exec "$@"

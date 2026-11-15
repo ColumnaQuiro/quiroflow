@@ -142,9 +142,13 @@ function bubbleTime(iso: string) {
   <div class="relative flex h-full min-h-0 flex-col bg-surface-page">
     <!-- With the Inbox, Team is one side of its tab and this bar switches
          between them; without it, this page is the tab itself. -->
-    <div v-if="context && can('inbox_access')" class="qf-plane qf-lip qf-lip-surface flex shrink-0 items-center gap-2 px-3 pt-2 md:px-5">
+    <!-- The same title and tabs as the Inbox's (components/PractitionerInbox.vue). -->
+    <div v-if="context && can('inbox_access')" class="qf-plane qf-lip qf-lip-surface qf-fade shrink-0 px-4 pt-2 md:px-5">
+      <div class="flex min-h-[52px] items-center gap-2">
+        <h1 class="min-w-0 flex-1 truncate text-[22px] font-[650] leading-tight tracking-[-0.02em] text-ink-900">{{ t('Inbox', 'Bandeja') }}</h1>
+        <StaffHelpButton />
+      </div>
       <InboxTeamSwitch current="team" />
-      <StaffHelpButton />
     </div>
     <AppPageHeader v-else :title="t('Team', 'Equipo')">
       <StaffHelpButton v-if="context" />

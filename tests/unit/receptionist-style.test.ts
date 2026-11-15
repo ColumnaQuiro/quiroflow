@@ -25,6 +25,17 @@ describe('House style, checked after the model writes', () => {
     expect(styleProblems('Tengo hueco a las 11:30 con Marta Soler.', team)).toEqual(['surname'])
   })
 
+  // 13 Nov 2026: "como [quien te recomendó] no es paciente de nuestro centro, te reservo
+  // la primera visita a precio estándar (70 €)". The price is just the price.
+  it('sends back a price that is explained instead of given', () => {
+    expect(styleProblems('Como no es paciente de nuestro centro, te reservo la primera visita a precio estándar (70 €).', team)).toEqual(['price_reason'])
+    expect(styleProblems('La primera visita tiene el precio normal, 70 €.', team)).toEqual(['price_reason'])
+    expect(styleProblems('As he is not a patient here, it is the standard price of 70 €.', team)).toEqual(['price_reason'])
+    expect(styleProblems('La primera visita son 70 €.', team)).toEqual([])
+    expect(styleProblems('La primera visita tiene ahora una oferta de 50 € (normalmente 70 €).', team)).toEqual([])
+    expect(styleNote(['price_reason'])).toContain('give the price alone')
+  })
+
   it('does not take a time or a price for a date', () => {
     expect(styleProblems('A las 18:00 o a las 18:15, son 50,00 €.', team)).toEqual([])
   })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { vi, describe, expect, it } from 'vitest'
 import sharp from 'sharp'
 import { PDFDocument, PDFName } from 'pdf-lib'
 import { compressPatientFile } from '../../server/utils/compressPatientFile'
@@ -16,6 +16,11 @@ function noise(width: number, height: number, channels: number) {
   for (let i = 0; i < buf.length; i++) buf[i] = (i * 7919 + (i >> 5)) % 256
   return buf
 }
+
+// These encode and decode real megapixel images with sharp and pdf-lib: a
+// second or two each on an idle machine, well past vitest's 5 s default on a
+// busy one, where they failed three pushes in a row with nothing wrong.
+vi.setConfig({ testTimeout: 30_000 })
 
 describe('compressing a patient file', () => {
   it('keeps a portrait phone photo upright', async () => {

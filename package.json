@@ -21,7 +21,7 @@
     "i18n:todo": "./scripts/with-node.sh node scripts/i18n-extract.mjs --report-only --todo i18n-todo.json",
     "i18n:prune": "./scripts/with-node.sh node scripts/i18n-extract.mjs --report-only --write",
     "check:table-grants": "./scripts/with-node.sh node scripts/check-table-grants.mjs",
-    "preflight": "npm run check:migrations && npm run check:migration-compatibility && npm run check:e2e-shards && npm run check:theme-tokens && npm run check:rls-initplan && npm run check:rls-two-factor && npm run check:i18n && npm run check:table-grants && npm run lint && npm run test:unit && NODE_OPTIONS=--max-old-space-size=8192 ./scripts/with-node.sh nuxi typecheck",
+    "preflight": "./scripts/preflight.sh",
     "postinstall": "./scripts/with-node.sh nuxt prepare",
     "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
     "test:e2e:local": "./scripts/e2e-local.sh",
@@ -35,7 +35,7 @@
     "test:unit": "./scripts/with-node.sh vitest run",
     "eval:receptionist": "./scripts/with-node.sh vitest run --config vitest.evals.config.ts tests/evals/receptionist",
     "eval:forms": "./scripts/with-node.sh vitest run --config vitest.evals.config.ts tests/evals/forms",
-    "lint": "./scripts/with-node.sh eslint ."
+    "lint": "./scripts/with-node.sh eslint . --cache --cache-strategy content --cache-location node_modules/.cache/quiroflow-preflight/eslint/"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

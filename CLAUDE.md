@@ -30,6 +30,20 @@ gate behind it. Because of that:
   `v-else` shipped — preflight clean, every route 500ing, and the only
   signal was three Cypress shards failing on pages unrelated to the
   change. `npm run build` names it outright in about a minute.
+  Run preflight **after committing**, then push: a pass records the tree it
+  checked, and the pre-push hook skips its own run when the commit being
+  pushed is that tree. Run it with uncommitted or untracked files in the
+  way and the hook runs it all again. It caches lint and typecheck in
+  `node_modules/.cache` (not in CI), but any `.ts`/`.vue` edit still means
+  a near-full ~90 s typecheck: everything auto-imports `utils/` and
+  `composables/`, so TypeScript rechecks every file that depends on them.
+- **Do not run the Cypress suite locally before opening a PR.** CI runs
+  every spec on every PR across its shards. Locally it needs a build, a
+  `db reset` on the Supabase stack every worktree shares, and a quiet
+  machine, and it still fails for reasons that are not the change. Run one
+  spec locally only when you are writing it or reproducing a CI failure
+  (`npx cypress run --spec <file>`), and otherwise open the PR and read the
+  shards' results.
 - **CI's Cypress shards are computed, not listed.** `scripts/e2e-shard.mjs`
   spreads every spec on disk across the shards by its measured time in
   `cypress/e2e-timings.json`, so a new spec or folder runs with no workflow
@@ -57,6 +71,23 @@ That missing "Require branches to be up to date" checkbox is exactly why
 the sync-before-merge rule above has to be followed by hand. Measured over
 the last 13 merges, 11 were up to date and 2 went in 2–3 commits stale;
 neither broke anything, but nothing would have caught it if they had.
+
+## Typechecks and builds queue, one at a time per machine
+
+A typecheck of this project takes about 4.5 GB and a production build is in
+the same range. Several sessions, each in its own worktree, used to run them
+together: six at once on a 16 GB machine on 13 Nov 2026 swapped it to a
+standstill, and a build whose server step takes a minute took fourteen.
+
+`scripts/with-node.sh` now sends `nuxt build`, `nuxt generate` and
+`nuxi typecheck` through `scripts/heavy-queue.sh`, which runs one at a time
+across every checkout on the machine and prints who it is waiting for. So a
+`[queue] waiting for the heavy check in …` line is the system working, not a
+hang: do not kill it and do not start a second copy. `QUIROFLOW_NO_QUEUE=1`
+skips the queue for one command; CI never queues.
+
+It only covers checkouts that have the script, so a branch cut before it
+merged does not wait and is not waited for until it is synced with `main`.
 
 ## Migrations — timestamped filenames, never the next free number
 

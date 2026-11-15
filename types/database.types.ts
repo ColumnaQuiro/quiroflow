@@ -3259,6 +3259,7 @@ export type Database = {
           frequency_value: number
           id: string
           name: string
+          next_phases: Json
           package_purchase_id: string | null
           patient_membership_id: string | null
           payment_kind: string
@@ -3276,6 +3277,7 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          next_phases?: Json
           package_purchase_id?: string | null
           patient_membership_id?: string | null
           payment_kind?: string
@@ -3293,6 +3295,7 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          next_phases?: Json
           package_purchase_id?: string | null
           patient_membership_id?: string | null
           payment_kind?: string
@@ -11096,6 +11099,10 @@ export type Database = {
       bulk_patient_ids: {
         Args: { p_clinic_id: string; p_filters: Json; p_patient_ids: string[] }
         Returns: string[]
+      }
+      bulk_update_patients: {
+        Args: { p_account_id: string; p_changes: Json; p_clinic_id: string; p_filters: Json; p_patient_ids: string[] }
+        Returns: Json
       }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }

@@ -12,7 +12,13 @@ import type { PlanCadence } from './carePlanCadence'
 /** Flag the plan once this many attended visits (or fewer) remain. */
 export const RENEWAL_DUE_REMAINING = 2
 
-export function renewalDue(plan: { total_visits: number | null }, completedInPlan: number): boolean {
+/**
+ * Not while a next phase is queued (care_plans.next_phases): that phase
+ * starts by itself when this one's last visit is done, so there is nothing to
+ * decide yet -- the review comes at the end of the last phase.
+ */
+export function renewalDue(plan: { total_visits: number | null; next_phases?: unknown }, completedInPlan: number): boolean {
+  if (Array.isArray(plan.next_phases) && plan.next_phases.length > 0) return false
   return plan.total_visits !== null && plan.total_visits > 0 && plan.total_visits - completedInPlan <= RENEWAL_DUE_REMAINING
 }
 

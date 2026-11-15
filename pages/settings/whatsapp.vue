@@ -30,44 +30,6 @@ const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
-const metaAdsAccountId = ref('')
-const metaAdsAccessToken = ref('')
-// Whether each token is stored. Write-only, like the WhatsApp token: the
-// value never comes back to the page, and an empty field keeps it.
-const hasInstagramToken = ref(false)
-const hasMetaAdsToken = ref(false)
-const instagramUserId = ref('')
-const instagramAccessToken = ref('')
-// Same rule as manualOpen: decided once per load, open until connected.
-const instagramManualOpen = ref(false)
-const instagramConnect = useFacebookPageConnect('instagram')
-const connectingInstagram = ref(false)
-// Set when one grant reached several Instagram accounts: the clinic picks
-// here, and the ticket carries the rest back to the server.
-const instagramChoices = ref<{ instagramUserId: string; username: string | null; pageName: string | null }[]>([])
-const instagramTicket = ref('')
-// The last thing that went wrong, kept in the card: a toast is gone in four
-// seconds, and Meta's reason is usually the only clue to what to do next.
-const instagramError = ref('')
-const instagramChoicesEl = ref<HTMLElement | null>(null)
-// The Facebook Page whose Messenger DMs reach the Inbox: the one Instagram is
-// connected through, filled in by the Connect button.
-const messengerPageId = ref('')
-// Web chat on the clinic's own website (public/webchat.js), addressed by the
-// booking page's slug.
-const webchatEnabled = ref(false)
-const webchatGreeting = ref('')
-const accountSlug = ref('')
-// The closing tag is split: written whole, it would end this <script setup>.
-const webchatSnippet = computed(() => (accountSlug.value && appOrigin.value ? `<script src="${appOrigin.value}/webchat.js" data-clinic="${accountSlug.value}" async><` + `/script>` : ''))
-async function copySnippet() {
-  try {
-    await navigator.clipboard.writeText(webchatSnippet.value)
-    showToast(t('Copied. Paste it before </body> on every page of your website.', 'Copiado. Pégalo antes de </body> en todas las páginas de tu web.'), 'success')
-  } catch {
-    showToast(t('Could not copy. Select the code and copy it by hand.', 'No se pudo copiar. Selecciona el código y cópialo a mano.'), 'error')
-  }
-}
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -80,28 +42,53 @@ const saving = ref(false)
 // that would render an empty string during SSR but the real URL on the
 // client's first render, and Vue flags that mismatch as a hydration error.
 const webhookUrl = ref('')
-const appOrigin = ref('')
 onMounted(() => {
   webhookUrl.value = `${window.location.origin}/api/whatsapp/webhook`
-  appOrigin.value = window.location.origin
 })
+
+// Setting WhatsApp up by hand, from a clinic's own Meta app, is how the first
+// clinic was connected and the only route on a deployment without Embedded
+// Signup. Everyone else connects with the button, and a form of ids, tokens
+// and an app secret beside it only invites pasting the wrong thing -- so it
+// is shown to a clinic that already runs on its own app (it has an app
+// secret stored), or where there is no button to use instead.
+const runtimeConfig = useRuntimeConfig()
+const embeddedSignupAvailable = Boolean(runtimeConfig.public.metaPlatformAppId && runtimeConfig.public.metaEmbeddedSignupConfigId)
+const showManual = computed(() => hasStoredAppSecret.value || !embeddedSignupAvailable)
 
 interface Template {
   name: string
   language: string
   category: string
   bodyText: string
+  status?: string
+  rejectedReason?: string | null
 }
 const templates = ref<Template[]>([])
+// Submitted and not approved: pending, rejected or paused at Meta.
+const inReview = ref<Template[]>([])
 const loadingTemplates = ref(false)
 const templatesError = ref('')
+const creatingTemplate = ref(false)
+const justCreated = ref('')
+function templateCreated(created: { name: string }) {
+  creatingTemplate.value = false
+  justCreated.value = created.name
+  loadTemplates()
+}
+function reviewLabel(status: string | undefined) {
+  if (status === 'REJECTED') return t('Rejected', 'Rechazada')
+  if (status === 'PAUSED') return t('Paused by Meta', 'Pausada por Meta')
+  if (status === 'DISABLED') return t('Disabled by Meta', 'Desactivada por Meta')
+  return t('In review', 'En revisión')
+}
 
 async function load() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_business_app_since, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id, messenger_page_id, webchat_enabled, webchat_greeting, slug',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_business_app_since, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -111,10 +98,8 @@ async function load() {
   manualOpen.value = !businessAccountId.value
   // The tokens live in account_secrets; the page only learns which are stored.
   try {
-    const tokens = await useStaffFetch<{ whatsapp: boolean; instagram: boolean; metaAds: boolean }>('/api/whatsapp/tokens')
+    const tokens = await useStaffFetch<{ whatsapp: boolean }>('/api/whatsapp/tokens')
     hasStoredToken.value = tokens.whatsapp
-    hasInstagramToken.value = tokens.instagram
-    hasMetaAdsToken.value = tokens.metaAds
   } catch {
     hasStoredToken.value = false
   }
@@ -133,15 +118,6 @@ async function load() {
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
-  metaAdsAccountId.value = data?.meta_ads_account_id ?? ''
-  metaAdsAccessToken.value = ''
-  instagramUserId.value = data?.instagram_user_id ?? ''
-  instagramManualOpen.value = !instagramUserId.value
-  instagramAccessToken.value = ''
-  messengerPageId.value = data?.messenger_page_id ?? ''
-  webchatEnabled.value = data?.webchat_enabled ?? false
-  webchatGreeting.value = data?.webchat_greeting ?? ''
-  accountSlug.value = data?.slug ?? ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
   staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
@@ -155,8 +131,9 @@ async function loadTemplates() {
   loadingTemplates.value = true
   templatesError.value = ''
   try {
-    const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    const { templates: list, inReview: pending } = await useStaffFetch<{ templates: Template[]; inReview?: Template[] }>('/api/whatsapp/templates')
     templates.value = list
+    inReview.value = pending ?? []
   } catch (err: any) {
     templatesError.value = err?.data?.statusMessage ?? t('Failed to load templates', 'Error al cargar las plantillas')
   } finally {
@@ -210,22 +187,10 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
 
 // Each id routes inbound messages to exactly one account, so the database
 // refuses one that another account already holds
-// (accounts_whatsapp_phone_number_id_key, accounts_instagram_user_id_key).
+// (accounts_whatsapp_phone_number_id_key).
 // Its own words for that are a constraint name, which tells a clinic nothing
 // about what to do.
 function saveErrorMessage(error: { code?: string; message: string }) {
-  if (error.code === '23505' && error.message.includes('instagram_user_id')) {
-    return t(
-      'This Instagram account is already connected to another QuiroFlow account. Disconnect it there first.',
-      'Esta cuenta de Instagram ya está conectada a otra cuenta de QuiroFlow. Desconéctala allí primero.',
-    )
-  }
-  if (error.code === '23505' && error.message.includes('messenger_page_id')) {
-    return t(
-      'This Facebook Page already receives Messenger for another QuiroFlow account. Disconnect it there first.',
-      'Esta página de Facebook ya recibe Messenger en otra cuenta de QuiroFlow. Desconéctala allí primero.',
-    )
-  }
   if (error.code === '23505' && error.message.includes('whatsapp_phone_number_id')) {
     return t(
       'This WhatsApp number is already connected to another QuiroFlow account. Disconnect it there first.',
@@ -233,84 +198,6 @@ function saveErrorMessage(error: { code?: string; message: string }) {
     )
   }
   return error.message
-}
-
-// Meta's dialog: the clinic ticks its Instagram account and the Page it is
-// linked to, and the server finds the one behind it, subscribes the Page and
-// stores both. Nothing here to save afterwards -- it is already stored.
-//
-// Unless the grant reached more than one account (a portfolio with two
-// locations, or a Page an earlier connection granted): then the server
-// answers with the choices instead, and finishInstagram sends the pick back.
-interface InstagramConnectResult {
-  connected: boolean
-  instagramUserId?: string
-  username?: string | null
-  messengerPageId?: string | null
-  choose?: { instagramUserId: string; username: string | null; pageName: string | null }[]
-  ticket?: string
-}
-
-async function connectInstagram() {
-  connectingInstagram.value = true
-  instagramChoices.value = []
-  instagramError.value = ''
-  try {
-    const code = await instagramConnect.launch()
-    const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', { method: 'POST', body: { code } })
-    if (result.choose?.length && result.ticket) {
-      instagramChoices.value = result.choose
-      instagramTicket.value = result.ticket
-      // Nothing is connected until they pick, and coming back from Meta's
-      // popup they are not looking at this card: say so, and bring it into
-      // view. A grey line under the button went unnoticed twice.
-      showToast(t('One more step: choose which Instagram account is this clinic’s.', 'Un paso más: elige cuál es la cuenta de Instagram de esta clínica.'), 'info', 8000)
-      await nextTick()
-      instagramChoicesEl.value?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
-      return
-    }
-    instagramConnected(result)
-  } catch (err: any) {
-    // Closing Meta's dialog is not a failure (see WhatsAppConnectCard).
-    if (err?.message === 'CANCELLED') return
-    instagramFailed(err)
-  } finally {
-    connectingInstagram.value = false
-  }
-}
-
-async function finishInstagram(instagramUserIdPicked: string) {
-  connectingInstagram.value = true
-  instagramError.value = ''
-  try {
-    const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', {
-      method: 'POST',
-      body: { ticket: instagramTicket.value, instagramUserId: instagramUserIdPicked },
-    })
-    instagramChoices.value = []
-    instagramTicket.value = ''
-    instagramConnected(result)
-  } catch (err: any) {
-    instagramFailed(err)
-  } finally {
-    connectingInstagram.value = false
-  }
-}
-
-function instagramFailed(err: any) {
-  instagramError.value = err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.')
-  showToast(instagramError.value, 'error')
-}
-
-function instagramConnected(result: InstagramConnectResult) {
-  instagramError.value = ''
-  instagramUserId.value = result.instagramUserId ?? ''
-  hasInstagramToken.value = true
-  instagramAccessToken.value = ''
-  instagramManualOpen.value = false
-  if (result.messengerPageId) messengerPageId.value = result.messengerPageId
-  const who = result.username ? `@${result.username}` : result.instagramUserId
-  showToast(t(`Instagram connected: ${who}.`, `Instagram conectado: ${who}.`), 'success')
 }
 
 async function save() {
@@ -325,14 +212,6 @@ async function save() {
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
-    meta_ads_account_id: metaAdsAccountId.value.trim() || null,
-    instagram_user_id: instagramUserId.value.trim() || null,
-    // Only the Instagram connection sets messenger_page_id
-    // (accounts_guard_server_written), from the Page the clinic ticked at Meta.
-    // Leaving the Instagram ID empty disconnects it, and gives that Page up too.
-    ...(instagramUserId.value.trim() ? {} : { messenger_page_id: null }),
-    webchat_enabled: webchatEnabled.value,
-    webchat_greeting: webchatGreeting.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
@@ -345,14 +224,9 @@ async function save() {
   }
   // Tokens through the server, into account_secrets: not a column every
   // member of the clinic can read.
-  const typedTokens = { whatsapp: accessToken.value.trim(), instagram: instagramAccessToken.value.trim(), metaAds: metaAdsAccessToken.value.trim() }
-  if (typedTokens.whatsapp || typedTokens.instagram || typedTokens.metaAds) {
+  if (accessToken.value.trim()) {
     try {
-      await useStaffFetch('/api/whatsapp/tokens', { method: 'PUT', body: typedTokens })
-      if (typedTokens.instagram) hasInstagramToken.value = true
-      if (typedTokens.metaAds) hasMetaAdsToken.value = true
-      instagramAccessToken.value = ''
-      metaAdsAccessToken.value = ''
+      await useStaffFetch('/api/whatsapp/tokens', { method: 'PUT', body: { whatsapp: accessToken.value.trim() } })
     } catch (e: any) {
       showToast(e?.data?.statusMessage ?? e?.statusMessage ?? t('Could not save the access token', 'No se pudo guardar el token de acceso'), 'error')
       return
@@ -371,7 +245,6 @@ async function save() {
     }
   }
 
-  if (!instagramUserId.value.trim()) messengerPageId.value = ''
   showToast(t('Saved', 'Guardado'))
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
@@ -389,7 +262,7 @@ async function save() {
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="whatsapp-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('Your clinic’s WhatsApp number: what QuiroFlow sends from it, and the other Meta accounts that use the same connection.', 'El número de WhatsApp de tu clínica: lo que QuiroFlow envía desde él y las otras cuentas de Meta que usan la misma conexión.') }}
+            {{ t('Your clinic’s WhatsApp number, and the approved templates QuiroFlow starts each conversation with.', 'El número de WhatsApp de tu clínica y las plantillas aprobadas con las que QuiroFlow inicia cada conversación.') }}
           </p>
 
           <!-- The one-click route first: it is the one almost every clinic should take. -->
@@ -409,7 +282,7 @@ async function save() {
                 </span>
                 <span class="flex flex-col gap-0.5">
                   <strong class="text-[13.5px] text-ink-900">{{ connected ? t('Messages can be sent', 'Se pueden enviar mensajes') : t('Not connected yet', 'Aún sin conectar') }}</strong>
-                  <span class="text-[12.5px] text-ink-muted">{{ connected ? t(`Business account ${businessAccountId}`, `Cuenta de empresa ${businessAccountId}`) : t('Connect above, or set it up by hand below.', 'Conéctalo arriba, o configúralo a mano abajo.') }}</span>
+                  <span class="text-[12.5px] text-ink-muted">{{ connected ? t(`Business account ${businessAccountId}`, `Cuenta de empresa ${businessAccountId}`) : t('Connect it above.', 'Conéctalo arriba.') }}</span>
                 </span>
               </div>
               <div class="flex gap-3 px-[18px] py-3.5">
@@ -431,11 +304,32 @@ async function save() {
                   <h2 id="h-templates" class="text-[16px] font-bold text-ink-900">{{ t('Message templates', 'Plantillas de mensaje') }}</h2>
                   <p class="mt-1 text-[13px] leading-snug text-ink-muted">{{ t('WhatsApp only lets a business start a conversation with a template Meta has approved. Pick which one each message uses.', 'WhatsApp solo deja a una empresa iniciar una conversación con una plantilla aprobada por Meta. Elige cuál usa cada mensaje.') }}</p>
                 </div>
-                <UiBtn :disabled="loadingTemplates || !hasStoredToken || !businessAccountId" data-cy="whatsapp-templates-refresh" @click="loadTemplates">
-                  {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Refresh from Meta', 'Actualizar desde Meta') }}
-                </UiBtn>
+                <div class="flex flex-wrap gap-2">
+                  <UiBtn :disabled="loadingTemplates || !hasStoredToken || !businessAccountId" data-cy="whatsapp-templates-refresh" @click="loadTemplates">
+                    {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Refresh from Meta', 'Actualizar desde Meta') }}
+                  </UiBtn>
+                  <UiBtn variant="primary" :disabled="!hasStoredToken || !businessAccountId" data-cy="whatsapp-template-create" @click="creatingTemplate = true">
+                    {{ t('Create template', 'Crear plantilla') }}
+                  </UiBtn>
+                </div>
               </div>
               <p v-if="templatesError" class="border-t border-line-row px-[18px] py-2.5 text-[13px] font-semibold text-danger-text">{{ templatesError }}</p>
+              <p v-if="justCreated" class="border-t border-line-row bg-success-bg px-[18px] py-2.5 text-[13px] text-success-text" data-cy="whatsapp-template-created">
+                {{ t(`"${justCreated}" was sent to Meta. Once it is approved you can choose it here and in your automations.`, `«${justCreated}» se ha enviado a Meta. Cuando la aprueben podrás elegirla aquí y en tus automatizaciones.`) }}
+              </p>
+              <!-- Submitted but not usable yet: a template does not vanish
+              between creating it and Meta approving it, and a rejection says
+              why. -->
+              <div v-if="inReview.length" class="flex flex-col gap-1.5 border-t border-line-row px-[18px] py-3" data-cy="whatsapp-templates-in-review">
+                <span class="text-[12.5px] font-semibold text-ink-700">{{ t('Waiting on Meta', 'Pendientes de Meta') }}</span>
+                <div v-for="tpl in inReview" :key="tpl.name + tpl.language" class="flex flex-wrap items-center gap-2 text-[13px]">
+                  <span class="font-mono text-ink-900">{{ tpl.name }}</span>
+                  <span class="text-ink-muted">· {{ tpl.language }}</span>
+                  <UiPill :tone="tpl.status === 'REJECTED' || tpl.status === 'DISABLED' ? 'danger' : 'warning'" dot>{{ reviewLabel(tpl.status) }}</UiPill>
+                  <span v-if="tpl.rejectedReason" class="text-[12px] text-ink-muted">{{ t(templateRejectionReason(tpl.rejectedReason).en, templateRejectionReason(tpl.rejectedReason).es) }}</span>
+                </div>
+              </div>
+              <SettingsWhatsAppTemplateDialog v-if="creatingTemplate" @close="creatingTemplate = false" @created="templateCreated" />
 
               <div v-for="u in USES" :key="u.key" :data-template-use="u.key" class="grid grid-cols-1 items-start gap-2 border-t border-line-row px-[18px] py-3 md:grid-cols-[1fr_1.15fr] md:gap-4">
                 <div class="flex flex-col gap-0.5">
@@ -467,135 +361,13 @@ async function save() {
               </div>
             </section>
 
-            <!-- Instagram rides the same Meta app and webhook: only which account to receive and send as. -->
-            <section aria-labelledby="h-ig" class="overflow-hidden rounded-card border border-line bg-surface">
-              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
-                <h2 id="h-ig" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Instagram messages', 'Mensajes de Instagram') }}</h2>
-                <UiPill v-if="instagramUserId && (hasInstagramToken || instagramAccessToken)" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
-                <UiPill v-else-if="instagramUserId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
-                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
-              </div>
-              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('DMs to your professional account arrive in the Inbox beside WhatsApp, and you can answer them from there.', 'Los mensajes a tu cuenta profesional llegan a la Bandeja junto a WhatsApp, y puedes responderlos desde allí.') }}</p>
-              <div v-if="instagramConnect.available.value" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <span class="min-w-[220px] flex-1 text-[13px] leading-snug text-ink-500">{{ t('Sign in with Meta and tick your Instagram account and the Facebook Page it is linked to.', 'Inicia sesión con Meta y marca tu cuenta de Instagram y la página de Facebook a la que está vinculada.') }}</span>
-                <UiBtn variant="primary" :disabled="connectingInstagram || loading" data-cy="instagram-connect" @click="connectInstagram">
-                  {{ connectingInstagram ? t('Connecting…', 'Conectando…') : instagramUserId ? t('Reconnect Instagram', 'Volver a conectar Instagram') : t('Connect Instagram', 'Conectar Instagram') }}
-                </UiBtn>
-              </div>
-              <div v-if="instagramChoices.length" ref="instagramChoicesEl" role="group" aria-labelledby="h-ig-choose" class="flex flex-col gap-2 border-t border-brand-tint bg-brand-tint px-[18px] py-3.5" data-cy="instagram-choices">
-                <strong id="h-ig-choose" class="text-[14.5px] text-ink-900">{{ t('One more step: which Instagram account is this clinic’s?', 'Un paso más: ¿cuál es la cuenta de Instagram de esta clínica?') }}</strong>
-                <p class="text-[13px] leading-snug text-ink-500">{{ t('Meta shared more than one account with QuiroFlow. Nothing is connected until you choose.', 'Meta ha compartido más de una cuenta con QuiroFlow. No se conecta nada hasta que elijas.') }}</p>
-                <div class="flex flex-wrap gap-2">
-                  <UiBtn v-for="c in instagramChoices" :key="c.instagramUserId" variant="primary" :disabled="connectingInstagram" :data-instagram-user-id="c.instagramUserId" @click="finishInstagram(c.instagramUserId)">
-                    {{ c.username ? `@${c.username}` : c.instagramUserId }}<span v-if="c.pageName" class="ml-1 font-normal opacity-80">· {{ c.pageName }}</span>
-                  </UiBtn>
-                </div>
-              </div>
-              <p v-if="instagramError" role="alert" class="border-t border-line-row px-[18px] py-2.5 text-[13px] font-semibold text-danger-text" data-cy="instagram-connect-error">{{ instagramError }}</p>
-              <!-- Without the button (no configuration on this deployment) the fields are the only way, so they stay open. -->
-              <details :open="!instagramConnect.available.value || instagramManualOpen" class="group border-t border-line" data-cy="instagram-manual">
-                <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
-                  {{ t('Set it up by hand', 'Configúralo a mano') }}
-                </summary>
-                <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('Leave the account ID empty to keep Instagram disconnected.', 'Deja el ID vacío para no conectar Instagram.') }}</p>
-                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                  <label for="ig-id" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('Instagram account ID', 'ID de la cuenta de Instagram') }}</label>
-                  <input id="ig-id" v-model="instagramUserId" type="text" placeholder="17841400000000000" data-test="instagram-user-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
-                </div>
-                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                    <label for="ig-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
-                    <span class="text-[13px] text-ink-500">{{ t('A Page token with instagram_manage_messages. Only needed to reply.', 'Un token de página con instagram_manage_messages. Solo hace falta para responder.') }}</span>
-                  </div>
-                  <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" :placeholder="hasInstagramToken ? '••••••••••••••••••••' : 'EAA…'" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
-                </div>
-                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                    <label for="fb-page-id" class="text-[14.5px] font-bold text-ink-900">{{ t('Facebook Page ID', 'ID de la página de Facebook') }}</label>
-                    <span class="text-[13px] text-ink-500">{{ t('Set by connecting Instagram, from the Page you tick at Meta. Its Messenger DMs arrive in the Inbox too.', 'Se fija al conectar Instagram, con la página que marques en Meta. Sus mensajes de Messenger también llegan a la Bandeja.') }}</span>
-                  </div>
-                  <input id="fb-page-id" :value="messengerPageId" type="text" readonly :placeholder="t('Not connected', 'Sin conectar')" data-test="messenger-page-id" :class="[inputClass, 'w-full cursor-default font-mono text-[13px] sm:w-[300px]']" />
-                </div>
-              </details>
-              <!-- Messenger is not a second connection: it is the Page Instagram already goes through. -->
-              <div class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3" data-cy="messenger-status">
-                <span class="min-w-[220px] flex-1 text-[13px] leading-snug text-ink-500">
-                  <strong class="text-ink-900">{{ t('Facebook Messenger', 'Facebook Messenger') }}</strong> ·
-                  {{ messengerPageId ? t('Messages to the same Facebook Page arrive in the Inbox as well, and you can answer them there.', 'Los mensajes a la misma página de Facebook también llegan a la Bandeja, y puedes responderlos desde allí.') : t('Connect Instagram and the Facebook Page you tick receives Messenger here too.', 'Conecta Instagram y la página de Facebook que marques también recibirá Messenger aquí.') }}
-                </span>
-                <UiPill v-if="messengerPageId && (hasInstagramToken || instagramAccessToken)" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
-                <UiPill v-else-if="messengerPageId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
-                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
-              </div>
-            </section>
-
-            <!-- A chat bubble on the clinic's own website, answered from the Inbox (and by the receptionist, when it is on). -->
-            <section aria-labelledby="h-webchat" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="webchat-settings">
-              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
-                <h2 id="h-webchat" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Chat on your website', 'Chat en tu web') }}</h2>
-                <UiPill v-if="webchatEnabled" tone="success" dot>{{ t('On', 'Activado') }}</UiPill>
-                <UiPill v-else tone="neutral">{{ t('Off', 'Desactivado') }}</UiPill>
-              </div>
-              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('A chat button on your website. Each visitor who writes becomes a lead, their messages arrive in the Inbox, and the AI receptionist answers them if it is on.', 'Un botón de chat en tu web. Cada visitante que escribe se convierte en lead, sus mensajes llegan a la Bandeja y la recepcionista con IA le contesta si está activada.') }}</p>
-              <label class="flex cursor-pointer flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <span class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <span class="text-[14.5px] font-bold text-ink-900">{{ t('Show the chat on my website', 'Mostrar el chat en mi web') }}</span>
-                  <span class="text-[13px] text-ink-500">{{ t('Off hides it everywhere, even where the code is still pasted.', 'Desactivado lo oculta en todas partes, aunque el código siga pegado.') }}</span>
-                </span>
-                <input v-model="webchatEnabled" type="checkbox" data-cy="webchat-enabled" class="h-5 w-5 rounded border-line-control text-brand focus:ring-brand/30" />
-              </label>
-              <div class="flex flex-wrap items-start gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="webchat-greeting" class="text-[14.5px] font-bold text-ink-900">{{ t('Greeting', 'Saludo') }}</label>
-                  <span class="text-[13px] text-ink-500">{{ t('The first thing a visitor reads when they open the chat.', 'Lo primero que lee un visitante al abrir el chat.') }}</span>
-                </div>
-                <textarea id="webchat-greeting" v-model="webchatGreeting" rows="2" maxlength="300" data-cy="webchat-greeting" :placeholder="t('Hi! How can we help you?', '¡Hola! ¿En qué te podemos ayudar?')" :class="[inputClass, 'w-full sm:w-[300px]']" />
-              </div>
-              <div class="flex flex-col gap-2 border-t border-line-row px-[18px] py-3">
-                <span class="text-[14.5px] font-bold text-ink-900">{{ t('Code for your website', 'Código para tu web') }}</span>
-                <template v-if="webchatSnippet">
-                  <span class="text-[13px] text-ink-500">{{ t('Paste it once, before </body>, on every page. Whoever manages your website can do it in a minute.', 'Pégalo una vez, antes de </body>, en todas las páginas. Quien lleve tu web lo hace en un minuto.') }}</span>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-ctl border border-line bg-surface-subtle px-3 py-2 font-mono text-[12.5px] text-ink-700" data-cy="webchat-snippet">{{ webchatSnippet }}</code>
-                    <UiBtn data-cy="webchat-copy" @click="copySnippet">{{ t('Copy', 'Copiar') }}</UiBtn>
-                  </div>
-                </template>
-                <span v-else class="text-[13px] text-ink-500">{{ t('Your clinic needs a booking page address first: set it in Settings > Online booking.', 'Primero tu clínica necesita una dirección de reservas: ponla en Ajustes > Reserva online.') }}</span>
-              </div>
-            </section>
-
-            <!-- Reading only: the token asked for is ads_read, so a leaked one cannot spend money. -->
-            <section aria-labelledby="h-ads" class="overflow-hidden rounded-card border border-line bg-surface">
-              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
-                <h2 id="h-ads" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Meta Ads spend', 'Gasto en Meta Ads') }}</h2>
-                <UiPill v-if="metaAdsAccountId && (hasMetaAdsToken || metaAdsAccessToken)" tone="success" dot>{{ t('Connected', 'Conectado') }}</UiPill>
-                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
-              </div>
-              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('Lets Growth read what you spent on Meta ads instead of you typing it each month. Read-only: nothing here can spend money.', 'Permite a Crecimiento leer lo que gastaste en Meta en lugar de escribirlo cada mes. Solo lectura: nada aquí puede gastar dinero.') }}</p>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="ads-id" class="text-[14.5px] font-bold text-ink-900">{{ t('Ad account ID', 'ID de la cuenta publicitaria') }}</label>
-                  <span class="text-[13px] text-ink-500">{{ t('With or without act_. Euro accounts only for now.', 'Con o sin act_. De momento solo cuentas en euros.') }}</span>
-                </div>
-                <input id="ads-id" v-model="metaAdsAccountId" type="text" placeholder="act_1234567890" data-test="meta-ads-account-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
-              </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="ads-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Read token', 'Token de lectura') }}</label>
-                  <span class="text-[13px] text-ink-500">{{ t('A long-lived token with ads_read for that account.', 'Un token de larga duración con ads_read para esa cuenta.') }}</span>
-                </div>
-                <input id="ads-token" v-model="metaAdsAccessToken" type="password" autocomplete="off" :placeholder="hasMetaAdsToken ? '••••••••••••••••••••' : 'EAA…'" data-test="meta-ads-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
-              </div>
-            </section>
-
-            <!-- The manual route, folded but never gone: a clinic set up by hand (Columnaquiro) keeps it.
-                 Open by default until something is connected, so a clinic without the button still finds it. -->
-            <section class="overflow-hidden rounded-card border border-line bg-surface">
+            <!-- By hand, from a clinic's own Meta app: only where that is how the clinic
+                 already runs (it has an app secret stored), or there is no Connect button. -->
+            <section v-if="showManual" class="overflow-hidden rounded-card border border-line bg-surface">
               <details :open="manualOpen" class="group" data-cy="whatsapp-manual">
                 <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
-                  {{ t('Already have your own Meta app? Set it up by hand', '¿Ya tienes tu propia app de Meta? Configúralo a mano') }}
+                  {{ t('Your own Meta app, set up by hand', 'Tu propia app de Meta, configurada a mano') }}
                 </summary>
                 <p class="px-[18px] pb-2 text-[13px] leading-snug text-ink-muted">
                   {{ t('A Phone Number ID, a WhatsApp Business Account ID and a permanent access token from your Meta app, plus at least one approved message template.', 'Un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente de tu app de Meta, además de al menos una plantilla aprobada.') }}
@@ -626,49 +398,14 @@ async function save() {
                     <UiPill v-else tone="warning">{{ t('Not set', 'Sin configurar') }}</UiPill>
                   </div>
                 </div>
-              </details>
-              <details class="group border-t border-line" data-cy="whatsapp-webhook">
-                <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
-                  {{ t('Delivery and reply tracking: the webhook', 'Seguimiento de entrega y respuesta: el webhook') }}
-                </summary>
-                <div class="px-[18px] pb-4">
-            <p class="mt-1 text-[12.5px] leading-relaxed text-ink-muted2">
-              {{ t('Optional. Feeds the "Scheduled Reminders" report — whether a message actually delivered (vs. a bad number or a recipient with no WhatsApp) and whether a patient replied to confirm or reschedule. Meta only allows', 'Opcional. Alimenta el informe "Recordatorios Programados" — si un mensaje realmente se entregó (frente a un número incorrecto o un destinatario sin WhatsApp) y si un paciente respondió para confirmar o reprogramar. Meta solo permite') }}
-              <strong>{{ t('one', 'una') }}</strong> {{ t('webhook URL per WhatsApp Business number, so if you already point it at another tool (n8n, Zapier, your own backend...), you have two options — no need to give that up:', 'URL de webhook por número de WhatsApp Business, así que si ya lo tienes apuntando a otra herramienta (n8n, Zapier, tu propio backend...), tienes dos opciones — no hace falta renunciar a ello:') }}
-            </p>
-            <ol class="mt-3 list-decimal space-y-3 pl-5 text-[12.5px] text-ink-500">
-              <li>
-                <strong>{{ t('Nothing already using the webhook slot?', '¿Nada usa todavía el espacio del webhook?') }}</strong> {{ t('Register this URL directly in your Meta App dashboard, under', 'Registra esta URL directamente en tu panel de Meta App, en') }} <strong>WhatsApp &rarr; Configuration &rarr; Webhook</strong>:
-                <div class="mt-1.5 flex items-center gap-2">
-                  <code class="flex-1 overflow-x-auto rounded-ctlSm bg-surface-subtle px-2 py-1 text-[12px] text-ink-600">{{ webhookUrl }}</code>
-                </div>
-              </li>
-              <li>
-                <strong>{{ t('Already forwarding to n8n or something else?', '¿Ya reenvías a n8n o a otra cosa?') }}</strong> {{ t("Add one more step to that existing flow — an HTTP request node that forwards the same incoming payload, unmodified, to the URL above. QuiroFlow doesn't need to be Meta's registered endpoint, just a second place the payload also lands.", 'Añade un paso más a ese flujo existente — un nodo de solicitud HTTP que reenvíe el mismo payload entrante, sin modificar, a la URL de arriba. QuiroFlow no necesita ser el endpoint registrado de Meta, solo un segundo lugar donde también llegue el payload.') }}
-              </li>
-            </ol>
-            <p class="mt-3 rounded-ctl border border-line bg-surface-subtle p-3 text-[12px] leading-relaxed text-ink-600">
-              <strong>{{ t('Each option authenticates differently, and one of the two is now required.', 'Cada opción se autentica de forma distinta, y ahora una de las dos es obligatoria.') }}</strong>
-              {{ t('Incoming webhooks used to be accepted from anyone; they are now ignored unless they can be proven genuine.', 'Antes se aceptaban webhooks entrantes de cualquiera; ahora se ignoran salvo que se pueda probar que son auténticos.') }}
-              <br /><br />
-              <strong>{{ t('Option 1', 'Opción 1') }}</strong> — {{ t('Meta signs every request, so fill in the', 'Meta firma cada solicitud, así que rellena el') }}
-              <strong>{{ t('Meta App Secret', 'Secreto de la app de Meta') }}</strong> {{ t('field above and nothing else is needed.', 'de arriba y no hace falta nada más.') }}
-              <br /><br />
-              <strong>{{ t('Option 2', 'Opción 2') }}</strong> — {{ t("Meta's signature cannot survive the forwarding hop: it covers the exact bytes, and n8n re-encodes the JSON on the way through, so the signature no longer matches. Instead, create a token in", 'La firma de Meta no sobrevive al reenvío: cubre los bytes exactos, y n8n vuelve a codificar el JSON al pasar, así que la firma deja de coincidir. En su lugar, crea un token en') }}
-              <strong>{{ t('Settings → Developers', 'Configuración → Desarrolladores') }}</strong> {{ t('with the', 'con el permiso') }}
-              <code class="rounded-ctlSm bg-surface px-1 py-0.5">whatsapp:webhook</code> {{ t('scope, and have your HTTP Request node send it as a header:', 'y haz que tu nodo de solicitud HTTP lo envíe como cabecera:') }}
-              <code class="mt-1.5 block overflow-x-auto rounded-ctlSm bg-surface px-2 py-1 text-[12px]">Authorization: Bearer qf_live_…</code>
-            </p>
-            <p class="mt-3 text-[12px] text-ink-muted2">
-              {{ t("Either way it needs a verify token — set", 'De cualquier forma necesita un token de verificación — configura') }}
-              <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>
-              {{ t("in your server's environment (only relevant for option 1, Meta's own verification handshake), and", 'en el entorno de tu servidor (solo relevante para la opción 1, el propio protocolo de verificación de Meta), y') }}
-              <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">NUXT_SUPABASE_SECRET_KEY</code> {{ t('(Supabase Project Settings → API → service_role secret) either way, since this endpoint has no QuiroFlow login to authenticate with.', '(Supabase Project Settings → API → secreto service_role) de cualquier forma, ya que este endpoint no tiene un inicio de sesión de QuiroFlow con el que autenticarse.') }}
-            </p>
-            <p class="mt-2 text-[12px] text-ink-faint">
-              {{ t('Skip this entirely and confirmations still send fine — you\'ll just see "pending" stay pending in the report instead of moving to confirmed/reschedule automatically.', 'Omite esto por completo y las confirmaciones seguirán enviándose bien — solo verás que "pendiente" se queda pendiente en el informe en lugar de pasar automáticamente a confirmado/reprogramado.') }}
-            </p>
+                <!-- The webhook the clinic's own app posts to. The platform app's is
+                     QuiroFlow's to set, so a clinic that connected with the button never sees this. -->
+                <div class="border-t border-line-row px-[18px] py-3" data-cy="whatsapp-webhook">
+                  <span class="text-[14.5px] font-bold text-ink-900">{{ t('Webhook', 'Webhook') }}</span>
+                  <p class="mt-0.5 text-[13px] leading-snug text-ink-500">
+                    {{ t('In your Meta app, under WhatsApp → Configuration, point the webhook here and subscribe it to messages. Replies and delivery status only arrive with the App Secret above stored.', 'En tu app de Meta, en WhatsApp → Configuración, apunta el webhook aquí y suscríbelo a messages. Las respuestas y el estado de entrega solo llegan con el secreto de la app de arriba guardado.') }}
+                  </p>
+                  <code class="mt-2 block overflow-x-auto rounded-ctlSm bg-surface-subtle px-2 py-1 text-[12px] text-ink-600">{{ webhookUrl }}</code>
                 </div>
               </details>
             </section>

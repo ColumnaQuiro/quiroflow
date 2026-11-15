@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose } from '~/utils/phone'
 import { findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
+import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
 // messages like recalls and confirmations require a pre-approved template
@@ -21,6 +22,8 @@ export default defineEventHandler(async (event) => {
     variables: string[]
     headerFormat?: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION'
     attachmentFileId?: string
+    /** Attach the file the template was created with in QuiroFlow, instead of one of the patient's. */
+    templateMedia?: boolean
     location?: { latitude: number; longitude: number; name: string; address: string }
     appointmentId?: string
     /** A person writing to this one patient (their record, their Inbox
@@ -135,6 +138,19 @@ export default defineEventHandler(async (event) => {
         },
       ],
     })
+  } else if (body.headerFormat && body.templateMedia) {
+    // The guide or picture the template was made with. Looked up here by the
+    // template's own name rather than taken as a path from the browser, so a
+    // send can only ever attach a file of this clinic's templates.
+    const admin = serverSupabaseServiceRole<Database>(event)
+    const media = await templateMediaFile(admin, teamMember.account_id, body.templateName, body.templateLanguage)
+    if (media) {
+      const { data: signed } = await admin.storage.from('whatsapp-media').createSignedUrl(media.path, 60 * 60 * 24)
+      if (signed?.signedUrl) {
+        const key = body.headerFormat.toLowerCase()
+        components.push({ type: 'header', parameters: [{ type: key, [key]: { link: signed.signedUrl, ...(key === 'document' ? { filename: media.filename } : {}) } }] })
+      }
+    }
   } else if (body.headerFormat && body.attachmentFileId) {
     const { data: file } = await supabase
       .from('patient_files')

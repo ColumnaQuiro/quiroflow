@@ -5,8 +5,8 @@ useDocHead('Webhooks', 'Receive signed HTTP callbacks when patients, appointment
 
 const EVENTS = [
   { event: 'patient.created', fires: 'A patient record is created — in the app, through the API, or by an online booking.' },
-  { event: 'patient.updated', fires: 'Any field on a patient changes. Saves that change nothing are not delivered.' },
-  { event: 'patient.deleted', fires: 'A patient is deleted. <code>data</code> holds the record as it was.' },
+  { event: 'patient.updated', fires: 'A field the API publishes changes on a patient. Saves that change none of them — a clinical note, say — are not delivered.' },
+  { event: 'patient.deleted', fires: 'A patient is deleted, including the duplicate removed when two records of the same person are merged (its appointments and invoices move to the record that stays). <code>data</code> holds the record as it was.' },
   { event: 'appointment.created', fires: 'An appointment is booked, from any source.' },
   { event: 'appointment.updated', fires: 'An appointment is rescheduled, reassigned, or has its status changed — including cancellation, and including the API’s <code>DELETE</code>, which cancels rather than removes.' },
   { event: 'appointment.deleted', fires: 'An appointment is deleted from the calendar. Deletion is reversible in QuiroFlow, so you’ll also receive an <code>appointment.updated</code> if you subscribe to both — treat <code>appointment.deleted</code> as the authoritative one.' },
@@ -21,7 +21,7 @@ X-QuiroFlow-Signature: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b
 
 {
   "event": "appointment.created",
-  "created_at": "2026-03-14T09:31:02.481Z",
+  "created_at": "2026-03-14T09:31:02.481+00:00",
   "data": {
     "id": "c3a91f52-...",
     "account_id": "0b7e2d18-...",
@@ -102,7 +102,7 @@ http_response_code(200);`
     lead="Register an endpoint and QuiroFlow POSTs to it when something changes — instead of you polling to find out."
   >
     <p>
-      Set them up in QuiroFlow under <strong>Settings → Webhooks</strong>: give a URL, tick the events you want, and you'll be given a
+      Set them up in QuiroFlow under <strong>Settings → Developers → Webhooks</strong> (<em>Ajustes → Desarrolladores → Webhooks</em>): give an <code>https://</code> URL, tick the events you want, and you'll be given a
       signing secret. Each endpoint keeps a delivery log there, which is the first place to look when something isn't arriving.
     </p>
 
@@ -129,7 +129,7 @@ http_response_code(200);`
         { name: 'X-QuiroFlow-Signature', type: 'string', description: 'Hex-encoded HMAC-SHA256 of the raw request body, keyed with your endpoint’s secret.' },
         { name: 'event', type: 'string', description: 'Which event this is.' },
         { name: 'created_at', type: 'timestamp', description: 'When it happened.' },
-        { name: 'data', type: 'object', description: 'The affected row. This is the <em>database</em> row, which is a wider shape than the REST resource of the same name — treat unknown fields as internal and don’t depend on them.' },
+        { name: 'data', type: 'object', description: 'The affected record, with the fields the REST resource of the same name publishes, plus <code>account_id</code> (and <code>deleted_at</code> on appointments). Address fields arrive flat — <code>address</code>, <code>city</code>, <code>postal_code</code>, <code>country</code> — rather than nested. Clinical notes and other internal fields are never sent.' },
       ]"
     />
 
@@ -177,7 +177,7 @@ http_response_code(200);`
     <DevportalCallout>
       Be aware of the current limits before you design around webhooks. Delivery is <strong>at-most-once</strong>: a POST is attempted when
       the event happens and <strong>is not retried</strong> if your endpoint is down or returns an error. The delivery log in Settings →
-      Webhooks records what was sent, not whether it arrived.
+      Developers → Webhooks records what was sent, not whether it arrived. To change the secret, delete the endpoint and add it again.
     </DevportalCallout>
     <p>
       So for anything where a missed event would be costly, pair webhooks with a periodic reconciliation pass over the API — webhooks for

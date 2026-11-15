@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { billingLanguage, stripeForPlatformBilling, syncInvoiceLanguage } from '~/server/utils/platformBillingStripe'
 import { isSupersededSubscriptionEvent } from '~/utils/billing'
 import type Stripe from 'stripe'
 
@@ -203,6 +203,18 @@ export default defineEventHandler(async (event) => {
     .select('account_id')
   if (updateError) fail('Could not update the subscription row', updateError)
   if (!updated?.length) fail('No subscription row for this account')
+
+  // After the row is written, so it can never hold up access. On every live
+  // event rather than only the first, so an owner who switches QuiroFlow's
+  // language gets their next invoice in it; the sync writes only on a
+  // difference.
+  if (stripeEvent.type !== 'customer.subscription.deleted') {
+    await syncInvoiceLanguage(
+      stripe,
+      typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
+      await billingLanguage(supabase, accountId),
+    )
+  }
 
   return { received: true }
 })

@@ -1,0 +1,134 @@
+// /api/meta/ads/connect finishes the Meta Ads Connect button in Settings >
+// Leads: it trades a code for a token, finds the ad account the grant
+// covers, and stores the account id and the read token. Growth then reads the
+// month's spend with it.
+//
+// Driven against the Graph stub (NUXT_META_GRAPH_BASE_URL) because it writes a
+// credential. Every name and id here is invented.
+
+const platformSecret = Cypress.env('META_PLATFORM_APP_SECRET') as string | undefined
+
+interface SeededAccount {
+  email: string
+  password: string
+  accountId: string
+  clinicId: string
+}
+
+const connect = (body: Record<string, unknown> = { code: 'AQBxyz-not-a-real-code' }) =>
+  cy.request({ method: 'POST', url: '/api/meta/ads/connect', body, failOnStatusCode: false })
+
+const connection = (accountId: string) =>
+  cy.task<any[]>('db:selectRows', { table: 'accounts', columns: 'meta_ads_account_id', match: { id: accountId } }).then((rows) =>
+    cy.task<string | null>('db:accountSecretOf', { accountId, name: 'meta_ads_access_token' }).then((token) => ({ adAccountId: rows[0]?.meta_ads_account_id ?? null, token })),
+  )
+
+describe('Connecting Meta Ads', () => {
+  let account: SeededAccount
+
+  beforeEach(() => {
+    cy.seedStaffAccount().then((seeded) => {
+      account = seeded as SeededAccount
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+    })
+  })
+
+  afterEach(() => cy.task('db:stopMetaGraphStub'))
+
+  it('refuses a caller with no session', () => {
+    cy.clearCookies()
+    connect().its('status').should('be.oneOf', [401, 403])
+  })
+
+  it('rejects a call with neither a code nor a ticket', () => {
+    connect({}).its('status').should('eq', 400)
+  })
+
+  describe('through the exchange', () => {
+    before(function () {
+      if (!platformSecret) this.skip()
+    })
+
+    it('stores the one ad account the grant covers, with its token, and shows it in Settings', () => {
+      cy.task('db:startMetaGraphStub', {
+        adAccounts: [
+          { id: 'act_1111', account_id: '1111', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 },
+          // A closed account is not a candidate, not an ambiguity.
+          { id: 'act_2222', account_id: '2222', name: 'Cuenta antigua', currency: 'EUR', account_status: 101 },
+        ],
+      })
+      connect().then((res) => {
+        expect(res.status).to.eq(200)
+        expect(res.body).to.deep.include({ connected: true, adAccountId: '1111', name: 'Clínica Demo Ads' })
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: '1111', token: 'STUB-BUSINESS-TOKEN' })
+
+      cy.visit('/settings/leads')
+      cy.get('[data-cy="meta-ads-account"]').should('contain', 'Clínica Demo Ads').and('contain', 'EUR')
+      cy.get('[data-cy="meta-ads-status"]').should('contain', 'Connected')
+
+      cy.get('[data-cy="meta-ads-disconnect"]').click()
+      cy.get('[data-cy=confirm-dialog-confirm]').click()
+      cy.get('[data-cy="meta-ads-status"]').should('contain', 'Not connected')
+      connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
+    })
+
+    it('asks which ad account when there are several, handing out no token, then connects the pick', () => {
+      cy.task('db:startMetaGraphStub', {
+        adAccounts: [
+          { id: 'act_3333', account_id: '3333', name: 'Clínica Demo Valencia', currency: 'EUR' },
+          { id: 'act_4444', account_id: '4444', name: 'Clínica Demo Jerez', currency: 'EUR' },
+        ],
+      })
+      connect().then((res) => {
+        expect(res.status).to.eq(200)
+        expect(res.body.connected).to.eq(false)
+        expect(res.body.choose.map((c: any) => c.adAccountId)).to.deep.equal(['3333', '4444'])
+        expect(JSON.stringify(res.body)).not.to.contain('STUB-BUSINESS-TOKEN')
+        connection(account.accountId).its('adAccountId').should('eq', null)
+
+        connect({ ticket: res.body.ticket, adAccountId: '9999' }).its('status').should('eq', 400)
+        connect({ ticket: res.body.ticket, adAccountId: 'act_4444' }).its('body').should('deep.include', { connected: true, adAccountId: '4444' })
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: '4444', token: 'STUB-BUSINESS-TOKEN' })
+    })
+
+    it('finds the ad account from the grant itself, where /me/adaccounts is refused', () => {
+      // A system-user token from business login is refused GET /me/adaccounts
+      // without business_management -- the first real connection, 15 Nov
+      // 2026. The grant's own ads_read scope names the account instead.
+      cy.task('db:startMetaGraphStub', {
+        failAt: 'adaccounts',
+        granularScopes: [{ scope: 'ads_read', target_ids: ['5555'] }],
+        adAccounts: [{ id: 'act_5555', account_id: '5555', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 }],
+      })
+      connect().then((res) => {
+        expect(res.status).to.eq(200)
+        expect(res.body).to.deep.include({ connected: true, adAccountId: '5555', name: 'Clínica Demo Ads', currency: 'EUR' })
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: '5555', token: 'STUB-BUSINESS-TOKEN' })
+    })
+
+    it('says why when neither the grant nor /me/adaccounts names an account', () => {
+      cy.task('db:startMetaGraphStub', { failAt: 'adaccounts' })
+      connect().then((res) => {
+        expect(res.status).to.eq(502)
+        expect(res.body.message ?? res.body.statusMessage).to.contain('Missing Permissions')
+      })
+      connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
+    })
+
+    it('stores nothing when the grant has no ad account on it', () => {
+      cy.task('db:startMetaGraphStub', { adAccounts: [] })
+      connect().its('status').should('eq', 400)
+      connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
+    })
+
+    it('stores nothing when the code is refused', () => {
+      cy.task('db:startMetaGraphStub', { failAt: 'exchange' })
+      connect().its('status').should('eq', 502)
+      connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
+    })
+  })
+})

@@ -720,16 +720,20 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 <template>
   <div class="flex h-full min-h-0 select-none flex-col bg-surface-page" style="-webkit-touch-callout: none" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="onPointerUp">
     <!-- Day bar, on the back plane (assets/css/main.css), with the diary's
-         controls; the plane carries on into the who/view bar below it. -->
-    <div class="qf-plane flex shrink-0 items-center gap-1.5 px-3 pb-1.5 pt-2.5 md:px-5">
-      <div class="relative min-w-0 flex-1">
-        <button type="button" class="flex max-w-full items-center gap-1 rounded-ctl py-1 text-left" :aria-label="t(`${title}. Choose a date`, `${title}. Elegir fecha`)" data-cy="agenda-day" @click="openPicker">
-          <span class="truncate text-[22px] font-[650] tracking-[-0.02em] text-ink-900">{{ title }}</span>
-          <AppChevron dir="down" class="text-ink-muted" />
-        </button>
-        <!-- Over the title, invisible: a tap on it is a tap on the native picker
-             wherever showPicker() is not supported. -->
-        <input ref="datePicker" type="date" :value="day" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" tabindex="-1" aria-hidden="true" data-cy="agenda-date-input" @change="jumpTo" />
+         controls; the plane carries on into the who/view bar below it. On a
+         phone the date has a line of its own: beside six 44pt buttons and
+         Today it had ~25pt left and read as "1…". -->
+    <div class="qf-plane flex shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 pb-1.5 pt-2.5 md:flex-nowrap md:px-5">
+      <div class="min-w-0 basis-full md:basis-auto md:flex-1">
+        <div class="relative inline-flex max-w-full">
+          <button type="button" class="flex max-w-full items-center gap-1 rounded-ctl py-1 text-left" :aria-label="t(`${title}. Choose a date`, `${title}. Elegir fecha`)" data-cy="agenda-day" @click="openPicker">
+            <span class="truncate text-[22px] font-[650] tracking-[-0.02em] text-ink-900">{{ title }}</span>
+            <AppChevron dir="down" class="text-ink-muted" />
+          </button>
+          <!-- Over the title, invisible: a tap on it is a tap on the native picker
+               wherever showPicker() is not supported. -->
+          <input ref="datePicker" type="date" :value="day" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" tabindex="-1" aria-hidden="true" data-cy="agenda-date-input" @change="jumpTo" />
+        </div>
       </div>
       <button v-if="!shownToday" type="button" class="h-11 rounded-full bg-surface px-3.5 text-[14px] font-semibold text-ink-900" data-cy="agenda-today" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
       <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-900" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : isThree ? t('Previous three days', 'Tres días antes') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
@@ -739,7 +743,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
       <template v-if="!readOnly">
-        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
+        <button type="button" class="ml-auto flex h-11 w-11 items-center justify-center rounded-full md:ml-0" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
         </button>
         <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-900 md:w-auto md:gap-1.5 md:px-3.5" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: scopePractitioner }">
@@ -753,7 +757,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       </template>
     </div>
 
-    <div class="qf-plane qf-lip flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
+    <div class="qf-plane qf-lip qf-fade flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
       <!-- Whose diary, as the web calendar's practitioner tabs. -->
       <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
         <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-10 shrink-0 rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">

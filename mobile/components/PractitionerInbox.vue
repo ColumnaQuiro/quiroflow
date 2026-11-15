@@ -551,6 +551,20 @@ function windowPill(c: Conversation) {
 // -- not just the last message -- so finding "that time they mentioned X"
 // works the same as finding a patient by name or number.
 const search = ref('')
+// The search field opens from the title row's magnifier (and stays open while
+// it holds text, so a search survives switching views).
+const searchOpen = ref(false)
+const searchInput = ref<HTMLInputElement | null>(null)
+const searchShown = computed(() => searchOpen.value || search.value.trim() !== '')
+function toggleSearch() {
+  if (searchShown.value) {
+    searchOpen.value = false
+    search.value = ''
+    return
+  }
+  searchOpen.value = true
+  nextTick(() => searchInput.value?.focus())
+}
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(search, (term) => {
   clearTimeout(searchTimer)
@@ -1819,37 +1833,35 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <!-- Conversation list: always mounted underneath the thread overlay. On a
          wide iPad (lg) it keeps a 340px column and the thread opens beside it. -->
     <div class="absolute inset-0 flex min-h-0 flex-col bg-surface lg:right-auto lg:w-[340px] lg:border-r lg:border-line">
-      <!-- Above the list only, so an open conversation still covers the whole
-           screen on a phone (pages/inbox.vue puts the Team switch here). -->
-      <slot v-if="!selectionMode" name="list-top" />
-      <!-- On the back plane, like the Team switch above it (pages/inbox.vue). -->
-      <div v-if="!selectionMode" class="qf-plane flex shrink-0 items-center gap-2 px-3 py-2">
-        <input
-          v-model="search"
-          type="search"
-          :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
-          class="h-11 flex-1 rounded-full border border-transparent bg-surface px-4 text-[14px] text-ink-900 placeholder:text-ink-faint focus:border-brand focus:outline-none"
-        />
-        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
-      </div>
-      <div v-if="!selectionMode" class="qf-plane qf-lip qf-lip-surface shrink-0 px-3 pt-1" data-cy="inbox-chips">
-        <div class="flex items-center gap-2">
-          <div role="tablist" :aria-label="t('View', 'Vista')" class="grid flex-1 grid-cols-3 gap-[3px] rounded-full bg-chip-bg p-[3px]">
-            <button
-              v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('Needs reply', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
-              :key="s[0]"
-              type="button"
-              role="tab"
-              :aria-selected="segment === s[0]"
-              class="flex h-9 min-w-0 items-center justify-center gap-1 rounded-full px-1 text-[13px]"
-              :class="segment === s[0] ? 'bg-brand font-semibold text-brand-on' : 'font-medium text-ink-muted'"
-              :data-cy="`inbox-view-${s[0]}`"
-              @click="setSegment(s[0])"
-            >
-              <span class="truncate">{{ s[1] }}</span>
-              <span v-if="s[2]" class="shrink-0 text-[11.5px] font-bold" :class="segment === s[0] ? 'text-brand-on' : 'text-ink-muted2'">{{ s[2] }}</span>
-            </button>
-          </div>
+      <!-- The back plane (assets/css/main.css): a title like every other
+           screen, with search, select and filters as icons; under it the
+           Conversations | Team tabs (pages/inbox.vue fills list-top); the
+           search field only while open; then the views as separate chips.
+           Above the list only, so an open conversation still covers the
+           whole screen on a phone. -->
+      <div v-if="!selectionMode" class="qf-plane qf-lip qf-lip-surface qf-fade shrink-0 px-4 pt-2" data-cy="inbox-chips">
+        <div class="flex min-h-[52px] items-center gap-2">
+          <h1 class="min-w-0 flex-1 truncate text-[22px] font-[650] leading-tight tracking-[-0.02em] text-ink-900">{{ t('Inbox', 'Bandeja') }}</h1>
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+            :class="searchShown ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'"
+            :aria-pressed="searchShown"
+            :aria-label="t('Search', 'Buscar')"
+            data-cy="inbox-search-toggle"
+            @click="toggleSearch"
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></svg>
+          </button>
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-ink-900"
+            :aria-label="t('Select', 'Seleccionar')"
+            data-cy="inbox-select"
+            @click="selectionMode = true"
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5" /><path d="M8.5 12.2l2.4 2.4 4.6-5" /></svg>
+          </button>
           <button
             type="button"
             class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-ink-900"
@@ -1859,6 +1871,32 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M5.5 10h9M8 14.5h4" /></svg>
             <span v-if="activeFilterChips.length" class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10.5px] font-bold text-brand-on">{{ activeFilterChips.length }}</span>
+          </button>
+        </div>
+        <slot name="list-top" />
+        <input
+          v-if="searchShown"
+          ref="searchInput"
+          v-model="search"
+          type="search"
+          :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
+          class="mt-2 h-11 w-full rounded-full border border-transparent bg-surface px-4 text-[15px] text-ink-900 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+          data-cy="inbox-search"
+        />
+        <div role="tablist" :aria-label="t('View', 'Vista')" class="mt-3 flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('Needs reply', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
+            :key="s[0]"
+            type="button"
+            role="tab"
+            :aria-selected="segment === s[0]"
+            class="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-[14px] font-semibold"
+            :class="segment === s[0] ? 'bg-brand text-brand-on' : 'text-ink-muted ring-1 ring-inset ring-line'"
+            :data-cy="`inbox-view-${s[0]}`"
+            @click="setSegment(s[0])"
+          >
+            {{ s[1] }}
+            <span v-if="s[2]" class="text-[12.5px] font-bold" :class="segment === s[0] ? 'text-brand-on' : 'text-ink-muted2'">{{ s[2] }}</span>
           </button>
         </div>
         <!-- Only what is narrowing the list, each with its own way out -->
@@ -1909,9 +1947,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         @touchend="onTouchEnd"
       >
         <div
-          v-if="pulling || pullRefreshing || pullDistance > 0"
-          class="flex items-center justify-center overflow-hidden transition-[height]"
+          class="flex items-center justify-center overflow-hidden"
+          :class="pullDistance > 0 && !pullRefreshing ? '' : 'transition-[height] duration-300 ease-out'"
           :style="{ height: pullRefreshing ? '56px' : `${pullDistance}px` }"
+          :aria-hidden="!pullRefreshing"
         >
           <!-- A thumb-sized disc, turning as it is pulled: the bare 16px icon was
              hard to see under a finger. -->

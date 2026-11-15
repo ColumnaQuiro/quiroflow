@@ -23,6 +23,9 @@ const { brand } = useClinicBrand()
 // The login itself, not whoever the family switcher is showing.
 const { me: patient, teamMember } = useIdentity()
 
+// The guided tour of Inicio (components/PatientAppTour.vue), again on request.
+const tour = usePatientAppTour()
+
 const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
 const initials = computed(() =>
   [patient.value?.first_name?.[0], patient.value?.last_name?.[0]].filter(Boolean).join('').toUpperCase(),
@@ -106,6 +109,16 @@ async function deleteAccount() {
     <LanguageSetting class="mt-3" />
     <ThemeSetting class="mt-3" />
     <FaceIdSetting class="mt-3" />
+
+    <button
+      type="button"
+      class="mt-3 flex w-full items-center justify-between rounded-card border border-line bg-surface px-4 py-3.5 text-left shadow-card"
+      data-cy="patient-tour-replay"
+      @click="tour.replay()"
+    >
+      <span class="text-[13.5px] font-medium text-ink-900">{{ t('Show me around the app', 'Ver el recorrido por la app') }}</span>
+      <span class="text-ink-faint"><AppChevron /></span>
+    </button>
 
     <div class="mt-5 space-y-2">
       <AppButton class="w-full" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</AppButton>

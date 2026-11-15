@@ -815,7 +815,7 @@ watch(
   <div class="flex h-full min-h-0 flex-col">
     <!-- The back plane (assets/css/main.css): who the visit is with, and
          where it stands. -->
-    <div class="qf-plane qf-lip flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5">
+    <div class="qf-plane qf-lip qf-fade flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5">
       <button type="button" class="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-900 active:bg-surface" :aria-label="t('Back', 'Atrás')" @click="goBack">
         <AppChevron dir="left" :size="24" />
       </button>

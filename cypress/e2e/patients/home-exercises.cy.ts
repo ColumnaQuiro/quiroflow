@@ -1,5 +1,7 @@
 // Home exercises: the practitioner assigns one on the record, the patient
 // sees it in the portal and ticks today off, and the record shows the tick.
+// A YouTube link plays inside the portal (and the app, same component)
+// rather than sending the patient off to YouTube.
 // The patient's tick goes through set_my_exercise_done; they have no other
 // write here.
 
@@ -18,7 +20,7 @@ describe('Home exercises', () => {
         cy.get('[data-cy="exercises-assign-open"]').click()
         cy.get('[data-cy="exercise-new"]').click()
         cy.get('[data-cy="exercise-name"]').type('Gato-camello')
-        cy.get('[data-cy="exercise-link"]').type('https://example.com/gato-camello')
+        cy.get('[data-cy="exercise-link"]').type('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
         cy.get('[data-cy="exercise-sets"]').type('3')
         cy.get('[data-cy="exercise-reps"]').type('10')
         cy.get('[data-cy="exercise-frequency"]').type('2 veces al día')
@@ -30,6 +32,12 @@ describe('Home exercises', () => {
         cy.login(email, password)
         cy.visit('/portal/exercises')
         cy.get('[data-cy="patient-exercise"]').should('have.length', 1).and('contain.text', 'Gato-camello')
+        cy.get('[data-cy="exercise-media"]').should('not.exist')
+        cy.get('[data-cy="exercise-embed-player"]').should('not.exist')
+        cy.get('[data-cy="exercise-embed-toggle"]').should('contain.text', 'Watch the video').click()
+        cy.get('[data-cy="exercise-embed-player"] iframe').should('have.attr', 'src', 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
+        cy.get('[data-cy="exercise-embed-toggle"]').should('contain.text', 'Hide the video').click()
+        cy.get('[data-cy="exercise-embed-player"]').should('not.exist')
         cy.get('[data-cy="exercise-done-today"]').should('contain.text', 'Done today').click()
         cy.get('[data-cy="exercise-done-today"]').should('contain.text', '✓ Done today')
         cy.reload()

@@ -36,7 +36,7 @@ const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
 const { fire } = useAutomations()
 
-interface Plan { id: string; name: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null; total_visits: number | null; started_at: string }
+interface Plan { id: string; name: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null; total_visits: number | null; started_at: string; next_phases?: unknown }
 interface Membership { id: string; name: string; price_cents: number; billing_interval: string | null; billing_interval_count: number | null }
 const plan = ref<Plan | null>(null)
 const done = ref(0)
@@ -68,7 +68,7 @@ const loaded = ref(false)
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 async function load() {
-  const { data: p } = await supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }).limit(1).maybeSingle()
+  const { data: p } = await supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, next_phases').eq('patient_id', props.patientId).order('started_at', { ascending: false }).limit(1).maybeSingle()
   plan.value = (p as Plan | null) ?? null
   if (plan.value) {
     const { data: appts } = await supabase.from('appointments').select('id, starts_at, status').eq('patient_id', props.patientId).is('deleted_at', null).gte('starts_at', plan.value.started_at).order('starts_at')

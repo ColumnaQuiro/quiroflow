@@ -1,0 +1,206 @@
+[
+  {
+    "route": "/dashboard",
+    "requests": 18,
+    "waves": 2,
+    "settledMs": 1125,
+    "firstMs": 178,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "clinics?select=id,name&order=name.asc": 1,
+      "team_members?select=dashboard_layout&id=eq.9751e307-b6ab-4766-9972-6610d5375122": 1,
+      "team_members?select=id,full_name&is_practitioner=eq.true&order=full_name.asc": 1,
+      "package_purchases?select=id,patient_id,package_name,sessions_total,sessions_used,price_cents,purchased_at,i": 1,
+      "payments?select=amount_cents,method,paid_at,invoice_id,patient_id,invoices!payments_invoice_id_fke": 1,
+      "invoices?select=id,appointment_id,patient_id,appointments!invoices_appointment_id_fkey(id,practiti": 1,
+      "invoices?select=id,total_cents,status,appointment_id,patient_id,created_at,payments!payments_invoi": 1,
+      "payment_schedules?select=package_purchase_id,status&package_purchase_id=not.is.null": 1,
+      "payments?select=id,invoice_id,amount_cents,package_purchase_id,external_reference,purpose&package_": 1,
+      "appointments?select=id,starts_at,status,appointment_types(name)&starts_at=gte.2026-10-11T22:00:00.000Z": 1,
+      "team_members?id=eq.9751e307-b6ab-4766-9972-6610d5375122": 1,
+      "payments?select=amount_cents,method,patient_id,invoices!payments_invoice_id_fkey(status,appointmen": 1,
+      "appointments?select=patient_id&status=eq.completed&starts_at=gte.2026-07-20T13:30:40.659Z&offset=0&lim": 1,
+      "patients?select=id": 1,
+      "appointments?select=status&starts_at=gte.2026-10-04T22:00:00.000Z&starts_at=lte.2026-10-11T21:59:59.99": 1,
+      "recall_candidates?select=days_since_last_appointment&offset=0&limit=1000": 1,
+      "appointments?select=id,starts_at,practitioner_name,patients(first_name,last_name)&status=eq.booked&del": 1
+    }
+  },
+  {
+    "route": "/calendar",
+    "requests": 22,
+    "waves": 4,
+    "settledMs": 1248,
+    "firstMs": 149,
+    "byPath": {
+      "rpc/get_my_bootstrap": 1,
+      "rpc/get_nav_badges": 1,
+      "calendar_resources?select=id,name&clinic_id=eq.5c75bb72-f673-4498-9f79-5bfa61b87e34&order=name.asc": 1,
+      "appointment_type_overrides?select=appointment_type_id,team_member_id,duration_minutes,price_cents": 1,
+      "team_members?select=id,full_name,color,business_hours&deleted_at=is.null&is_practitioner=eq.true&order": 1,
+      "appointment_types?select=id,name,duration_minutes,color,default_price_cents,sort_order,archived_at,class_ca": 1,
+      "team_member_clinics?select=team_member_id,clinic_id": 1,
+      "availability_blocks?select=id,room_id,practitioner_id,starts_at,ends_at,note&clinic_id=eq.5c75bb72-f673-4498-": 1,
+      "class_sessions?select=id,room_id,practitioner_id,appointment_type_id,starts_at,ends_at,capacity,appointm": 1,
+      "appointments?select=id,patient_id,room_id,practitioner_id,appointment_type_id,starts_at,ends_at,status": 2,
+      "appointments?select=id,patient_id&patient_id=in.(0cfdd04c-1098-4b7d-9c34-21be7b9d598c,3b807b4e-4507-42": 1,
+      "appointment_reschedules?select=appointment_id,to_starts_at&account_id=eq.4a443d37-8f02-43b4-a97d-0eb3fcc6e8a6&fro": 1,
+      "payments?select=amount_cents,method,invoices!payments_invoice_id_fkey(status,appointments!invoices": 1,
+      "invoices?select=total_cents,status,appointments!invoices_appointment_id_fkey(id,practitioner_id,cl": 1,
+      "patient_live_balances?select=patient_id,outstanding_cents&patient_id=in.(0cfdd04c-1098-4b7d-9c34-21be7b9d598c,3": 1,
+      "invoices?select=id,appointment_id,invoice_number,total_cents,status,payments!payments_invoice_id_f": 1,
+      "package_purchases?select=patient_id,package_name,sessions_total,sessions_used,is_closed&patient_id=in.(0cfd": 1,
+      "package_sessions?select=appointment_id,amount_cents,external_reference,used_at,package_purchases(package_n": 1,
+      "appointment_reschedules?select=appointment_id&appointment_id=in.(05f389fa-98f8-4799-ad36-08b85371ca81,184f65dd-7d": 1,
+      "appointment_reschedules?select=id,appointment_id,from_starts_at&account_id=eq.4a443d37-8f02-43b4-a97d-0eb3fcc6e8a": 1,
+      "waitlist_entries?select=id,offered_starts_at,offered_ends_at,offered_room_id,offered_practitioner_id,offer": 1
+    }
+  },
+  {
+    "route": "/patients",
+    "requests": 7,
+    "waves": 2,
+    "settledMs": 731,
+    "firstMs": 422,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "team_members?select=id,full_name&order=full_name.asc": 1,
+      "patients?select=id,first_name,last_name,tags,clinic_id,email,default_practitioner_id,invoice_email": 1,
+      "care_plans?select=patient_id,name,total_visits,created_at&patient_id=in.(0cfdd04c-1098-4b7d-9c34-21b": 1,
+      "patient_contact_numbers?select=patient_id,number,country_code,is_whatsapp&patient_id=in.(0cfdd04c-1098-4b7d-9c34-": 1,
+      "rpc/patient_list_visit_summary": 1,
+      "patient_live_balances?select=patient_id,balance_cents&patient_id=in.(0cfdd04c-1098-4b7d-9c34-21be7b9d598c,f2132": 1
+    }
+  },
+  {
+    "route": "/inbox",
+    "requests": 10,
+    "waves": 1,
+    "settledMs": 2540,
+    "firstMs": 1149,
+    "byPath": {
+      "team_members?select=id,full_name&deleted_at=is.null&order=full_name.asc": 1,
+      "patients?select=id,first_name,last_name&order=first_name.asc&limit=20": 1,
+      "rpc/get_nav_badges": 1,
+      "inbox_assignments?select=conversation_key,team_member_id&account_id=eq.4a443d37-8f02-43b4-a97d-0eb3fcc6e8a6": 1,
+      "whatsapp_labels?select=id,name,color&order=name.asc": 1,
+      "inbox_snoozes?select=conversation_key,snoozed_until,created_at&team_member_id=eq.9751e307-b6ab-4766-997": 1,
+      "inbox_reads?select=conversation_key,last_read_at&team_member_id=eq.9751e307-b6ab-4766-9972-6610d53751": 1,
+      "rpc/inbox_page": 2,
+      "/api/growth/conversations": 1
+    }
+  },
+  {
+    "route": "/practitioner",
+    "requests": 16,
+    "waves": 1,
+    "settledMs": 1618,
+    "firstMs": 849,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "clinics?select=timezone&id=eq.5c75bb72-f673-4498-9f79-5bfa61b87e34": 1,
+      "appointment_types?select=id,name,duration_minutes,color,default_price_cents,sort_order,archived_at": 1,
+      "team_members?select=id,full_name,color&deleted_at=is.null&is_practitioner=eq.true&order=full_name.asc": 1,
+      "calendar_resources?select=id,name&clinic_id=eq.5c75bb72-f673-4498-9f79-5bfa61b87e34&order=name.asc": 1,
+      "time_clock_exemptions?select=team_member_id&team_member_id=eq.9751e307-b6ab-4766-9972-6610d5375122": 1,
+      "staff_tasks?select=id,title,due_at,done_at,created_at,patient_id,lead_id,role_id,patients(first_name,": 1,
+      "time_entries?select=id,kind,at,work_date&team_member_id=eq.9751e307-b6ab-4766-9972-6610d5375122&supers": 1,
+      "services_products?select=name,stock_units,min_stock&kind=eq.product&stock_units=not.is.null&order=name.asc": 1,
+      "clinics?select=timezone&archived_at=is.null&timezone=not.is.null&order=created_at.asc&limit=1": 1,
+      "appointments?select=id,patient_id,room_id,practitioner_id,appointment_type_id,starts_at,ends_at,status": 1,
+      "appointments?select=id,patient_id,starts_at,confirmation_status,patients(first_name,last_name),team_me": 1,
+      "care_plans?select=patient_id,total_visits,started_at&patient_id=in.(f21322b1-8d2a-40dd-bfcd-3f55e693": 1,
+      "appointments?select=patient_id,starts_at,status&patient_id=in.(f21322b1-8d2a-40dd-bfcd-3f55e69384c2,28": 1,
+      "patient_contact_numbers?select=patient_id,number,country_code,is_whatsapp&patient_id=in.(0e34a372-040b-4d84-aa87-": 1,
+      "appointments?select=patient_id,starts_at,status&patient_id=in.(0e34a372-040b-4d84-aa87-7820c2a190f3,6a": 1
+    }
+  },
+  {
+    "route": "/billing",
+    "requests": 8,
+    "waves": 1,
+    "settledMs": 1235,
+    "firstMs": 659,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "invoices?select=id": 1,
+      "invoices?select=id&status=eq.unpaid": 1,
+      "invoices?select=id&status=eq.paid": 1,
+      "invoices?select=id,total_cents&status=eq.unpaid&offset=0&limit=1000": 1,
+      "invoices?select=id&status=eq.void": 1,
+      "payments?select=invoice_id,amount_cents&invoice_id=in.(6c55cb04-2990-41be-86b7-36ea1b61d2ba,978930": 1,
+      "invoices?select=id,invoice_number,status,total_cents,created_at,patients(first_name,last_name)&ord": 1
+    }
+  },
+  {
+    "route": "/reports",
+    "requests": 3,
+    "waves": 1,
+    "settledMs": 705,
+    "firstMs": 450,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "report_pages?select=id,name,visibility,blocks,updated_at,created_by&order=updated_at.desc": 1,
+      "team_members?select=id,full_name": 1
+    }
+  },
+  {
+    "route": "/recalls",
+    "requests": 5,
+    "waves": 1,
+    "settledMs": 581,
+    "firstMs": 397,
+    "byPath": {
+      "rpc/get_nav_badges": 1,
+      "team_members?select=id,full_name&order=full_name.asc": 1,
+      "recall_candidates?select=patient_id,account_id,first_name,last_name,email,tags,recall_priority,default_prac": 1,
+      "recall_parked?select=patient_id&parked_as=eq.snoozed": 1,
+      "recall_parked?select=patient_id&parked_as=eq.dismissed": 1
+    }
+  },
+  {
+    "route": "/settings",
+    "requests": 1,
+    "waves": 1,
+    "settledMs": 731,
+    "firstMs": 523,
+    "byPath": {
+      "rpc/get_nav_badges": 1
+    }
+  },
+  {
+    "route": "/patients/0cfdd04c-1098-4b7d-9c34-21be7b9d598c",
+    "requests": 27,
+    "waves": 2,
+    "settledMs": 1562,
+    "firstMs": 483,
+    "byPath": {
+      "patient_memberships?select=id,membership_name,status&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d598c&statu": 1,
+      "invoices?select=id,total_cents,status,is_refund&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d598c": 1,
+      "account_credits?select=amount_cents,external_reference,payment_id&patient_id=eq.0cfdd04c-1098-4b7d-9c34-2": 1,
+      "patient_contact_numbers?select=*&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d598c&order=created_at.asc&limit=1": 1,
+      "patients?select=*,practitioner:team_members!patients_default_practitioner_id_fkey(full_name),tutor": 1,
+      "package_purchases?select=id,package_name,sessions_total,sessions_used,price_cents,invoice_id,owed_cents,is_": 1,
+      "package_purchase_shares?select=package_purchases(id,package_name,sessions_total,sessions_used,price_cents,is_clos": 1,
+      "rpc/get_nav_badges": 1,
+      "payments?select=amount_cents,method,invoice_id,package_purchase_id,external_reference,purpose&pati": 1,
+      "rpc/log_patient_access": 1,
+      "appointments?select=id,starts_at,created_at,status,appointment_types(name)&patient_id=eq.0cfdd04c-1098": 1,
+      "communications_log?select=id,channel,kind,status,preview,sent_at&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7": 1,
+      "whatsapp_messages?select=id,channel,created_at,body_preview&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d5": 1,
+      "patient_app_messages?select=id,created_at,body&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d598c&direction=eq": 1,
+      "contact_log?select=id,action,note,created_at,created_by&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9": 1,
+      "care_plans?select=id,name,created_at,created_by,frequency_value,frequency_unit,visits_per_period,tot": 1,
+      "patient_exercises?select=id,created_at,ended_at,assigned_by,exercises(name)&patient_id=eq.0cfdd04c-1098-4b7": 1,
+      "patient_docs?select=id,title,created_at,completed_at,created_by&patient_id=eq.0cfdd04c-1098-4b7d-9c34-": 1,
+      "invoices?select=id,created_at,invoice_number,status&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d": 1,
+      "team_members?select=id,full_name": 1,
+      "team_members?select=id,full_name&order=full_name.asc": 1,
+      "appointments?select=id,starts_at,ends_at,status,confirmation_status,clinic_id,practitioner_name,appoin": 2,
+      "patient_docs?select=id,title,created_at&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b9d598c&completed_a": 1,
+      "invoices?select=invoice_number,total_cents,created_at&patient_id=eq.0cfdd04c-1098-4b7d-9c34-21be7b": 1,
+      "care_plans?select=id,name,total_visits,frequency_value,frequency_unit,visits_per_period,started_at,p": 1,
+      "rpc/get_my_shared_packages": 1
+    }
+  }
+]

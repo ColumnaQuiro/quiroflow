@@ -73,6 +73,13 @@ function book(s: Seeded, typeId: string, inDays: number) {
   })
 }
 
+/**
+ * As if the visit had been booked two days ago: no offer goes out within a
+ * day of a booking or a move (EARLIER_VISIT_SETTLE_HOURS).
+ */
+const settle = (appointmentId: string) =>
+  cy.task('db:updateRows', { table: 'earlier_visit_offers', values: { visit_changed_at: new Date(Date.now() - 2 * 86_400_000).toISOString() }, match: { appointment_id: appointmentId } })
+
 /** A tap on one of the template's buttons, as Meta delivers it: the title, quoting the template. */
 function tap(s: Seeded, title: string, quotedWamid: string) {
   const body = JSON.stringify({
@@ -126,6 +133,7 @@ describe('Earlier first visits', () => {
     templates()
     seed({ language: 'fr' }).then((s) => {
       book(s, s.firstVisitTypeId, 5).then((appt) => {
+        settle(appt.id)
         cron().its('status').should('eq', 200)
         offerFor(appt.id).then((offer: Offer) => {
           expect(offer.status).to.eq('offered')
@@ -168,6 +176,7 @@ describe('Earlier first visits', () => {
     seed().then((s) => {
       book(s, s.firstVisitTypeId, 5).then((appt) => {
         startsAtOf(appt.id).then((before) => {
+          settle(appt.id)
           cron()
           offerFor(appt.id).its('status').should('eq', 'offered')
           templateWamid(appt.id).then((wamid) => {
@@ -179,7 +188,39 @@ describe('Earlier first visits', () => {
             startsAtOf(appt.id).should('eq', before)
             // Not read as an answer to a reminder either.
             cy.task<{ confirmation_status: string | null }[]>('db:selectRows', { table: 'appointments', columns: 'confirmation_status', match: { id: appt.id } }).its('0.confirmation_status').should('eq', null)
-            sendsTo(s.phone).then((sends) => expect(sends.find((m) => m.type === 'text')?.text?.body).to.match(/^Perfecto, mantienes tu primera visita/))
+            sendsTo(s.phone).then((sends) => expect(sends.find((m) => m.type === 'text')?.text?.body).to.match(/^De acuerdo, mantienes tu primera visita/))
+          })
+        })
+      })
+    })
+  })
+
+  it('writes nothing within a day of the visit being booked', () => {
+    templates()
+    seed().then((s) => {
+      book(s, s.firstVisitTypeId, 5).then((appt) => {
+        cron().its('status').should('eq', 200)
+        offerFor(appt.id).its('status').should('eq', 'waiting')
+        sendsTo(s.phone).then((sends) => expect(sends.filter((m) => m.template?.name === TEMPLATE)).to.have.length(0))
+      })
+    })
+  })
+
+  it('with two first visits booked, writes once, and a no keeps both', () => {
+    templates()
+    seed().then((s) => {
+      book(s, s.firstVisitTypeId, 5).then((first) => {
+        book(s, s.firstVisitTypeId, 6).then((second) => {
+          settle(first.id)
+          settle(second.id)
+          cron()
+          sendsTo(s.phone).then((sends) => expect(sends.filter((m) => m.template?.name === TEMPLATE)).to.have.length(1))
+          offerFor(first.id).its('status').should('eq', 'offered')
+          offerFor(second.id).its('status').should('eq', 'waiting')
+          templateWamid(first.id).then((wamid) => {
+            tap(s, 'No, me quedo con la mía', wamid).its('status').should('eq', 200)
+            offerFor(first.id).its('status').should('eq', 'declined')
+            offerFor(second.id).its('status').should('eq', 'declined')
           })
         })
       })
@@ -190,6 +231,7 @@ describe('Earlier first visits', () => {
     templates()
     seed().then((s) => {
       book(s, s.firstVisitTypeId, 5).then((appt) => {
+        settle(appt.id)
         cron()
         offerFor(appt.id).its('status').should('eq', 'offered')
         // Unanswered past its deadline: back to waiting, and not offered again today.

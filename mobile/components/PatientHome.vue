@@ -108,6 +108,12 @@ watch([next, activePackages, apptLoading, moneyLoading], () => {
   homeWidget.publish(patientWidgetSnapshot({ next: next.value, packages: activePackages.value, clinic: clinics.value.find((c) => c.id === next.value?.clinic_id)?.name ?? clinics.value[0]?.name ?? null, timeZone: zoneOf(next.value?.clinic_id ?? null) }))
 })
 
+// The guided tour (PatientAppTour.vue) waits for the figures, so it lights up
+// the real next visit and balance rather than skeletons.
+const homeReady = usePatientHomeReady()
+watchEffect(() => { homeReady.value = !apptLoading.value && !moneyLoading.value })
+onBeforeUnmount(() => { homeReady.value = false })
+
 function eur(cents: number) {
   return formatEur(cents)
 }
@@ -153,40 +159,42 @@ function eur(cents: number) {
         </div>
       </div>
 
-      <p class="mt-6 text-[13.5px] font-semibold text-ink-muted">{{ t('Your next visit', 'Tu próxima cita') }}</p>
-      <div v-if="apptLoading" class="mt-2 pb-2"><UiSkeleton class="h-9 w-56 rounded-ctlSm opacity-30" /></div>
-      <template v-else-if="next">
-        <div class="mt-1 flex items-end justify-between gap-3" data-cy="patient-home-next">
-          <div class="min-w-0">
-            <p class="qf-figure text-[34px] text-ink-900 first-letter:uppercase">{{ visitDay(next.starts_at, next.clinic_id) }}</p>
-            <p class="mt-0.5 text-[17px] text-ink-muted">{{ t('', 'de ') }}{{ visitMonth(next.starts_at, next.clinic_id) }}</p>
+      <div data-tour="next-visit">
+        <p class="mt-6 text-[13.5px] font-semibold text-ink-muted">{{ t('Your next visit', 'Tu próxima cita') }}</p>
+        <div v-if="apptLoading" class="mt-2 pb-2"><UiSkeleton class="h-9 w-56 rounded-ctlSm opacity-30" /></div>
+        <template v-else-if="next">
+          <div class="mt-1 flex items-end justify-between gap-3" data-cy="patient-home-next">
+            <div class="min-w-0">
+              <p class="qf-figure text-[34px] text-ink-900 first-letter:uppercase">{{ visitDay(next.starts_at, next.clinic_id) }}</p>
+              <p class="mt-0.5 text-[17px] text-ink-muted">{{ t('', 'de ') }}{{ visitMonth(next.starts_at, next.clinic_id) }}</p>
+            </div>
+            <p class="qf-figure shrink-0 text-[34px] text-ink-900">{{ visitTime(next.starts_at, next.clinic_id) }}</p>
           </div>
-          <p class="qf-figure shrink-0 text-[34px] text-ink-900">{{ visitTime(next.starts_at, next.clinic_id) }}</p>
-        </div>
-        <p class="mt-3 text-[15px] text-ink-700">
-          {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
-          <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
-        </p>
-        <!-- On the day: "Ya estoy aquí" on arrival (utils/selfCheckIn.ts). -->
-        <PatientCheckIn class="mt-4" :appt="next" />
-        <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
-        <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
-        <div class="mt-1 flex flex-wrap gap-x-5">
-          <!-- Changing it only where the clinic lets patients, and far enough off -->
-          <NuxtLink v-if="settings.rescheduleEnabled && canChange(next)" :to="`/book?reschedule=${next.id}`" class="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink-900" data-cy="patient-home-reschedule">
-            {{ t('Change this visit', 'Cambiar esta cita') }} <AppChevron :size="12" />
-          </NuxtLink>
-          <NuxtLink to="/visits" class="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink-900">
-            {{ t('Your plan', 'Tu plan') }} <AppChevron :size="12" />
-          </NuxtLink>
-        </div>
-      </template>
-      <template v-else>
-        <p class="qf-figure mt-1 text-[26px] text-ink-900">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
-        <AppButton v-if="settings.bookingEnabled" to="/book" variant="primary" class="mt-4 w-full">
-          {{ t('Book a visit', 'Reservar cita') }}
-        </AppButton>
-      </template>
+          <p class="mt-3 text-[15px] text-ink-700">
+            {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
+            <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
+          </p>
+          <!-- On the day: "Ya estoy aquí" on arrival (utils/selfCheckIn.ts). -->
+          <PatientCheckIn class="mt-4" :appt="next" />
+          <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
+          <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
+          <div class="mt-1 flex flex-wrap gap-x-5">
+            <!-- Changing it only where the clinic lets patients, and far enough off -->
+            <NuxtLink v-if="settings.rescheduleEnabled && canChange(next)" :to="`/book?reschedule=${next.id}`" class="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink-900" data-cy="patient-home-reschedule">
+              {{ t('Change this visit', 'Cambiar esta cita') }} <AppChevron :size="12" />
+            </NuxtLink>
+            <NuxtLink to="/visits" class="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink-900">
+              {{ t('Your plan', 'Tu plan') }} <AppChevron :size="12" />
+            </NuxtLink>
+          </div>
+        </template>
+        <template v-else>
+          <p class="qf-figure mt-1 text-[26px] text-ink-900">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
+          <AppButton v-if="settings.bookingEnabled" to="/book" variant="primary" class="mt-4 w-full">
+            {{ t('Book a visit', 'Reservar cita') }}
+          </AppButton>
+        </template>
+      </div>
       <div class="h-5" />
     </header>
 
@@ -235,7 +243,7 @@ function eur(cents: number) {
           </div>
         </NuxtLink>
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-3" data-tour="money">
           <NuxtLink to="/visits" class="rounded-card bg-surface p-4 shadow-card">
             <p class="text-[13.5px] font-semibold text-ink-muted">{{ t('Sessions', 'Sesiones') }}</p>
             <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-8 w-10 rounded-ctlSm" /></p>
@@ -261,6 +269,7 @@ function eur(cents: number) {
         to="/documents"
         class="mt-3 flex min-h-[56px] items-center justify-between rounded-card bg-surface px-4 shadow-card md:hidden"
         data-cy="patient-home-documents"
+        data-tour="documents"
       >
         <span class="text-[15px] font-semibold text-ink-900">{{ t('Your documents', 'Tus documentos') }}</span>
         <span class="text-ink-faint"><AppChevron /></span>

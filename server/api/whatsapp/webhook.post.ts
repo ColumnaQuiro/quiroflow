@@ -13,6 +13,8 @@ import { applyRecallReply } from '~/server/utils/recallReplies'
 import { declinesOnlyARecall, recallReplyIntent } from '~/utils/recallReply'
 import { answerEarlierVisitTap } from '~/server/utils/earlierVisitOffers'
 import { appointmentReplyIntent } from '~/utils/appointmentReply'
+import { cancellationReasonFromRowId } from '~/utils/cancellationReason'
+import { findLastCancelledVisit, recordCancellationReason } from '~/server/utils/cancellationReasons'
 import { importWhatsAppHistory, storeBusinessAppEcho, type CoexistenceMessage, type HistoryChunk } from '~/server/utils/whatsappCoexistence'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
@@ -39,7 +41,7 @@ interface MetaMessage {
   type: string
   text?: { body: string }
   button?: { text: string }
-  interactive?: { button_reply?: { title: string }; list_reply?: { title: string } }
+  interactive?: { button_reply?: { id?: string; title: string }; list_reply?: { id?: string; title: string } }
   image?: MetaMedia
   video?: MetaMedia
   audio?: MetaMedia
@@ -576,12 +578,24 @@ export default defineEventHandler(async (event) => {
         // "No, gracias" only when it answers a recall: said to the
         // receptionist or the desk it answers them (utils/recallReply.ts).
         const reply = replyText(msg)
+        // A reason tapped from the list the receptionist sends after
+        // cancelling a first visit (utils/cancellationReason.ts): recorded
+        // here, whatever the receptionist then makes of it, and read as
+        // nothing else -- "Reservaré más adelante" is not a recall's "Más
+        // adelante", and "Prefiero otro día u hora" is not a reminder's
+        // "Cambiar".
+        const tappedReason = cancellationReasonFromRowId(msg.interactive?.list_reply?.id)
+        if (tappedReason && patientId) {
+          const visit = await findLastCancelledVisit(supabase, account.id, patientId)
+          if (visit) await recordCancellationReason(supabase, account.id, patientId, visit, tappedReason)
+        }
         // "Sí, adelantar" / "No, me quedo con la mía" on the offer of an
         // earlier first visit (earlierVisitOffers.ts), answered there. Read
         // as nothing else: its "Sí" is not the reminder's Confirmar, and its
         // "No" not a recall's decline.
-        const earlierAnswered = patientId ? await answerEarlierVisitTap(event, supabase, account.id, patientId, reply, msg.context?.id ?? null) : false
-        const recallIntent = patientId && !earlierAnswered
+        const earlierAnswered = patientId && !tappedReason ? await answerEarlierVisitTap(event, supabase, account.id, patientId, reply, msg.context?.id ?? null) : false
+        const answeredElsewhere = earlierAnswered || Boolean(tappedReason)
+        const recallIntent = patientId && !answeredElsewhere
           ? recallReplyIntent(reply, declinesOnlyARecall(reply) ? await answersRecall(supabase, patientIds, msg) : true)
           : null
         if (recallIntent && patientId) {
@@ -596,7 +610,7 @@ export default defineEventHandler(async (event) => {
         }
 
         const intent = appointmentReplyIntent(replyText(msg), { button: isButtonReply(msg) })
-        if (intent && patientIds.length > 0 && !earlierAnswered) {
+        if (intent && patientIds.length > 0 && !answeredElsewhere) {
           const appt = await resolveRepliedAppointment(supabase, patientIds, msg.context?.id ?? null)
           // An answer already on record is only overturned by another
           // deliberate tap, never by a later sentence we merely read an

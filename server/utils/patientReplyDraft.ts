@@ -1,8 +1,8 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, reasonChoices } from '~/server/utils/receptionistSend'
+import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
@@ -75,7 +75,7 @@ export async function draftPatientReply(
   // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
   const readAt = new Date().toISOString()
   const startedAt = Date.now()
-  const { data: patient } = await supabase.from('patients').select('id, first_name, user_id, is_minor').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+  const { data: patient } = await supabase.from('patients').select('id, first_name, user_id, is_minor, preferred_language').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
@@ -360,6 +360,12 @@ export async function draftPatientReply(
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
+  // Why a first visit was cancelled, asked with the reasons to tap and
+  // recorded (utils/cancellationReason.ts): the clinic's only way to know
+  // why new patients drop out, and how "later" lands in Recalls.
+  if (actions) actions.asksWhyCancelled = true
+  const askWhyCancelled = actions ? askWhyCancelledTool(actions) : null
+  const cancellationReason = actions ? cancellationReasonTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // Taking someone who has left off the recalls needs no calendar, only that
@@ -388,6 +394,8 @@ export async function draftPatientReply(
     book,
     waitlist,
     cancel,
+    askWhyCancelled,
+    cancellationReason,
     give,
     stopFollowUps,
     stopEarlier,
@@ -460,7 +468,7 @@ export async function draftPatientReply(
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
-      await sendAsReceptionist(opts.send.event, service, accountId, target, draft)
+      await sendAsReceptionist(opts.send.event, service, accountId, target, draft, run.choices ? reasonChoices(patient.preferred_language) : null)
     } catch (err) {
       // Refused (the window closed, "do not contact"...): it stays a waiting
       // draft, so a person still sees what it would have said -- and is told

@@ -4,6 +4,10 @@ import type { ReceptionistIncludedBy } from '~/composables/useGrowthReceptionist
 // Growth > AI receptionist: what it does, what it knows, how it behaves,
 // and a place to try it.
 //
+// The Report tab (ReceptionistReport.vue) is how its conversations are
+// going over weeks -- cancellations, who came back, why -- to decide what
+// to adjust.
+//
 // It used to be nine cards down one long page, with the on/off switch
 // first, the billing card second and the booking rules read-only. Now four
 // sections: an Overview that says in one sentence what it is doing right
@@ -26,10 +30,11 @@ const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, re
 const route = useRoute()
 const router = useRouter()
 
-type Tab = 'overview' | 'knowledge' | 'behaviour' | 'try'
-const TABS: Tab[] = ['overview', 'knowledge', 'behaviour', 'try']
+type Tab = 'overview' | 'report' | 'knowledge' | 'behaviour' | 'try'
+const TABS: Tab[] = ['overview', 'report', 'knowledge', 'behaviour', 'try']
 const tabs = computed<{ key: Tab; label: string; narrowOnly?: boolean }[]>(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
+  { key: 'report', label: t('Report', 'Informe') },
   { key: 'knowledge', label: t('What it knows', 'Lo que sabe') },
   { key: 'behaviour', label: t('How it behaves', 'Cómo actúa') },
   // On a wide screen the test panel is always beside the settings, so the
@@ -158,6 +163,10 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
               :save="(limit: number | null) => save({ monthlyReplyLimit: limit })"
             />
           </template>
+
+          <!-- Report: the last few weeks, what came of its cancellations
+          and of the earlier-time offers. Fetched when opened. -->
+          <GrowthReceptionistReport v-else-if="tab === 'report'" />
 
           <!-- What it knows: who it is and the facts it repeats. -->
           <template v-else-if="tab === 'knowledge'">

@@ -14,6 +14,8 @@ import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { applyPatientLeft } from '~/server/utils/recallReplies'
 import { earlierVisitEnrolled, stopEarlierVisitOffers } from '~/server/utils/earlierVisitOffers'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
+import { CANCELLATION_REASONS, isCancellationReason, type CancellationReason } from '~/utils/cancellationReason'
+import { deferFirstVisit, findLastCancelledVisit, isFirstVisitStage, recordCancellationReason } from '~/server/utils/cancellationReasons'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
 import { BROUGHT_RELATIONS, MINOR_AGE, REPEAT_CHANGE_LIMIT, repeatChangeRefusal, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
@@ -124,13 +126,39 @@ export const ADD_TO_WAITLIST: Anthropic.Tool = {
 export const CANCEL_APPOINTMENT: Anthropic.Tool = {
   name: 'cancel_appointment',
   description:
-    'Cancels a visit they already have, from the list under "Moving a visit they already have". Call it only when there is no doubt which visit, and that they want it cancelled rather than moved: they asked to cancel it, or said they will not come to it and do not want another time now. If they have several visits and did not say which, ask first. It cancels one visit: to cancel several, call it once for each, and tell them cancelled only the ones it confirmed. Only after it confirms may you tell them it is cancelled. Stopping or pausing their treatment, or cancelling a package, is not this: hand those over to a colleague.',
+    'Cancels a visit they already have, from the list under "Moving a visit they already have". Call it only when there is no doubt which visit, and that they want it cancelled rather than moved: they asked to cancel it, or said they will not come to it and do not want another time now. If they want it on another day or time -- a date they name, "next week", "whenever you have a gap" -- do NOT cancel it: offer free times, and once they choose one move it with book_appointment and move_visit_on. Until then the visit stays booked; cancelled first, they are left with nothing when the new time cannot be booked. If they have several visits and did not say which, ask first. It cancels one visit: to cancel several, call it once for each, and tell them cancelled only the ones it confirmed. Only after it confirms may you tell them it is cancelled. Stopping or pausing their treatment, or cancelling a package, is not this: hand those over to a colleague.',
   input_schema: {
     type: 'object',
     properties: {
       visit_on: { type: 'string', description: 'That visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
+      reason: {
+        type: 'string',
+        enum: [...CANCELLATION_REASONS],
+        description: 'Why, only when they said so: another_time (wants another day or time later), later (will book again later on), feeling_better, unforeseen (work, illness, an appointment, something came up), price, other. Leave out when they did not say.',
+      },
     },
     required: ['visit_on'],
+    additionalProperties: false,
+  },
+}
+
+export const ASK_WHY_CANCELLED: Anthropic.Tool = {
+  name: 'ask_why_cancelled',
+  description:
+    'Sends your reply with a list of reasons to tap ("Prefiero otro día u hora", "Reservaré más adelante", "Ya me encuentro mejor", "Un imprevisto", "Por el precio", "Otro motivo"). Call it right after cancelling their FIRST visit when they did not say why. Then write the reply: that it is cancelled, with the day and time, and one short friendly question asking why -- do not write the reasons out, they go with it. Never for any other visit, and never when they already said why.',
+  input_schema: { type: 'object', properties: {}, additionalProperties: false },
+}
+
+export const RECORD_CANCELLATION_REASON: Anthropic.Tool = {
+  name: 'record_cancellation_reason',
+  description:
+    'Records why they cancelled the visit they cancelled most recently, when they tell you after it was cancelled (often by tapping one of the reasons you sent). Then answer as the reason asks: another_time -- offer free times for a new visit; later -- tell them the clinic will write to them in a few weeks to find a time, and do not offer times now; feeling_better -- be glad for them, and say they can write whenever they need; unforeseen, price, other -- thank them, briefly.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', enum: [...CANCELLATION_REASONS], description: 'What they said, as one of the reasons.' },
+    },
+    required: ['reason'],
     additionalProperties: false,
   },
 }
@@ -244,6 +272,14 @@ export interface BookingContext {
    * for someone new only. Booked only with referred_by naming that patient.
    */
   referral?: { types: OfferedType[] }
+  /**
+   * The visit cancel_appointment cancelled in this reply, for
+   * ask_why_cancelled and record_cancellation_reason to find without asking
+   * the database which one it was.
+   */
+  cancelledInThisReply?: { id: string; firstVisit: boolean }
+  /** ask_why_cancelled is offered in this reply, so a cancelled first visit's reason is asked with it. */
+  asksWhyCancelled?: boolean
 }
 
 type ToolResult = { content: string; isError: boolean }
@@ -915,8 +951,9 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
   let used = false
   return async (input) => {
     if (used) return { content: 'You have already cancelled a visit in this reply. Tell them what was cancelled.', isError: true }
-    const value = (input ?? {}) as { visit_on?: unknown }
+    const value = (input ?? {}) as { visit_on?: unknown; reason?: unknown }
     const wanted = typeof value.visit_on === 'string' ? value.visit_on.trim().replace('T', ' ') : ''
+    const reason = isCancellationReason(value.reason) ? value.reason : null
     const visit = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
     const patientId = ctx.person.patientId
     if (!visit || !patientId) {
@@ -931,7 +968,7 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     used = true
     const { data: changed, error } = await writer
       .from('appointments')
-      .update({ status: 'cancelled' } as never)
+      .update({ status: 'cancelled', ...(reason ? { cancellation_reason: reason } : {}) } as never)
       .eq('id', visit.id)
       .eq('account_id', ctx.accountId)
       .eq('status', 'booked')
@@ -943,9 +980,13 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
       return { content: 'That visit could not be cancelled: it may already have been cancelled or changed by a colleague. Do not say it is cancelled: call hand_over_to_colleague saying which visit they want cancelled.', isError: true }
     }
 
-    const typeName = ctx.booked.types.find((t) => t.id === visit.typeId)?.name ?? null
+    const type = ctx.booked.types.find((t) => t.id === visit.typeId) ?? null
+    const typeName = type?.name ?? null
+    const firstVisit = isFirstVisitStage(type?.stage)
+    ctx.cancelledInThisReply = { id: visit.id, firstVisit }
     const format = (locale: string) => new Date(visit.startsAt).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
     console.info(`[receptionist] cancelled appointment ${visit.id} (account ${ctx.accountId})`)
+    if (reason === 'later' && firstVisit) await deferFirstVisit(writer, ctx.accountId, patientId)
 
     // Best-effort, as after a booking: the visit is cancelled either way.
     try {
@@ -962,11 +1003,73 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     return {
       content: [
-        `Cancelled: ${typeName ?? 'their visit'}, ${format('en-GB')}. The time is free again. Tell them it is cancelled, with the day and time in words, and that they can write whenever they want another time.`,
+        `Cancelled: ${typeName ?? 'their visit'}, ${format('en-GB')}. The time is free again. Tell them it is cancelled, with the day and time in words.`,
+        afterCancellingNote(firstVisit, reason, Boolean(ctx.asksWhyCancelled)),
         remaining.length ? `They still have ${remaining.length === 1 ? 'a visit' : 'visits'} on ${remaining.join(' and ')}, which ${remaining.length === 1 ? 'stands' : 'stand'}.` : '',
       ].filter(Boolean).join(' '),
       isError: false,
     }
+  }
+}
+
+/**
+ * What the model is told to say once a visit is cancelled. A first visit
+ * cancelled is a new patient lost unless something brings them back: of 14
+ * the receptionist cancelled by 15 Nov 2026, one had booked again, and
+ * nearly every reply ended "escríbenos cuando quieras" -- which nobody did.
+ */
+function afterCancellingNote(firstVisit: boolean, reason: CancellationReason | null, asksWhy: boolean): string {
+  if (!firstVisit) return 'Say they can write whenever they want another time.'
+  if (!reason && !asksWhy) return 'This was their FIRST visit and they did not say why: ask them, in one short friendly sentence, why they cannot come. Do not offer times yet.'
+  if (!reason) return 'This was their FIRST visit and they did not say why: call ask_why_cancelled now, then write the reply -- cancelled, with the day and time, and one short friendly question asking why. Do not list reasons yourself and do not offer times yet.'
+  if (reason === 'another_time') return 'They want another day or time: offer free times for a new first visit now.'
+  if (reason === 'later') return 'They will book later: tell them the clinic will write to them in a few weeks to find a time. Do not offer times now.'
+  return 'Thank them briefly, and say they can write whenever they want to come.'
+}
+
+/**
+ * The visit of theirs cancelled most recently -- in this reply, or by anyone
+ * in the last fortnight (lastCancelledVisit, cancellationReasons.ts).
+ */
+async function lastCancelledVisit(ctx: BookingContext): Promise<{ id: string; firstVisit: boolean } | null> {
+  if (ctx.cancelledInThisReply) return ctx.cancelledInThisReply
+  return ctx.person.patientId ? findLastCancelledVisit(ctx.service, ctx.accountId, ctx.person.patientId) : null
+}
+
+/**
+ * ask_why_cancelled: only after a first visit of theirs was cancelled. What
+ * it changes is how the reply is sent: runReceptionistModel marks the run
+ * when this succeeds, and the caller sends the reasons with it.
+ */
+export function askWhyCancelledTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  return async () => {
+    const last = await lastCancelledVisit(ctx)
+    if (!last?.firstVisit) return { content: 'There is no cancelled first visit of theirs to ask about. Do not ask why; just answer them.', isError: true }
+    return { content: 'The reasons will go with your reply as a list they can tap. Write the reply: that it is cancelled, with the day and time, and one short friendly question asking why. Do not write the reasons out.', isError: false }
+  }
+}
+
+/** record_cancellation_reason: on the visit of theirs cancelled most recently. */
+export function cancellationReasonTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  let used = false
+  return async (input) => {
+    if (used) return { content: 'Already recorded in this reply.', isError: false }
+    const reason = (input as { reason?: unknown } | null)?.reason
+    if (!isCancellationReason(reason)) return { content: `reason must be one of: ${CANCELLATION_REASONS.join(', ')}.`, isError: true }
+    const patientId = ctx.person.patientId
+    const last = await lastCancelledVisit(ctx)
+    if (!last || !patientId) return { content: 'They have no recently cancelled visit to record a reason for. Just answer them.', isError: true }
+    used = true
+    await recordCancellationReason(receptionistServiceClient(ctx.event), ctx.accountId, patientId, last, reason)
+    const next: Record<CancellationReason, string> = {
+      another_time: last.firstVisit ? 'Recorded. Now offer free times for a new first visit.' : 'Recorded. Now offer free times for a new visit.',
+      later: 'Recorded. Tell them the clinic will write to them in a few weeks to find a time. Do not offer times now.',
+      feeling_better: 'Recorded. Say you are glad, and that they can write whenever they need.',
+      unforeseen: 'Recorded. Thank them briefly, and say they can write whenever they want to come.',
+      price: 'Recorded. Thank them briefly. Do not argue about the price or offer a discount.',
+      other: 'Recorded. Thank them briefly, and say they can write whenever they want to come.',
+    }
+    return { content: next[reason], isError: false }
   }
 }
 

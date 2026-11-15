@@ -1,16 +1,19 @@
 name: Back up Storage files
 
 # Copies every Supabase Storage object (patient documents, photos, WhatsApp
-# media, invoice PDFs) into an S3 bucket in a separate AWS account, in Spain
-# (eu-south-2). Supabase's daily backups cover the database only -- files had
+# media, invoice PDFs) into an S3 bucket in a separate AWS account, in
+# Stockholm (eu-north-1). Supabase's daily backups cover the database only -- files had
 # no copy anywhere until this. See scripts/backup-storage.mjs for what is
 # copied and why nothing is ever deleted.
 #
-# AWS access is through GitHub's OIDC token, not a stored AWS key: the role in
-# BACKUP_AWS_ROLE_ARN trusts only this repository's main branch, can only list
-# and write the backup bucket, and is denied every delete. The repository is
-# public, so a pull request from a fork runs none of this (schedule and manual
-# dispatch only) and could not assume the role if it tried.
+# AWS access is an IAM user's key in BACKUP_ACCESS_KEY_ID /
+# BACKUP_SECRET_ACCESS_KEY. That user can only list and write the backup
+# bucket and is denied every delete, so a leaked key can add versions but not
+# destroy any. (GitHub OIDC would avoid storing a key, but the AWS account's
+# organization policy forbids creating the OIDC provider -- see
+# scripts/backup-storage-aws-setup.sh.) The repository is public, so this runs
+# on schedule and manual dispatch only: a pull request from a fork never sees
+# the secrets.
 #
 # The log prints counts per bucket, never a file name: object keys carry the
 # uploaded filename and these logs are public.
@@ -32,7 +35,6 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   backup:
@@ -46,11 +48,12 @@ jobs:
           SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
           SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
           SUPABASE_S3_ENDPOINT: ${{ vars.SUPABASE_S3_ENDPOINT }}
-          BACKUP_AWS_ROLE_ARN: ${{ vars.BACKUP_AWS_ROLE_ARN }}
+          BACKUP_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          BACKUP_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
           BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
         run: |
           missing=""
-          for name in SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY SUPABASE_S3_ENDPOINT BACKUP_AWS_ROLE_ARN BACKUP_BUCKET; do
+          for name in SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY SUPABASE_S3_ENDPOINT BACKUP_ACCESS_KEY_ID BACKUP_SECRET_ACCESS_KEY BACKUP_BUCKET; do
             [ -z "${!name}" ] && missing="$missing $name"
           done
           if [ -n "$missing" ]; then
@@ -69,11 +72,6 @@ jobs:
       # nuxt prepare or any native build.
       - run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.BACKUP_AWS_ROLE_ARN }}
-          aws-region: eu-south-2
-
       - name: Copy new and changed files
         env:
           SUPABASE_S3_ENDPOINT: ${{ vars.SUPABASE_S3_ENDPOINT }}
@@ -81,6 +79,8 @@ jobs:
           SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
           SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
           BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
-          BACKUP_REGION: eu-south-2
+          BACKUP_REGION: eu-north-1
+          BACKUP_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          BACKUP_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: npm run backup:storage

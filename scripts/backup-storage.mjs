@@ -15,8 +15,8 @@
 //     that overwrote it);
 //   - NEVER deletes. A file removed from Supabase stays in the backup. The
 //     backup bucket is versioned, so an overwrite keeps the previous version
-//     too, and the IAM role this runs as is denied every delete -- a leaked
-//     credential can add versions but cannot destroy what is there.
+//     too, and the IAM user this runs as is denied every delete -- a leaked
+//     key can add versions but cannot destroy what is there.
 //
 // It prints counts, never object keys. Keys carry the uploaded filename
 // (`<account>/<patient>/<ts>-Informe ....pdf`), the repository is public, and
@@ -28,10 +28,10 @@
 //   SUPABASE_S3_ACCESS_KEY_ID      Storage -> S3 Configuration -> access keys
 //   SUPABASE_S3_SECRET_ACCESS_KEY
 //   BACKUP_BUCKET                  destination bucket name
-//   BACKUP_REGION                  destination region (eu-south-2)
+//   BACKUP_REGION                  destination region (eu-north-1)
 //   BACKUP_S3_ENDPOINT             optional; only to point at a local S3 in tests
-//   BACKUP_ACCESS_KEY_ID           optional; otherwise the default AWS chain
-//   BACKUP_SECRET_ACCESS_KEY         (in CI: the OIDC role the workflow assumes)
+//   BACKUP_ACCESS_KEY_ID           the write-only IAM user's key; without it,
+//   BACKUP_SECRET_ACCESS_KEY         the default AWS credential chain
 //   DRY_RUN=1                      list and compare, copy nothing
 import { S3Client, ListBucketsCommand, ListObjectsV2Command, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 

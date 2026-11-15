@@ -49,6 +49,32 @@ function ticketKey(appSecret: string): string {
   return createHash('sha256').update(`quiroflow:meta-ads-connect-ticket:${appSecret}`).digest('base64')
 }
 
+/**
+ * The ad accounts the grant itself names, without the act_ prefix: the
+ * target_ids of its ads_read (or ads_management) granular scope. Empty when
+ * Meta does not say, which sends the caller to /me/adaccounts instead.
+ */
+async function grantedAdAccountIds(graph: string, token: string, appToken: string): Promise<{ ids: string[]; seen: string }> {
+  try {
+    const debug = await $fetch<{ data?: { granular_scopes?: { scope: string; target_ids?: string[] }[] } }>(`${graph}/debug_token`, {
+      query: { input_token: token, access_token: appToken },
+    })
+    const scopes = debug.data?.granular_scopes ?? []
+    const ids = scopes
+      .filter((s) => s.scope === 'ads_read' || s.scope === 'ads_management')
+      .flatMap((s) => s.target_ids ?? [])
+      .map((id) => id.replace(/^act_/, ''))
+    // What was granted, as scope names and how many assets each covers --
+    // never a token. Said in the error when no ad account turns up, so a
+    // failed connection tells us what Meta handed over instead of leaving
+    // it to a guess and another release.
+    const seen = scopes.map((s) => `${s.scope}${s.target_ids ? `(${s.target_ids.length})` : ''}`).join(', ') || 'none'
+    return { ids: [...new Set(ids)], seen }
+  } catch {
+    return { ids: [], seen: 'unreadable' }
+  }
+}
+
 // Meta's account_status: 1 active, 2 disabled, 3 unsettled, 7 pending risk
 // review, 8 pending settlement, 9 in grace period, 100 pending closure,
 // 101 closed. A closed account has no spend worth reading, and offering it
@@ -114,14 +140,38 @@ export default defineEventHandler(async (event) => {
     }
 
     // 3. The ad accounts this grant covers.
+    //
+    //    Asked of the token's own grant first: debug_token's granular_scopes
+    //    names the ad accounts ads_read was granted for. Business login
+    //    hands out a system-user token, and GET /me/adaccounts on one is
+    //    refused with "(#200) Missing Permissions" unless it also carries
+    //    business_management -- which is what the first real connection hit,
+    //    15 Nov 2026. Asking for business_management to work around that
+    //    would be asking for far more than reading spend needs. /me/adaccounts
+    //    stays as the fallback, for a user token where it does work.
     let accounts: AdAccount[]
-    try {
-      const listed = await $fetch<{ data?: AdAccount[] }>(`${GRAPH}/me/adaccounts`, {
-        query: { fields: 'id,account_id,name,currency,account_status', limit: '100', access_token: token },
-      })
-      accounts = (listed.data ?? []).filter((a) => a.id && !CLOSED.has(a.account_status ?? 1))
-    } catch (err) {
-      throw createError({ statusCode: 502, statusMessage: `Could not read the ad accounts on that connection: ${metaErrorMessage(err)}` })
+    const granted = await grantedAdAccountIds(GRAPH, token, `${appId}|${appSecret}`)
+    if (granted.ids.length > 0) {
+      const read = await Promise.all(
+        granted.ids.map((id) =>
+          $fetch<AdAccount>(`${GRAPH}/act_${id}`, { query: { fields: 'id,account_id,name,currency,account_status', access_token: token } }).catch(
+            () => ({ id: `act_${id}`, account_id: id }) as AdAccount,
+          ),
+        ),
+      )
+      accounts = read.filter((a) => !CLOSED.has(a.account_status ?? 1))
+    } else {
+      try {
+        const listed = await $fetch<{ data?: AdAccount[] }>(`${GRAPH}/me/adaccounts`, {
+          query: { fields: 'id,account_id,name,currency,account_status', limit: '100', access_token: token },
+        })
+        accounts = (listed.data ?? []).filter((a) => a.id && !CLOSED.has(a.account_status ?? 1))
+      } catch (err) {
+        throw createError({
+          statusCode: 502,
+          statusMessage: `Could not read the ad accounts on that connection: ${metaErrorMessage(err)} (granted: ${granted.seen})`,
+        })
+      }
     }
     if (accounts.length === 0) {
       throw createError({

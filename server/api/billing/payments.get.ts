@@ -10,7 +10,10 @@ export interface PlatformPaymentRow {
   taxAmountCents: number
   status: 'success' | 'failed' | 'pending'
   method: { brand: string; last4: string } | null
+  /** Stripe's invoice page: the invoice on screen, with its own download buttons. */
   invoiceUrl: string | null
+  /** The invoice PDF itself, for a one-click download. */
+  pdfUrl: string | null
 }
 
 // Read-only payment history for the in-app "Payments" tab, sourced live from
@@ -69,7 +72,8 @@ export default defineEventHandler(async (event) => {
       taxAmountCents: taxCents,
       status,
       method,
-      invoiceUrl: invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
+      invoiceUrl: invoice.hosted_invoice_url ?? null,
+      pdfUrl: invoice.invoice_pdf ?? null,
     }
   })
 

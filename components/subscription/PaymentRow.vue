@@ -15,7 +15,10 @@ const props = defineProps<{
   taxCents: number
   status: 'success' | 'failed' | 'pending'
   method: { brand: string; last4: string } | null
+  /** Stripe's page for the invoice: view it, pay it if open, download it. */
   invoiceUrl: string | null
+  /** The PDF itself. Optional for callers that only have the page. */
+  pdfUrl?: string | null
   /** e.g. "Card declined — insufficient funds. Retried successfully on 24 July." */
   note?: string | null
   refunded?: boolean
@@ -27,6 +30,7 @@ const open = ref(false)
 const copied = ref(false)
 
 const baseCents = computed(() => props.totalCents - props.taxCents)
+const hasInvoice = computed(() => !!props.invoiceUrl || !!props.pdfUrl)
 const rowId = computed(() => `payment-${props.saleId}`)
 
 async function copyReference() {
@@ -46,7 +50,9 @@ async function copyReference() {
          <a> inside a <button> is invalid, and the browser picks one of them at
          random when you click. That is why the PDF link was missing entirely
          from the row the first time this was built. -->
-    <div class="flex items-start gap-4 border-b border-line-divider">
+    <!-- The row's own bottom border moves under the invoice links on a phone,
+         where they sit beneath it instead of in a column. -->
+    <div class="flex items-start gap-4 border-line-divider" :class="hasInvoice ? 'lg:border-b' : 'border-b'">
       <button
         type="button"
         class="flex min-w-0 flex-1 items-start gap-4 py-3.5 text-left outline-none focus-visible:bg-surface-subtle"
@@ -76,10 +82,20 @@ async function copyReference() {
           </SubscriptionPill>
         </span>
       </button>
-      <span class="hidden w-[130px] shrink-0 justify-end py-3.5 lg:flex">
-        <SubscriptionOutboundLink v-if="invoiceUrl" :href="invoiceUrl">{{ t('Invoice PDF', 'Factura PDF') }}</SubscriptionOutboundLink>
-        <span v-else class="text-[12.5px] text-ink-faint">—</span>
+      <!-- Two links, because they are two different wants: reading the
+           invoice (Stripe's page, which also takes payment of an open one) and
+           keeping it (the PDF, for the accountant). The single link used to
+           say "Invoice PDF" and open the page, and on a phone there was no
+           link at all -- this column is desktop-only. -->
+      <span class="hidden w-[130px] shrink-0 justify-end gap-3 py-3.5 lg:flex">
+        <SubscriptionOutboundLink v-if="invoiceUrl" :href="invoiceUrl">{{ t('View', 'Ver') }}</SubscriptionOutboundLink>
+        <SubscriptionOutboundLink v-if="pdfUrl" :href="pdfUrl">PDF</SubscriptionOutboundLink>
+        <span v-if="!hasInvoice" class="text-[12.5px] text-ink-faint">—</span>
       </span>
+    </div>
+    <div v-if="hasInvoice" class="flex gap-5 border-b border-line-divider pb-1 lg:hidden">
+      <SubscriptionOutboundLink v-if="invoiceUrl" :href="invoiceUrl">{{ t('View invoice', 'Ver factura') }}</SubscriptionOutboundLink>
+      <SubscriptionOutboundLink v-if="pdfUrl" :href="pdfUrl">{{ t('Download PDF', 'Descargar PDF') }}</SubscriptionOutboundLink>
     </div>
 
     <div v-if="open" :id="rowId" class="mb-3.5 flex flex-col gap-6 rounded-[9px] border border-line bg-surface-subtle px-4 py-3.5 lg:flex-row lg:gap-7">

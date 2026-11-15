@@ -74,5 +74,7 @@ const locked = computed(() => !family.canSeeClinical.value && CLINICAL.some((p) 
       </div>
     </div>
     <PatientTabBar v-if="tabsVisible && keyboardHeight === 0" class="md:hidden" />
+    <!-- Where everything is, once, the first time Inicio is reached -->
+    <PatientAppTour v-if="tabsVisible" />
   </div>
 </template>

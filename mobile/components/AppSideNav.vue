@@ -28,6 +28,7 @@ const t = useT()
       v-for="item in items"
       :key="item.to"
       :to="item.to"
+      :data-tour="item.tour"
       class="flex h-11 items-center gap-2.5 rounded-full px-3 text-[14px]"
       :class="isActive(item.to) ? 'bg-brand font-semibold text-brand-on' : 'text-ink-700 active:bg-surface'"
       :aria-current="isActive(item.to) ? 'page' : undefined"

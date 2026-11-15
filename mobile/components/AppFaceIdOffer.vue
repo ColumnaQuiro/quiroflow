@@ -10,11 +10,15 @@ const lock = useAppLock()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-const open = ref(false)
+// Shared with the patient tour (PatientAppTour.vue): the two never stack, so
+// whichever opens first goes first and the other waits for it to close.
+const open = useState('faceid-offer-open', () => false)
+const tourOpen = usePatientAppTour().open
 const busy = ref(false)
 const QUIET = ['/login', '/signup', '/join', '/forgot-password']
 
 async function consider() {
+  if (open.value || tourOpen.value) return
   if (!lock.native() || !lock.ready.value || lock.enabled.value || !lock.biometry.value || lock.locked.value) return
   const userId = user.value?.sub
   if (!userId || lock.offered(userId)) return
@@ -22,9 +26,11 @@ async function consider() {
   // Past two-factor, not in the middle of it.
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
   if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') return
+  // The tour may have opened while the line above was waiting.
+  if (tourOpen.value) return
   open.value = true
 }
-watch(() => [user.value?.sub, route.path, lock.ready.value, lock.locked.value], () => setTimeout(consider, 800), { immediate: true })
+watch(() => [user.value?.sub, route.path, lock.ready.value, lock.locked.value, tourOpen.value], () => setTimeout(consider, 800), { immediate: true })
 
 function close() {
   const userId = user.value?.sub

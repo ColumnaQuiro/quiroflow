@@ -30,6 +30,20 @@ gate behind it. Because of that:
   `v-else` shipped — preflight clean, every route 500ing, and the only
   signal was three Cypress shards failing on pages unrelated to the
   change. `npm run build` names it outright in about a minute.
+  Run preflight **after committing**, then push: a pass records the tree it
+  checked, and the pre-push hook skips its own run when the commit being
+  pushed is that tree. Run it with uncommitted or untracked files in the
+  way and the hook runs it all again. It caches lint and typecheck in
+  `node_modules/.cache` (not in CI), but any `.ts`/`.vue` edit still means
+  a near-full ~90 s typecheck: everything auto-imports `utils/` and
+  `composables/`, so TypeScript rechecks every file that depends on them.
+- **Do not run the Cypress suite locally before opening a PR.** CI runs
+  every spec on every PR across its shards. Locally it needs a build, a
+  `db reset` on the Supabase stack every worktree shares, and a quiet
+  machine, and it still fails for reasons that are not the change. Run one
+  spec locally only when you are writing it or reproducing a CI failure
+  (`npx cypress run --spec <file>`), and otherwise open the PR and read the
+  shards' results.
 - **CI's Cypress shards are computed, not listed.** `scripts/e2e-shard.mjs`
   spreads every spec on disk across the shards by its measured time in
   `cypress/e2e-timings.json`, so a new spec or folder runs with no workflow

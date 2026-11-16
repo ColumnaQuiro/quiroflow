@@ -3444,6 +3444,8 @@ async function startMetaGraphStub(opts: {
    * for a token with leads_retrieval but no ads permission.
    */
   refuseAdNames?: boolean
+  /** debug_token's expires_at (unix seconds), as a 60-day user token carries it. */
+  tokenExpiresAt?: number
   /** Ad accounts the login grants (GET /me/adaccounts), for the Meta Ads connect. */
   adAccounts?: { id: string; account_id: string; name: string; currency: string; account_status?: number }[]
 }) {
@@ -3471,7 +3473,7 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/debug_token')) {
       if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
-      if (opts.granularScopes) return send(200, { data: { app_id: 'STUBAPP', granular_scopes: opts.granularScopes } })
+      if (opts.granularScopes) return send(200, { data: { app_id: 'STUBAPP', granular_scopes: opts.granularScopes, ...(opts.tokenExpiresAt ? { expires_at: opts.tokenExpiresAt } : {}) } })
       return send(200, {
         data: { app_id: 'STUBAPP', granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
       })

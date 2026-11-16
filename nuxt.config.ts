@@ -528,13 +528,24 @@ export default defineNuxtConfig({
       // app. Blank hides the Connect button.
       metaInstagramConfigId: '1399986838997555',
       // A fourth, for the Meta Ads card in Settings > Leads: "QuiroFlow ad
-      // spend", created 15 Nov 2026. Ad accounts required, task permission
-      // ANALYZE only, and ads_read ONLY -- reading spend, never
-      // ads_management, so nothing it hands out can spend a clinic's money.
-      // Same never-expiring system-user token as the others. Until ads_read
-      // passes App Review, Meta only offers it to people with a role on the
-      // app. Blank hides the Connect button and leaves the paste-a-token fields.
-      metaAdsConfigId: '4726545360911121',
+      // spend (user)", created 16 Nov 2026, ads_read ONLY -- reading spend,
+      // never ads_management, so nothing it hands out can spend a clinic's
+      // money.
+      //
+      // A USER access token, unlike the other three, and that is forced:
+      // the system-user config made first ("QuiroFlow ad spend",
+      // 4726545360911121) came back from Meta without ads_read at all,
+      // because a business system-user token only carries ads permissions
+      // for an app with Ads Management Standard Access -- a Marketing API
+      // tier Meta grants after a record of API use, not on request. The
+      // connect exchanges it for a 60-day token, so Meta wants the
+      // connection renewed every 60 days; Settings > Leads says by when.
+      // Switch back to a system-user config once the app has that tier.
+      //
+      // Until ads_read passes App Review, Meta only offers it to people with
+      // a role on the app. Blank hides the Connect button and leaves the
+      // paste-a-token fields.
+      metaAdsConfigId: '1014134380995906',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

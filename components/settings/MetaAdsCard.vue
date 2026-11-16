@@ -14,6 +14,8 @@ interface Status {
   hasToken: boolean
   name: string | null
   currency: string | null
+  /** When Meta stops accepting the connection; a user token lasts 60 days. */
+  expiresAt: string | null
   error: string | null
 }
 interface Choice {
@@ -67,6 +69,12 @@ const label = computed(() => status.value?.name ?? (status.value?.adAccountId ? 
 // A connected account billing in anything but euros cannot be read in:
 // channel_spend has no currency column, so the sync refuses it. Said here,
 // where it can be fixed, rather than only as a failed sync on the dashboard.
+// Meta gives this connection 60 days and no way to renew it without the
+// person signing in again, so the card says by when, and turns to a warning
+// in the last two weeks -- before spend quietly stops being read.
+const renewBy = computed(() => (status.value?.expiresAt ? new Date(status.value.expiresAt) : null))
+const renewSoon = computed(() => Boolean(renewBy.value && renewBy.value.getTime() - Date.now() < 14 * 86_400_000))
+const renewByLabel = computed(() => (renewBy.value ? renewBy.value.toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'long' }) : ''))
 const wrongCurrency = computed(() => Boolean(status.value?.currency && status.value.currency !== 'EUR'))
 const showManual = computed(() => !meta.available.value || (status.value?.adAccountId && !connected.value))
 
@@ -186,6 +194,9 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
         </div>
         <p v-if="connected" class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="meta-ads-account">
           {{ label }}<span v-if="status?.currency" class="ml-1 font-normal text-ink-muted2">· {{ status.currency }}</span>
+        </p>
+        <p v-if="connected && renewBy" class="mt-0.5 text-[12.5px]" :class="renewSoon ? 'font-semibold text-warning-text' : 'text-ink-muted2'" data-cy="meta-ads-renew">
+          {{ t(`Meta asks for this connection to be renewed by ${renewByLabel}: click Reconnect before then.`, `Meta pide renovar esta conexión antes del ${renewByLabel}: pulsa Volver a conectar antes de esa fecha.`) }}
         </p>
         <p class="mt-1 text-[13px] leading-snug text-ink-muted">
           {{ t('Growth reads what you spent on Facebook and Instagram ads each month, so cost per lead and per new patient fill themselves in. Read-only: nothing here can create ads or spend money.', 'Crecimiento lee lo que gastaste en anuncios de Facebook e Instagram cada mes, para que el coste por lead y por paciente nuevo se rellenen solos. Solo lectura: nada aquí puede crear anuncios ni gastar dinero.') }}

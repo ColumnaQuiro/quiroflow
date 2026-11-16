@@ -9,6 +9,9 @@ interface Step {
   // each importer stamps on what it writes. Absent for a step that writes
   // nothing countable (a repair, a read-only check).
   count?: () => PromiseLike<{ count: number | null }>
+  // What the status says once count is above zero, when "N imported" would be
+  // untrue of what is counted.
+  countText?: (n: number) => string
 }
 
 interface StepGroup {
@@ -66,7 +69,14 @@ const sources = computed<Source[]>(() => [
         note: t('Start here: everything else is matched to a patient.', 'Empieza aquí: todo lo demás se empareja con un paciente.'),
         steps: [
           { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Runs first: everything after it finds its patient by the PracticeHub reference stored here.', 'Va primero: todo lo demás encuentra a su paciente por la referencia de PracticeHub guardada aquí.'), count: counted('patients') },
-          { key: 'appointment_types', label: t('Appointment types', 'Tipos de cita'), hint: t('Creates the types, and repairs visits attached to the wrong one.', 'Crea los tipos y corrige visitas asociadas al equivocado.') },
+          { key: 'appointment_types', label: t('Appointment types', 'Tipos de cita'), hint: t('Creates the types, and repairs visits attached to the wrong one.', 'Crea los tipos y corrige visitas asociadas al equivocado.'),
+            // A type carries no PracticeHub reference, so this counts the
+            // clinic's types: the importer reuses one already here by name, so
+            // once they exist the step has nothing left to create. It runs
+            // before Appointments, so counting relinked visits would leave it
+            // unticked after a successful run.
+            count: () => supabase.from('appointment_types').select('*', { count: 'exact', head: true }).eq('account_id', store.accountId!),
+            countText: (n) => (n === 1 ? t('1 type', '1 tipo') : t(`${nf.format(n)} types`, `${nf.format(n)} tipos`)) },
           { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits.', 'Visitas pasadas y futuras.'), count: counted('appointments') },
         ],
       },
@@ -278,6 +288,7 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
   if (!step.count) return null
   if (!countsLoaded.value) return { text: '…', done: false }
   const n = counts.value[step.key] ?? 0
+  if (n && step.countText) return { text: step.countText(n), done: true }
   return n ? { text: t(`${nf.format(n)} imported`, `${nf.format(n)} importados`), done: true } : { text: t('Nothing imported yet', 'Nada importado aún'), done: false }
 }
 // Every importer shows a long preview -- counts, sample tables, sometimes

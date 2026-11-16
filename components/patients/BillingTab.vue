@@ -134,7 +134,7 @@ const { preference: lang } = useLang()
 // invoices, payments, credits and bonos, and used to fetch them once each --
 // on opening, and again after every payment. One patient_ledger request now
 // answers both (fetchLedger), so the summary is told not to start its own.
-const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary, refreshWithDetail } =
+const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, spendableCreditCents, lifetimeCents, refresh: refreshCreditSummary, refreshWithDetail } =
   usePatientFinancialSummary(() => props.patientId, { manual: true })
 const { issueFactura, issueRectificativa, annulFactura } = useFacturas()
 const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod, labelFor: methodLabel } = usePaymentMethods()
@@ -397,14 +397,19 @@ async function applyCreditToInvoice() {
     applyingCredit.value = false
     return
   }
-  const { error: creditRowError } = await supabase.from('account_credits').insert({
-    account_id: store.accountId!,
-    patient_id: props.patientId,
-    amount_cents: -amountCents,
-    reason: `Applied to invoice ${invoice.invoice_number}`,
-    invoice_id: invoice.id,
-    created_by: store.teamMember?.id ?? null,
-  })
+  // Only the part drawn from the ledger gets a row: the rest was paid ahead
+  // and has no row to take it off -- see utils/owing ledgerDrawCents.
+  const fromLedgerCents = ledgerDrawCents(amountCents, creditLedgerCents.value)
+  const { error: creditRowError } = fromLedgerCents > 0
+    ? await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -fromLedgerCents,
+      reason: `Applied to invoice ${invoice.invoice_number}`,
+      invoice_id: invoice.id,
+      created_by: store.teamMember?.id ?? null,
+    })
+    : { error: null }
   if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
 
   // It throws when its write is refused, which left this form stuck on
@@ -498,17 +503,18 @@ async function takePayment() {
   }
   const creditRows = rows.filter((r) => r.method === 'credit')
   let creditRowError: { message: string } | null = null
-  if (creditRows.length > 0) {
-    ;({ error: creditRowError } = await supabase.from('account_credits').insert(
-      creditRows.map((r) => ({
-        account_id: store.accountId!,
-        patient_id: props.patientId,
-        amount_cents: -paymentRowCents(r),
-        reason: `Applied to invoice ${invoice.invoice_number}`,
-        invoice_id: invoice.id,
-        created_by: store.teamMember?.id ?? null,
-      })),
-    ))
+  // Only the part drawn from the ledger gets a row: the rest was paid ahead
+  // and has no row to take it off -- see utils/owing ledgerDrawCents.
+  const fromLedgerCents = ledgerDrawCents(creditRows.reduce((sum, r) => sum + paymentRowCents(r), 0), creditLedgerCents.value)
+  if (fromLedgerCents > 0) {
+    ;({ error: creditRowError } = await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -fromLedgerCents,
+      reason: `Applied to invoice ${invoice.invoice_number}`,
+      invoice_id: invoice.id,
+      created_by: store.teamMember?.id ?? null,
+    }))
   }
 
   // An instalment on a bono used to be banked as spendable account credit,
@@ -723,11 +729,14 @@ async function recordSalePayment(description: string, amountCents: number, metho
     return paymentRefusedMessage(paymentError)
   }
 
-  if (method === 'credit') {
+  // Only the part drawn from the ledger gets a row: the rest was paid ahead
+  // and has no row to take it off -- see utils/owing ledgerDrawCents.
+  const fromLedgerCents = method === 'credit' ? ledgerDrawCents(amountCents, creditLedgerCents.value) : 0
+  if (fromLedgerCents > 0) {
     const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
-      amount_cents: -amountCents,
+      amount_cents: -fromLedgerCents,
       reason: `Applied to ${description}`,
       invoice_id: invoice.id,
       created_by: store.teamMember?.id ?? null,
@@ -735,7 +744,7 @@ async function recordSalePayment(description: string, amountCents: number, metho
     if (creditRowError) {
       return t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
     }
-  } else {
+  } else if (method !== 'credit') {
     await issueFactura({
       accountId: store.accountId!,
       patientId: props.patientId,
@@ -806,11 +815,14 @@ async function recordPackagePayment(
       bono: { packageName: description, priceCents: bono.priceCents, sessionsTotal: bono.sessionsTotal, installment: bono.installment },
     })
   }
-  if (method === 'credit') {
+  // Only the part drawn from the ledger gets a row: the rest was paid ahead
+  // and has no row to take it off -- see utils/owing ledgerDrawCents.
+  const fromLedgerCents = method === 'credit' ? ledgerDrawCents(amountCents, creditLedgerCents.value) : 0
+  if (fromLedgerCents > 0) {
     const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
-      amount_cents: -amountCents,
+      amount_cents: -fromLedgerCents,
       reason: `Applied to ${description}`,
       invoice_id: null,
       created_by: store.teamMember?.id ?? null,
@@ -1515,7 +1527,14 @@ const availableCents = computed(() => creditLedgerCents.value + committedBonoCen
  * folded into it makes that term more conservative for an imported bono, and
  * under-offering is the safe direction to be wrong in.
  */
-const spendableCreditCents = computed(() => creditLedgerCents.value + paidAheadCents.value)
+//
+// That rule now lives in utils/owing spendableCreditOf and arrives on the
+// summary, so every charge screen offers the same figure -- the calendar's
+// visit panel, the invoice page and the staff app offered the ledger alone,
+// which an imported PracticeHub prepayment never reaches. It also adds the
+// unpaid invoices back before taking the surplus: read straight off the
+// balance, a prepayment vanished here the moment the visit it was for was
+// invoiced (50 paid - 50 charged = 0 to spend).
 // The surplus term above on its own: paid beyond everything invoiced and what
 // the bonos have committed -- money on account with no receipt to settle.
 // On account shows it as "Paid ahead". "Balance" used to carry it, mixed in

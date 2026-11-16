@@ -70,12 +70,13 @@ export function planInvoiceUnderBono(
 /**
  * Whether the credit part of a payment asks for more than there is.
  *
- * Capped by the credit LEDGER, not the balance: a balance carries prepaid
- * bono money, which buys the sessions and is not spendable twice (the
- * double-count migration 0161 removed). Only asked when credit is actually
- * being spent -- otherwise 0 against a negative figure reads as "exceeded"
- * and blocks a plain cash or card payment.
+ * Capped by what is SPENDABLE (utils/owing spendableCreditOf), not by the raw
+ * balance: a balance carries prepaid bono money, which buys the sessions and
+ * is not spendable twice (the double-count migration 0161 removed). Nor by the
+ * credit ledger alone, which an imported PracticeHub prepayment never reaches.
+ * Only asked when credit is actually being spent -- otherwise 0 against a
+ * negative figure reads as "exceeded" and blocks a plain cash or card payment.
  */
-export function creditExceedsLedger(creditCents: number, creditLedgerCents: number): boolean {
-  return creditCents > 0 && creditCents > creditLedgerCents
+export function creditExceedsSpendable(creditCents: number, spendableCreditCents: number): boolean {
+  return creditCents > 0 && creditCents > spendableCreditCents
 }

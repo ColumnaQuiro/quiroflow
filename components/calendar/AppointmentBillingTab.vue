@@ -24,7 +24,7 @@ const {
   balanceCents,
   outstandingCents,
   availableCents,
-  creditLedgerCents,
+  spendableCreditCents,
   activeMembership,
   activePackages,
   invoice,
@@ -274,7 +274,7 @@ const fieldId = useId()
             <label :for="`${fieldId}-method-${i}`" class="block text-[12px] font-medium text-ink-600">{{ t('Method', 'Método') }}</label>
             <select :id="`${fieldId}-method-${i}`" v-model="row.method" class="mt-1 h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
+              <option v-if="spendableCreditCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }})</option>
             </select>
           </div>
           <button v-if="paymentRows.length > 1" type="button" class="flex h-9 items-center rounded-ctlSm px-2 text-[12.5px] text-ink-muted hover:bg-danger-bg hover:text-danger-text touch:h-11" @click="removePaymentRow(i)">

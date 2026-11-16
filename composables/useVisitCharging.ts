@@ -1,7 +1,8 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsLedger, isVisitUpcoming, lineItemsTotalCents } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
+import { ledgerDrawCents } from '../utils/owing'
 
 // Charging one visit: raising its invoice, adding and removing lines, drawing
 // it from a bono, and taking payment for it -- with the factura, the credit
@@ -55,7 +56,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   const accountId = () => toValue(ctx.accountId)!
 
   const summary = usePatientFinancialSummary(patientId)
-  const { balanceCents, creditLedgerCents, refresh: refreshSummary } = summary
+  const { balanceCents, creditLedgerCents, spendableCreditCents, refresh: refreshSummary } = summary
 
   const invoice = ref<VisitInvoice | null>(null)
   const lineItems = ref<VisitLineItem[]>([])
@@ -518,8 +519,8 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     error.value = ''
     const rows = paymentRows.value.filter((r) => paymentRowCents(r) > 0)
     if (rows.length === 0) return
-    // Capped by the credit LEDGER, not the balance -- see creditExceedsLedger.
-    if (creditExceedsLedger(paymentCreditCents.value, creditLedgerCents.value)) {
+    // Capped by what is spendable, not the balance -- see creditExceedsSpendable.
+    if (creditExceedsSpendable(paymentCreditCents.value, spendableCreditCents.value)) {
       error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
       return
     }
@@ -569,17 +570,18 @@ export function useVisitCharging(ctx: VisitChargingContext) {
       if (!issued) facturaMissing = true
     }
     const creditRows = rows.filter((r) => r.method === 'credit')
-    if (creditRows.length > 0) {
-      await supabase.from('account_credits').insert(
-        creditRows.map((r) => ({
-          account_id: accountId(),
-          patient_id: patientId(),
-          amount_cents: -paymentRowCents(r),
-          reason: `Applied to invoice ${invoice.value!.invoice_number}`,
-          invoice_id: invoice.value!.id,
-          created_by: toValue(ctx.teamMemberId) ?? null,
-        })),
-      )
+    // Only the part drawn from the ledger gets a row: the rest was paid ahead
+    // and has no row to take it off -- see utils/owing ledgerDrawCents.
+    const fromLedgerCents = ledgerDrawCents(creditRows.reduce((sum, r) => sum + paymentRowCents(r), 0), creditLedgerCents.value)
+    if (fromLedgerCents > 0) {
+      await supabase.from('account_credits').insert({
+        account_id: accountId(),
+        patient_id: patientId(),
+        amount_cents: -fromLedgerCents,
+        reason: `Applied to invoice ${invoice.value!.invoice_number}`,
+        invoice_id: invoice.value!.id,
+        created_by: toValue(ctx.teamMemberId) ?? null,
+      })
     }
 
     // Decided from the database, not from the totals this screen loaded when it

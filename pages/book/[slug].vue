@@ -179,6 +179,12 @@ const ANY_PRACTITIONER = '__any__'
 
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
+// The type's description goes in the summary only where no service card showed
+// it: a clinic with one type, or a link that fixes one (?type=). Those links
+// often skip to the date too, so every step's summary carries it.
+const summaryDescription = computed(() =>
+  (info.value?.appointment_types.length ?? 0) > 1 && !typeLockedByQuery.value ? null : (appointmentType.value?.online_description ?? null),
+)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 // At the clinic chosen, and doing the type chosen when only some do it.
 const availablePractitioners = computed(() => {
@@ -1397,7 +1403,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               </UiBtn>
             </div>
 
-            <BookingSummary :description="info.appointment_types.length > 1 && !typeLockedByQuery ? null : appointmentType?.online_description" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="null" :slot="null" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
+            <BookingSummary :description="summaryDescription" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="null" :slot="null" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 
@@ -1554,7 +1560,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               </div>
             </div>
 
-            <BookingSummary class="h-fit lg:sticky lg:top-6" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="summaryMember" :slot="selectedSlot" awaiting-slot :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents">
+            <BookingSummary class="h-fit lg:sticky lg:top-6" :description="summaryDescription" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="summaryMember" :slot="selectedSlot" awaiting-slot :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents">
               <UiBtn v-if="selectedSlot" type="button" variant="primary" size="lg" class="mt-3 hidden w-full lg:inline-flex" data-cy="booking-continue" @click="confirmSlot">
                 {{ say({ es: 'Continuar', en: 'Continue', fr: 'Continuer' }) }}
               </UiBtn>
@@ -1644,7 +1650,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               </UiBtn>
             </form>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
+            <BookingSummary :description="summaryDescription" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 

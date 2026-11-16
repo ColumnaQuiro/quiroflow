@@ -1,8 +1,8 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, reasonChoices } from '~/server/utils/receptionistSend'
+import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
@@ -312,6 +312,11 @@ export async function draftLeadReply(
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
+  // As for a patient (patientReplyDraft.ts): a lead whose first visit was
+  // booked here can cancel it here too, and is asked why.
+  if (actions) actions.asksWhyCancelled = true
+  const askWhyCancelled = actions ? askWhyCancelledTool(actions) : null
+  const cancellationReason = actions ? cancellationReasonTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
@@ -337,6 +342,8 @@ export async function draftLeadReply(
     book,
     waitlist,
     cancel,
+    askWhyCancelled,
+    cancellationReason,
     give,
     stopEarlier,
     maxTimesPerReply: config.slotsPerReply,
@@ -404,7 +411,7 @@ export async function draftLeadReply(
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
-      await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft)
+      await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft, run.choices ? reasonChoices(null) : null)
     } catch (err) {
       // Refused by WhatsApp (the window closed, a bad number): it stays a
       // draft, so a person still sees what it would have said.

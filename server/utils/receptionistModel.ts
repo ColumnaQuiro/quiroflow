@@ -8,7 +8,7 @@ import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason } from '~/utils/receptionistFollowThrough'
@@ -59,6 +59,8 @@ export interface ReceptionistRun {
   toolUses: ReceptionistToolUse[]
   /** The checks in code that fired, in order (receptionist_reply_traces.checks). */
   checks: string[]
+  /** Choices to send with the text: the reasons for cancelling, after ask_why_cancelled. */
+  choices: 'cancellation_reason' | null
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
 }
 
@@ -174,6 +176,10 @@ export async function runReceptionistModel(
     give?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer stop_follow_ups (receptionistBooking.ts): a patient answered on their own only. */
     stopFollowUps?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer ask_why_cancelled (receptionistBooking.ts): same terms as `cancel`. A success sends the reasons with the reply (`choices`). */
+    askWhyCancelled?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer record_cancellation_reason (receptionistBooking.ts): same terms as `cancel`. */
+    cancellationReason?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer stop_earlier_time_offers (receptionistBooking.ts): a clinic offering earlier first visits, same terms as `book`. */
     stopEarlier?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /**
@@ -202,7 +208,8 @@ export async function runReceptionistModel(
   // record (receptionist_reply_traces).
   const checks: string[] = []
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
-  const run = (text: string, refused: boolean): ReceptionistRun => ({ text, refused, handedOver, toolUses, checks, usage })
+  let choices: ReceptionistRun['choices'] = null
+  const run = (text: string, refused: boolean): ReceptionistRun => ({ text, refused, handedOver, toolUses, checks, usage, choices: refused ? null : choices })
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
   const toolUses: ReceptionistToolUse[] = []
@@ -228,6 +235,8 @@ export async function runReceptionistModel(
     ...(opts.book ? [BOOK_APPOINTMENT] : []),
     ...(opts.waitlist ? [ADD_TO_WAITLIST] : []),
     ...(opts.cancel ? [CANCEL_APPOINTMENT] : []),
+    ...(opts.askWhyCancelled ? [ASK_WHY_CANCELLED] : []),
+    ...(opts.cancellationReason ? [RECORD_CANCELLATION_REASON] : []),
     ...(opts.give ? [GIVE_VISIT_TO] : []),
     ...(opts.stopFollowUps ? [STOP_FOLLOW_UPS] : []),
     ...(opts.stopEarlier ? [STOP_EARLIER_TIME_OFFERS] : []),
@@ -367,6 +376,17 @@ export async function runReceptionistModel(
             return { content: 'The visit could not be cancelled. Do not say it is cancelled: call hand_over_to_colleague saying which visit they want cancelled.', isError: true }
           })
           if (!result.isError) booked = true
+        } else if (use.name === 'ask_why_cancelled' && opts.askWhyCancelled) {
+          result = await opts.askWhyCancelled(use.input).catch((err) => {
+            console.error('[receptionist] ask_why_cancelled failed:', (err as Error)?.message ?? err)
+            return { content: 'The reasons cannot be sent. Ask them in one short sentence why they cannot come, without listing reasons.', isError: true }
+          })
+          if (!result.isError) choices = 'cancellation_reason'
+        } else if (use.name === 'record_cancellation_reason' && opts.cancellationReason) {
+          result = await opts.cancellationReason(use.input).catch((err) => {
+            console.error('[receptionist] record_cancellation_reason failed:', (err as Error)?.message ?? err)
+            return { content: 'It could not be recorded. Just answer them.', isError: true }
+          })
         } else if (use.name === 'give_visit_to' && opts.give) {
           result = await opts.give(use.input).catch((err) => {
             console.error('[receptionist] give_visit_to failed:', (err as Error)?.message ?? err)

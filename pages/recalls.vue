@@ -104,7 +104,7 @@ let loadedPaginated = true
 // nothing reads it (11.7ms against 363ms on a real account). Balances for the
 // rows on screen are fetched by id instead.
 const RECALL_COLUMNS =
-  'patient_id, account_id, first_name, last_name, email, tags, recall_priority, default_practitioner_id, last_appointment_at, days_since_last_appointment, preferred_language, clinic_id, last_no_show_at, assigned_to'
+  'patient_id, account_id, first_name, last_name, email, tags, recall_priority, default_practitioner_id, last_appointment_at, days_since_last_appointment, preferred_language, clinic_id, last_no_show_at, assigned_to, first_visit_deferred_at'
 
 // The list follows the clinic chosen in the sidebar. Patients from before
 // clinics were assigned carry none, and belong to every clinic's list.
@@ -905,7 +905,13 @@ const QUEUE_COLUMNS = 'xl:grid-cols-[44px_minmax(0,2fr)_140px_144px_104px_minmax
               </div>
             </div>
             <div class="col-start-2 flex flex-col items-start gap-1 xl:col-start-auto">
-              <span class="text-[13.5px] text-ink-700">{{ longDate(r.last_appointment_at) }}</span>
+              <!-- Never came: cancelled their first visit saying they would
+                   book later (20261115172804), counted from when they said it. -->
+              <template v-if="!r.last_appointment_at && r.first_visit_deferred_at">
+                <span class="text-[13.5px] text-ink-700" data-cy="recall-first-visit-deferred">{{ t('Cancelled first visit', 'Canceló su primera visita') }}</span>
+                <span class="text-[12px] text-ink-muted">{{ t(`Will book later · said on ${formatShortDate(r.first_visit_deferred_at)}`, `Reservará más adelante · lo dijo el ${formatShortDate(r.first_visit_deferred_at)}`) }}</span>
+              </template>
+              <span v-else class="text-[13.5px] text-ink-700">{{ longDate(r.last_appointment_at) }}</span>
               <UiPill :tone="overdueTone(r.days_since_last_appointment)" class="whitespace-nowrap" data-cy="recall-overdue">{{ overdueLabel(r.days_since_last_appointment) }}</UiPill>
               <span v-if="noShowNote(r)" class="text-[12px] text-ink-muted" data-cy="recall-no-show">{{ noShowNote(r) }}</span>
             </div>

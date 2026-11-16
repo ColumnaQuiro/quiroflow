@@ -66,6 +66,8 @@ export type Database = {
           created_at: string
           id: string
           last_offered_at: string | null
+          last_offered_starts_at: string | null
+          last_offered_visit_at: string | null
           offer_expires_at: string | null
           offered_ends_at: string | null
           offered_starts_at: string | null
@@ -80,6 +82,8 @@ export type Database = {
           created_at?: string
           id?: string
           last_offered_at?: string | null
+          last_offered_starts_at?: string | null
+          last_offered_visit_at?: string | null
           offer_expires_at?: string | null
           offered_ends_at?: string | null
           offered_starts_at?: string | null
@@ -94,6 +98,8 @@ export type Database = {
           created_at?: string
           id?: string
           last_offered_at?: string | null
+          last_offered_starts_at?: string | null
+          last_offered_visit_at?: string | null
           offer_expires_at?: string | null
           offered_ends_at?: string | null
           offered_starts_at?: string | null
@@ -2408,6 +2414,7 @@ export type Database = {
           confirmation_sent_at: string | null
           confirmation_answered_at: string | null
           confirmation_status: string | null
+          cancellation_reason: string | null
           created_at: string
           deleted_at: string | null
           ends_at: string
@@ -2439,6 +2446,7 @@ export type Database = {
           confirmation_sent_at?: string | null
           confirmation_answered_at?: string | null
           confirmation_status?: string | null
+          cancellation_reason?: string | null
           created_at?: string
           deleted_at?: string | null
           ends_at: string
@@ -2470,6 +2478,7 @@ export type Database = {
           confirmation_sent_at?: string | null
           confirmation_answered_at?: string | null
           confirmation_status?: string | null
+          cancellation_reason?: string | null
           created_at?: string
           deleted_at?: string | null
           ends_at?: string
@@ -7287,6 +7296,7 @@ export type Database = {
           emergency_contact: string | null
           external_reference: string | null
           first_name: string
+          first_visit_deferred_at: string | null
           gender: string | null
           goals: string | null
           has_phone: boolean
@@ -7348,6 +7358,7 @@ export type Database = {
           emergency_contact?: string | null
           external_reference?: string | null
           first_name: string
+          first_visit_deferred_at?: string | null
           gender?: string | null
           goals?: string | null
           has_phone?: boolean
@@ -7409,6 +7420,7 @@ export type Database = {
           emergency_contact?: string | null
           external_reference?: string | null
           first_name?: string
+          first_visit_deferred_at?: string | null
           gender?: string | null
           goals?: string | null
           has_phone?: boolean
@@ -10760,6 +10772,7 @@ export type Database = {
           default_practitioner_id: string | null
           email: string | null
           first_name: string | null
+          first_visit_deferred_at: string | null
           last_appointment_at: string | null
           last_name: string | null
           last_no_show_at: string | null

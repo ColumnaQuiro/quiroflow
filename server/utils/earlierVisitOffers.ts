@@ -158,6 +158,10 @@ async function offerEarlierTime(service: any, origin: string, row: OfferRow, now
       offer_expires_at: expiresAt.toISOString(),
       offers_made: row.offers_made + 1,
       last_offered_at: now.toISOString(),
+      // Kept once the offer closes, for the receptionist report: what was
+      // offered, against when their visit was.
+      last_offered_starts_at: slot.startsAt.toISOString(),
+      last_offered_visit_at: appt.starts_at,
       updated_at: now.toISOString(),
     })
     .eq('id', row.id)

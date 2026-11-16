@@ -46,6 +46,32 @@ export async function sendWhatsAppText(account: WhatsAppAccount, to: string, bod
   return metaSend(account, { to, type: 'text', text: { body, preview_url: false } })
 }
 
+/**
+ * Text with a list of choices to tap (an interactive list message): free-form,
+ * so only inside the 24h window, like any text. A tap comes back to the
+ * webhook as interactive.list_reply with the row's id and title. WhatsApp
+ * caps a row title at 24 characters, the button at 20 and the rows at 10, and
+ * refuses the whole message over any of them -- callers pass fixed lists
+ * (utils/cancellationReason.ts) held to those limits by their tests.
+ */
+export async function sendWhatsAppChoices(account: WhatsAppAccount, to: string, body: string, choices: WhatsAppChoices) {
+  return metaSend(account, {
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: body.slice(0, 4096) },
+      action: { button: choices.button, sections: [{ rows: choices.rows.slice(0, 10) }] },
+    },
+  })
+}
+
+export interface WhatsAppChoices {
+  /** The button that opens the list. */
+  button: string
+  rows: { id: string; title: string }[]
+}
+
 export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker'
 
 export async function sendWhatsAppMedia(

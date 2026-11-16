@@ -1,5 +1,7 @@
 import type { H3Event } from 'h3'
-import { sendInboxMessage } from '~/server/utils/inboxSend'
+import { sendInboxMessage, withChoiceLines } from '~/server/utils/inboxSend'
+import type { WhatsAppChoices } from '~/server/utils/whatsappSend'
+import { CANCELLATION_REASON_BUTTON, cancellationReasonRows, choiceLanguage } from '~/utils/cancellationReason'
 import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
 import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoReply'
 import { HANDED_OVER_REPLY } from '~/utils/receptionistFollowThrough'
@@ -18,13 +20,25 @@ import { sendMessengerToLead } from '~/server/utils/messengerSend'
 // patient_app_messages row plus the push to their phone that
 // /api/patient-messages/send gives a person's reply.
 
+/** The reasons for cancelling, as the list sent with ask_why_cancelled's reply, in their language. */
+export function reasonChoices(preferredLanguage: string | null | undefined): WhatsAppChoices {
+  const language = choiceLanguage(preferredLanguage)
+  return { button: CANCELLATION_REASON_BUTTON[language], rows: cancellationReasonRows(language) }
+}
+
 export type ReceptionistTarget =
   /** `channel`: the one they last wrote on, which the reply goes back on. WhatsApp when unsaid. */
   | { kind: 'lead'; leadId: string; channel?: string }
   | { kind: 'patient'; patientId: string; channel: 'whatsapp' | 'app' }
 
-/** Sends `text` as the receptionist. Throws when it cannot be sent (e.g. outside WhatsApp's window). */
-export async function sendAsReceptionist(event: H3Event, service: any, accountId: string, target: ReceptionistTarget, text: string) {
+/**
+ * Sends `text` as the receptionist. Throws when it cannot be sent (e.g.
+ * outside WhatsApp's window). `choices` go as a list to tap on WhatsApp, and
+ * as lines under the text anywhere that has no such thing.
+ */
+export async function sendAsReceptionist(event: H3Event, service: any, accountId: string, target: ReceptionistTarget, message: string, choices?: WhatsAppChoices | null) {
+  const onWhatsApp = target.kind === 'lead' ? !target.channel || target.channel === 'whatsapp' : target.channel === 'whatsapp'
+  const text = choices?.rows.length && !onWhatsApp ? withChoiceLines(message, choices) : message
   if (target.kind === 'patient' && target.channel === 'app') {
     const { error } = await service
       .from('patient_app_messages')
@@ -47,7 +61,8 @@ export async function sendAsReceptionist(event: H3Event, service: any, accountId
   // sendInboxMessage reads only the sender's account; the receptionist has no
   // team member of its own.
   const sender = { supabase: service, teamMember: { account_id: accountId } } as unknown as Parameters<typeof sendInboxMessage>[1]
-  await sendInboxMessage(event, sender, target.kind === 'lead' ? { leadId: target.leadId, text, sentByAi: true } : { patientId: target.patientId, text, sentByAi: true })
+  const withChoices = choices?.rows.length && onWhatsApp ? { choices } : {}
+  await sendInboxMessage(event, sender, target.kind === 'lead' ? { leadId: target.leadId, text, sentByAi: true, ...withChoices } : { patientId: target.patientId, text, sentByAi: true, ...withChoices })
 }
 
 /**

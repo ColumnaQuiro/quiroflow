@@ -3,7 +3,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
-import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
+import { isWithin24hWindow, sendWhatsAppChoices, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind, type WhatsAppChoices } from '~/server/utils/whatsappSend'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import type { requirePermission } from '~/server/utils/requirePermission'
 
@@ -29,6 +29,12 @@ export interface InboxSendParams {
   mediaFilename?: string
   mediaKind?: MediaKind
   caption?: string
+  /**
+   * With `text`: choices to tap under it (a WhatsApp list). The thread keeps
+   * them as lines under the text, which is how the team -- and the
+   * receptionist, reading the conversation back -- sees what was offered.
+   */
+  choices?: WhatsAppChoices
   /** Sent by the AI receptionist on its own (receptionistSend.ts), not a person. */
   sentByAi?: boolean
   /** Sent unprompted by the clinic (a booking confirmation), not a reply: refused for "do not contact". */
@@ -225,6 +231,9 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
       insert.media_mime_type = params.mediaMimeType
       insert.media_filename = params.mediaFilename ?? null
       insert.body_preview = params.caption?.slice(0, 2000) ?? null
+    } else if (params.text && params.choices?.rows.length) {
+      insert.wamid = await sendWhatsAppChoices(waAccount, to, params.text, params.choices)
+      insert.body_preview = withChoiceLines(params.text, params.choices).slice(0, 2000)
     } else if (params.text) {
       insert.wamid = await sendWhatsAppText(waAccount, to, params.text)
       insert.body_preview = params.text.slice(0, 2000)
@@ -243,6 +252,11 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
     await supabase.storage.from('whatsapp-media').upload(upload.path, upload.buffer, { contentType: upload.contentType, upsert: true })
   }
   if (leadId && params.sentByAi !== true) await clearLeadHandover(supabase, account.id, leadId)
+}
+
+/** Text followed by its choices, one per line, as the thread shows a list message. */
+export function withChoiceLines(text: string, choices: WhatsAppChoices): string {
+  return `${text}\n\n${choices.rows.map((row) => `• ${row.title}`).join('\n')}`
 }
 
 /**

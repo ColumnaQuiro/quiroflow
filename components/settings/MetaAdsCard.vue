@@ -84,7 +84,7 @@ async function connect() {
   connectError.value = ''
   try {
     const code = await meta.launch()
-    const result = await useStaffFetch<ConnectResult>('/api/meta/ads/connect', { method: 'POST', body: { code, redirectUri: meta.redirectUri } })
+    const result = await useStaffFetch<ConnectResult>('/api/meta/ads/connect', { method: 'POST', body: { code, redirectUris: meta.redirectUris() } })
     if (result.choose?.length && result.ticket) {
       choices.value = result.choose
       ticket.value = result.ticket

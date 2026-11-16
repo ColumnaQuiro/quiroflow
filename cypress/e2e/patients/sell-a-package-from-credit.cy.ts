@@ -45,8 +45,13 @@ describe('Selling a package from account credit', () => {
           expect(rows, 'no factura for a credit payment').to.have.length(0)
         })
 
-        // And the credit is actually drawn down rather than spendable twice.
-        cy.contains('tr', 'Applied to Bono 12').should('exist')
+        // And the credit is spent rather than spendable twice -- without a
+        // ledger row. That money never had one: it was paid ahead, and a -100
+        // row against no +100 took it off the balance a second time
+        // (utils/owing ledgerDrawCents). The bono now holds it.
+        cy.task<unknown[]>('db:creditsFor', { patientId: patient.id }).should('have.length', 0)
+        cy.contains('select', 'Sell a bono').should('exist').select('Bono 12 (12, 528,00 €)')
+        cy.contains('label', 'Method').parent().find('select').find('option[value="credit"]').should('be.disabled').should('contain.text', 'none available')
       })
     })
   })

@@ -325,7 +325,7 @@ function backToHeader() {
 // Billing tab uses too. Who is charging comes from usePractitionerContext,
 // since there is no account store in this app.
 const {
-  creditLedgerCents,
+  spendableCreditCents,
   activePackages,
   refresh: refreshMoney,
   invoice,
@@ -1092,7 +1092,7 @@ watch(
                 <input v-model="row.amount" type="number" step="0.01" min="0" class="w-24 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]" />
                 <select v-model="row.method" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
                   <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-                  <option v-if="creditLedgerCents > 0" value="credit">{{ t(`Credit on account (${euros(creditLedgerCents)} available)`, `Saldo a favor (${euros(creditLedgerCents)} disponible)`) }}</option>
+                  <option v-if="spendableCreditCents > 0" value="credit">{{ t(`Credit on account (${euros(spendableCreditCents)} available)`, `Saldo a favor (${euros(spendableCreditCents)} disponible)`) }}</option>
                 </select>
               </div>
               <AppButton variant="primary" class="w-full" :disabled="saving || paymentTotalCents <= 0" @click="recordPayment">{{ saving ? t('Saving…', 'Guardando…') : t(`Record ${euros(paymentTotalCents)}`, `Registrar ${euros(paymentTotalCents)}`) }}</AppButton>

@@ -55,6 +55,8 @@ describe('Data and developer settings', () => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ana', externalReference: 'PH-100' })
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Luis', externalReference: 'PH-101' })
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Typed by hand' })
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Primera visita' })
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste' })
       cy.login(account.email, account.password)
       cy.visit('/settings/import?type=not-a-step')
       cy.get('[data-cy="import-settings"][data-ready="true"]')
@@ -62,6 +64,9 @@ describe('Data and developer settings', () => {
       // An address naming no step opens the first one rather than a blank panel.
       cy.get('[data-cy="import-panel"] h2').should('have.text', 'Connection')
       cy.get('[data-step="patients"] [data-cy="import-step-status"]').should('have.text', '2 imported')
+      // Types carry no PracticeHub reference: the step is done once the
+      // clinic has them, which it needs before Appointments runs.
+      cy.get('[data-step="appointment_types"] [data-cy="import-step-status"]').should('have.text', '2 types')
       cy.get('[data-step="appointments"] [data-cy="import-step-status"]').should('have.text', 'Nothing imported yet')
       cy.get('[data-step="reconciliation"] [data-cy="import-step-status"]').should('not.exist')
 

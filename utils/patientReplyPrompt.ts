@@ -204,7 +204,7 @@ export function returningPatientSection(f: PatientReplyFacts, opts: { reactivati
   if (!f.lastVisitAt && left <= 0) return ''
   const lines = [
     `# They have been to the clinic before
-This person is a returning patient, not someone new. Never offer them a first visit, never quote the first-visit price or the first-visit offer, and never treat a price question as one about a first visit: answer it with the session and bono prices from "Prices of the visits after the first, and bonos" (or the clinic knowledge, for anything not there).`,
+This person is a returning patient, not someone new. Never offer them a first visit, never quote the first-visit price or the first-visit offer, and never treat a price question as one about a first visit: answer it with the session and bono prices from "Visits after the first (length and price), and bonos" (or the clinic knowledge, for anything not there).`,
   ]
   if (left > 0) {
     lines.push(`They still have ${left} session${left === 1 ? '' : 's'} left on their package. A visit they book now uses one of them: offer their usual session (the type of their last visit, normally an adjustment), not a reactivation or report visit -- even if an earlier message in the conversation suggested one -- and do not quote a price for it. Offer times for it yourself rather than handing over; only hand over if they want to stop, pause or change the package.`)

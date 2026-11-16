@@ -996,7 +996,7 @@ export function buildSystemPrompt(
     // with the single-session and package prices, and "you need a first
     // visit" -- without its price, the one number they needed.
     opts.audience && opts.audience !== 'existing'
-      ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and bono prices from "Prices of the visits after the first, and bonos" (or the clinic knowledge, for anything not there), and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
+      ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and bono prices from "Visits after the first (length and price), and bonos" (or the clinic knowledge, for anything not there), and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
       : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a

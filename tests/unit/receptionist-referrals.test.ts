@@ -162,13 +162,14 @@ describe('Prices in the prompt', () => {
 describe('Prices after the first visit', () => {
   const session = { ...adjustment, priceCents: 5500 }
 
-  it('lists the visits after the first, never a first visit or a type without a price', () => {
-    expect(names(typesAfterFirstVisit([{ ...first, priceCents: 7000 }, session, adjustment, { ...referred, priceCents: 5000 }]))).toEqual(['Ajuste'])
+  it('lists the visits after the first, never a first visit, and a type without a price only for its length', () => {
+    expect(names(typesAfterFirstVisit([{ ...first, priceCents: 7000 }, session, { ...referred, priceCents: 5000 }]))).toEqual(['Ajuste'])
+    expect(names(typesAfterFirstVisit([adjustment, { ...adjustment, name: 'Sin nada', durationMinutes: 0 }]))).toEqual(['Ajuste'])
   })
 
-  it('lists the sessions and the bonos with their price a session', () => {
+  it('lists the sessions with their length and price, and the bonos with their price a session', () => {
     const text = laterPricesSection({ sessions: [session], packages: [{ name: 'Bono 10 sesiones', sessions: 10, priceCents: 46000 }] })
-    expect(text).toContain('- Ajuste: 55 €')
+    expect(text).toContain('- Ajuste: 15 min, 55 €')
     expect(text).toContain('- Bono 10 sesiones: 10 sessions for 460 € paid at once (46 € a session)')
   })
 
@@ -178,6 +179,10 @@ describe('Prices after the first visit', () => {
       packages: [{ name: 'Bono 10 sesiones', sessions: 10, priceCents: 50000, installments: [{ installments: 2, installmentCents: 25000 }, { installments: 3, installmentCents: 18000 }] }],
     })
     expect(text).toContain('- Bono 10 sesiones: 10 sessions for 500 € paid at once (50 € a session); or in 2 payments of 250 € (500 € in all), or 3 payments of 180 € (540 € in all)')
+  })
+
+  it('gives the length of a session that has no price', () => {
+    expect(laterPricesSection({ sessions: [adjustment], packages: [] })).toContain('- Ajuste: 15 min')
   })
 
   it('says nothing when there is nothing to price', () => {

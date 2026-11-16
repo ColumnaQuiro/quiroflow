@@ -25,6 +25,8 @@ interface BookingAppointmentType {
    * listed for the clinic, as on the web page. Absent before 20260925181500.
    */
   online_bypass_practitioner?: boolean
+  /** What the clinic tells patients about it; null (or absent, before 20261116183812) for nothing. */
+  online_description?: string | null
 }
 // Types that are paid online when booked. The app cannot take that payment,
 // so create_patient_booking refuses them and they come separately, only so
@@ -441,6 +443,7 @@ async function submitBooking() {
         <select v-if="info!.appointment_types.length > 0" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
           <option v-for="type in info!.appointment_types" :key="type.id" :value="type.id">{{ type.name }} ({{ type.duration_minutes }} min)</option>
         </select>
+        <p v-if="info!.appointment_types.length > 0 && appointmentType?.online_description" class="mt-1.5 whitespace-pre-line break-words text-[12.5px] text-ink-700">{{ appointmentType.online_description }}</p>
         <p v-else class="mt-1 text-[12.5px] text-ink-muted">{{ t("None of this clinic's appointments can be booked from the app.", 'Ninguna de las citas de esta clínica se puede reservar desde la app.') }}</p>
       </div>
 

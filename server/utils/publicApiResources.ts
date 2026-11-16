@@ -191,7 +191,7 @@ export const appointmentTypesResource: ApiResource = {
   table: 'appointment_types',
   scope: 'catalog:read',
   select:
-    'id, name, duration_minutes, default_price_cents, color, stage, online_booking_enabled, online_bookable_by, online_deposit_cents, online_payment_required, online_max_days_ahead, created_at',
+    'id, name, duration_minutes, default_price_cents, color, stage, online_booking_enabled, online_bookable_by, online_deposit_cents, online_payment_required, online_max_days_ahead, online_description, created_at',
   // An archived type (Settings -> Appointment Types -> Archivar) is one the
   // clinic no longer offers, so an integration building a booking form must
   // not list it. Appointments that used it still carry its id.
@@ -211,6 +211,7 @@ export const appointmentTypesResource: ApiResource = {
     online_deposit_cents: row.online_deposit_cents,
     online_payment_required: row.online_payment_required,
     online_max_days_ahead: row.online_max_days_ahead,
+    online_description: row.online_description,
     created_at: row.created_at,
   }),
 }

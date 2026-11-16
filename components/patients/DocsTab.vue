@@ -16,7 +16,7 @@ const { can } = usePermission()
 // `public_token` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
 type Doc = Omit<Tables<'patient_docs'>, 'fields'> & { fields: DocField[]; public_token: string }
-type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
+type Template = Omit<Tables<'doc_templates'>, 'fields' | 'translations'> & { fields: DocField[]; translations: unknown }
 
 const docs = ref<Doc[]>([])
 const templates = ref<Template[]>([])
@@ -50,13 +50,34 @@ async function load() {
   loading.value = true
   const [{ data: docData }, { data: templateData }] = await Promise.all([
     supabase.from('patient_docs').select('*').eq('patient_id', props.patientId).order('updated_at', { ascending: false }),
-    supabase.from('doc_templates').select('*').order('title'),
+    // A translation made the old way, as a template of its own, is folded
+    // into its form's translations (20261116144215); not a form to pick.
+    supabase.from('doc_templates').select('*').is('translation_of', null).order('title'),
   ])
   docs.value = (docData as unknown as Doc[]) ?? []
   templates.value = (templateData as unknown as Template[]) ?? []
   loading.value = false
 }
 onMounted(load)
+
+// The language a form goes out in: the patient's own when any form has a
+// translation into it, which is what an automation would send them; the
+// clinic's otherwise. Staff can switch it before picking the form.
+const offeredLanguages = computed(() => {
+  const have = new Set(templates.value.flatMap((tpl) => docLanguagesOf(tpl.translations)))
+  return DOC_LANGUAGES.filter((code) => have.has(code))
+})
+const patientLanguage = ref<string | null>(null)
+const sendLanguage = ref<string>('es')
+watch([offeredLanguages, patientLanguage], () => {
+  const own = patientLanguage.value
+  sendLanguage.value = own && (offeredLanguages.value as readonly string[]).includes(own) ? own : 'es'
+})
+onMounted(async () => {
+  const { data } = await supabase.from('patients').select('preferred_language').eq('id', props.patientId).maybeSingle<{ preferred_language: string | null }>()
+  patientLanguage.value = data?.preferred_language ?? null
+})
+const hasLanguage = (tpl: Template) => sendLanguage.value === 'es' || !!docTranslationsOf(tpl.translations)[sendLanguage.value]
 
 onMounted(async () => {
   const { data } = await supabase
@@ -112,7 +133,7 @@ function openDoc(doc: Doc) {
   fields.value = Array.isArray(doc.fields) ? [...doc.fields] : []
 }
 
-async function createDoc(initialTitle: string, initialFields: DocField[], templateId: string | null = null) {
+async function createDoc(initialTitle: string, initialFields: DocField[], templateId: string | null = null, language: string | null = null) {
   const { data, error } = await supabase
     .from('patient_docs')
     .insert({
@@ -121,6 +142,7 @@ async function createDoc(initialTitle: string, initialFields: DocField[], templa
       title: initialTitle,
       fields: initialFields as any,
       template_id: templateId,
+      language,
       created_by: store.teamMember?.id ?? null,
       updated_by: store.teamMember?.id ?? null,
     })
@@ -148,7 +170,10 @@ async function newFromTemplate(template: Template) {
     // {{attr_<key>}}: the clinic's own fields, as far as this person may read them.
     supabase.from('patient_attribute_values').select('value, patient_attributes(key, kind)').eq('patient_id', props.patientId),
   ])
-  const rendered = renderTemplateFields(template.fields, {
+  // In the language chosen in the menu, when this form has it; the
+  // original otherwise (the menu says which).
+  const sent = docInLanguage(template, sendLanguage.value === 'es' ? null : sendLanguage.value)
+  const rendered = renderTemplateFields(sent.fields, {
     ...patientAttributeMergeVars(custom ?? []),
     first_name: patient?.first_name ?? '',
     last_name: patient?.last_name ?? '',
@@ -167,7 +192,7 @@ async function newFromTemplate(template: Template) {
     // clinic sends, not whatever locale this browser happens to run in.
     today: new Date().toLocaleDateString('es-ES'),
   })
-  await createDoc(template.title, rendered, template.id)
+  await createDoc(sent.title, rendered, template.id, sent.language)
 }
 
 function backToList() {
@@ -261,14 +286,30 @@ function metaFor(doc: Doc) {
             </button>
             <template v-if="templates.length > 0">
               <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
+              <div v-if="offeredLanguages.length" class="flex flex-wrap gap-1 px-3 pb-1 pt-1.5" role="group" :aria-label="t('Language of the form', 'Idioma del formulario')" data-cy="doc-send-language">
+                <button
+                  v-for="code in ['es', ...offeredLanguages]"
+                  :key="code"
+                  type="button"
+                  :aria-pressed="sendLanguage === code"
+                  :data-cy="`doc-send-language-${code}`"
+                  class="rounded-pill border px-2 py-0.5 text-[12px] touch:py-1.5"
+                  :class="sendLanguage === code ? 'border-brand bg-brand-tint font-semibold text-brand-text' : 'border-line text-ink-600 hover:bg-surface-subtle'"
+                  @click="sendLanguage = code"
+                >
+                  {{ docLanguageName(code, t) }}
+                </button>
+              </div>
               <button
-                v-for="t in templates"
-                :key="t.id"
+                v-for="tpl in templates"
+                :key="tpl.id"
                 type="button"
                 class="block w-full px-3 py-1.5 touch:py-3 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
-                @click="newFromTemplate(t)"
+                data-cy="doc-send-template"
+                @click="newFromTemplate(tpl)"
               >
-                {{ t.title }}
+                {{ tpl.title }}
+                <span v-if="!hasLanguage(tpl)" class="block text-[11.5px] text-ink-faint">{{ t('Not translated: goes in Spanish', 'Sin traducir: se envía en español') }}</span>
               </button>
             </template>
           </div>
@@ -316,6 +357,7 @@ function metaFor(doc: Doc) {
             </p>
           </div>
           <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 pl-[38px] sm:w-auto sm:flex-nowrap sm:pl-0">
+          <UiPill v-if="doc.language" data-cy="doc-sent-language">{{ docLanguageName(doc.language, t) }}</UiPill>
           <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <a

@@ -21,6 +21,11 @@ export interface DocField {
   options?: string[]
   multiple?: boolean
   allowOther?: boolean
+  // 'choice' only, on a patient's copy sent in another language: the
+  // original form's options, in the same order as `options`. An automation
+  // reading the answer compares it against the original's wording, so "Yes"
+  // is read back as "Sí" (answerInOriginal in utils/docTranslations.ts).
+  sourceOptions?: string[]
   // Links this interactive field two ways to a patient column: rendering a
   // template prefills it from the patient's existing data (renderTemplateFields
   // below), and completing the public doc writes whatever the patient typed

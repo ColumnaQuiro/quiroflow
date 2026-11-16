@@ -354,6 +354,8 @@ async function createPatient(opts: {
   externalReference?: string
   /** DNI/NIE, which a protected document is locked with. */
   nationalId?: string
+  /** The language forms and messages go to them in ('es' by default). */
+  preferredLanguage?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -371,6 +373,7 @@ async function createPatient(opts: {
         ...(opts.referralSource === undefined ? {} : { referral_source: opts.referralSource }),
         ...(opts.externalReference === undefined ? {} : { external_reference: opts.externalReference }),
         ...(opts.nationalId === undefined ? {} : { national_id: opts.nationalId }),
+        ...(opts.preferredLanguage === undefined ? {} : { preferred_language: opts.preferredLanguage }),
       })
       .select('id, first_name, last_name')
       .single(),
@@ -663,7 +666,7 @@ async function bookingAndWhatsappSettingsOf(opts: { accountId: string }) {
   )
 }
 
-async function createDocTemplate(opts: { accountId: string; title: string; category?: string; fields?: unknown[]; language?: string; translationOf?: string }) {
+async function createDocTemplate(opts: { accountId: string; title: string; category?: string; fields?: unknown[]; language?: string; translationOf?: string; translations?: Record<string, unknown> }) {
   return unwrap(
     await admin
       .from('doc_templates')
@@ -674,6 +677,7 @@ async function createDocTemplate(opts: { accountId: string; title: string; categ
         category: opts.category ?? null,
         language: opts.language ?? null,
         translation_of: opts.translationOf ?? null,
+        translations: (opts.translations ?? {}) as never,
       })
       .select('id')
       .single(),

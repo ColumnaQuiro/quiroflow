@@ -17,8 +17,9 @@ const { context } = usePractitionerContext()
 const reception = useReceptionLock()
 
 interface PendingDoc { id: string; title: string; public_token: string }
-interface Template { id: string; title: string; fields: DocField[] }
+interface Template { id: string; title: string; fields: DocField[]; translations: unknown }
 interface PatientRow {
+  preferred_language: string | null
   first_name: string
   last_name: string | null
   date_of_birth: string | null
@@ -52,8 +53,10 @@ async function load() {
   if (!context.value) return
   const [d, tp, p, a] = await Promise.all([
     supabase.from('patient_docs').select('id, title, public_token').eq('patient_id', props.patientId).is('completed_at', null).order('created_at'),
-    supabase.from('doc_templates').select('id, title, fields').order('title'),
-    supabase.from('patients').select('first_name, last_name, date_of_birth, email, address, city, postal_code, country, national_id, occupation, gender, emergency_contact').eq('id', props.patientId).maybeSingle(),
+    // A translation made the old way, as a template of its own, is folded
+    // into its form's translations (20261116144215); not a form to pick.
+    supabase.from('doc_templates').select('id, title, fields, translations').is('translation_of', null).order('title'),
+    supabase.from('patients').select('preferred_language, first_name,last_name, date_of_birth, email, address, city, postal_code, country, national_id, occupation, gender, emergency_contact').eq('id', props.patientId).maybeSingle(),
     supabase.from('accounts').select('name').eq('id', context.value.accountId).maybeSingle(),
   ])
   pending.value = (d.data as PendingDoc[] | null) ?? []
@@ -96,7 +99,10 @@ async function start() {
   const tokens = pending.value.filter((x) => chosenDocs.value.has(x.id)).map((x) => x.public_token)
   const p = patient.value
   for (const tpl of templates.value.filter((x) => chosenTemplates.value.has(x.id))) {
-    const fields = renderTemplateFields(tpl.fields, {
+    // In the patient's own language when the form has a translation into
+    // it, as an automation would send it; the original otherwise.
+    const sent = docInLanguage(tpl, p.preferred_language)
+    const fields = renderTemplateFields(sent.fields, {
       first_name: p.first_name ?? '',
       last_name: p.last_name ?? '',
       date_of_birth: p.date_of_birth ?? '',
@@ -114,7 +120,7 @@ async function start() {
     })
     const { data, error: e } = await supabase
       .from('patient_docs')
-      .insert({ account_id: context.value.accountId, patient_id: props.patientId, title: tpl.title, fields: fields as never, template_id: tpl.id, created_by: context.value.teamMemberId, updated_by: context.value.teamMemberId } as never)
+      .insert({ account_id: context.value.accountId, patient_id: props.patientId, title: sent.title, fields: fields as never, template_id: tpl.id, language: sent.language, created_by: context.value.teamMemberId, updated_by: context.value.teamMemberId } as never)
       .select('public_token')
       .single()
     if (e || !data) {

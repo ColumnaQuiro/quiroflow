@@ -2,8 +2,9 @@
 import type { Tables } from '~/types/database.types'
 import type { DocField } from '~/utils/docFields'
 import type { AiFormDraft } from '~/utils/aiFormDraft'
+import type { DocLanguage, DocTranslation, DocTranslations } from '~/utils/docTranslations'
 
-type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
+type Template = Omit<Tables<'doc_templates'>, 'fields' | 'translations'> & { fields: DocField[]; translations: unknown }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -24,7 +25,9 @@ const counts = ref<Record<string, { sent: number; done: number }>>({})
 
 async function load() {
   loading.value = true
-  const { data } = await supabase.from('doc_templates').select('*').order('updated_at', { ascending: false })
+  // A translation made the old way, as a template of its own, was folded into
+  // its form's translations (20261116144215) and is not listed.
+  const { data } = await supabase.from('doc_templates').select('*').is('translation_of', null).order('updated_at', { ascending: false })
   templates.value = (data as unknown as Template[]) ?? []
   loading.value = false
   const results = await Promise.all(
@@ -59,57 +62,35 @@ const category = ref<string>('')
 // Privacidad lists the ones about to expire (20261017182107_record_retention).
 const validMonths = ref<string | number>('')
 
-// ---- versions in other languages
-// A translation is its own template pointing at the original. Patients are
-// sent the version in their preferred language, and automations that wait
-// for the form or read an answer count either -- answers are read by the
-// question's id, which is why a version starts as a copy of the original.
-const LANGUAGES = [
-  { code: 'en', label: ['English', 'Inglés'] as const },
-  { code: 'fr', label: ['French', 'Francés'] as const },
-  { code: 'es', label: ['Spanish', 'Español'] as const },
-]
-const languageName = (code: string | null) => {
-  const l = LANGUAGES.find((x) => x.code === code)
-  return l ? t(l.label[0], l.label[1]) : (code ?? '')
-}
-const originalOf = (tpl: Template) => templates.value.find((x) => x.id === tpl.translation_of) ?? null
-const versionsOf = (tpl: Template) => templates.value.filter((x) => x.translation_of === tpl.id)
-const missingLanguages = computed(() => {
-  const tpl = activeTemplate.value
-  if (!tpl || tpl.translation_of) return []
-  const have = new Set(versionsOf(tpl).map((v) => v.language))
-  // The original is in the clinic's own language, Spanish here.
-  return LANGUAGES.filter((l) => l.code !== 'es' && !have.has(l.code))
-})
+// ---- the form in other languages (utils/docTranslations.ts)
+// One form, one set of questions; each language holds only the words, by
+// block id. So a question added here is in every language at once, in
+// Spanish until it is translated -- and the language tab says how many are.
+// Patients are sent the language on their record, when the form has it.
+const translations = ref<DocTranslations>({})
+const activeLanguage = ref<'es' | DocLanguage>('es')
+const formLanguages = computed(() => DOC_LANGUAGES.filter((code) => !!translations.value[code]))
+const addableLanguages = computed(() => DOC_LANGUAGES.filter((code) => !translations.value[code]))
+const languageMenuOpen = ref(false)
+const missingIn = (code: DocLanguage) => untranslatedBlockIds(fields.value, translations.value[code]).length
 
-async function addVersion(language: string) {
-  const original = activeTemplate.value
-  if (!original) return
-  if (dirty.value) await save()
-  const { data, error } = await supabase
-    .from('doc_templates')
-    .insert({
-      account_id: store.accountId!,
-      title: `${title.value.trim() || original.title} (${languageName(language)})`,
-      // The same blocks, ids and all, so an automation that reads an answer
-      // finds it whichever version came back. Only the words are to change.
-      fields: fields.value as any,
-      category: category.value || null,
-      language,
-      translation_of: original.id,
-      created_by: store.teamMember?.id ?? null,
-      updated_by: store.teamMember?.id ?? null,
-    })
-    .select('*')
-    .single()
-  if (error || !data) {
-    if (error) showToast(error.message, 'error')
-    return
-  }
-  const created = data as unknown as Template
-  templates.value = [created, ...templates.value]
-  openTemplate(created)
+function addLanguage(code: DocLanguage) {
+  languageMenuOpen.value = false
+  translations.value = { ...translations.value, [code]: translations.value[code] ?? { fields: {} } }
+  activeLanguage.value = code
+}
+const removingLanguage = ref<DocLanguage | null>(null)
+function removeLanguage() {
+  const code = removingLanguage.value
+  if (!code) return
+  const rest = { ...translations.value }
+  delete rest[code]
+  translations.value = rest
+  removingLanguage.value = null
+  activeLanguage.value = 'es'
+}
+function setTranslation(code: DocLanguage, value: DocTranslation) {
+  translations.value = { ...translations.value, [code]: value }
 }
 
 function openTemplate(t: Template) {
@@ -118,6 +99,10 @@ function openTemplate(t: Template) {
   fields.value = Array.isArray(t.fields) ? [...t.fields] : []
   category.value = t.category ?? ''
   validMonths.value = t.valid_months ?? ''
+  // A copy, so edits stay in the editor until Save. Not structuredClone:
+  // the row is a reactive proxy, which it refuses to clone.
+  translations.value = JSON.parse(JSON.stringify(docTranslationsOf(t.translations))) as DocTranslations
+  activeLanguage.value = 'es'
   savedState.value = editorState()
   aiDrafted.value = false
 }
@@ -142,6 +127,7 @@ function openAiDraft(draft: AiFormDraft) {
     valid_months: null,
     language: null,
     translation_of: null,
+    translations: {},
     created_by: null,
     updated_by: null,
     created_at: now,
@@ -151,6 +137,8 @@ function openAiDraft(draft: AiFormDraft) {
   fields.value = draft.fields
   category.value = draft.category ?? ''
   validMonths.value = ''
+  translations.value = {}
+  activeLanguage.value = 'es'
   // Nothing is saved yet, so leaving asks first, as with any unsaved edit.
   savedState.value = ''
   aiDrafted.value = true
@@ -160,7 +148,13 @@ function openAiDraft(draft: AiFormDraft) {
 // used to drop unsaved edits without a word.
 const savedState = ref('')
 function editorState() {
-  return JSON.stringify({ title: title.value.trim(), fields: fields.value, category: category.value, validMonths: String(validMonths.value) })
+  return JSON.stringify({
+    title: title.value.trim(),
+    fields: fields.value,
+    category: category.value,
+    validMonths: String(validMonths.value),
+    translations: pruneDocTranslations(translations.value, fields.value),
+  })
 }
 const dirty = computed(() => !!activeTemplate.value && editorState() !== savedState.value)
 
@@ -238,6 +232,8 @@ async function save() {
     fields: fields.value as any,
     category: category.value || null,
     valid_months: validMonths.value === '' ? null : Math.min(120, Math.max(1, Math.round(Number(validMonths.value)))),
+    // Only the blocks the form still has: a deleted question's words go too.
+    translations: pruneDocTranslations(translations.value, fields.value) as any,
     updated_by: store.teamMember?.id ?? null,
   }
   if (isUnsaved.value) {
@@ -326,7 +322,7 @@ async function confirmDelete() {
                     <span class="flex flex-wrap items-center gap-2">
                       <strong class="truncate text-[15px] text-ink-900" data-cy="doc-title">{{ tpl.title }}</strong>
                       <UiPill v-if="categoryLabel(tpl.category)" tone="brand">{{ categoryLabel(tpl.category) }}</UiPill>
-                      <UiPill v-if="tpl.translation_of" data-cy="doc-language">{{ languageName(tpl.language) }}</UiPill>
+                      <UiPill v-for="code in docLanguagesOf(tpl.translations)" :key="code" data-cy="doc-language">{{ docLanguageName(code, t) }}</UiPill>
                     </span>
                     <span class="text-[12.5px] text-ink-muted">{{ questionCount(tpl) }} · {{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString(t('en-GB', 'es-ES')) }}</span>
                   </span>
@@ -366,6 +362,63 @@ async function confirmDelete() {
                 <template v-if="isUnsaved">{{ t('Drafted by AI and not saved yet. Read every question, and any legal wording, before you save it or send it to a patient. Fill in anything in [square brackets].', 'Creado con IA y aún sin guardar. Lee cada pregunta, y cualquier texto legal, antes de guardarlo o enviarlo a un paciente. Completa lo que esté [entre corchetes].') }}</template>
                 <template v-else>{{ t('Drafted by AI. Read every question, and any legal wording, before you send it to a patient. Fill in anything in [square brackets].', 'Creado con IA. Lee cada pregunta, y cualquier texto legal, antes de enviarlo a un paciente. Completa lo que esté [entre corchetes].') }}</template>
               </p>
+              <!-- The original and each language it is translated into. -->
+              <div class="flex flex-wrap items-center gap-1 border-b border-line-row" role="tablist" :aria-label="t('Languages of this form', 'Idiomas de este formulario')" data-cy="doc-language-tabs">
+                <button
+                  v-for="code in ['es', ...formLanguages] as ('es' | DocLanguage)[]"
+                  :key="code"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activeLanguage === code"
+                  :data-cy="`doc-language-tab-${code}`"
+                  class="-mb-px inline-flex h-10 touch:h-11 items-center gap-1.5 border-b-2 px-3 text-[13.5px]"
+                  :class="activeLanguage === code ? 'border-brand font-semibold text-ink-900' : 'border-transparent text-ink-500 hover:text-ink-700'"
+                  @click="activeLanguage = code"
+                >
+                  {{ docLanguageName(code, t) }}
+                  <span v-if="code === 'es'" class="text-[12px] font-normal text-ink-muted">{{ t('original', 'original') }}</span>
+                  <span
+                    v-else-if="missingIn(code) > 0"
+                    class="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-pill bg-warning-bg px-1 text-[11px] font-semibold text-warning-text"
+                    :title="t(`${missingIn(code)} still to translate`, `${missingIn(code)} por traducir`)"
+                  >{{ missingIn(code) }}</span>
+                </button>
+                <div v-if="addableLanguages.length" class="relative">
+                  <button
+                    type="button"
+                    class="inline-flex h-10 touch:h-11 items-center px-3 text-[13.5px] font-semibold text-brand-text hover:underline"
+                    :aria-expanded="languageMenuOpen"
+                    data-cy="doc-add-language"
+                    @click="languageMenuOpen = !languageMenuOpen"
+                  >
+                    + {{ t('Add a language', 'Añadir idioma') }}
+                  </button>
+                  <div v-if="languageMenuOpen" class="absolute left-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
+                    <button
+                      v-for="code in addableLanguages"
+                      :key="code"
+                      type="button"
+                      :data-cy="`doc-add-language-${code}`"
+                      class="block w-full px-3 py-1.5 touch:py-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle"
+                      @click="addLanguage(code)"
+                    >
+                      {{ docLanguageName(code, t) }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <SettingsDocTranslationEditor
+                v-if="activeLanguage !== 'es' && translations[activeLanguage]"
+                :key="activeLanguage"
+                :fields="fields"
+                :title="title"
+                :language="activeLanguage"
+                :model-value="translations[activeLanguage]!"
+                @update:model-value="setTranslation(activeLanguage as DocLanguage, $event)"
+                @remove="removingLanguage = activeLanguage as DocLanguage"
+              />
+              <template v-else>
               <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                 {{ t('Name', 'Nombre') }}
                 <input v-model="title" type="text" :placeholder="t('Untitled template', 'Plantilla sin título')" class="h-10 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[16px] font-semibold text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
@@ -384,32 +437,11 @@ async function confirmDelete() {
                 <input id="doc-valid-months" v-model="validMonths" type="number" min="1" max="120" :placeholder="t('No expiry', 'Sin caducidad')" class="h-9 touch:h-11 w-[130px] rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="doc-valid-months" />
                 <span class="text-[12.5px] text-ink-muted">{{ t('Signed copies about to expire are listed in Settings › Privacy.', 'Las copias firmadas a punto de caducar salen en Ajustes › Privacidad.') }}</span>
               </div>
-              <!-- A version points at a saved original, so an unsaved draft has none yet. -->
-              <div v-if="!isUnsaved" class="flex flex-col gap-1.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="doc-versions">
-                <template v-if="activeTemplate.translation_of">
-                  <span class="text-[13.5px] text-ink-700">
-                    {{ t(`${languageName(activeTemplate.language)} version of “${originalOf(activeTemplate)?.title ?? '…'}”.`, `Versión en ${languageName(activeTemplate.language).toLowerCase()} de «${originalOf(activeTemplate)?.title ?? '…'}».`) }}
-                  </span>
-                  <span class="text-[12.5px] leading-snug text-ink-muted">
-                    {{ t('Patients whose language is this one are sent this version. Translate the words, but keep the same questions: an automation that reads an answer finds it by the question, in either version.', 'Los pacientes con este idioma reciben esta versión. Traduce los textos, pero mantén las mismas preguntas: una automatización que lee una respuesta la encuentra por la pregunta, en cualquiera de las dos versiones.') }}
-                  </span>
-                </template>
-                <template v-else>
-                  <span class="text-[13px] font-semibold text-ink-700">{{ t('Other languages', 'Otros idiomas') }}</span>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <button v-for="v in versionsOf(activeTemplate)" :key="v.id" type="button" class="text-[13.5px] font-semibold text-brand-text hover:underline" @click="openTemplate(v)">
-                      {{ languageName(v.language) }}
-                    </button>
-                    <UiBtn v-for="l in missingLanguages" :key="l.code" size="sm" :data-cy="`doc-add-version-${l.code}`" @click="addVersion(l.code)">
-                      + {{ t(`${l.label[0]} version`, `Versión en ${l.label[1].toLowerCase()}`) }}
-                    </UiBtn>
-                  </div>
-                  <span class="text-[12.5px] leading-snug text-ink-muted">
-                    {{ t("Each patient is sent the version in their preferred language, and this one if there is none.", 'Cada paciente recibe la versión en su idioma preferido, y esta si no hay ninguna.') }}
-                  </span>
-                </template>
-              </div>
+              <p v-if="formLanguages.length" class="text-[12.5px] leading-snug text-ink-muted" data-cy="doc-languages-note">
+                {{ t('Each patient is sent the form in the language on their record when it is translated into it, and in Spanish otherwise. Questions added here reach every language; translate them on its tab.', 'Cada paciente recibe el formulario en el idioma de su ficha si está traducido a ese idioma, y en español si no. Las preguntas que añadas aquí llegan a todos los idiomas; tradúcelas en su pestaña.') }}
+              </p>
               <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
+              </template>
             </div>
           </section>
         </div>
@@ -427,6 +459,18 @@ async function confirmDelete() {
     >
       <p class="text-[14px] leading-snug text-ink-700">{{ t('It can no longer be sent. Forms already sent with it stay on each patient’s record.', 'Ya no se podrá enviar. Los formularios ya enviados con ella se quedan en la ficha de cada paciente.') }}</p>
       <p v-if="deleting.category" class="text-[14px] leading-snug text-warning-text">{{ t('Reports stops counting them as this category, though: every patient shows as missing it until another template in the category is sent.', 'Pero Informes deja de contarlos en esta categoría: todos los pacientes aparecerán sin ella hasta que se envíe otra plantilla de la categoría.') }}</p>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="removingLanguage"
+      tone="danger"
+      :title="t(`Remove ${docLanguageName(removingLanguage, t)}?`, `¿Quitar el ${docLanguageName(removingLanguage, t).toLowerCase()}?`)"
+      :confirm-label="t('Remove language', 'Quitar idioma')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="removeLanguage"
+      @cancel="removingLanguage = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('Its translation is deleted when you save, and these patients are sent the form in Spanish. Forms already sent keep their language.', 'Su traducción se borra al guardar, y estos pacientes recibirán el formulario en español. Los formularios ya enviados conservan su idioma.') }}</p>
     </UiConfirmDialog>
 
     <SettingsDocAiDraftDialog v-if="aiDialogOpen" @drafted="openAiDraft" @cancel="aiDialogOpen = false" />

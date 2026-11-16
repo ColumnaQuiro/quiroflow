@@ -324,9 +324,12 @@ async function createFlowRule(opts: {
  */
 /** The copies of forms a patient has been sent, oldest first. */
 async function docsFor(opts: { patientId: string }) {
-  return check(await admin.from('patient_docs').select('id, template_id, public_token, completed_at').eq('patient_id', opts.patientId).order('created_at')) as {
+  return check(await admin.from('patient_docs').select('id, template_id, language, title, fields, public_token, completed_at').eq('patient_id', opts.patientId).order('created_at')) as {
     id: string
     template_id: string | null
+    language: string | null
+    title: string
+    fields: { id: string; label: string; options?: string[] }[]
     public_token: string
     completed_at: string | null
   }[]

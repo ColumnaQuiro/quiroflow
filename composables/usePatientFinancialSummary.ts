@@ -4,7 +4,7 @@
 // the mobile app, so the only signal was a red cloud build four days later.
 import { bonoOwedCents } from '../utils/bonoOwed'
 import { bonoDueCents, installmentPlanOf } from '../utils/bonoInstallments'
-import { outstandingCentsOf } from '../utils/owing'
+import { outstandingCentsOf, spendableCreditOf } from '../utils/owing'
 
 // What patient_ledger (20261111192200) answers: the rows the six selects
 // below used to fetch one request each, and -- with p_detail -- the rows the
@@ -129,6 +129,11 @@ interface FinancialState {
   // session still comes off its own counter and credit still off the ledger,
   // so showing it here cannot let the same value be spent twice.
   availableCents: Ref<number>
+  // What a charge screen may offer as "credit on account" -- the ledger plus
+  // money paid ahead of anything invoiced or committed to a bono. See
+  // utils/owing spendableCreditOf. The ledger alone missed every imported
+  // PracticeHub prepayment.
+  spendableCreditCents: Ref<number>
   activeMembership: Ref<ActiveMembership | null>
   activePackages: Ref<ActivePackage[]>
   // Tracks whether a load has ever completed (or is in flight) for this id --
@@ -165,6 +170,7 @@ function stateFor(id: string | null | undefined): FinancialState {
       lifetimeCents: ref(0),
       bonoValueCents: ref(0),
       availableCents: ref(0),
+      spendableCreditCents: ref(0),
       activeMembership: ref(null),
       activePackages: ref([]),
       loaded: false,
@@ -453,6 +459,12 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
         return sum + Math.max(0, remainingCents - (p.owedCents ?? 0))
       }, 0)
     state.availableCents.value = state.creditLedgerCents.value + state.bonoValueCents.value
+    state.spendableCreditCents.value = spendableCreditOf({
+      creditLedgerCents: state.creditLedgerCents.value,
+      balanceCents: state.balanceCents.value,
+      outstandingCents: state.outstandingCents.value,
+      bonoValueCents: state.bonoValueCents.value,
+    })
   }
 
   // Forces a fresh load regardless of cache state -- what every write
@@ -504,6 +516,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
     lifetimeCents: computed(() => stateFor(id.value).lifetimeCents.value),
     bonoValueCents: computed(() => stateFor(id.value).bonoValueCents.value),
     availableCents: computed(() => stateFor(id.value).availableCents.value),
+    spendableCreditCents: computed(() => stateFor(id.value).spendableCreditCents.value),
     activeMembership: computed(() => stateFor(id.value).activeMembership.value),
     activePackages: computed(() => stateFor(id.value).activePackages.value),
     loadError: computed(() => stateFor(id.value).loadError.value),

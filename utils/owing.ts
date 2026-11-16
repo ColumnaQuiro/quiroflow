@@ -97,3 +97,45 @@ export function outstandingCentsOf(invoices: OwingInvoice[], payments: OwingPaym
   // spendableCreditCents), not something that has already happened.
   return Math.min(unpaidCents, Math.max(0, invoicedCents - paidCents))
 }
+
+/**
+ * What a patient can put towards a charge as "credit on account": the credit
+ * ledger in full, plus money paid ahead -- paid beyond what has been charged
+ * and what their bonos have already committed.
+ *
+ * The ledger alone is what every charge screen but the patient's Billing tab
+ * used to offer, and it counts only account_credits rows -- which an imported
+ * PracticeHub payment never has. A patient who paid 50 EUR ahead in
+ * PracticeHub showed +50 on their balance and no credit to spend on the
+ * visit that money was for, so reception was asked for it again in full.
+ *
+ * The balance is read with the unpaid invoices added back (outstandingCents):
+ * paying those is the main thing credit is FOR. Read straight off the
+ * balance, the 50 EUR above vanished the moment the visit it was meant for
+ * was invoiced -- 50 paid, 50 charged, 0 left -- on the one screen that had
+ * offered it.
+ *
+ * The bonos' committed value still comes off: a balance carries prepaid bono
+ * money, which buys the sessions and is not spendable twice (the double count
+ * 0161 removed).
+ */
+export function spendableCreditOf(f: { creditLedgerCents: number; balanceCents: number; outstandingCents: number; bonoValueCents: number }): number {
+  const paidAheadCents = Math.max(0, f.balanceCents + f.outstandingCents - f.creditLedgerCents - f.bonoValueCents)
+  return Math.max(0, f.creditLedgerCents) + paidAheadCents
+}
+
+/**
+ * How much of a credit spend comes off the credit LEDGER -- the size of the
+ * negative account_credits row to write beside the 'credit' payment. The rest
+ * was money paid ahead (spendableCreditOf) and needs no row at all.
+ *
+ * Writing the row for the whole amount took the same euros off twice. A
+ * 'credit' payment is never money (20260924095218), so spending 50 EUR paid
+ * ahead on a 50 EUR visit reads 50 paid - 50 charged = 0 with no row -- and
+ * -50 with one, against an account_credits balance that never had the +50 to
+ * net it against. The same shape the backfill in 20260924095305 repaired by
+ * hand for one patient.
+ */
+export function ledgerDrawCents(spendCents: number, creditLedgerCents: number): number {
+  return Math.max(0, Math.min(spendCents, creditLedgerCents))
+}

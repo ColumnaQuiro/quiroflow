@@ -37,7 +37,7 @@ const error = ref('')
 const sending = ref(false)
 const sendMessage = ref('')
 
-const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
+const { balanceCents, creditLedgerCents, spendableCreditCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
 const { issueFactura } = useFacturas()
 const { nextAppointmentDate } = useNextAppointment(() => invoice.value?.patient_id ?? '')
 const hideNextVisit = ref(false)
@@ -125,9 +125,11 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
-  // Credit ledger, not balance -- a balance carries prepaid bono money that
-  // buys sessions, and must not be spendable here as well. See BillingTab.
-  if (paymentMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+  // Spendable credit, not balance -- a balance carries prepaid bono money that
+  // buys sessions, and must not be spendable here as well. Not the credit
+  // ledger alone either, which misses imported prepayments. See
+  // utils/owing spendableCreditOf.
+  if (paymentMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -164,11 +166,14 @@ async function recordPayment() {
       purpose: 'visit',
     })
   }
-  if (paymentMethod.value === 'credit') {
+  // Only the part drawn from the ledger gets a row: the rest was paid ahead
+  // and has no row to take it off -- see utils/owing ledgerDrawCents.
+  const fromLedgerCents = paymentMethod.value === 'credit' ? ledgerDrawCents(amountCents, creditLedgerCents.value) : 0
+  if (fromLedgerCents > 0) {
     const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: invoice.value!.patient_id,
-      amount_cents: -amountCents,
+      amount_cents: -fromLedgerCents,
       reason: `Applied to invoice ${invoice.value!.invoice_number}`,
       invoice_id: invoiceId,
       created_by: store.teamMember?.id ?? null,
@@ -469,7 +474,7 @@ const fieldId = useId()
               <label :for="`${fieldId}-paymentMethod`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
               <select :id="`${fieldId}-paymentMethod`" v-model="paymentMethod" class="mt-1 h-9 max-w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11">
                 <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
+                <option v-if="spendableCreditCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>
             <UiBtn type="submit" variant="primary" :disabled="savingPayment">

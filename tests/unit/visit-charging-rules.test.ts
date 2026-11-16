@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   bonoPerSessionCents,
   bonoVisitChargeCents,
-  creditExceedsLedger,
+  creditExceedsSpendable,
   isVisitUpcoming,
   lineItemsTotalCents,
   planInvoiceUnderBono,
@@ -129,15 +129,15 @@ describe('An invoice the visit carries when a bono then pays for it', () => {
 })
 
 describe('Spending credit on a visit', () => {
-  it('is refused past what the credit ledger holds', () => {
-    expect(creditExceedsLedger(5000, 4000)).toBe(true)
+  it('is refused past what is spendable', () => {
+    expect(creditExceedsSpendable(5000, 4000)).toBe(true)
   })
 
-  it('is allowed up to exactly the ledger', () => {
-    expect(creditExceedsLedger(4000, 4000)).toBe(false)
+  it('is allowed up to exactly what is spendable', () => {
+    expect(creditExceedsSpendable(4000, 4000)).toBe(false)
   })
 
-  it('never blocks a payment that spends no credit, whatever the ledger reads', () => {
-    expect(creditExceedsLedger(0, -1200)).toBe(false)
+  it('never blocks a payment that spends no credit, whatever the figure reads', () => {
+    expect(creditExceedsSpendable(0, -1200)).toBe(false)
   })
 })

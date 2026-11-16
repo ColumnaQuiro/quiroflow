@@ -23,6 +23,9 @@ interface LedgerPackageRow {
   installments: number | null
   installment_cents: number | null
   is_closed: boolean
+  // The bono's whole price was invoiced when it was sold, so a session from
+  // it is charged nothing (utils/visitCharging.bonoVisitChargeCents).
+  charged_at_purchase?: boolean
 }
 export interface LedgerBonoPaymentRow {
   id: string
@@ -90,6 +93,8 @@ interface ActivePackage {
   // is, so a beneficiary's own billing view can say "shared by X" instead of
   // looking like a package this patient bought themselves.
   ownerName?: string
+  // See LedgerPackageRow -- what the buttons that use a session quote.
+  charged_at_purchase?: boolean
 }
 
 interface FinancialState {
@@ -298,6 +303,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
         package_name: p.package_name,
         sessions_total: p.sessions_total,
         sessions_used: p.sessions_used,
+        charged_at_purchase: p.charged_at_purchase ?? false,
         price_cents: p.price_cents,
         invoice_id: p.invoice_id,
         owed_cents: p.owed_cents,
@@ -379,7 +385,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
     // Both arrive in the ledger now: my_shared_packages is that RPC's answer,
     // asked for inside patient_ledger only when the shares table came back
     // empty -- the same condition the second request used to hang on.
-    type ShareRow = { package_purchases: { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; purchased_at?: string; patients: { first_name: string; last_name: string | null } | null } | null }
+    type ShareRow = { package_purchases: { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; charged_at_purchase?: boolean; purchased_at?: string; patients: { first_name: string; last_name: string | null } | null } | null }
     let shareRows: ShareRow[] = (ledger.package_shares ?? []).map((s) => ({
       package_purchases: s.package_purchases && {
         id: s.package_purchases.id,
@@ -388,6 +394,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
         sessions_used: s.package_purchases.sessions_used,
         price_cents: s.package_purchases.price_cents,
         is_closed: s.package_purchases.is_closed,
+        charged_at_purchase: s.package_purchases.charged_at_purchase ?? false,
         purchased_at: s.package_purchases.purchased_at,
         patients: s.package_purchases.patients,
       },

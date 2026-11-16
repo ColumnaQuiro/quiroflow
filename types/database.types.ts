@@ -5727,6 +5727,7 @@ export type Database = {
       package_purchases: {
         Row: {
           account_id: string
+          charged_at_purchase: boolean
           created_by: string | null
           external_reference: string | null
           id: string
@@ -5745,6 +5746,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          charged_at_purchase?: boolean
           created_by?: string | null
           external_reference?: string | null
           id?: string
@@ -5763,6 +5765,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          charged_at_purchase?: boolean
           created_by?: string | null
           external_reference?: string | null
           id?: string

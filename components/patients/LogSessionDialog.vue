@@ -26,6 +26,9 @@ const props = defineProps<{
   sessionsUsed: number
   sessionsTotal: number
   perSessionCents: number
+  // The bono's price was invoiced when it was sold: the visit costs nothing
+  // more and perSessionCents is 0 (utils/visitCharging.bonoVisitChargeCents).
+  chargedAtPurchase?: boolean
   visits: UnloggedVisit[]
   coveredVisits: CoveredVisit[]
   loading: boolean
@@ -173,10 +176,15 @@ function confirm() {
 
       <p data-cy="log-session-summary" class="rounded-ctl bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-600">
         {{
-          t(
-            `Uses 1 session: ${leftAfter} of ${sessionsTotal} left afterwards. The visit is charged ${formatEur(perSessionCents)}, the bono's rate per session, and settled from what the patient has paid for the bono.`,
-            `Consume 1 sesión: quedarán ${leftAfter} de ${sessionsTotal}. La visita se carga a ${formatEur(perSessionCents)}, el precio por sesión del bono, y se salda con lo que el paciente ha pagado por el bono.`,
-          )
+          chargedAtPurchase
+            ? t(
+                `Uses 1 session: ${leftAfter} of ${sessionsTotal} left afterwards. Nothing is charged: the bono was invoiced in full when it was bought.`,
+                `Consume 1 sesión: quedarán ${leftAfter} de ${sessionsTotal}. No se cobra nada: el bono se facturó entero al comprarlo.`,
+              )
+            : t(
+                `Uses 1 session: ${leftAfter} of ${sessionsTotal} left afterwards. The visit is charged ${formatEur(perSessionCents)}, the bono's rate per session, and settled from what the patient has paid for the bono.`,
+                `Consume 1 sesión: quedarán ${leftAfter} de ${sessionsTotal}. La visita se carga a ${formatEur(perSessionCents)}, el precio por sesión del bono, y se salda con lo que el paciente ha pagado por el bono.`,
+              )
         }}
       </p>
     </div>

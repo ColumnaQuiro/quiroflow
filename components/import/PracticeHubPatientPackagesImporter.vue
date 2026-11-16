@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatEur, formatEurFromAmount } from '~/utils/billing'
+import { practiceHubChargedAtPurchase } from '~/utils/visitCharging'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -21,6 +22,10 @@ interface PHPatientPackage {
   active: number | null
   visits: number | null
   visits_left: number | null
+  // How many of `visits` PracticeHub lets through at 0. Zero on a clinic that
+  // charges every visit; visits - 1 on one that invoices the whole price on
+  // the visit the bono is bought at. See practiceHubChargedAtPurchase.
+  free_visits?: number | null
   price: number | null
   balance: number | null
   owing: number | null
@@ -83,6 +88,11 @@ interface Candidate {
   // writes is_closed, and a closed bono then stops offering its sessions and
   // stops counting as money the patient can draw on.
   needsClosedStamp: boolean
+  // PracticeHub has already invoiced everything this bono costs, so a session
+  // logged here charges nothing (package_purchases.charged_at_purchase). Set
+  // on insert; needsChargeStamp when a bono already here says otherwise.
+  chargedAtPurchase: boolean
+  needsChargeStamp: boolean
   // The other patients PracticeHub has subscribed to this bono -- a family
   // bono the whole household draws sessions from. Owner excluded.
   sharedWith: { id: string; name: string }[]
@@ -112,6 +122,7 @@ interface LocalBono {
   // re-run can tell that PracticeHub has since closed one that was live when
   // it was imported.
   isClosed: boolean
+  chargedAtPurchase: boolean
 }
 
 const stage = ref<'connect' | 'loading' | 'preview' | 'applying' | 'done' | 'error'>('connect')
@@ -470,7 +481,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
-        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents, is_closed')
+        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents, is_closed, charged_at_purchase')
         .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
@@ -484,6 +495,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           sessionsTotal: row.sessions_total ?? 0,
           owedCents: row.owed_cents,
           isClosed: row.is_closed ?? false,
+          chargedAtPurchase: row.charged_at_purchase ?? false,
           purchasedAt: String(row.purchased_at),
           reference: row.external_reference ?? null,
           visitRows: 0,
@@ -809,10 +821,16 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // is how a spent bono is retired and how a mis-sold one is cancelled --
       // so this is checked on every re-run rather than only at insert.
       const needsClosedStamp = existingPurchaseId !== null && (existingLocal?.isClosed ?? false) !== !isActive
+      // Whether its price is already invoiced. Checked on every re-run too:
+      // Elevate's 270 bonos were imported before there was a column for it,
+      // and without it the first session logged here charged a bono PracticeHub
+      // had already billed in full.
+      const chargedAtPurchase = practiceHubChargedAtPurchase(pkg)
+      const needsChargeStamp = existingPurchaseId !== null && (existingLocal?.chargedAtPurchase ?? false) !== chargedAtPurchase
 
       // Nothing left to do: the bono is here, its household is attached, its
       // counters match PracticeHub and so does its outstanding figure.
-      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync && !needsOwedStamp && !needsClosedStamp) continue
+      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync && !needsOwedStamp && !needsClosedStamp && !needsChargeStamp) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -837,6 +855,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         existingPurchaseId,
         needsReferenceStamp,
         needsClosedStamp,
+        chargedAtPurchase,
+        needsChargeStamp,
         sharedWith: missingShares,
         status: 'pending',
       })
@@ -995,6 +1015,7 @@ async function applyFixes() {
           // A closed bono is imported as history (see the branches above) and
           // has to arrive saying so, or its leftover sessions read as live.
           is_closed: !c.isActive,
+          charged_at_purchase: c.chargedAtPurchase,
         })
         .select('id')
         .single()
@@ -1026,6 +1047,21 @@ async function applyFixes() {
       if (closedError) {
         c.status = 'error'
         c.errorMessage = closedError.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
+    }
+
+    // Whether its sessions still cost anything. On its own for the same reason
+    // as is_closed: the counters can agree while this does not.
+    if (c.repairOnly && c.needsChargeStamp && purchaseId) {
+      const { error: chargeError } = await supabase
+        .from('package_purchases')
+        .update({ charged_at_purchase: c.chargedAtPurchase })
+        .eq('id', purchaseId)
+      if (chargeError) {
+        c.status = 'error'
+        c.errorMessage = chargeError.message
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
@@ -1479,9 +1515,17 @@ const introNotes = computed(() => [
                 <div v-if="c.usedAheadOfPracticeHub" class="text-ink-muted2">{{ t('More sessions used here than in PracticeHub: left as it is', 'Más sesiones usadas aquí que en PracticeHub: se deja como está') }}</div>
                 <div v-if="c.owedCents > 0" class="text-ink-muted2">{{ t(`${formatEuros(c.owedCents)} still owed on it`, `${formatEuros(c.owedCents)} pendiente en el bono`) }}</div>
                 <div v-if="c.needsReferenceStamp" class="text-ink-muted2">{{ t('+ PracticeHub reference', '+ referencia de PracticeHub') }}</div>
+                <div v-if="c.needsChargeStamp || (!c.repairOnly && c.chargedAtPurchase)" class="text-ink-muted2">
+                  {{
+                    c.chargedAtPurchase
+                      ? t('Already invoiced in full: its sessions charge nothing', 'Ya facturado entero: sus sesiones no se cobran')
+                      : t('Sessions charged per visit', 'Sesiones cobradas por visita')
+                  }}
+                </div>
               </td>
               <td class="px-3 py-2">
                 <span v-if="c.status === 'pending' && c.repairOnly && c.counterSync" class="text-warning-text">{{ t('Out of date', 'Desactualizado') }}</span>
+                <span v-else-if="c.status === 'pending' && c.repairOnly && c.needsChargeStamp" class="text-warning-text">{{ t('Out of date', 'Desactualizado') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('To add', 'Por añadir') }}</span>

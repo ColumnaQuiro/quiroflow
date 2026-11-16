@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { bonoPerSessionCents } from '../../utils/visitCharging'
+import { bonoVisitChargeCents } from '../../utils/visitCharging'
 const props = defineProps<{
   appointmentId: string
   patientId: string
@@ -73,9 +73,12 @@ onMounted(init)
 // services added to it) would otherwise offer "Charge €0.00".
 // The rate a bono button quotes, rounded the way usePackageSession rounds
 // what it actually bills, so the button and the charge cannot disagree.
-function perSessionLabel(p: { price_cents: number; sessions_total: number }): string {
+// A bono invoiced in full when it was sold has nothing left to charge per
+// visit, and says so rather than quoting a rate (bonoVisitChargeCents).
+function perSessionLabel(p: { price_cents: number; sessions_total: number; charged_at_purchase?: boolean }): string {
   if (!p.sessions_total) return '—'
-  return `${formatEur(bonoPerSessionCents(p))}`
+  if (p.charged_at_purchase) return t('already paid', 'ya pagado')
+  return `${formatEur(bonoVisitChargeCents(p))}`
 }
 
 const chargeLabel = computed(() =>

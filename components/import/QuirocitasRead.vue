@@ -76,7 +76,7 @@ const percent = computed(() => {
       :lead="t('Reads every patient, their history, bonos and invoices, then the cash ledger, from Quirocitas into this browser. The steps after it import from that copy. It takes about ten minutes for 2000 patients.', 'Lee de Quirocitas cada paciente, su historial, bonos y facturas, y después la caja, a una copia en este navegador. Los pasos siguientes importan desde esa copia. Tarda unos diez minutos por cada 2000 pacientes.')"
       :notes="[
         { title: t('Nothing is written yet.', 'Aún no se escribe nada.'), body: t('Reading changes nothing in Quirocitas or in QuiroFlow.', 'Leer no cambia nada en Quirocitas ni en QuiroFlow.') },
-        { title: t('Stop and carry on.', 'Para y sigue.'), body: t('Stopping keeps what has been read; reading again picks up where it stopped. The copy stays in this browser only.', 'Al parar se guarda lo leído; al volver a leer sigue donde se quedó. La copia solo queda en este navegador.') },
+        { title: t('Stop and carry on.', 'Para y sigue.'), body: t('Stopping keeps what has been read; reading again picks up where it stopped. Once a read has finished, reading again goes through every patient for what changed in Quirocitas since. The copy stays in this browser only.', 'Al parar se guarda lo leído; al volver a leer sigue donde se quedó. Cuando una lectura ha terminado, volver a leer repasa cada paciente para traer lo que haya cambiado en Quirocitas. La copia solo queda en este navegador.') },
       ]"
     />
 

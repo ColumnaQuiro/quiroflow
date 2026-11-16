@@ -19,6 +19,8 @@ export interface QuirocitasRecord {
   invoices: QuirocitasInvoice[]
   /** By cita id; only visits with something marked. */
   techniques: Record<string, QuirocitasTechniques>
+  /** When this record was fetched. Missing on copies made before it was kept. */
+  readAt?: string
 }
 
 export interface QuirocitasLedgerMonth {
@@ -38,9 +40,38 @@ export interface QuirocitasSnapshot {
   failed: Record<string, string>
   ledger: QuirocitasLedgerRow[]
   ledgerMonths: QuirocitasLedgerMonth[]
+  /** When the read this copy belongs to began; a record older than it is read again. */
+  passStartedAt?: string
 }
 
 export const qcPatientRef = (id: string) => `QC-${id}`
+
+/**
+ * Which patients a read has to fetch from Quirocitas.
+ *
+ * A finished copy (its ledger is read last, so it has months) is out of date
+ * the moment the clinic books anything in Quirocitas, so pressing Read again
+ * starts a new pass over EVERY patient: a new appointment, a cancellation or
+ * a move only shows in a record that is fetched again. It used to fetch only
+ * patients the copy did not have, so "Read again for changes" brought new
+ * patients and nothing else, and the Appointments step then found nothing to
+ * import for anyone already imported.
+ *
+ * A pass that stopped part way (the ledger is cleared until the pass ends)
+ * carries on: only records not yet fetched in that pass are read. A copy from
+ * before passes were recorded has no start, and carries on as it always did,
+ * with the patients it does not have.
+ */
+export function quirocitasReadQueue(previous: QuirocitasSnapshot | null, listIds: string[], now: string) {
+  const resuming = previous && previous.ledgerMonths.length === 0
+  const passStartedAt = resuming ? previous.passStartedAt ?? '' : now
+  const queue = listIds.filter((id) => {
+    if (!resuming) return true
+    const rec = previous.patients[id]
+    return !rec || (rec.readAt ?? '') < passStartedAt
+  })
+  return { passStartedAt, queue }
+}
 
 // --- small conversions -------------------------------------------------------------
 

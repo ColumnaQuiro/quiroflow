@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { requirePermission } from '~/server/utils/requirePermission'
-import { TemplateCreateError, createWhatsAppTemplate } from '~/server/utils/whatsappTemplateCreate'
-import { headerFileProblem, templateDraftProblems, type TemplateDraft } from '~/utils/whatsappTemplateDraft'
+import { TemplateCreateError, createWhatsAppTemplate, readTemplateSubmission } from '~/server/utils/whatsappTemplateCreate'
+import { headerFileProblem, templateDraftProblems } from '~/utils/whatsappTemplateDraft'
 
 // Creates a WhatsApp message template and submits it to Meta for review --
 // the "Create template" dialog in Settings > WhatsApp and the automation
@@ -12,27 +12,7 @@ import { headerFileProblem, templateDraftProblems, type TemplateDraft } from '~/
 // templates are part of how the clinic's WhatsApp is configured.
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requirePermission(event, 'communication_config')
-
-  const form = await readMultipartFormData(event)
-  const raw = form?.find((part) => part.name === 'draft')?.data?.toString()
-  let parsed: Partial<TemplateDraft>
-  try {
-    parsed = raw ? JSON.parse(raw) : {}
-  } catch {
-    throw createError({ statusCode: 400, statusMessage: 'The template could not be read.' })
-  }
-  const draft: TemplateDraft = {
-    name: String(parsed.name ?? '').trim(),
-    language: String(parsed.language ?? ''),
-    category: parsed.category === 'MARKETING' ? 'MARKETING' : 'UTILITY',
-    header: (['image', 'video', 'document'] as const).find((k) => k === parsed.header) ?? 'none',
-    body: String(parsed.body ?? ''),
-    examples: Array.isArray(parsed.examples) ? parsed.examples.map((e) => String(e ?? '')) : [],
-    footer: String(parsed.footer ?? ''),
-  }
-
-  const filePart = form?.find((part) => part.name === 'file' && part.filename)
-  const file = filePart?.data ? { data: filePart.data, type: filePart.type ?? '', filename: filePart.filename ?? 'archivo' } : null
+  const { draft, file } = await readTemplateSubmission(event)
 
   // The dialog checks all of this as the clinic types; this is the same check
   // for anything that reaches the endpoint another way, before a call to Meta

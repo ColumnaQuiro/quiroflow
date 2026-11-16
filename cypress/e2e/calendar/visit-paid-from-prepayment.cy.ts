@@ -53,7 +53,9 @@ describe('Paying a visit from money paid ahead', () => {
           // Still 50 to spend with the visit invoiced against it -- paying that
           // invoice is what the money is for.
           cy.contains('button', 'Process').parents('form').as('paymentForm')
-          cy.get('@paymentForm').find('select').eq(0).find('option[value="credit"]').should('contain.text', '50,00 €')
+          // \s, not a space: formatEur puts a no-break space before the euro
+          // sign, and contain.text compares the raw text (utils/billing.ts).
+          cy.get('@paymentForm').find('select').eq(0).find('option[value="credit"]').invoke('text').should('match', /50,00\s€ available/)
           cy.get('@paymentForm').find('select').eq(0).select('credit')
           cy.get('@paymentForm').find('input[type="number"]').eq(0).clear().type('50')
           cy.get('@paymentForm').contains('button', 'Process').click()

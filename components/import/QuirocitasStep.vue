@@ -23,9 +23,17 @@ const result = ref<{ written: number; errors: string[] } | null>(null)
 // Quirocitas keeps reminding its patients until the clinic switches over, so
 // by default the visits still to come are marked as already reminded here.
 const quietUpcoming = ref(true)
+// A read that stopped part way is a copy of SOME of the clinic. Importing from
+// it used to happen without a word, and the patients never read -- with all
+// their visits -- were simply missing afterwards. So an unfinished copy stops
+// every step until it is finished, unless importing only what was read is
+// chosen in so many words.
+const readState = computed(() => (snapshot.value ? quirocitasReadState(snapshot.value) : null))
+const partialChosen = ref(false)
+const blockedByRead = computed(() => Boolean(readState.value && !readState.value.finished && !partialChosen.value))
 
 onMounted(() => { if (store.accountId) loadQuirocitasSnapshot(store.accountId) })
-watch(() => props.kind, () => { stage.value = 'idle'; plan.value = null; result.value = null })
+watch(() => props.kind, () => { stage.value = 'idle'; plan.value = null; result.value = null; partialChosen.value = false })
 
 const INTRO: Record<QuirocitasStepKind, { lead: () => string; notes: () => { title: string; body: string }[] }> = {
   patients: {
@@ -102,6 +110,17 @@ async function apply() {
     <p v-if="!snapshot" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
       {{ t('Read Quirocitas first: every step imports from that copy.', 'Lee antes Quirocitas: cada paso importa desde esa copia.') }}
     </p>
+
+    <div v-else-if="blockedByRead && (stage === 'idle' || stage === 'error') && readState" class="space-y-3 rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text" data-cy="qc-read-unfinished">
+      <p class="font-medium">
+        <template v-if="readState.total">{{ t(`The Quirocitas read has not finished: ${nf.format(readState.read)} of ${nf.format(readState.total)} patients read, cash ledger not yet.`, `La lectura de Quirocitas no ha terminado: ${nf.format(readState.read)} de ${nf.format(readState.total)} pacientes leídos, y la caja sin leer.`) }}</template>
+        <template v-else>{{ t(`The Quirocitas read has not finished: ${nf.format(readState.read)} patients read, cash ledger not yet.`, `La lectura de Quirocitas no ha terminado: ${nf.format(readState.read)} pacientes leídos, y la caja sin leer.`) }}</template>
+      </p>
+      <p>{{ t('Importing now would leave out every patient not read yet, with all their visits. Go back to Read and press "Carry on reading": it picks up where it stopped. Keep this tab open until it finishes.', 'Importar ahora dejaría fuera a todos los pacientes aún sin leer, con todas sus visitas. Vuelve a Leer y pulsa «Seguir leyendo»: sigue donde se quedó. Deja esta pestaña abierta hasta que termine.') }}</p>
+      <button type="button" class="text-[12.5px] font-medium underline" data-cy="qc-import-partial" @click="partialChosen = true">
+        {{ t('Import only what has been read', 'Importar solo lo leído') }}
+      </button>
+    </div>
 
     <template v-else-if="stage === 'idle' || stage === 'error'">
       <label v-if="kind === 'appointments'" class="flex items-start gap-2 text-[13px] text-ink-700">

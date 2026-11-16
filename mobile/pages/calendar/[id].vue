@@ -399,8 +399,12 @@ function euros(cents: number) {
   return formatEur(cents)
 }
 // The rate a bono button quotes, rounded the way the session is billed.
-function bonoRateLabel(p: { price_cents: number; sessions_total: number }) {
-  return p.sessions_total ? euros(bonoPerSessionCents(p)) : '—'
+// A bono invoiced in full when it was sold charges nothing per visit
+// (bonoVisitChargeCents), so it says that instead of a rate.
+function bonoRateLabel(p: { price_cents: number; sessions_total: number; charged_at_purchase?: boolean }) {
+  if (!p.sessions_total) return '—'
+  if (p.charged_at_purchase) return t('already paid', 'ya pagado')
+  return euros(bonoVisitChargeCents(p))
 }
 
 // -- Today's note ------------------------------------------------------------------

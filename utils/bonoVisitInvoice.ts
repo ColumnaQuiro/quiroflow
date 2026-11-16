@@ -64,7 +64,24 @@ interface OpenReceipt {
   payments: { amount_cents: number }[]
 }
 
-export async function chargeBonoVisit(supabase: any, input: BonoVisitCharge): Promise<{ error: string | null; invoiceId: string | null }> {
+export async function chargeBonoVisit(supabase: any, rawInput: BonoVisitCharge): Promise<{ error: string | null; invoiceId: string | null }> {
+  // A bono whose price was invoiced when it was sold is already paid for, so
+  // this session is charged nothing -- see bonoVisitChargeCents. Read here,
+  // from the row, rather than trusted from each caller: three screens call
+  // this, and one of them is an app build that may be weeks old.
+  const { data: bonoRow, error: bonoError } = await supabase
+    .from('package_purchases')
+    .select('charged_at_purchase')
+    .eq('id', rawInput.bonoPurchaseId)
+    .maybeSingle()
+  if (bonoError) return { error: bonoError.message, invoiceId: null }
+  const prepaid = !!bonoRow?.charged_at_purchase
+  const input: BonoVisitCharge = prepaid ? { ...rawInput, perSessionCents: 0 } : rawInput
+  // Nothing to collect is paid, whatever the balance says: a 0 EUR charge
+  // left unpaid would sit on the to-collect list with nothing to collect.
+  const statusFor = (): Promise<'paid' | 'unpaid'> =>
+    prepaid ? Promise.resolve('paid') : bonoVisitChargeStatus(supabase, input.patientId, input.perSessionCents, input.ownBalanceCents)
+
   const { data: receipts, error: readError } = await supabase
     .from('invoices')
     .select('id, status, total_cents, is_refund, invoice_line_items(id, price_cents, quantity, service_id), payments!payments_invoice_id_fkey(amount_cents)')
@@ -95,10 +112,7 @@ export async function chargeBonoVisit(supabase: any, input: BonoVisitCharge): Pr
       if (zeroError) return { error: zeroError.message, invoiceId: null }
 
       const paidOnIt = (open.payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-      const status =
-        paidOnIt >= input.perSessionCents
-          ? 'paid'
-          : await bonoVisitChargeStatus(supabase, input.patientId, input.perSessionCents, input.ownBalanceCents)
+      const status = paidOnIt >= input.perSessionCents ? 'paid' : await statusFor()
 
       const { error: lineError } = await supabase.from('invoice_line_items').insert({
         account_id: input.accountId,
@@ -140,7 +154,7 @@ export async function chargeBonoVisit(supabase: any, input: BonoVisitCharge): Pr
       invoice_number: chargeNumber,
       // The FAMILY's balance, not this patient's: on a shared bono the money
       // sits on the owner's record. See bonoVisitChargeStatus().
-      status: await bonoVisitChargeStatus(supabase, input.patientId, input.perSessionCents, input.ownBalanceCents),
+      status: await statusFor(),
       total_cents: input.perSessionCents,
     })
     .select('id')

@@ -1596,8 +1596,11 @@ async function createPackagePurchase(opts: {
   // Sold in plazos: how many and what each costs (priceCents must be their product).
   installments?: number
   installmentCents?: number
+  // Its whole price was invoiced when it was sold (an Elevate-style PracticeHub
+  // import): a session from it is charged nothing.
+  chargedAtPurchase?: boolean
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed, installments, installmentCents } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed, installments, installmentCents, chargedAtPurchase } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -1612,6 +1615,7 @@ async function createPackagePurchase(opts: {
         ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
         ...(isClosed === undefined ? {} : { is_closed: isClosed }),
         ...(installments === undefined ? {} : { installments, installment_cents: installmentCents ?? null }),
+        ...(chargedAtPurchase === undefined ? {} : { charged_at_purchase: chargedAtPurchase }),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),

@@ -8,6 +8,7 @@ import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefund'
 import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
+import { bonoVisitChargeCents } from '~/utils/visitCharging'
 import { loadUnloggedVisits, localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null; contactBlocked?: boolean }>()
@@ -44,6 +45,9 @@ interface PackagePurchaseRow {
   // history -- but it is not money the patient can draw on and no session
   // comes off it. See the is_closed migration.
   is_closed?: boolean
+  // Invoiced in full when it was sold, so a session from it costs nothing
+  // more (utils/visitCharging.bonoVisitChargeCents).
+  charged_at_purchase?: boolean
   // Set only for a bono shared TO this patient (they're a beneficiary, not
   // the owner) -- see fetchLedger(). Owner-only actions (Share, Delete,
   // collecting payment against the owner's own invoice) are hidden for
@@ -3610,7 +3614,8 @@ const fieldId = useId()
       :bono-name="logDialogFor.package_name"
       :sessions-used="logDialogFor.sessions_used"
       :sessions-total="logDialogFor.sessions_total"
-      :per-session-cents="Math.round(logDialogFor.price_cents / logDialogFor.sessions_total)"
+      :per-session-cents="bonoVisitChargeCents(logDialogFor)"
+      :charged-at-purchase="!!logDialogFor.charged_at_purchase"
       :visits="unloggedVisits"
       :covered-visits="coveredVisits"
       :loading="loadingUnlogged"

@@ -69,6 +69,53 @@ describe('Logging a bono session', () => {
     })
   })
 
+  // Elevate Chiropractic's PracticeHub invoices a bono's whole price on the
+  // visit it is bought at and every later visit at 0. Imported, the bono's
+  // money is already spent by that invoice, so charging the per-session rate
+  // here billed the session twice: a patient 10 EUR in credit read as owing 30.
+  it('charges nothing for a session off a bono invoiced in full when it was sold', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paula', lastName: 'Prepago' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 20',
+          sessionsTotal: 20,
+          sessionsUsed: 4,
+          priceCents: 80000,
+          chargedAtPurchase: true,
+        }).then((purchase: any) => {
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${patient.id}?tab=billing`)
+
+          cy.contains('16 of 20 sessions left').should('be.visible')
+          cy.get('[data-cy="log-session-open"]').click()
+          // The dialog says what will happen before anything is written.
+          cy.get('[data-cy="log-session-summary"]').should('contain.text', 'Nothing is charged')
+          cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
+
+          cy.contains('15 of 20 sessions left', { timeout: 15000 }).scrollIntoView().should('be.visible')
+
+          cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
+            expect(eff.purchase.sessions_used, 'the session still comes off the bono').to.eq(5)
+            // Still recorded at what it is worth: the bono's history and the
+            // value left on it are unchanged by how it was billed.
+            expect(eff.sessions, 'the visit recorded on the bono').to.have.length(1)
+            expect(eff.sessions[0].amount_cents, 'worth the bono rate').to.eq(4000)
+
+            // The receipt the visit gets, the shape PracticeHub gave every
+            // later visit of such a bono: 0, and settled.
+            expect(eff.invoices, 'one receipt for the visit').to.have.length(1)
+            expect(eff.invoices[0].total_cents, 'nothing charged').to.eq(0)
+            expect(eff.invoices[0].status, 'nothing left to collect').to.eq('paid')
+            expect(eff.lineItems[0].price_cents, 'the line says the same').to.eq(0)
+            expect(eff.payments, 'and nothing collected').to.have.length(0)
+          })
+        })
+      })
+    })
+  })
+
   it('records the visit on the day it happened, not the day it was typed in', () => {
     // Catching up on a session for a visit that was never on the calendar.
     // The date recorded has to be the one picked rather than now -- a visit

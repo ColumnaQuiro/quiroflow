@@ -21,6 +21,49 @@ export function bonoPerSessionCents(bono: { price_cents: number; sessions_total:
   return Math.round(bono.price_cents / bono.sessions_total)
 }
 
+/**
+ * What a session drawn from this bono is CHARGED, which is not always what it
+ * is worth.
+ *
+ * A bono sold here raises no invoice: its money sits in the balance and each
+ * visit's charge, at bonoPerSessionCents, is what spends it. A bono whose
+ * whole price was invoiced when it was sold (`charged_at_purchase`, set by the
+ * PracticeHub importer for a clinic that bills that way) has nothing left in
+ * the balance to spend -- its own invoice already took it. Charging the
+ * per-session rate there bills every remaining session a second time: 40 EUR
+ * a visit on a Bono 20 PracticeHub had invoiced at 800 and then charged 0 per
+ * visit.
+ *
+ * bonoPerSessionCents stays what a session is WORTH (the bono's history, the
+ * value still on its counter); this is what the visit costs today.
+ */
+export function bonoVisitChargeCents(bono: { price_cents: number; sessions_total: number; charged_at_purchase?: boolean | null }): number {
+  return bono.charged_at_purchase ? 0 : bonoPerSessionCents(bono)
+}
+
+/**
+ * Whether PracticeHub has already invoiced everything a package costs, so the
+ * sessions still on it are paid for.
+ *
+ * PracticeHub charges `visits - free_visits` of a package's visits and lets
+ * the rest through at 0. A clinic that bills per visit has free_visits = 0
+ * (every package on Columnaquiro, Castellón and QuiroBalance, checked 16 Nov
+ * 2026). One that bills the whole price up front has free_visits =
+ * visits - 1: the price lands on the visit the bono is bought at, and every
+ * visit after it is free (310 of Elevate Chiropractic's 332).
+ *
+ * Once no charged visit is left -- visits_left <= free_visits -- whatever the
+ * counter still holds was paid for by invoices that are already here. Before
+ * that the price has not all been invoiced, and charging per session (the
+ * QuiroFlow way) still collects it.
+ */
+export function practiceHubChargedAtPurchase(pkg: { visits: number | null; visits_left: number | null; free_visits?: number | null }): boolean {
+  const free = pkg.free_visits ?? 0
+  if (free <= 0) return false
+  const left = pkg.visits_left ?? pkg.visits ?? 0
+  return left <= free
+}
+
 /** An invoice's total, from its lines. Quantity counts. */
 export function lineItemsTotalCents(lines: { price_cents: number; quantity: number }[]): number {
   return lines.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)

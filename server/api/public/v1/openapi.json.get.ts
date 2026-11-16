@@ -710,6 +710,7 @@ function schemas() {
         online_deposit_cents: { type: 'integer', nullable: true },
         online_payment_required: { type: 'boolean' },
         online_max_days_ahead: { type: 'integer', nullable: true },
+        online_description: { type: 'string', nullable: true, description: 'Shown to patients under the name when booking online.' },
         created_at: datetime(),
       },
     },

@@ -33,6 +33,8 @@ interface BookingAppointmentType {
   online_deposit_cents: number | null
   /** Only these practitioners do it; empty (or absent, before 20261026141816) for everyone. */
   practitioner_ids?: string[]
+  /** What the clinic tells patients about it; null (or absent, before 20261116183812) for nothing. */
+  online_description?: string | null
 }
 interface BookingTeamMember {
   id: string
@@ -1296,20 +1298,24 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                     type="button"
                     role="radio"
                     :aria-checked="ty.id === appointmentTypeId"
-                    class="flex items-center gap-3 rounded-card border bg-surface px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
-                    :class="ty.id === appointmentTypeId ? 'border-brand bg-brand-tint ring-1 ring-inset ring-brand' : 'border-line shadow-card hover:border-brand'"
+                    class="flex gap-3 rounded-card border bg-surface px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
+                    :class="[
+                      ty.id === appointmentTypeId ? 'border-brand bg-brand-tint ring-1 ring-inset ring-brand' : 'border-line shadow-card hover:border-brand',
+                      ty.online_description ? 'items-start' : 'items-center',
+                    ]"
                     :disabled="!hydrated"
                     data-cy="booking-service-option"
                     @click="appointmentTypeId = ty.id"
                   >
                     <span
                       class="h-[18px] w-[18px] shrink-0 rounded-full border-2"
-                      :class="ty.id === appointmentTypeId ? 'border-[5px] border-brand bg-surface' : 'border-line-control'"
+                      :class="[ty.id === appointmentTypeId ? 'border-[5px] border-brand bg-surface' : 'border-line-control', { 'mt-0.5': ty.online_description }]"
                       aria-hidden="true"
                     ></span>
                     <span class="min-w-0 flex-1">
                       <span class="block break-words font-semibold text-ink-900">{{ ty.name }}</span>
                       <span class="block text-sm text-ink-muted">{{ ty.duration_minutes }} min</span>
+                      <span v-if="ty.online_description" class="mt-1.5 block whitespace-pre-line break-words text-sm text-ink-700" data-cy="booking-service-description">{{ ty.online_description }}</span>
                     </span>
                     <span v-if="ty.default_price_cents > 0" class="shrink-0 font-mono text-sm font-medium text-ink-900">{{ formatPrice(effectivePriceCents(ty.default_price_cents, ty.id, '', info.overrides)) }}</span>
                   </button>
@@ -1391,7 +1397,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               </UiBtn>
             </div>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="null" :slot="null" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
+            <BookingSummary :description="info.appointment_types.length > 1 && !typeLockedByQuery ? null : appointmentType?.online_description" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :duration-minutes="effectiveDurationMinutes" :team-member="null" :slot="null" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 

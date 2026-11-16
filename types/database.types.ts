@@ -2343,6 +2343,7 @@ export type Database = {
           online_booking_enabled: boolean
           online_bypass_practitioner: boolean
           online_deposit_cents: number | null
+          online_description: string | null
           online_max_days_ahead: number | null
           practitioner_ids: string[]
           online_payment_required: boolean
@@ -2365,6 +2366,7 @@ export type Database = {
           online_booking_enabled?: boolean
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
+          online_description?: string | null
           online_max_days_ahead?: number | null
           practitioner_ids?: string[]
           online_payment_required?: boolean
@@ -2387,6 +2389,7 @@ export type Database = {
           online_booking_enabled?: boolean
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
+          online_description?: string | null
           online_max_days_ahead?: number | null
           practitioner_ids?: string[]
           online_payment_required?: boolean

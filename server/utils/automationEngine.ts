@@ -27,6 +27,8 @@ import { RECALL_QUEUE_COLUMNS, withoutParkedRecalls } from '~/server/utils/segme
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import { evaluateBranch, factKey, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
+import { answerInOriginal } from '~/utils/docTranslations'
+import type { DocField } from '~/utils/docFields'
 import { asAudienceRef, asAudienceRefs, respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
 import { audienceMemberIds } from '~/server/utils/audienceMembers'
 import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
@@ -1253,7 +1255,11 @@ async function completedDocSince(supabase: any, run: SequenceRun, templateId?: s
   return data ?? null
 }
 
-/** A form and every translation of it. */
+/**
+ * A form and every translation of it made the old way, as a template of its
+ * own (superseded by doc_templates.translations, 20261116144215). A copy
+ * sent from one before that migration names it.
+ */
 async function formAndTranslations(supabase: any, templateId: string): Promise<string[]> {
   const { data } = await supabase.from('doc_templates').select('id').eq('translation_of', templateId)
   return [templateId, ...((data ?? []) as { id: string }[]).map((d) => d.id)]
@@ -1307,10 +1313,13 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
       for (const c of config.conditions ?? []) {
         if (c.field !== 'doc_answer' || !c.doc_template_id || !c.doc_field_id) continue
         const doc = await completedDocSince(supabase, run, c.doc_template_id)
-        const blocks = Array.isArray(doc?.fields) ? (doc!.fields as { id?: string; value?: unknown }[]) : []
+        const blocks = Array.isArray(doc?.fields) ? (doc!.fields as Partial<DocField>[]) : []
+        const block = blocks.find((f) => f.id === c.doc_field_id)
         // Absent when the form is not back yet: undefined fails every
-        // comparison, so an unanswered form goes down "No".
-        facts[factKey(c)] = blocks.find((f) => f.id === c.doc_field_id)?.value ?? undefined
+        // comparison, so an unanswered form goes down "No". An option picked
+        // on a copy sent in another language reads as the original's, which
+        // is what the condition was written against ("Yes" is "Sí").
+        facts[factKey(c)] = answerInOriginal(block, block?.value) ?? undefined
       }
     }
     if ((used.has('appointment_type_id') || used.has('practitioner_id')) && run.appointment_id) {

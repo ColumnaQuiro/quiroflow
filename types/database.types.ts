@@ -3899,6 +3899,7 @@ export type Database = {
           fields: Json
           id: string
           title: string
+          translations: Json
           language: string | null
           translation_of: string | null
           updated_at: string
@@ -3914,6 +3915,7 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          translations?: Json
           language?: string | null
           translation_of?: string | null
           updated_at?: string
@@ -3929,6 +3931,7 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          translations?: Json
           language?: string | null
           translation_of?: string | null
           updated_at?: string
@@ -6340,6 +6343,7 @@ export type Database = {
           external_reference: string | null
           fields: Json
           id: string
+          language: string | null
           patient_id: string
           public_token: string
           template_id: string | null
@@ -6356,6 +6360,7 @@ export type Database = {
           external_reference?: string | null
           fields?: Json
           id?: string
+          language?: string | null
           patient_id: string
           public_token?: string
           template_id?: string | null
@@ -6372,6 +6377,7 @@ export type Database = {
           external_reference?: string | null
           fields?: Json
           id?: string
+          language?: string | null
           patient_id?: string
           public_token?: string
           template_id?: string | null

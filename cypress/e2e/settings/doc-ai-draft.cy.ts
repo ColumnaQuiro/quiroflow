@@ -36,14 +36,14 @@ describe('Drafting a form with AI', () => {
       cy.get('#doc-category').should('have.value', 'consent')
       cy.get('input[placeholder="Heading text…"]').should('have.value', 'Tus datos')
       cy.get('input[placeholder="Question / label…"]').first().should('have.value', 'Nombre')
-      // A version points at a saved original; there is none yet.
-      cy.get('[data-cy=doc-versions]').should('not.exist')
+      // Languages can be added to a draft too; it has none yet.
+      cy.get('[data-cy=doc-language-tabs]').should('be.visible')
+      cy.get('[data-cy=doc-language-tab-en]').should('not.exist')
 
       cy.contains('button', 'Save').click()
       // The banner changing is the insert having come back. (Not the toast:
       // "Saved" also matches Settings › Saved Replies in the side menu.)
       cy.get('[data-cy=doc-ai-banner]').should('not.contain', 'not saved yet')
-      cy.get('[data-cy=doc-versions]').should('be.visible')
 
       // Reopened from the database: what was saved is the draft, blocks and all.
       cy.reload()

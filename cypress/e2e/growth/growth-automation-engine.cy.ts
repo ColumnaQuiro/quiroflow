@@ -310,34 +310,58 @@ describe('Automation engine', () => {
     })
 
     it('sends each patient the form in their language, and reads the answer from either version', () => {
-      const blocks = (label: string) => [{ id: RECOMMEND, type: 'scale', label, value: null }]
-      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica', fields: blocks('¿Recomendarías este tratamiento?') }).then((form) => {
-        cy.task<{ id: string }>('db:createDocTemplate', {
-          accountId: account.accountId,
+      const BACK = 'q-back'
+      const fields = [
+        { id: RECOMMEND, type: 'scale', label: '¿Recomendarías este tratamiento?', value: null },
+        { id: BACK, type: 'choice', label: '¿Volverías?', options: ['Sí', 'No'], value: null },
+      ]
+      const translations = {
+        en: {
           title: 'Chiropractic review',
-          fields: blocks('Would you recommend this treatment?'),
-          language: 'en',
-          translationOf: form.id,
-        }).then((english) => {
-          const sendForm = { type: 'whatsapp_template', config: { template_name: 'revision_form', template_language: 'es', doc_template_ids: [form.id], match_patient_language: true } }
-          flow({ ...answered(form.id), steps: [sendForm, ...answered(form.id).steps] }).then((rule) => {
-            patient({ preferredLanguage: 'en' }).then((en) => {
-              patient().then((es) => {
-                fire({ triggerEvent: 'appointment.completed', patientId: en.id })
-                fire({ triggerEvent: 'appointment.completed', patientId: es.id })
-                // The automation names the Spanish form; each is sent their own.
-                cy.task<{ template_id: string }[]>('auto:docsFor', { patientId: es.id }).then((docs) => expect(docs.map((d) => d.template_id)).to.deep.eq([form.id]))
-                cy.task<{ template_id: string; public_token: string }[]>('auto:docsFor', { patientId: en.id }).then((docs) => {
-                  expect(docs.map((d) => d.template_id)).to.deep.eq([english.id])
-                  // Answered the way the patient's browser does.
-                  cy.task('auto:answerDoc', { token: docs[0]!.public_token, answers: { [RECOMMEND]: 9 } })
-                })
-                cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
-                tick()
-                templates(en.id).should('deep.eq', ['revision_form', 'pide_resena'])
-                // Not answered yet: still waiting.
-                templates(es.id).should('deep.eq', ['revision_form'])
+          fields: { [RECOMMEND]: { label: 'Would you recommend this treatment?' }, [BACK]: { label: 'Would you come back?', options: ['Yes', 'No'] } },
+        },
+      }
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica', fields, translations }).then((form) => {
+        const sendForm = { type: 'whatsapp_template', config: { template_name: 'revision_form', template_language: 'es', doc_template_ids: [form.id], match_patient_language: true } }
+        // A branch written against the Spanish option, answered in English.
+        const flowSteps = [
+          sendForm,
+          {
+            type: 'wait_until',
+            config: { event: 'doc.completed', doc_template_id: form.id, timeout_minutes: 7 * 1440 },
+            met: [
+              {
+                type: 'branch',
+                config: { conditions: [{ field: 'doc_answer', op: 'is', value: 'Sí', doc_template_id: form.id, doc_field_id: BACK }] },
+                yes: [whatsapp('pide_resena')],
+                no: [whatsapp('gracias_revision')],
+              },
+            ],
+            timeout: [whatsapp('recuerda_formulario')],
+          },
+        ]
+        flow({ triggerEvent: 'appointment.completed', steps: flowSteps }).then((rule) => {
+          patient({ preferredLanguage: 'en' }).then((en) => {
+            patient().then((es) => {
+              fire({ triggerEvent: 'appointment.completed', patientId: en.id })
+              fire({ triggerEvent: 'appointment.completed', patientId: es.id })
+              // One form: each copy names it, in the patient's own language.
+              cy.task<{ template_id: string; language: string | null; title: string }[]>('auto:docsFor', { patientId: es.id }).then((docs) => {
+                expect(docs.map((d) => [d.template_id, d.language, d.title])).to.deep.eq([[form.id, null, 'Revisión quiropráctica']])
               })
+              cy.task<{ template_id: string; language: string | null; title: string; public_token: string; fields: { label: string; options?: string[] }[] }[]>('auto:docsFor', { patientId: en.id }).then((docs) => {
+                expect(docs.map((d) => [d.template_id, d.language, d.title])).to.deep.eq([[form.id, 'en', 'Chiropractic review']])
+                expect(docs[0]!.fields.map((f) => f.label)).to.deep.eq(['Would you recommend this treatment?', 'Would you come back?'])
+                expect(docs[0]!.fields[1]!.options).to.deep.eq(['Yes', 'No'])
+                // Answered the way the patient's browser does.
+                cy.task('auto:answerDoc', { token: docs[0]!.public_token, answers: { [RECOMMEND]: 9, [BACK]: 'Yes' } })
+              })
+              cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+              tick()
+              // "Yes" on the English copy is "Sí" to the branch.
+              templates(en.id).should('deep.eq', ['revision_form', 'pide_resena'])
+              // Not answered yet: still waiting.
+              templates(es.id).should('deep.eq', ['revision_form'])
             })
           })
         })

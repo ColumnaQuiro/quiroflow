@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, recallHoldReason, RECALL_HOLD_DAYS, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
+import { docInLanguage, docTranslationsOf } from '~/utils/docTranslations'
 import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
@@ -738,17 +739,32 @@ async function trackedReviewLink(
 // shapes: appended as `${origin}/doc/${token}` in a message body, or as the
 // bare token substituted into a WhatsApp URL button's {{n}} placeholder
 // (Meta stores the rest of the URL, e.g. ".../doc/{{1}}", on the button itself).
-/** A form's translation into `language`, or the form itself when it has none. */
-export async function docTemplateForLanguage(supabase: any, docTemplateId: string, language: string | null | undefined): Promise<string> {
-  if (!language) return docTemplateId
-  const { data } = await supabase
-    .from('doc_templates')
-    .select('id')
-    .eq('translation_of', docTemplateId)
-    .eq('language', language)
-    .limit(1)
-    .maybeSingle()
-  return data?.id ?? docTemplateId
+/**
+ * A form as it goes to a patient in `language`: its own translation into it
+ * (doc_templates.translations), else -- for a form translated the old way,
+ * as a template of its own pointing at it -- that template, else the form.
+ */
+async function docTemplateForLanguage(
+  supabase: any,
+  docTemplateId: string,
+  language: string | null | undefined,
+): Promise<{ templateId: string; title: string; fields: unknown; language: string | null } | null> {
+  const { data: template } = await supabase.from('doc_templates').select('title, fields, translations').eq('id', docTemplateId).maybeSingle()
+  if (!template) return null
+  if (language && !docTranslationsOf(template.translations)[language]) {
+    // Superseded by translations (20261116144215), whose migration folded
+    // every one there was; kept for one made by a release that predates it.
+    const { data: legacy } = await supabase
+      .from('doc_templates')
+      .select('title, fields')
+      .eq('translation_of', docTemplateId)
+      .eq('language', language)
+      .limit(1)
+      .maybeSingle()
+    if (legacy) return { templateId: docTemplateId, title: legacy.title, fields: legacy.fields, language }
+  }
+  const sent = docInLanguage(template, language)
+  return { templateId: docTemplateId, ...sent }
 }
 
 async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction | undefined, docTemplateId: string): Promise<string | null> {
@@ -757,10 +773,9 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
   // to attach one to -- the button falls back to Meta's example suffix
   // rather than the send being rejected.
   if (!patient) return null
-  // The version in the patient's own language, when the form has one. The
-  // automation names the original; a wait or a branch on it counts either.
-  const templateId = await docTemplateForLanguage(supabase, docTemplateId, patient.preferred_language)
-  const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', templateId).maybeSingle()
+  // In the patient's own language, when the form has a translation into it.
+  // The copy names the form itself, so a wait or a branch on it sees it.
+  const template = await docTemplateForLanguage(supabase, docTemplateId, patient.preferred_language)
   if (!template) return null
   const { data: custom } = await supabase.from('patient_attribute_values').select('value, patient_attributes(key, kind)').eq('patient_id', patient.id)
   const rendered = renderTemplateFields(template.fields, {
@@ -780,7 +795,7 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
   })
   const { data: doc } = await supabase
     .from('patient_docs')
-    .insert({ account_id: accountId, patient_id: patient.id, title: template.title, fields: rendered, template_id: templateId })
+    .insert({ account_id: accountId, patient_id: patient.id, title: template.title, fields: rendered, template_id: template.templateId, language: template.language })
     .select('public_token')
     .single()
   return doc?.public_token ?? null

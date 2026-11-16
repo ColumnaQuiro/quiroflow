@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PersonMask } from '../../composables/usePoseModel'
 import { measureAll, measureView, defaultPoints, pointsFromLandmarks, POSTURE_VIEWS, VIEW_LABELS, type FrontMetrics, type Points, type PostureView, type SideMetrics, type StoredViews } from '../../utils/posture'
 
 // A new posture assessment for one patient (posture_assessments): a photo per
@@ -33,7 +34,12 @@ onMounted(async () => {
   ready.value = true
 })
 
-interface Shot { url: string; blob: Blob; width: number; height: number; points: Points; facing: 'right' | 'left' | null; found: boolean }
+// A photo is kept both ways when the person could be cut out: as taken, and
+// on white. White is what is shown and saved unless the practitioner turns it
+// off for that photo (the outline missed a hand, say).
+interface Version { url: string; blob: Blob }
+interface Shot { original: Version; cutout: Version | null; white: boolean; width: number; height: number; points: Points; facing: 'right' | 'left' | null; found: boolean }
+const shown = (s: Shot): Version => (s.white && s.cutout ? s.cutout : s.original)
 const shots = reactive<Partial<Record<PostureView, Shot>>>({})
 const step = ref<PostureView | 'result'>('front')
 const busy = ref(false)
@@ -48,6 +54,8 @@ const touch = useMediaQuery('(pointer: coarse)')
 
 // The photo, shrunk to 1600 px on its long side (enough to place a point to
 // a few millimetres, small enough to upload from a phone), as a JPEG.
+const jpeg = (canvas: HTMLCanvasElement) =>
+  new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se ha podido leer la foto'))), 'image/jpeg', 0.86))
 async function shrink(file: File): Promise<{ blob: Blob; width: number; height: number; canvas: HTMLCanvasElement }> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
@@ -55,9 +63,56 @@ async function shrink(file: File): Promise<{ blob: Blob; width: number; height: 
   canvas.width = Math.round(bitmap.width * scale)
   canvas.height = Math.round(bitmap.height * scale)
   canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se ha podido leer la foto'))), 'image/jpeg', 0.86))
-  return { blob, width: canvas.width, height: canvas.height, canvas }
+  return { blob: await jpeg(canvas), width: canvas.width, height: canvas.height, canvas }
 }
+
+// The person on white: the photo kept where the model's outline says it is
+// the person, white everywhere else. The outline is soft (the model works at
+// a lower resolution than the photo), so it is tightened a little -- below
+// LOW is background, above HIGH is the person, a ramp between -- and then
+// scaled up smoothly, which leaves an edge a pixel or two wide rather than a
+// staircase. Null when the outline is not believable as one standing person
+// (almost nothing, or almost the whole frame): the photo stays as taken.
+const LOW = 0.35
+const HIGH = 0.65
+function cutOut(photo: HTMLCanvasElement, mask: PersonMask): HTMLCanvasElement | null {
+  const n = mask.width * mask.height
+  if (!n || mask.data.length < n) return null
+  const alpha = document.createElement('canvas')
+  alpha.width = mask.width
+  alpha.height = mask.height
+  const actx = alpha.getContext('2d')!
+  const img = actx.createImageData(mask.width, mask.height)
+  let person = 0
+  for (let i = 0; i < n; i++) {
+    const v = mask.data[i]!
+    if (v > 0.5) person++
+    const t = Math.min(1, Math.max(0, (v - LOW) / (HIGH - LOW)))
+    img.data[i * 4 + 3] = Math.round(t * t * (3 - 2 * t) * 255)
+  }
+  if (person < n * 0.02 || person > n * 0.9) return null
+  actx.putImageData(img, 0, 0)
+  const out = document.createElement('canvas')
+  out.width = photo.width
+  out.height = photo.height
+  const ctx = out.getContext('2d')!
+  ctx.drawImage(photo, 0, 0)
+  ctx.globalCompositeOperation = 'destination-in'
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(alpha, 0, 0, out.width, out.height)
+  ctx.globalCompositeOperation = 'destination-over'
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, out.width, out.height)
+  return out
+}
+
+function forget(s: Shot | undefined) {
+  if (!s) return
+  URL.revokeObjectURL(s.original.url)
+  if (s.cutout) URL.revokeObjectURL(s.cutout.url)
+}
+onBeforeUnmount(() => POSTURE_VIEWS.forEach((v) => forget(shots[v])))
 
 async function onPhoto(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
@@ -68,10 +123,21 @@ async function onPhoto(e: Event) {
   error.value = ''
   try {
     const { blob, width, height: h, canvas } = await shrink(file)
-    const landmarks = await detect(canvas)
+    const { landmarks, mask } = await detect(canvas)
     const placed = landmarks ? pointsFromLandmarks(view, landmarks, width, h) : defaultPoints(view, width, h)
-    if (shots[view]) URL.revokeObjectURL(shots[view]!.url)
-    shots[view] = { url: URL.createObjectURL(blob), blob, width, height: h, points: placed.points, facing: placed.facing, found: !!landmarks }
+    const white = mask ? cutOut(canvas, mask) : null
+    const cutBlob = white ? await jpeg(white) : null
+    forget(shots[view])
+    shots[view] = {
+      original: { url: URL.createObjectURL(blob), blob },
+      cutout: cutBlob ? { url: URL.createObjectURL(cutBlob), blob: cutBlob } : null,
+      white: !!cutBlob,
+      width,
+      height: h,
+      points: placed.points,
+      facing: placed.facing,
+      found: !!landmarks,
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -102,7 +168,7 @@ async function save() {
     for (const v of taken.value) {
       const s = shots[v]!
       const path = `${props.accountId}/posture/${id}/${v}.jpg`
-      const { error: up } = await supabase.storage.from('patient-files').upload(path, s.blob, { contentType: 'image/jpeg', upsert: true })
+      const { error: up } = await supabase.storage.from('patient-files').upload(path, shown(s).blob, { contentType: 'image/jpeg', upsert: true })
       if (up) throw new Error(up.message)
       views[v] = { photo: path, width: s.width, height: s.height, points: s.points, facing: s.facing }
     }
@@ -174,10 +240,14 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
         </div>
         <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
           <div class="mx-auto w-full max-w-[560px]">
-            <PostureOverlay :src="current.url" :width="current.width" :height="current.height" :view="step" :points="current.points" editable @update:points="current.points = $event" />
+            <PostureOverlay :src="shown(current).url" :width="current.width" :height="current.height" :view="step" :points="current.points" editable @update:points="current.points = $event" />
             <p class="mt-2 text-center text-[12.5px] text-ink-muted" data-cy="posture-found" :data-found="current.found ? 'true' : 'false'">
               {{ current.found ? t('Drag a point to correct it. The blue line is the vertical from the ankle.', 'Arrastra un punto para corregirlo. La línea azul es la vertical desde el tobillo.') : t('No one found automatically: drag each point onto the body.', 'No se ha encontrado a nadie automáticamente: arrastra cada punto a su sitio.') }}
             </p>
+            <label v-if="current.cutout" class="mx-auto mt-2 flex w-fit cursor-pointer items-center gap-2 text-[13px] font-semibold text-ink-700">
+              <input v-model="current.white" type="checkbox" class="size-4 accent-brand" data-cy="posture-white" />
+              {{ t('White background', 'Fondo blanco') }}
+            </label>
           </div>
           <aside class="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-4" data-cy="posture-live">
             <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ VIEW_LABELS[step] }} · {{ t('live', 'al momento') }}</p>
@@ -217,7 +287,7 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
       <section v-else class="flex flex-col gap-4" data-cy="posture-result">
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div v-for="v in taken" :key="v" class="flex flex-col gap-1">
-            <PostureOverlay :src="shots[v]!.url" :width="shots[v]!.width" :height="shots[v]!.height" :view="v" :points="shots[v]!.points" :labels="false" />
+            <PostureOverlay :src="shown(shots[v]!).url" :width="shots[v]!.width" :height="shots[v]!.height" :view="v" :points="shots[v]!.points" :labels="false" />
             <span class="text-center text-[12.5px] font-semibold text-ink-700">{{ VIEW_LABELS[v] }}</span>
           </div>
         </div>

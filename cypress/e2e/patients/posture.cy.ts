@@ -4,7 +4,8 @@
 // record's Progreso; shared with the patient, who sees it on the portal.
 //
 // The pose model is stubbed (window.__postureDetect, see usePoseModel): the
-// specs place known landmarks rather than fetch an 11 MB model.
+// specs place known landmarks rather than fetch an 11 MB model, and, where a
+// spec needs the person cut out, a known outline (window.__postureMask).
 const PHOTO = 'cypress/fixtures/posture-figure.png'
 
 /** 33 landmarks of a person standing a little round-shouldered, facing the viewer's right in a side photo. */
@@ -24,10 +25,20 @@ function landmarks() {
   set(28, 0.45, 0.93)
   return lm
 }
-function visitCapture(patientId: string, found = true) {
+/**
+ * The person's outline as the model would give it: sure inside a band down
+ * the middle of the photo, sure it is the room everywhere else.
+ */
+function personMask(img: { width: number; height: number }) {
+  const data = new Float32Array(img.width * img.height)
+  for (let y = 0; y < img.height; y++) for (let x = Math.round(img.width * 0.3); x < img.width * 0.7; x++) data[y * img.width + x] = 1
+  return { width: img.width, height: img.height, data }
+}
+function visitCapture(patientId: string, found = true, mask = false) {
   cy.visit(`/patients/posture/${patientId}`, {
     onBeforeLoad: (win) => {
       ;(win as any).__postureDetect = () => (found ? landmarks() : null)
+      if (mask) (win as any).__postureMask = personMask
     },
   })
   cy.get('[data-cy=posture-capture][data-ready=true]', { timeout: 20000 })
@@ -70,6 +81,8 @@ describe('Posture assessment', () => {
         photo()
         cy.get('[data-cy=posture-found]', { timeout: 20000 }).should('have.attr', 'data-found', 'true')
         cy.get('[data-cy=posture-overlay] circle').should('have.length', 10)
+        // No outline from the model, so the photo stays as taken, with no choice offered.
+        cy.get('[data-cy=posture-white]').should('not.exist')
         // The right shoulder is lower: a positive tilt.
         cy.get('[data-cy=posture-live-shoulders]').invoke('text').should('match', /^\d+(,\d)? °$/)
         cy.get('[data-cy=posture-next]').click()
@@ -405,6 +418,47 @@ describe('Posture assessment', () => {
           cy.get('[data-cy=posture-overlay]').trigger('pointerup', ev)
           cy.get('[data-cy=posture-point-kneeR]').should(($m) => expect($m[0]!.getBoundingClientRect().top).to.be.closeTo(r.top - 15, 1.5))
         })
+      })
+    })
+  })
+
+  // Like PosturePro: the person cut out onto white, the grid behind them, the
+  // points on top -- and the photo as taken, one click away, for when the
+  // outline gets something wrong.
+  it('puts the person on a white background with the grid, and keeps the photo as taken', () => {
+    /** The colour of the top-left pixel of the photo the overlay shows. */
+    const corner = () =>
+      cy.get('[data-cy=posture-overlay][data-shown=true] image').then(($img) =>
+        cy.window().then(
+          (win) =>
+            new Cypress.Promise<number[]>((resolve) => {
+              const img = new win.Image()
+              img.onload = () => {
+                const c = win.document.createElement('canvas')
+                c.width = img.width
+                c.height = img.height
+                const ctx = c.getContext('2d')!
+                ctx.drawImage(img, 0, 0)
+                resolve(Array.from(ctx.getImageData(2, 2, 1, 1).data.slice(0, 3)))
+              }
+              img.src = $img.attr('href')!
+            }),
+        ),
+      )
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fondo', lastName: 'Blanco' }).then((patient) => {
+        cy.login(account.email, account.password)
+        visitCapture(patient.id, true, true)
+        cy.get('[data-cy=posture-height]').clear().type('170')
+        photo()
+        cy.get('[data-cy=posture-white]', { timeout: 20000 }).should('be.checked')
+        cy.get('[data-cy=posture-grid] line').should('have.length.greaterThan', 20)
+        corner().should((rgb) => rgb.forEach((v) => expect(v).to.be.greaterThan(248)))
+        // The fixture's own background is a grey, (225, 225, 230).
+        cy.get('[data-cy=posture-white]').uncheck()
+        corner().should((rgb) => expect(rgb[0]).to.be.lessThan(235))
+        cy.get('[data-cy=posture-white]').check()
+        corner().should((rgb) => rgb.forEach((v) => expect(v).to.be.greaterThan(248)))
       })
     })
   })

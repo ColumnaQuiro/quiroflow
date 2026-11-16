@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureHeadline, pxPerCm, type Points } from '../../utils/posture'
+import { defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureGrid, postureHeadline, pxPerCm, type Points } from '../../utils/posture'
 
 // A 170 cm patient photographed so that ear-to-ankle is 1591.2 px: exactly
 // 10 px per cm, so every number below can be checked by hand.
@@ -101,5 +101,20 @@ describe('postureHeadline', () => {
     const side: Points = { ear: [540, EAR_Y], shoulder: [520, EAR_Y + 34.64], hip: [505, 900], knee: [503, 1300], ankle: [500, ANKLE_Y] }
     const m = measureAll({ right: { photo: 'x', width: 1000, height: 2000, points: side, facing: 'right' } }, H)
     expect(postureHeadline(m)).toEqual({ headForward: 2, headWeight: 18.1, headAngle: 30, shoulderTilt: null, hipTilt: null })
+  })
+})
+
+describe('postureGrid', () => {
+  it('draws 24 rows and puts a column on the vertical, stepping out from it evenly', () => {
+    const { xs, ys } = postureGrid(900, 1200, 437)
+    expect(ys).toHaveLength(23)
+    expect(ys[0]).toBe(50)
+    expect(xs).toContain(437)
+    expect(xs[0]).toBe(37)
+    expect(xs[1]! - xs[0]!).toBe(50)
+    expect(xs.every((x) => x >= 0 && x < 900)).toBe(true)
+  })
+  it('draws nothing for a photo with no height', () => {
+    expect(postureGrid(900, 0, 10)).toEqual({ xs: [], ys: [] })
   })
 })

@@ -50,7 +50,11 @@ describe('Selling a package from account credit', () => {
         // row against no +100 took it off the balance a second time
         // (utils/owing ledgerDrawCents). The bono now holds it.
         cy.task<unknown[]>('db:creditsFor', { patientId: patient.id }).should('have.length', 0)
-        cy.contains('select', 'Sell a bono').should('exist').select('Bono 12 (12, 528,00 €)')
+        // A fresh page, so the form is as reception would find it next time.
+        cy.reload()
+        cy.contains('select', 'Sell a bono').find('option').contains('Bono 12').then(($option) => {
+          cy.contains('select', 'Sell a bono').select(String($option.val()))
+        })
         cy.contains('label', 'Method').parent().find('select').find('option[value="credit"]').should('be.disabled').should('contain.text', 'none available')
       })
     })

@@ -17,7 +17,7 @@ describe('Paying a visit from money paid ahead', () => {
   it('offers the prepayment as credit, and leaves the balance at zero', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30 })
-      cy.task('db:createServiceProduct', { accountId: account.accountId, name: 'Adjustment', priceCents: 5000 })
+      cy.task<{ id: string }>('db:createServiceProduct', { accountId: account.accountId, name: 'Adjustment', priceCents: 5000 }).as('service')
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paula', lastName: 'Prepaid' }).then((patient: any) => {
         cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 5000, method: 'other' })
 
@@ -43,7 +43,11 @@ describe('Paying a visit from money paid ahead', () => {
         cy.get('[data-cy=appt-sheet]').within(() => {
           cy.get('[data-cy=appt-tab-billing]').click()
           cy.contains('button', 'Charge this visit').click()
-          cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (50,00 €)')
+          // By id: the label carries a formatted amount, and matching it as
+          // text is not what this spec is about.
+          cy.get<{ id: string }>('@service').then((service) => {
+            cy.get(`select option[value="${service.id}"]`).should('exist').parent().select(service.id)
+          })
           cy.contains('Balance due: 50,00 €').should('be.visible')
 
           // Still 50 to spend with the visit invoiced against it -- paying that

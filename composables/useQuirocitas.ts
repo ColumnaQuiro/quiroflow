@@ -1,6 +1,6 @@
 import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasLedgerRow, QuirocitasListPatient, QuirocitasPatient } from '~/utils/quirocitasPages'
 import type { QuirocitasLedgerMonth, QuirocitasRecord, QuirocitasSnapshot, QuirocitasTechniques } from '~/utils/quirocitasRows'
-import { quirocitasDate } from '~/utils/quirocitasRows'
+import { quirocitasDate, quirocitasReadQueue } from '~/utils/quirocitasRows'
 
 // The Quirocitas importer's shared state: the saved connection, and the
 // clinic's records once read.
@@ -106,8 +106,9 @@ const LEDGER_MONTHS_PER_CALL = 4
 /**
  * Reads the whole clinic: the patient list, every patient's record, history,
  * invoices and adjusted segments, then the cash ledger back to the month of
- * the oldest visit. Patients already read are kept unless `again` is set, so
- * stopping and starting again picks up where it was.
+ * the oldest visit. A finished copy is read again in full, for what changed
+ * since; a read that stopped part way picks up where it was (see
+ * quirocitasReadQueue). `again` throws the copy away first.
  */
 export async function readQuirocitas(
   accountId: string,
@@ -116,32 +117,40 @@ export async function readQuirocitas(
   const previous = opts.again ? null : await loadQuirocitasSnapshot(accountId)
   opts.onProgress({ phase: 'list', done: 0, total: 0, failed: 0 })
   const { patients: list } = await quirocitasCall<{ patients: QuirocitasListPatient[] }>({ op: 'patients' })
+  const now = new Date().toISOString()
+  const { passStartedAt, queue: ids } = quirocitasReadQueue(previous, list.map((p) => p.id), now)
   const s: QuirocitasSnapshot = {
     baseUrl: connection.value?.baseUrl ?? '',
-    readAt: new Date().toISOString(),
+    readAt: now,
     bonoTypes: previous?.bonoTypes ?? [],
+    // Records already in the copy stay until they are fetched again, so a
+    // patient Quirocitas fails to send this time keeps the earlier copy rather
+    // than dropping out of every import step.
     patients: Object.fromEntries(Object.entries(previous?.patients ?? {}).filter(([id]) => list.some((p) => p.id === id))),
     failed: {},
     ledger: [],
     ledgerMonths: [],
+    passStartedAt,
   }
 
-  const queue = list.filter((p) => !s.patients[p.id])
+  const waiting = new Set(ids)
+  const queue = list.filter((p) => waiting.has(p.id))
   let done = list.length - queue.length
+  let bonoTypesRead = false
   let sinceSave = 0
   const report = () => opts.onProgress({ phase: 'patients', done, total: list.length, failed: Object.keys(s.failed).length })
   report()
 
   async function readOne(p: QuirocitasListPatient) {
     const read = await quirocitasCall<{ ficha: QuirocitasPatient; history: QuirocitasHistory; invoices: QuirocitasInvoice[]; bonoTypes: QuirocitasBonoType[] }>({ op: 'patient', id: p.id, name: p.name })
-    if (!s.bonoTypes.length) s.bonoTypes = read.bonoTypes
+    if (!bonoTypesRead) { s.bonoTypes = read.bonoTypes; bonoTypesRead = true }
     const techniques: Record<string, QuirocitasTechniques> = {}
     const citaIds = read.history.visits.map((v) => v.citaId).filter(Boolean)
     for (let i = 0; i < citaIds.length; i += TECHNIQUE_BATCH) {
       const { techniques: t } = await quirocitasCall<{ techniques: Record<string, QuirocitasTechniques> }>({ op: 'techniques', citaIds: citaIds.slice(i, i + TECHNIQUE_BATCH), segments: read.history.segments })
       Object.assign(techniques, t)
     }
-    const record: QuirocitasRecord = { list: p, ficha: read.ficha, history: read.history, invoices: read.invoices, techniques }
+    const record: QuirocitasRecord = { list: p, ficha: read.ficha, history: read.history, invoices: read.invoices, techniques, readAt: new Date().toISOString() }
     s.patients[p.id] = record
   }
 

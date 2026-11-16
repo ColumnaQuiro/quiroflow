@@ -15,6 +15,7 @@ import {
   quirocitasLedgerRows,
   quirocitasPatientRow,
   quirocitasPhone,
+  quirocitasReadQueue,
   quirocitasVisitNotes,
   splitQuirocitasName,
   type QuirocitasSnapshot,
@@ -259,5 +260,33 @@ describe('quirocitas rows', () => {
     // The invoice Quirocitas raised for the sale has no charge to sit on.
     expect(invoiceNotes).toHaveLength(1)
     expect(invoiceNotes[0]!.note).toContain('[Factura Quirocitas 13/2026]')
+  })
+
+  describe('which patients a read fetches', () => {
+    const ids = ['101', '102', '103']
+    const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), ...over })
+
+    it('reads everyone when there is no copy', () => {
+      expect(quirocitasReadQueue(null, ids, '2026-11-16T10:00:00Z')).toEqual({ passStartedAt: '2026-11-16T10:00:00Z', queue: ids })
+    })
+
+    it('reads everyone again once the copy is finished, so changes since are seen', () => {
+      // The clinic re-synced a finished copy and got only its new patients:
+      // appointments booked since for everyone else never reached the import.
+      const done = copy({ ledgerMonths: [{ month: '2026-11', rows: 1, printed: { cash: null, card: null, transfer: null }, summed: { cash: 0, card: 0, transfer: 0 } }], passStartedAt: '2026-11-05T09:00:00Z' })
+      done.patients[101]!.readAt = '2026-11-05T09:01:00Z'
+      expect(quirocitasReadQueue(done, ids, '2026-11-16T10:00:00Z')).toEqual({ passStartedAt: '2026-11-16T10:00:00Z', queue: ids })
+    })
+
+    it('carries on a stopped pass with only what that pass has not fetched', () => {
+      const stopped = copy({ passStartedAt: '2026-11-16T10:00:00Z' })
+      stopped.patients[101]!.readAt = '2026-11-16T10:02:00Z'
+      stopped.patients[102] = { ...stopped.patients[101]!, readAt: '2026-11-05T09:01:00Z' }
+      expect(quirocitasReadQueue(stopped, ids, '2026-11-16T11:00:00Z')).toEqual({ passStartedAt: '2026-11-16T10:00:00Z', queue: ['102', '103'] })
+    })
+
+    it('carries on a stopped copy from before passes were recorded with the patients it lacks', () => {
+      expect(quirocitasReadQueue(copy({}), ids, '2026-11-16T11:00:00Z')).toEqual({ passStartedAt: '', queue: ['102', '103'] })
+    })
   })
 })

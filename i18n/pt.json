@@ -6203,7 +6203,7 @@
   "Stopped": "Parado",
   "Stopped coming": "Deixou de vir",
   "Stopped. What was brought over is kept; start again to carry on.": "Parado. O que foi trazido mantém-se; inicie de novo para continuar.",
-  "Stopping keeps what has been read; reading again picks up where it stopped. The copy stays in this browser only.": "Ao parar, o que foi lido é mantido; ao ler de novo, continua onde parou. A cópia fica apenas neste navegador.",
+  "Stopping keeps what has been read; reading again picks up where it stopped. Once a read has finished, reading again goes through every patient for what changed in Quirocitas since. The copy stays in this browser only.": "Ao parar, o que foi lido é mantido; ao ler de novo, continua onde parou. Quando uma leitura termina, ler de novo percorre cada paciente para trazer o que mudou no Quirocitas desde então. A cópia fica apenas neste navegador.",
   "Stopping…": "A parar…",
   "Store links, to send to a patient": "Ligações das lojas, para enviar a um paciente",
   "Stored": "Guardado",

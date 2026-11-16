@@ -7,6 +7,9 @@ const props = defineProps<{
   priceCents: number
   // Minutes, for the line under the service; left out where it is not known.
   durationMinutes?: number
+  // The type's description for patients, where the page has not already
+  // shown it on the service cards (one type, or one fixed by the link).
+  description?: string | null
   teamMember: { full_name: string } | null
   slot: Date | null
   formatPrice: (cents: number) => string
@@ -51,6 +54,7 @@ const initials = computed(() =>
             <span class="shrink-0 font-mono font-medium text-ink-900">{{ formatPrice(priceCents) }}</span>
           </div>
           <p v-if="durationMinutes" class="text-ink-muted">{{ durationMinutes }} min</p>
+          <p v-if="description" class="mt-1 whitespace-pre-line break-words text-ink-700" data-cy="booking-summary-description">{{ description }}</p>
           <div v-if="onlinePaymentRequired !== undefined" class="mt-1.5 space-y-0.5 text-xs">
             <div class="flex items-center justify-between">
               <span class="text-ink-muted">{{ say({ es: 'Pagar ahora', en: 'Pay now', fr: 'À payer maintenant' }) }}</span>

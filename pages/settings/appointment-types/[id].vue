@@ -38,6 +38,8 @@ interface Form {
   /** appointment_types.practitioner_ids: who does it; empty for everyone. */
   practitionerIds: string[]
   online: boolean
+  /** appointment_types.online_description: what patients read under the name; '' for none. */
+  description: string
   bookableBy: string
   bypass: boolean
   maxDays: string | number
@@ -89,6 +91,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     // Only people still on the team: someone who left is no choice to show.
     practitionerIds: ((row.practitioner_ids ?? []) as string[]).filter((id) => people.some((p) => p.id === id)),
     online: !!row.online_booking_enabled,
+    description: row.online_description ?? '',
     bookableBy: row.online_bookable_by ?? 'all',
     bypass: !!row.online_bypass_practitioner,
     maxDays: row.online_max_days_ahead != null ? String(row.online_max_days_ahead) : '',
@@ -180,6 +183,7 @@ const changes = computed(() => {
   if (f.forReferrals !== before.forReferrals) out.for_referrals = f.forReferrals
   if (!same([...f.practitionerIds].sort(), [...before.practitionerIds].sort())) out.practitioner_ids = f.practitionerIds
   if (f.online !== before.online) out.online_booking_enabled = f.online
+  if (f.description.trim() !== before.description.trim()) out.online_description = f.description.trim() || null
   if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
   if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
   if (!same(f.maxDays, before.maxDays)) out.online_max_days_ahead = parseMinutes(f.maxDays)
@@ -315,6 +319,7 @@ async function save() {
   // The form holds what is stored now. A deposit edited while payment was
   // switched off again was not written, so it goes back to what it was.
   if (values.name !== undefined) f.name = values.name
+  if (values.online_description !== undefined) f.description = values.online_description ?? ''
   if (values.online_deposit_cents !== undefined) f.deposit = centsToInput(values.online_deposit_cents)
   else if (!(f.online && f.payment)) f.deposit = before.deposit
   original.value = JSON.stringify(f)
@@ -585,6 +590,18 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 :description="t('It appears on the booking page and in the patient app.', 'Aparece en la página de reservas y en la app de pacientes.')"
               />
               <template v-if="form.online">
+                <label class="flex flex-col gap-1.5 border-t border-line-row pb-3 pt-3 text-[13px] font-semibold text-ink-700">
+                  {{ t('Description for patients', 'Descripción para pacientes') }}
+                  <textarea
+                    v-model="form.description"
+                    data-cy="type-online-description"
+                    rows="3"
+                    maxlength="1000"
+                    :placeholder="t('E.g. First assessment: history, examination and X-ray review. Bring any reports you have.', 'P. ej. Primera valoración: historia, exploración y revisión de radiografías. Trae los informes que tengas.')"
+                    class="min-h-[80px] resize-y rounded-ctl border border-line-control bg-surface px-3 py-2 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                  <span :class="hint">{{ t('Shown under the name on the booking page and in the patient app, to help them choose. Optional.', 'Se muestra bajo el nombre en la página de reservas y en la app de pacientes, para ayudarles a elegir. Opcional.') }}</span>
+                </label>
                 <div class="flex flex-col gap-2 border-t border-line-row py-3">
                   <strong id="who-label" class="text-[14.5px] text-ink-900">{{ t('Who can book it', 'Quién puede reservarlo') }}</strong>
                   <div role="radiogroup" aria-labelledby="who-label" class="flex flex-col gap-1 rounded-ctl bg-chip-bg p-[3px] sm:flex-row">

@@ -52,6 +52,12 @@ describe('Connecting Meta Ads', () => {
 
     it('stores the one ad account the grant covers, with its token, and shows it in Settings', () => {
       cy.task('db:startMetaGraphStub', {
+        // A 60-day user token, which is what the Meta Ads login hands out:
+        // the card has to say by when to renew it. ads_read applies to all
+        // the person's accounts, so the grant names none and /me/adaccounts
+        // is what lists them.
+        granularScopes: [{ scope: 'ads_read', target_ids: [] }],
+        tokenExpiresAt: Math.floor(Date.now() / 1000) + 59 * 86400,
         adAccounts: [
           { id: 'act_1111', account_id: '1111', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 },
           // A closed account is not a candidate, not an ambiguity.
@@ -67,6 +73,7 @@ describe('Connecting Meta Ads', () => {
       cy.visit('/settings/leads')
       cy.get('[data-cy="meta-ads-account"]').should('contain', 'Clínica Demo Ads').and('contain', 'EUR')
       cy.get('[data-cy="meta-ads-status"]').should('contain', 'Connected')
+      cy.get('[data-cy="meta-ads-renew"]').should('contain', 'renewed by')
 
       cy.get('[data-cy="meta-ads-disconnect"]').click()
       cy.get('[data-cy=confirm-dialog-confirm]').click()

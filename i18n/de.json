@@ -8812,6 +8812,7 @@
   "Message {0}…": "Nachricht an {0}…",
   "Messages sent in the period; replies and bookings up to {0} days after each.": "Im Zeitraum gesendete Nachrichten; Antworten und Buchungen bis {0} Tage nach jeder.",
   "Meta Ads connected: {0}.": "Meta Ads verbunden: {0}.",
+  "Meta asks for this connection to be renewed by {0}: click Reconnect before then.": "Meta verlangt, dass diese Verbindung bis zum {0} erneuert wird: Klicken Sie vorher auf Erneut verbinden.",
   "Meta did not accept the stored token: {0}. Reconnect to fix it.": "Meta hat das gespeicherte Token nicht akzeptiert: {0}. Verbinden Sie erneut, um das zu beheben.",
   "Missed {0}": "{0} versäumt",
   "Missed {0} of {1}": "{0} von {1} versäumt",

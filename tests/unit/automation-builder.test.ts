@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { findProblems, normalizePositions, structuralErrors, successorInNewTree, type DraftRule, type DraftStep } from '../../utils/automationTree'
 import { layoutTree } from '../../utils/automationLayout'
-import { filtersInUse } from '../../utils/automationCatalog'
+import { FILTERS, defaultFilterValue, filtersInUse } from '../../utils/automationCatalog'
 
 // The pure halves of the Automations builder: what makes a tree unsaveable,
 // what is missing before it can run, where someone on a removed step goes,
@@ -125,5 +125,9 @@ describe('filters in use', () => {
   it('keeps a just-added, still empty tag filter on screen', () => {
     expect(filtersInUse({ tag_contains: '' })).toEqual(['tag_contains'])
     expect(filtersInUse({ appointment_type_id: 'x', hours_before: 24 })).toEqual(['appointment_types'])
+  })
+
+  it('keeps every filter on screen the moment it is added, before anything is picked', () => {
+    for (const { key } of FILTERS) expect(filtersInUse(defaultFilterValue(key))).toEqual([key])
   })
 })

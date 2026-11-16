@@ -3,6 +3,7 @@ import { BUTTON_PARAM_SOURCES, VARIABLE_SOURCES, say } from '~/utils/automationC
 import { ANSWER_PREFIX, DEFAULT_ANSWER_FALLBACK } from '~/utils/automationFields'
 import { FIELD, HINT, LABEL, LINK_BTN, NOTE, REMOVE_BTN, SECTION, WARN } from '~/utils/automationUi'
 import { serverMessage } from '~/utils/serverMessage'
+import type { EditedTemplateResult } from '~/utils/whatsappTemplateDraft'
 
 // A WhatsApp step: an approved Meta template, what fills each {{n}}, the
 // header it declares (a file, or a location), and what each dynamic URL
@@ -169,7 +170,24 @@ const creating = ref(false)
 const submitted = ref('')
 function templateCreated(created: { name: string }) {
   creating.value = false
+  edited.value = ''
   submitted.value = created.name
+  b.loadTemplates()
+}
+
+// ---- or the chosen one changed, without leaving the automation
+const editing = ref(false)
+const edited = ref('')
+const editBlocker = computed(() => (current.value ? templateEditBlocker({ ...current.value, buttons: current.value.buttons ?? [] }) : null))
+function templateEdited(result: EditedTemplateResult) {
+  editing.value = false
+  submitted.value = ''
+  edited.value = result.name
+  // The server moved every SAVED step off the old file; this one may have
+  // unsaved changes, and saving them would put the old file back.
+  const header = config.value.header
+  if (header && result.header === 'none') set({ header: undefined })
+  else if (header && result.headerMedia && result.previousStoragePath && header.storage_path === result.previousStoragePath) set({ header: { ...result.headerMedia } })
   b.loadTemplates()
 }
 </script>
@@ -188,7 +206,12 @@ function templateCreated(created: { name: string }) {
     <p v-if="submitted" :class="NOTE" data-test="template-submitted">
       {{ t(`"${submitted}" was sent to Meta for review. It appears in the list above once approved, usually within minutes.`, `«${submitted}» se ha enviado a Meta para revisión. Aparecerá en la lista de arriba cuando la aprueben, normalmente en unos minutos.`) }}
     </p>
+    <button v-if="current && !editBlocker" type="button" :class="LINK_BTN" class="-mt-3" data-test="template-edit" @click="editing = true">{{ t('Edit this template', 'Editar esta plantilla') }}</button>
+    <p v-if="edited" :class="NOTE" data-test="template-edited">
+      {{ t(`The change to "${edited}" was sent to Meta. It reviews it again, usually within minutes.`, `El cambio en «${edited}» se ha enviado a Meta. La vuelve a revisar, normalmente en unos minutos.`) }}
+    </p>
     <SettingsWhatsAppTemplateDialog v-if="creating" @close="creating = false" @created="templateCreated" />
+    <SettingsWhatsAppTemplateDialog v-if="editing && current" :template="{ ...current, buttons: current.buttons ?? [] }" @close="editing = false" @edited="templateEdited" />
     <label v-if="!b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
       <input type="checkbox" class="mt-0.5" :checked="config.purpose === 'recall'" data-test="purpose-recall" @change="set({ purpose: ($event.target as HTMLInputElement).checked ? 'recall' : undefined })" />
       <span class="flex flex-col gap-0.5">

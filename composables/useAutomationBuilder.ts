@@ -39,11 +39,15 @@ export interface RuleTotals {
 }
 
 export interface WhatsAppTemplate {
+  /** Meta's id, which an edit is addressed to. */
+  id: string | null
   name: string
   language: string
   category: string
   status: string
   bodyText: string
+  bodyExamples?: string[]
+  footerText?: string | null
   headerText: string | null
   variableCount: number
   urlButtonCount: number

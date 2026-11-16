@@ -95,23 +95,30 @@ export interface PromptPackage {
   installments?: { installments: number; installmentCents: number }[]
 }
 
-/** The visits after the first: what a session costs, for someone asking what comes after their first visit. */
+/**
+ * The visits after the first: how long one lasts and what it costs, for
+ * someone asking what comes after their first visit. A type with no price is
+ * kept for its length -- "¿cuánto duran las sesiones?" is asked by people who
+ * may only book a first visit, so this is the one place they can be told.
+ */
 export function typesAfterFirstVisit<T extends PromptType>(offered: T[]): T[] {
-  return offered.filter((type) => !isFirstVisit(type) && !type.forMinors && !type.forReferrals && typePrice(type))
+  return offered.filter((type) => !isFirstVisit(type) && !type.forMinors && !type.forReferrals && (typePrice(type) || type.durationMinutes > 0))
 }
 
 /**
- * The prices of the visits after the first, and of the clinic's bonos --
- * read from the types and from Settings > Bonos, where the clinic changes
- * them, rather than from a knowledge card that has to be kept in step by
- * hand (and that another clinic would have to write before its receptionist
- * could quote anything). Which of these applies is the rest of the prompt's:
+ * The length and price of the visits after the first, and the clinic's
+ * bonos -- read from the types and from Settings > Bonos, where the clinic
+ * changes them, rather than from a knowledge card that has to be kept in step
+ * by hand (and that another clinic would have to write before its
+ * receptionist could quote anything). The length is there because someone
+ * new only has their first visit's in "What you can offer": asked how long
+ * the sessions last, the receptionist gave that one alone (12 Nov 2026). Which of these applies is the rest of the prompt's:
  * someone new is quoted their first visit first, a patient with an open bono
  * no price at all.
  */
 export function laterPricesSection(opts: { sessions: PromptType[]; packages: PromptPackage[] }): string {
   const euros = (cents: number) => typePrice({ name: '', durationMinutes: 0, priceCents: cents })
-  const sessions = opts.sessions.map((type) => `- ${type.name}: ${typePrice(type)}`)
+  const sessions = opts.sessions.map((type) => `- ${type.name}: ${[type.durationMinutes > 0 ? `${type.durationMinutes} min` : '', typePrice(type)].filter(Boolean).join(', ')}`)
   const packages = opts.packages
     .filter((p) => p.sessions > 0 && p.priceCents > 0)
     .map((p) => {
@@ -125,10 +132,10 @@ export function laterPricesSection(opts: { sessions: PromptType[]; packages: Pro
     })
   if (!sessions.length && !packages.length) return ''
   return [
-    `# Prices of the visits after the first, and bonos`,
+    `# Visits after the first (length and price), and bonos`,
     sessions.length ? `Visits:\n${sessions.join('\n')}` : '',
     packages.length ? `Bonos (packages of sessions, paid up front or, where listed, in instalments ("plazos") at the price given for that number of payments):\n${packages.join('\n')}` : '',
-    `Give these only when they ask, and only what applies to them as said above. They win over any price for these in the clinic knowledge.`,
+    `Give these only when they ask, and only what applies to them as said above. Asked how long the sessions or visits last, give these lengths along with the first visit's. They win over any price or length for these in the clinic knowledge.`,
   ].filter(Boolean).join('\n')
 }
 

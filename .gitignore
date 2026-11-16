@@ -59,11 +59,17 @@ private_keys/
 # (a stray `git add -A`) would be a very large mistake. The runtime also
 # writes this path to .git/info/exclude, but that file is local to one
 # clone and never committed, so a fresh clone elsewhere has no such
-# protection. Only worktrees/ is ignored -- .claude/launch.json is
-# tracked deliberately.
+# protection. .claude/launch.json is tracked deliberately.
 # nuxt.config.ts excludes the same path from Nuxt's and Vite's file
 # watchers, for a different reason (EMFILE) with the same root cause.
 .claude/worktrees/
+
+# Claude Code's per-person permission file. Every "always allow" click
+# appends the exact command approved, which can carry absolute home
+# paths, names of files outside the repo, and commands that print
+# credentials -- and this repository is public. It stays on the machine
+# that wrote it; anything meant to be shared goes in .claude/settings.json.
+.claude/settings.local.json
 
 # Impeccable (design skill + hook). Only the shared config and the design
 # system sidecar are committed; everything else it writes here is per-machine

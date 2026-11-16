@@ -109,8 +109,27 @@ const LEDGER_MONTHS_PER_CALL = 4
  * the oldest visit. A finished copy is read again in full, for what changed
  * since; a read that stopped part way picks up where it was (see
  * quirocitasReadQueue). `again` throws the copy away first.
+ *
+ * While it runs, leaving the page asks first. A read is ten minutes or more
+ * of page loads and lives in this tab: a reload or a closed tab ends it
+ * silently, and the copy keeps only what was saved before (every 100
+ * patients). The guard is held here rather than by the Read screen, because
+ * the read carries on when that screen is left for another step.
  */
 export async function readQuirocitas(
+  accountId: string,
+  opts: { again?: boolean; onProgress: (p: QuirocitasReadProgress) => void; shouldStop: () => boolean },
+) {
+  const guard = (e: BeforeUnloadEvent) => e.preventDefault()
+  window.addEventListener('beforeunload', guard)
+  try {
+    return await readPass(accountId, opts)
+  } finally {
+    window.removeEventListener('beforeunload', guard)
+  }
+}
+
+async function readPass(
   accountId: string,
   opts: { again?: boolean; onProgress: (p: QuirocitasReadProgress) => void; shouldStop: () => boolean },
 ) {
@@ -131,6 +150,7 @@ export async function readQuirocitas(
     ledger: [],
     ledgerMonths: [],
     passStartedAt,
+    listTotal: list.length,
   }
 
   const waiting = new Set(ids)

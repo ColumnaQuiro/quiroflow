@@ -17,10 +17,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig()
-  const token = config.netlifyAuthToken
-  const siteId = config.netlifySiteId
+  // Nuxt only overrides runtimeConfig from NUXT_-prefixed variables, and the
+  // site has these as plain NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID. So from
+  // August to 16 Nov 2026 every sign-up landed in `skipped`, silently: eleven
+  // clinics' "Open page" links were 404s and only the one added by hand
+  // worked. Read at request time, so the token never lands in the bundle.
+  const token = config.netlifyAuthToken || process.env.NETLIFY_AUTH_TOKEN
+  const siteId = config.netlifySiteId || process.env.NETLIFY_SITE_ID
   const appDomain = config.public.appDomain
   if (!token || !siteId || !appDomain) {
+    if (appDomain && !import.meta.dev) {
+      console.warn(`[register-clinic-subdomain] no Netlify token/site id: ${account.slug}.${appDomain} was not registered and its booking link will 404`)
+    }
     return { skipped: true }
   }
 

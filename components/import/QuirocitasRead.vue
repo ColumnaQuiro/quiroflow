@@ -38,6 +38,7 @@ const summary = computed(() => {
     firstMonth: s.ledgerMonths[s.ledgerMonths.length - 1]?.month,
     mismatched: quirocitasLedgerMismatches(s),
     complete: s.ledgerMonths.length > 0,
+    state: quirocitasReadState(s),
   }
 })
 
@@ -111,6 +112,10 @@ const percent = computed(() => {
 
     <div v-if="summary && !running" class="rounded-lg border border-line bg-surface p-4" data-cy="qc-read-summary">
       <p class="mb-3 text-[13px] text-ink-muted2">{{ t(`Read ${new Date(snapshot!.readAt).toLocaleString('es-ES')}`, `Leído el ${new Date(snapshot!.readAt).toLocaleString('es-ES')}`) }}</p>
+      <p v-if="!summary.complete" class="mb-3 rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] font-medium text-warning-text" data-cy="qc-read-unfinished-summary">
+        <template v-if="summary.state.total">{{ t(`This read has not finished: ${nf.format(summary.state.read)} of ${nf.format(summary.state.total)} patients, cash ledger not yet. Press "Carry on reading" before importing.`, `Esta lectura no ha terminado: ${nf.format(summary.state.read)} de ${nf.format(summary.state.total)} pacientes, y la caja sin leer. Pulsa «Seguir leyendo» antes de importar.`) }}</template>
+        <template v-else>{{ t('This read has not finished: the cash ledger is not read yet and some patients may be missing. Press "Carry on reading" before importing.', 'Esta lectura no ha terminado: la caja está sin leer y puede que falten pacientes. Pulsa «Seguir leyendo» antes de importar.') }}</template>
+      </p>
       <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
         <div><dt class="text-ink-muted2">{{ t('Patients', 'Pacientes') }}</dt><dd class="font-medium text-ink-900">{{ nf.format(summary.patients) }}</dd></div>
         <div><dt class="text-ink-muted2">{{ t('Appointments', 'Citas') }}</dt><dd class="font-medium text-ink-900">{{ nf.format(summary.appointments) }}</dd></div>

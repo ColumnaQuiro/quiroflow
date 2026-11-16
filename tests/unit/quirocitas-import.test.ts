@@ -16,6 +16,7 @@ import {
   quirocitasPatientRow,
   quirocitasPhone,
   quirocitasReadQueue,
+  quirocitasReadState,
   quirocitasVisitNotes,
   splitQuirocitasName,
   type QuirocitasSnapshot,
@@ -287,6 +288,34 @@ describe('quirocitas rows', () => {
 
     it('carries on a stopped copy from before passes were recorded with the patients it lacks', () => {
       expect(quirocitasReadQueue(copy({}), ids, '2026-11-16T11:00:00Z')).toEqual({ passStartedAt: '', queue: ['102', '103'] })
+    })
+  })
+
+  describe('whether a copy is finished', () => {
+    const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), ...over })
+    const month = { month: '2026-11', rows: 1, printed: { cash: null, card: null, transfer: null }, summed: { cash: 0, card: 0, transfer: 0 } }
+
+    it('calls a copy with its ledger read finished', () => {
+      expect(quirocitasReadState(copy({ ledgerMonths: [month], listTotal: 1 }))).toEqual({ finished: true, read: 1, total: 1 })
+    })
+
+    it('calls a copy stopped before the ledger unfinished, with how many of the list it holds', () => {
+      // The clinic whose read stopped at 1,200 patients imported from a copy
+      // like this, and the visits of everyone not read never arrived.
+      const stopped = copy({ passStartedAt: '2026-11-16T10:00:00Z', listTotal: 3 })
+      stopped.patients[101]!.readAt = '2026-11-16T10:02:00Z'
+      expect(quirocitasReadState(stopped)).toEqual({ finished: false, read: 1, total: 3 })
+    })
+
+    it('counts only this pass when a "read again" stopped part way', () => {
+      const again = copy({ passStartedAt: '2026-11-16T10:00:00Z', listTotal: 2 })
+      again.patients[101]!.readAt = '2026-11-05T09:01:00Z'
+      again.patients[102] = { ...again.patients[101]!, readAt: '2026-11-16T10:03:00Z' }
+      expect(quirocitasReadState(again)).toEqual({ finished: false, read: 1, total: 2 })
+    })
+
+    it('still calls an older copy unfinished, without a total it never recorded', () => {
+      expect(quirocitasReadState(copy({}))).toEqual({ finished: false, read: 1, total: null })
     })
   })
 })

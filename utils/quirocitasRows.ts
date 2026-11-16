@@ -42,9 +42,30 @@ export interface QuirocitasSnapshot {
   ledgerMonths: QuirocitasLedgerMonth[]
   /** When the read this copy belongs to began; a record older than it is read again. */
   passStartedAt?: string
+  /** How many patients Quirocitas' list named when the read began. Absent on copies from before it was recorded. */
+  listTotal?: number
 }
 
 export const qcPatientRef = (id: string) => `QC-${id}`
+
+/**
+ * Whether a copy is the whole clinic, or a read that stopped part way.
+ *
+ * The ledger is read last and is cleared while a pass runs, so a copy without
+ * months is unfinished, whatever its patient count says. That is what an
+ * import step has to refuse by default: a clinic's read stopped at 1,200 of
+ * its patients (a reload, a closed tab, a laptop asleep), every step imported
+ * from that copy without a word, and the calendar was missing every visit of
+ * every patient never read -- most of that day's agenda. `read` counts records
+ * fetched in the current pass, so a stopped "read again" says how far it got.
+ */
+export function quirocitasReadState(s: QuirocitasSnapshot) {
+  const finished = s.ledgerMonths.length > 0
+  const records = Object.values(s.patients)
+  const pass = s.passStartedAt
+  const read = finished || !pass ? records.length : records.filter((r) => (r.readAt ?? '') >= pass).length
+  return { finished, read, total: s.listTotal ?? null }
+}
 
 /**
  * Which patients a read has to fetch from Quirocitas.

@@ -383,7 +383,9 @@ export default defineNuxtConfig({
     // Used to auto-register a new clinic's booking subdomain as a Netlify
     // domain alias on sign-up. Optional -- if unset (e.g. local dev), the
     // registration call just no-ops and the subdomain can be added
-    // manually later, same as before this existed.
+    // manually later, same as before this existed. The endpoint also falls
+    // back to the un-prefixed NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID, which is
+    // what the production site actually has.
     netlifyAuthToken: '',
     netlifySiteId: '',
     // Platform-level Stripe account used for Connect: clinics authorize via

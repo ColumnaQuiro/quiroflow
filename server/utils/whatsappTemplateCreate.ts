@@ -1,5 +1,17 @@
-import { HEADER_FILES, templateComponents, templateMediaPath, type TemplateDraft } from '~/utils/whatsappTemplateDraft'
+import {
+  HEADER_FILES,
+  headerFileProblem,
+  mimeTypeFromFilename,
+  safeFileName,
+  templateComponents,
+  templateEditBlocker,
+  templateHeaderKind,
+  templateMediaPath,
+  type TemplateDraft,
+} from '~/utils/whatsappTemplateDraft'
 import { withMessagingTokens } from '~/server/utils/accountSecrets'
+import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
+import type { WhatsAppTemplateSummary } from '~/server/utils/whatsappTemplates'
 
 // Submits a new message template to Meta for review, from inside QuiroFlow.
 //
@@ -29,6 +41,35 @@ interface HeaderFile {
   data: Buffer
   type: string
   filename: string
+}
+
+/**
+ * The create and edit endpoints' body: multipart, `draft` the TemplateDraft as
+ * JSON and `file` the PDF, image or video for the top when there is one.
+ * Every field is coerced to what a draft may hold, so the checks after this
+ * see a draft, whatever was posted.
+ */
+export async function readTemplateSubmission(event: any): Promise<{ draft: TemplateDraft; file: HeaderFile | null }> {
+  const form = await readMultipartFormData(event)
+  const raw = form?.find((part) => part.name === 'draft')?.data?.toString()
+  let parsed: Partial<TemplateDraft>
+  try {
+    parsed = raw ? JSON.parse(raw) : {}
+  } catch {
+    throw createError({ statusCode: 400, statusMessage: 'The template could not be read.' })
+  }
+  const draft: TemplateDraft = {
+    name: String(parsed.name ?? '').trim(),
+    language: String(parsed.language ?? ''),
+    category: parsed.category === 'MARKETING' ? 'MARKETING' : 'UTILITY',
+    header: (['image', 'video', 'document'] as const).find((k) => k === parsed.header) ?? 'none',
+    body: String(parsed.body ?? ''),
+    examples: Array.isArray(parsed.examples) ? parsed.examples.map((e) => String(e ?? '')) : [],
+    footer: String(parsed.footer ?? ''),
+  }
+  const filePart = form?.find((part) => part.name === 'file' && part.filename)
+  const file = filePart?.data ? { data: filePart.data, type: filePart.type ?? '', filename: filePart.filename ?? 'archivo' } : null
+  return { draft, file }
 }
 
 function metaMessage(err: any): string | null {
@@ -87,39 +128,55 @@ export interface CreatedTemplate {
   storagePath: string | null
 }
 
+interface Connection {
+  graph: string
+  token: string
+  wabaId: string
+}
+
+async function connection(supabase: any, accountId: string): Promise<Connection> {
+  const { data: account } = await supabase.from('accounts').select('whatsapp_business_account_id, whatsapp_access_token').eq('id', accountId).maybeSingle()
+  await withMessagingTokens(accountId, account)
+  if (!account?.whatsapp_business_account_id || !account?.whatsapp_access_token) {
+    throw new TemplateCreateError('WhatsApp is not configured. Set it up in Settings > WhatsApp.', 400)
+  }
+  return { graph: useRuntimeConfig().metaGraphBaseUrl, token: account.whatsapp_access_token, wabaId: account.whatsapp_business_account_id }
+}
+
+/**
+ * Keeps a new file in whatsapp-media before Meta is asked, so a template Meta
+ * accepts always has its file; `forget` removes it again when Meta refuses,
+ * so a refusal leaves nothing behind.
+ */
+async function keepFile(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile) {
+  if (draft.header === 'none' || !HEADER_FILES[draft.header].mimeTypes.includes(file.type)) {
+    throw new TemplateCreateError('That file type cannot go at the top of this template.', 400)
+  }
+  const storagePath = templateMediaPath(accountId, draft.name, draft.language, file.filename)
+  const { error } = await supabase.storage.from('whatsapp-media').upload(storagePath, file.data, { contentType: file.type, upsert: false })
+  if (error) throw new TemplateCreateError(error.message, 500)
+  return {
+    storagePath,
+    forget: async () => {
+      await supabase.storage.from('whatsapp-media').remove([storagePath])
+    },
+  }
+}
+
 /**
  * Sends the draft to Meta. The caller has already validated it
  * (templateDraftProblems / headerFileProblem); this only talks to Meta and
  * keeps the file.
  */
 export async function createWhatsAppTemplate(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile | null): Promise<CreatedTemplate> {
-  const { data: account } = await supabase.from('accounts').select('whatsapp_business_account_id, whatsapp_access_token').eq('id', accountId).maybeSingle()
-  await withMessagingTokens(accountId, account)
-  if (!account?.whatsapp_business_account_id || !account?.whatsapp_access_token) {
-    throw new TemplateCreateError('WhatsApp is not configured. Set it up in Settings > WhatsApp.', 400)
-  }
-  const graph: string = useRuntimeConfig().metaGraphBaseUrl
-  const token: string = account.whatsapp_access_token
-
-  // The file is kept before Meta is asked, so a template Meta accepts always
-  // has its file -- and removed again if Meta refuses, so a refusal leaves
-  // nothing behind.
-  let storagePath: string | null = null
-  if (draft.header !== 'none' && file) {
-    if (!HEADER_FILES[draft.header].mimeTypes.includes(file.type)) throw new TemplateCreateError('That file type cannot go at the top of this template.', 400)
-    storagePath = templateMediaPath(accountId, draft.name, draft.language, file.filename)
-    const { error } = await supabase.storage.from('whatsapp-media').upload(storagePath, file.data, { contentType: file.type, upsert: false })
-    if (error) throw new TemplateCreateError(error.message, 500)
-  }
-  const forget = async () => {
-    if (storagePath) await supabase.storage.from('whatsapp-media').remove([storagePath])
-  }
+  const { graph, token, wabaId } = await connection(supabase, accountId)
+  const kept = draft.header !== 'none' && file ? await keepFile(supabase, accountId, draft, file) : null
 
   try {
     const handle = draft.header !== 'none' && file ? await uploadSample(graph, token, file) : null
     let created: { id: string; status?: string; category?: string }
     try {
-      created = await $fetch<{ id: string; status?: string; category?: string }>(`${graph}/${account.whatsapp_business_account_id}/message_templates`, {
+      created = await $fetch<{ id: string; status?: string; category?: string }>(`${graph}/${wabaId}/message_templates`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: {
@@ -133,9 +190,123 @@ export async function createWhatsAppTemplate(supabase: any, accountId: string, d
       const detail = metaMessage(err)
       throw new TemplateCreateError(detail ? `Meta refused the template: ${detail}` : 'Could not reach WhatsApp to submit the template.', 502)
     }
-    return { id: String(created.id), status: created.status ?? 'PENDING', category: created.category ?? draft.category, storagePath }
+    return { id: String(created.id), status: created.status ?? 'PENDING', category: created.category ?? draft.category, storagePath: kept?.storagePath ?? null }
   } catch (err) {
-    await forget()
+    await kept?.forget()
     throw err
+  }
+}
+
+export interface EditedTemplate {
+  header: TemplateDraft['header']
+  /** The file the template now has in QuiroFlow, when a new one was attached. */
+  headerMedia: { type: string; storage_path: string; filename: string } | null
+  /** The file it had before, which automation steps that used it have been moved off. */
+  previousStoragePath: string | null
+}
+
+/**
+ * Edits a template that already exists at Meta (POST /{template-id}).
+ *
+ * `existing` is the template as Meta lists it NOW, read by the caller from the
+ * account's own Business Account -- so the id cannot name another clinic's
+ * template, and the status, name and language are Meta's rather than the
+ * browser's.
+ *
+ * Meta replaces every component with the ones sent, so a file at the top has
+ * to go up again as a sample even when the clinic did not change it. That is
+ * the file kept when the template was made in QuiroFlow; one made in WhatsApp
+ * Manager has none here, and has to be attached.
+ */
+export async function editWhatsAppTemplate(
+  supabase: any,
+  accountId: string,
+  existing: WhatsAppTemplateSummary,
+  draft: TemplateDraft,
+  file: HeaderFile | null,
+): Promise<EditedTemplate> {
+  const blocked = templateEditBlocker(existing)
+  if (blocked) throw new TemplateCreateError(blocked.en, 409)
+  // Neither can change at Meta; the draft carries what the template has.
+  draft = { ...draft, name: existing.name, language: existing.language }
+
+  const { graph, token } = await connection(supabase, accountId)
+  const previous = existing.mediaHeaderFormat ? await templateMediaFile(supabase, accountId, existing.name, existing.language) : null
+
+  // The sample Meta reviews the edit with: the new file, or the one already kept.
+  let sample: HeaderFile | null = null
+  if (draft.header !== 'none') {
+    if (file) sample = file
+    else if (previous && templateHeaderKind(existing) === draft.header) {
+      const { data: blob, error } = await supabase.storage.from('whatsapp-media').download(previous.path)
+      const type = mimeTypeFromFilename(previous.filename)
+      if (error || !blob || !type) throw new TemplateCreateError('The file this template was created with could not be read. Attach it again.', 500)
+      sample = { data: Buffer.from(await blob.arrayBuffer()), type, filename: previous.filename }
+    } else {
+      const missing = headerFileProblem(draft.header, null)!
+      throw new TemplateCreateError(missing.en, 400)
+    }
+  }
+
+  const kept = draft.header !== 'none' && file ? await keepFile(supabase, accountId, draft, file) : null
+  try {
+    const handle = sample ? await uploadSample(graph, token, sample) : null
+    // Meta does not let an approved template's category change, so for one
+    // it is not sent at all; for a rejected or paused one, only when changed.
+    const categoryChange = existing.status !== 'APPROVED' && draft.category !== existing.category ? { category: draft.category } : {}
+    try {
+      await $fetch(`${graph}/${existing.id}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { ...categoryChange, components: templateComponents(draft, handle) },
+      })
+    } catch (err: any) {
+      const detail = metaMessage(err)
+      throw new TemplateCreateError(detail ? `Meta refused the change: ${detail}` : 'Could not reach WhatsApp to submit the change.', 502)
+    }
+  } catch (err) {
+    await kept?.forget()
+    throw err
+  }
+
+  const headerMedia = kept && draft.header !== 'none' ? { type: draft.header, storage_path: kept.storagePath, filename: safeFileName(file!.filename) } : null
+  await moveAutomationSteps(supabase, accountId, existing, draft, previous?.path ?? null, headerMedia)
+  return { header: draft.header, headerMedia, previousStoragePath: previous?.path ?? null }
+}
+
+/**
+ * An automation step copies the template's file into its own config when the
+ * template is chosen (WhatsAppPanel's selectTemplate), so a new file would
+ * otherwise never reach it: every automation would keep sending the old PDF.
+ * Steps on this template that were still sending its file are moved to the
+ * new one; a template that no longer has anything at the top has the header
+ * taken off its steps, which Meta would otherwise refuse each send over.
+ * A step that attaches a file of its own is left with it.
+ */
+async function moveAutomationSteps(
+  supabase: any,
+  accountId: string,
+  existing: WhatsAppTemplateSummary,
+  draft: TemplateDraft,
+  previousPath: string | null,
+  headerMedia: EditedTemplate['headerMedia'],
+) {
+  if (!headerMedia && draft.header !== 'none') return
+  const { data: steps } = await supabase
+    .from('automation_actions')
+    .select('id, config')
+    .eq('account_id', accountId)
+    .eq('action_type', 'whatsapp_template')
+    .eq('config->>template_name', existing.name)
+  for (const step of steps ?? []) {
+    const config = step.config ?? {}
+    if ((config.template_language || 'es') !== existing.language || !config.header) continue
+    const usedTemplateFile = previousPath && config.header.storage_path === previousPath
+    let header: Record<string, unknown> | undefined
+    if (draft.header === 'none') header = undefined
+    else if (usedTemplateFile) header = { ...headerMedia }
+    else continue
+    const { header: _old, ...rest } = config
+    await supabase.from('automation_actions').update({ config: header ? { ...rest, header } : rest }).eq('id', step.id)
   }
 }

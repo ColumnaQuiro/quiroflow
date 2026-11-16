@@ -2,14 +2,18 @@
 import { FIELD, HINT, LABEL, LINK_BTN, SECTION, segmentBtn, SEGMENT_WRAP } from '~/utils/automationUi'
 import { withServerDetail } from '~/utils/serverMessage'
 import {
+  APPROVED_EDIT_LIMIT,
   BODY_MAX,
   FOOTER_MAX,
   HEADER_FILES,
   TEMPLATE_LANGUAGES,
+  draftFromTemplate,
   exampleCount,
   headerFileProblem,
   templateDraftProblems,
   templateNameFrom,
+  type EditedTemplateResult,
+  type ExistingTemplate,
   type TemplateCategory,
   type TemplateDraft,
   type TemplateHeaderKind,
@@ -22,19 +26,37 @@ import {
 //
 // Meta has to approve it before anything can send it, so this ends at
 // "submitted": the parent shows it as in review until it comes back approved.
+//
+// Given a `template`, it edits that one instead: the same form filled from
+// what Meta has now, with the name and language fixed (Meta does not let an
+// edit change them) and, once approved, the category too. The parent only
+// offers it for a template templateEditBlocker allows.
 
-const emit = defineEmits<{ close: []; created: [template: { name: string; language: string; status: string }] }>()
+const props = defineProps<{ template?: ExistingTemplate }>()
+const emit = defineEmits<{
+  close: []
+  created: [template: { name: string; language: string; status: string }]
+  edited: [template: EditedTemplateResult]
+}>()
 const t = useT()
 
+const editing = computed(() => !!props.template)
+const start = props.template ? draftFromTemplate(props.template) : null
+
 const title = ref('')
-const name = computed(() => templateNameFrom(title.value))
-const language = ref('es')
-const category = ref<TemplateCategory>('UTILITY')
-const header = ref<TemplateHeaderKind>('document')
+const name = computed(() => props.template?.name ?? templateNameFrom(title.value))
+const language = ref(start?.language ?? 'es')
+const category = ref<TemplateCategory>(start?.category ?? 'UTILITY')
+// Meta keeps an approved template's category: changing it is refused.
+const categoryLocked = computed(() => props.template?.status === 'APPROVED')
+const header = ref<TemplateHeaderKind>(start?.header ?? 'document')
 const file = ref<File | null>(null)
-const body = ref('')
-const examples = ref<string[]>([])
-const footer = ref('')
+const body = ref(start?.body ?? '')
+const examples = ref<string[]>(start?.examples ?? [])
+const footer = ref(start?.footer ?? '')
+// The file a template made in QuiroFlow already has: it goes to Meta again
+// unless another is attached, so it need not be chosen a second time.
+const keptFile = computed(() => (props.template?.headerMedia && header.value === start?.header ? props.template.headerMedia : null))
 
 // "{{1}}" built in script: a literal "}}" in the template would end the interpolation.
 const slot = (n: number) => '{{' + n + '}}'
@@ -87,8 +109,8 @@ const draft = computed<TemplateDraft>(() => ({
   footer: footer.value,
 }))
 const problems = computed(() => {
-  const list = templateDraftProblems(draft.value)
-  const fileProblem = headerFileProblem(header.value, file.value ? { type: file.value.type, size: file.value.size } : null)
+  const list = templateDraftProblems(draft.value, { editing: editing.value })
+  const fileProblem = !file.value && keptFile.value ? null : headerFileProblem(header.value, file.value ? { type: file.value.type, size: file.value.size } : null)
   return fileProblem ? [...list, fileProblem] : list
 })
 // Problems show once they have tried to submit: red under a half-written
@@ -110,10 +132,19 @@ async function submit() {
     const form = new FormData()
     form.append('draft', JSON.stringify(draft.value))
     if (header.value !== 'none' && file.value) form.append('file', file.value)
-    const created = await useStaffFetch<{ name: string; language: string; status: string }>('/api/whatsapp/templates', { method: 'POST', body: form })
-    emit('created', created)
+    if (props.template?.id) {
+      const edited = await useStaffFetch<EditedTemplateResult>(`/api/whatsapp/templates/${encodeURIComponent(props.template.id)}`, { method: 'POST', body: form })
+      emit('edited', edited)
+    } else {
+      const created = await useStaffFetch<{ name: string; language: string; status: string }>('/api/whatsapp/templates', { method: 'POST', body: form })
+      emit('created', created)
+    }
   } catch (e) {
-    error.value = withServerDetail(t('Meta did not accept the template.', 'Meta no ha aceptado la plantilla.'), e, t('Detail:', 'Detalle:'))
+    error.value = withServerDetail(
+      editing.value ? t('Meta did not accept the change.', 'Meta no ha aceptado el cambio.') : t('Meta did not accept the template.', 'Meta no ha aceptado la plantilla.'),
+      e,
+      t('Detail:', 'Detalle:'),
+    )
   } finally {
     busy.value = false
   }
@@ -143,9 +174,11 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
     >
       <div class="flex items-start gap-3 border-b border-line-row px-6 pb-4 pt-5">
         <div class="flex-1">
-          <h2 :id="titleId" class="text-[18px] font-bold text-ink-900">{{ t('New WhatsApp template', 'Nueva plantilla de WhatsApp') }}</h2>
+          <h2 :id="titleId" class="text-[18px] font-bold text-ink-900">{{ editing ? t('Edit WhatsApp template', 'Editar plantilla de WhatsApp') : t('New WhatsApp template', 'Nueva plantilla de WhatsApp') }}</h2>
           <p class="mt-1 text-[13px] leading-snug text-ink-muted">
-            {{ t('Meta reviews every template before it can be sent. It usually takes a few minutes, sometimes up to 24 hours.', 'Meta revisa cada plantilla antes de que se pueda enviar. Suele tardar unos minutos, a veces hasta 24 horas.') }}
+            <template v-if="categoryLocked">{{ t(APPROVED_EDIT_LIMIT.en, APPROVED_EDIT_LIMIT.es) }}</template>
+            <template v-else-if="editing">{{ t('Meta reviews the change before it can be sent. It usually takes a few minutes, sometimes up to 24 hours.', 'Meta revisa el cambio antes de que se pueda enviar. Suele tardar unos minutos, a veces hasta 24 horas.') }}</template>
+            <template v-else>{{ t('Meta reviews every template before it can be sent. It usually takes a few minutes, sometimes up to 24 hours.', 'Meta revisa cada plantilla antes de que se pueda enviar. Suele tardar unos minutos, a veces hasta 24 horas.') }}</template>
           </p>
         </div>
         <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle touch:h-11 touch:w-11" :aria-label="t('Close', 'Cerrar')" @click="emit('close')"><UiCloseIcon /></button>
@@ -153,14 +186,20 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
 
       <div class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[1fr_300px]">
         <div class="flex flex-col gap-4 px-6 py-5">
-          <label :class="LABEL">
+          <!-- An edit cannot rename it or change its language at Meta, so they are shown, not offered. -->
+          <div v-if="editing" class="flex flex-col gap-1" data-cy="template-fixed">
+            <span :class="SECTION">{{ t('Template', 'Plantilla') }}</span>
+            <span class="text-[14px] text-ink-900"><span class="font-mono" data-cy="template-name">{{ name }}</span> <span class="text-ink-muted">· {{ language }}</span></span>
+            <span :class="HINT">{{ t('Meta does not let a template change its name or language. For another language, create it again.', 'Meta no deja cambiar el nombre ni el idioma de una plantilla. Para otro idioma, créala de nuevo.') }}</span>
+          </div>
+          <label v-else :class="LABEL">
             {{ t('Name', 'Nombre') }}
             <input v-model="title" :class="FIELD" :placeholder="t('Post-adjustment guide', 'Guía después del ajuste')" data-cy="template-title" />
             <span v-if="name" :class="HINT">{{ t('Saved at Meta as', 'Se guarda en Meta como') }} <span class="font-mono text-ink-700" data-cy="template-name">{{ name }}</span></span>
           </label>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label :class="LABEL">
+          <div class="grid grid-cols-1 gap-4" :class="editing ? '' : 'sm:grid-cols-2'">
+            <label v-if="!editing" :class="LABEL">
               {{ t('Language', 'Idioma') }}
               <select v-model="language" :class="FIELD" data-cy="template-language">
                 <option v-for="l in TEMPLATE_LANGUAGES" :key="l.code" :value="l.code">{{ t(l.label.en, l.label.es) }}</option>
@@ -169,12 +208,15 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             <div :class="LABEL">
               <span id="tpl-category">{{ t('Category', 'Categoría') }}</span>
               <div :class="SEGMENT_WRAP" role="radiogroup" aria-labelledby="tpl-category">
-                <button type="button" role="radio" :aria-checked="category === 'UTILITY'" :class="segmentBtn(category === 'UTILITY')" data-cy="template-category-utility" @click="category = 'UTILITY'">{{ t('Service', 'Servicio') }}</button>
-                <button type="button" role="radio" :aria-checked="category === 'MARKETING'" :class="segmentBtn(category === 'MARKETING')" data-cy="template-category-marketing" @click="category = 'MARKETING'">{{ t('Marketing', 'Marketing') }}</button>
+                <button type="button" role="radio" :aria-checked="category === 'UTILITY'" :disabled="categoryLocked && category !== 'UTILITY'" :class="segmentBtn(category === 'UTILITY')" data-cy="template-category-utility" @click="category = 'UTILITY'">{{ t('Service', 'Servicio') }}</button>
+                <button type="button" role="radio" :aria-checked="category === 'MARKETING'" :disabled="categoryLocked && category !== 'MARKETING'" :class="segmentBtn(category === 'MARKETING')" data-cy="template-category-marketing" @click="category = 'MARKETING'">{{ t('Marketing', 'Marketing') }}</button>
               </div>
             </div>
           </div>
-          <p :class="HINT" class="-mt-2">
+          <p v-if="categoryLocked" :class="HINT" class="-mt-2" data-cy="template-category-locked">
+            {{ t('Meta keeps the category of an approved template. For the other one, create it again.', 'Meta no deja cambiar la categoría de una plantilla aprobada. Para la otra, créala de nuevo.') }}
+          </p>
+          <p v-else :class="HINT" class="-mt-2">
             {{ category === 'UTILITY'
               ? t('About their care or their appointment: a guide, instructions, a follow-up. The cheaper kind. If Meta finds it promotional, it moves it to Marketing.', 'Sobre su tratamiento o su cita: una guía, unas instrucciones, un seguimiento. Es la más barata. Si Meta la ve promocional, la pasa a Marketing.')
               : t('Offers, promotions, bringing people back. Costs more, and should only go to people who accepted marketing messages.', 'Ofertas, promociones, captación. Cuesta más, y solo debe ir a quien aceptó mensajes comerciales.') }}
@@ -194,7 +236,11 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
                 data-cy="template-file"
                 @change="onFile"
               />
-              <span :class="HINT">{{ t('Meta reviews the template with this file, and your automations send it unless a step attaches a different one.', 'Meta revisa la plantilla con este archivo, y tus automatizaciones lo envían salvo que un paso adjunte otro.') }}</span>
+              <span v-if="keptFile && !file" :class="HINT" data-cy="template-kept-file">
+                {{ t(`Keeps ${keptFile.filename}. Choose another file only to replace it: your automations then send the new one.`, `Mantiene ${keptFile.filename}. Elige otro archivo solo para cambiarlo: tus automatizaciones enviarán el nuevo.`) }}
+              </span>
+              <span v-else-if="editing && !file" :class="HINT">{{ t('Meta needs the file again to review the change.', 'Meta necesita el archivo otra vez para revisar el cambio.') }}</span>
+              <span v-else :class="HINT">{{ t('Meta reviews the template with this file, and your automations send it unless a step attaches a different one.', 'Meta revisa la plantilla con este archivo, y tus automatizaciones lo envían salvo que un paso adjunte otro.') }}</span>
             </template>
           </div>
 
@@ -230,7 +276,7 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             <div class="flex flex-col gap-1.5 rounded-card rounded-tl-[3px] border border-success-border bg-success-bg p-2 text-[13px] leading-relaxed text-ink-900" data-cy="template-preview">
               <div v-if="header !== 'none'" class="flex items-center gap-2 rounded-ctl bg-surface px-2.5 py-2 text-[12.5px] text-ink-700">
                 <span class="rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] font-bold text-ink-500">{{ fileLabel }}</span>
-                <span class="min-w-0 truncate">{{ file?.name ?? t('Your file', 'Tu archivo') }}</span>
+                <span class="min-w-0 truncate">{{ file?.name ?? keptFile?.filename ?? t('Your file', 'Tu archivo') }}</span>
               </div>
               <p class="whitespace-pre-line px-1" :class="body.trim() ? '' : 'text-ink-faint'">{{ previewBody }}</p>
               <p v-if="footer.trim()" class="px-1 text-[12px] text-ink-muted">{{ footer.trim() }}</p>
@@ -246,7 +292,7 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
         <p v-if="error" class="text-[13px] font-semibold text-danger-text" data-cy="template-error">{{ error }}</p>
         <div class="flex flex-wrap justify-end gap-2">
           <UiBtn @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-          <UiBtn variant="primary" :disabled="busy" data-cy="template-submit" @click="submit">{{ busy ? t('Sending to Meta…', 'Enviando a Meta…') : t('Send to Meta for review', 'Enviar a Meta para revisión') }}</UiBtn>
+          <UiBtn variant="primary" :disabled="busy" data-cy="template-submit" @click="submit">{{ busy ? t('Sending to Meta…', 'Enviando a Meta…') : editing ? t('Send the change to Meta', 'Enviar el cambio a Meta') : t('Send to Meta for review', 'Enviar a Meta para revisión') }}</UiBtn>
         </div>
       </div>
     </div>

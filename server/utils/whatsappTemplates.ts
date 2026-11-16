@@ -15,8 +15,10 @@ interface MetaTemplateComponent {
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION'
   text?: string
   buttons?: MetaTemplateButton[]
+  example?: { body_text?: string[][]; header_text?: string[]; header_handle?: string[] }
 }
 interface MetaTemplate {
+  id?: string
   name: string
   language: string
   category: string
@@ -26,11 +28,16 @@ interface MetaTemplate {
 }
 
 export interface WhatsAppTemplateSummary {
+  /** Meta's id for this name + language, which is what an edit is addressed to. */
+  id: string | null
   name: string
   language: string
   category: string
   status: string
   bodyText: string
+  /** The samples Meta reviewed the body with, one per {{n}}: an edit has to send them again. */
+  bodyExamples: string[]
+  footerText: string | null
   headerText: string | null
   variableCount: number
   urlButtonCount: number
@@ -54,6 +61,7 @@ function summarise(t: MetaTemplate): WhatsAppTemplateSummary {
   const components = t.components ?? []
   const body = components.find((c) => c.type === 'BODY')
   const header = components.find((c) => c.type === 'HEADER')
+  const footer = components.find((c) => c.type === 'FOOTER')
   const bodyText = body?.text ?? ''
   const variableCount = new Set(Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map((m) => m[1])).size
   const buttons = components.find((c) => c.type === 'BUTTONS')?.buttons ?? []
@@ -62,11 +70,14 @@ function summarise(t: MetaTemplate): WhatsAppTemplateSummary {
   // doesn't need (or accept) a doc link.
   const isDynamic = (b: MetaTemplateButton) => b.type === 'URL' && /\{\{\d+\}\}/.test(b.url ?? '')
   return {
+    id: t.id ? String(t.id) : null,
     name: t.name,
     language: t.language,
     category: t.category,
     status: t.status,
     bodyText,
+    bodyExamples: (body?.example?.body_text?.[0] ?? []).map((e) => String(e ?? '')),
+    footerText: footer?.text ?? null,
     headerText: header?.format === 'TEXT' ? (header.text ?? null) : null,
     variableCount,
     urlButtonCount: buttons.filter(isDynamic).length,
@@ -100,7 +111,7 @@ export async function fetchWhatsAppTemplates(supabase: any, accountId: string): 
   let response: { data: MetaTemplate[] }
   try {
     response = await $fetch<{ data: MetaTemplate[] }>(url, {
-      params: { fields: 'name,language,category,status,rejected_reason,components', limit: 100 },
+      params: { fields: 'id,name,language,category,status,rejected_reason,components', limit: 100 },
       headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
     })
   } catch (err: any) {

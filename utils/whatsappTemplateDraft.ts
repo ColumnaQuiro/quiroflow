@@ -87,16 +87,24 @@ export function exampleCount(body: string): number {
   return vars.length ? Math.max(...vars) : 0
 }
 
-/** Everything wrong with a draft, in the order a person would fix it. Empty when Meta should accept it. */
-export function templateDraftProblems(draft: TemplateDraft): Bilingual[] {
+/**
+ * Everything wrong with a draft, in the order a person would fix it. Empty when Meta should accept it.
+ *
+ * `editing` skips the name and the language: Meta does not let an edit change
+ * either, so they are whatever the template already has -- which for one made
+ * in WhatsApp Manager can be a language this dialog never offers ("en_US").
+ */
+export function templateDraftProblems(draft: TemplateDraft, { editing = false }: { editing?: boolean } = {}): Bilingual[] {
   const problems: Bilingual[] = []
 
-  if (!draft.name) problems.push({ en: 'Give the template a name.', es: 'Ponle un nombre a la plantilla.' })
-  else if (!/^[a-z0-9_]+$/.test(draft.name)) {
-    problems.push({ en: 'The name can only have lowercase letters, numbers and underscores.', es: 'El nombre solo puede llevar minúsculas, números y guiones bajos.' })
-  } else if (draft.name.length > NAME_MAX) problems.push({ en: 'The name is too long.', es: 'El nombre es demasiado largo.' })
+  if (!editing) {
+    if (!draft.name) problems.push({ en: 'Give the template a name.', es: 'Ponle un nombre a la plantilla.' })
+    else if (!/^[a-z0-9_]+$/.test(draft.name)) {
+      problems.push({ en: 'The name can only have lowercase letters, numbers and underscores.', es: 'El nombre solo puede llevar minúsculas, números y guiones bajos.' })
+    } else if (draft.name.length > NAME_MAX) problems.push({ en: 'The name is too long.', es: 'El nombre es demasiado largo.' })
 
-  if (!TEMPLATE_LANGUAGES.some((l) => l.code === draft.language)) problems.push({ en: 'Choose a language.', es: 'Elige un idioma.' })
+    if (!TEMPLATE_LANGUAGES.some((l) => l.code === draft.language)) problems.push({ en: 'Choose a language.', es: 'Elige un idioma.' })
+  }
   if (draft.category !== 'UTILITY' && draft.category !== 'MARKETING') problems.push({ en: 'Choose a category.', es: 'Elige una categoría.' })
   if (!['none', 'image', 'video', 'document'].includes(draft.header)) problems.push({ en: 'Choose what goes at the top.', es: 'Elige qué va arriba.' })
 
@@ -237,4 +245,101 @@ export function templateRejectionReason(code: string): Bilingual {
     default:
       return { en: code, es: code }
   }
+}
+
+// ---- Editing a template that already exists at Meta --------------------------
+//
+// Meta's edit (POST /{template-id}) REPLACES every component with the ones
+// sent: there is no patching one part. So a template is only editable here
+// when this dialog can say everything it has -- a file or nothing at the top,
+// the message with numbered variables, a footer. One with buttons, a text
+// heading or named variables would come back from an edit without them, the
+// welcome template's booking button among them, so those are left to
+// WhatsApp Manager rather than quietly cut down.
+
+/** A template as GET /api/whatsapp/templates lists it: the parts an edit needs. */
+export interface ExistingTemplate {
+  id: string | null
+  name: string
+  language: string
+  category: string
+  status: string
+  bodyText: string
+  /** Meta's samples for the body's {{n}}, in order. */
+  bodyExamples?: string[]
+  footerText?: string | null
+  headerText: string | null
+  mediaHeaderFormat: string | null
+  buttons: unknown[]
+  /** The file it was created with in QuiroFlow, when it was. */
+  headerMedia?: { type: string; storage_path: string; filename: string }
+}
+
+/** What POST /api/whatsapp/templates/{id} answers: the file the template now has, and the one it replaced. */
+export interface EditedTemplateResult {
+  name: string
+  language: string
+  /** What the template has at the top now. */
+  header: TemplateHeaderKind
+  headerMedia: { type: string; storage_path: string; filename: string } | null
+  previousStoragePath: string | null
+}
+
+/** Meta lets these be edited; a PENDING one is mid-review and cannot be. */
+export const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'PAUSED']
+
+/** Meta allows an approved template one edit a day, ten in thirty days; rejected and paused ones as many as needed. */
+export const APPROVED_EDIT_LIMIT: Bilingual = {
+  en: 'Meta reviews the change again. An approved template can be changed once a day, up to 10 times a month.',
+  es: 'Meta revisa el cambio de nuevo. Una plantilla aprobada se puede cambiar una vez al día, hasta 10 veces al mes.',
+}
+
+/** Why this template cannot be edited in QuiroFlow, or null when it can. */
+export function templateEditBlocker(t: ExistingTemplate): Bilingual | null {
+  if (!t.id) return { en: 'Refresh from Meta to edit it.', es: 'Actualiza desde Meta para editarla.' }
+  if (t.status === 'PENDING' || t.status === 'IN_APPEAL') {
+    return { en: 'Meta is still reviewing it. It can be changed once Meta answers.', es: 'Meta todavía la está revisando. Se podrá cambiar cuando responda.' }
+  }
+  if (!EDITABLE_STATUSES.includes(t.status)) return { en: 'Meta has disabled it, so it cannot be changed.', es: 'Meta la ha desactivado, así que no se puede cambiar.' }
+  const manager = { en: 'Edit it in WhatsApp Manager.', es: 'Edítala en WhatsApp Manager.' }
+  if (t.buttons.length > 0) return { en: `It has buttons, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Tiene botones, que QuiroFlow aún no sabe editar. ${manager.es}` }
+  if (t.headerText !== null) return { en: `It has a heading, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Tiene un título, que QuiroFlow aún no sabe editar. ${manager.es}` }
+  if (t.mediaHeaderFormat && !['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.mediaHeaderFormat)) {
+    return { en: `It has a location at the top, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Lleva una ubicación arriba, que QuiroFlow aún no sabe editar. ${manager.es}` }
+  }
+  // {{name}} rather than {{1}}: a template made with named parameters, which
+  // the numbered examples sent below would not match.
+  if (/\{\{\s*[^\d\s}][^}]*\}\}/.test(t.bodyText)) {
+    return { en: `It uses named variables, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Usa variables con nombre, que QuiroFlow aún no sabe editar. ${manager.es}` }
+  }
+  return null
+}
+
+/** What the header of an existing template is, as the dialog chooses it. */
+export function templateHeaderKind(t: Pick<ExistingTemplate, 'mediaHeaderFormat'>): TemplateHeaderKind {
+  const kind = t.mediaHeaderFormat?.toLowerCase()
+  return kind === 'image' || kind === 'video' || kind === 'document' ? kind : 'none'
+}
+
+/** The template as a draft, to edit it from what Meta has now. */
+export function draftFromTemplate(t: ExistingTemplate): TemplateDraft {
+  return {
+    name: t.name,
+    language: t.language,
+    category: t.category === 'MARKETING' ? 'MARKETING' : 'UTILITY',
+    header: templateHeaderKind(t),
+    body: t.bodyText,
+    examples: Array.from({ length: exampleCount(t.bodyText) }, (_, i) => t.bodyExamples?.[i] ?? ''),
+    footer: t.footerText ?? '',
+  }
+}
+
+/** The file type a kept file was stored as, from its name: storage keeps no type the send path trusts. */
+export function mimeTypeFromFilename(filename: string): string | null {
+  const ext = filename.toLowerCase().split('.').pop()
+  if (ext === 'pdf') return 'application/pdf'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'mp4') return 'video/mp4'
+  return null
 }

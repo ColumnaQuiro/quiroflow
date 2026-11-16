@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 import type { TablesUpdate } from '~/types/database.types'
+import type { EditedTemplateResult, ExistingTemplate } from '~/utils/whatsappTemplateDraft'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -56,14 +57,8 @@ const runtimeConfig = useRuntimeConfig()
 const embeddedSignupAvailable = Boolean(runtimeConfig.public.metaPlatformAppId && runtimeConfig.public.metaEmbeddedSignupConfigId)
 const showManual = computed(() => hasStoredAppSecret.value || !embeddedSignupAvailable)
 
-interface Template {
-  name: string
-  language: string
-  category: string
-  bodyText: string
-  status?: string
-  rejectedReason?: string | null
-}
+// What Meta lists, with what an edit needs (templateEditBlocker, the dialog).
+type Template = ExistingTemplate & { rejectedReason?: string | null }
 const templates = ref<Template[]>([])
 // Submitted and not approved: pending, rejected or paused at Meta.
 const inReview = ref<Template[]>([])
@@ -73,9 +68,20 @@ const creatingTemplate = ref(false)
 const justCreated = ref('')
 function templateCreated(created: { name: string }) {
   creatingTemplate.value = false
+  justEdited.value = ''
   justCreated.value = created.name
   loadTemplates()
 }
+// Editing one: the same dialog, opened on a template Meta already has.
+const editingTemplate = ref<Template | null>(null)
+const justEdited = ref('')
+function templateEdited(edited: EditedTemplateResult) {
+  editingTemplate.value = null
+  justCreated.value = ''
+  justEdited.value = edited.name
+  loadTemplates()
+}
+const editBlocker = (tpl: Template) => templateEditBlocker(tpl)
 function reviewLabel(status: string | undefined) {
   if (status === 'REJECTED') return t('Rejected', 'Rechazada')
   if (status === 'PAUSED') return t('Paused by Meta', 'Pausada por Meta')
@@ -322,14 +328,41 @@ async function save() {
               why. -->
               <div v-if="inReview.length" class="flex flex-col gap-1.5 border-t border-line-row px-[18px] py-3" data-cy="whatsapp-templates-in-review">
                 <span class="text-[12.5px] font-semibold text-ink-700">{{ t('Waiting on Meta', 'Pendientes de Meta') }}</span>
-                <div v-for="tpl in inReview" :key="tpl.name + tpl.language" class="flex flex-wrap items-center gap-2 text-[13px]">
+                <div v-for="tpl in inReview" :key="tpl.name + tpl.language" class="flex flex-wrap items-center gap-2 text-[13px]" :data-template-row="tpl.name">
                   <span class="font-mono text-ink-900">{{ tpl.name }}</span>
                   <span class="text-ink-muted">· {{ tpl.language }}</span>
                   <UiPill :tone="tpl.status === 'REJECTED' || tpl.status === 'DISABLED' ? 'danger' : 'warning'" dot>{{ reviewLabel(tpl.status) }}</UiPill>
                   <span v-if="tpl.rejectedReason" class="text-[12px] text-ink-muted">{{ t(templateRejectionReason(tpl.rejectedReason).en, templateRejectionReason(tpl.rejectedReason).es) }}</span>
+                  <!-- A rejection is fixed by changing it, not by starting again under a new name. -->
+                  <button v-if="!editBlocker(tpl)" type="button" class="text-[12.5px] font-semibold text-brand hover:underline" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">
+                    {{ t('Edit', 'Editar') }}
+                  </button>
                 </div>
               </div>
+              <p v-if="justEdited" class="border-t border-line-row bg-success-bg px-[18px] py-2.5 text-[13px] text-success-text" data-cy="whatsapp-template-edited">
+                {{ t(`The change to "${justEdited}" was sent to Meta. It reviews it again, usually within minutes.`, `El cambio en «${justEdited}» se ha enviado a Meta. La vuelve a revisar, normalmente en unos minutos.`) }}
+              </p>
+              <!-- Every approved template, to change one: the table below only
+              shows the five QuiroFlow sends itself, not the guides and offers
+              the automations send. -->
+              <details v-if="templates.length" class="group border-t border-line-row" data-cy="whatsapp-templates-all">
+                <summary class="flex min-h-[44px] cursor-pointer list-none items-center gap-2 px-[18px] text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
+                  {{ t(`Approved templates (${templates.length})`, `Plantillas aprobadas (${templates.length})`) }}
+                </summary>
+                <ul class="flex flex-col pb-1">
+                  <li v-for="tpl in templates" :key="tpl.name + tpl.language" class="flex flex-wrap items-start gap-x-3 gap-y-1 border-t border-line-row px-[18px] py-2.5 text-[13px]" :data-template-row="tpl.name">
+                    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span><span class="font-mono text-ink-900">{{ tpl.name }}</span> <span class="text-ink-muted">· {{ tpl.language }} · {{ tpl.category === 'MARKETING' ? t('Marketing', 'Marketing') : tpl.category === 'UTILITY' ? t('Service', 'Servicio') : tpl.category }}</span></span>
+                      <span class="line-clamp-2 text-[12.5px] leading-snug text-ink-500">“{{ tpl.bodyText }}”</span>
+                      <span v-if="editBlocker(tpl)" class="text-[12px] text-ink-muted" data-cy="whatsapp-template-edit-blocked">{{ t(editBlocker(tpl)!.en, editBlocker(tpl)!.es) }}</span>
+                    </div>
+                    <UiBtn v-if="!editBlocker(tpl)" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">{{ t('Edit', 'Editar') }}</UiBtn>
+                  </li>
+                </ul>
+              </details>
               <SettingsWhatsAppTemplateDialog v-if="creatingTemplate" @close="creatingTemplate = false" @created="templateCreated" />
+              <SettingsWhatsAppTemplateDialog v-if="editingTemplate" :template="editingTemplate" @close="editingTemplate = null" @edited="templateEdited" />
 
               <div v-for="u in USES" :key="u.key" :data-template-use="u.key" class="grid grid-cols-1 items-start gap-2 border-t border-line-row px-[18px] py-3 md:grid-cols-[1fr_1.15fr] md:gap-4">
                 <div class="flex flex-col gap-0.5">

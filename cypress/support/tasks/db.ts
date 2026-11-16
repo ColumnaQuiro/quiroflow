@@ -3406,8 +3406,10 @@ async function metaGraphStubSubscriptionsOf() {
 // wants as "OAuth" rather than "Bearer".
 let metaGraphStubTemplateCreates: Record<string, unknown>[] = []
 let metaGraphStubUploads: { bytes: number; authorization: string; fileType: string | null }[] = []
+// Edits (POST /{template-id}), with the id they were addressed to as _id.
+let metaGraphStubTemplateEdits: Record<string, unknown>[] = []
 async function metaGraphStubTemplateCreatesOf() {
-  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads }
+  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads, edits: metaGraphStubTemplateEdits }
 }
 let metaGraphStub: import('node:http').Server | null = null
 
@@ -3421,9 +3423,25 @@ async function startMetaGraphStub(opts: {
   scope?: string
   /** The whole granular_scopes answer, when one scope is not enough to say it. */
   granularScopes?: { scope: string; target_ids: string[] }[]
-  /** The template list Meta answers with, variants and statuses included. */
-  templates?: { name: string; language: string; status: string; body: string; header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO'; rejectedReason?: string }[]
-  /** Refuse a template submission, with the sentence Meta writes for a person. */
+  /**
+   * The template list Meta answers with, variants and statuses included. Each
+   * is listed under id "tpl-<name>-<language>" unless it names its own.
+   */
+  templates?: {
+    id?: string
+    name: string
+    language: string
+    status: string
+    body: string
+    category?: 'UTILITY' | 'MARKETING'
+    header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO'
+    rejectedReason?: string
+    /** The samples Meta reviewed the body's {{n}} with. */
+    examples?: string[]
+    footer?: string
+    buttons?: { type: string; text: string; url?: string }[]
+  }[]
+  /** Refuse a template submission or edit, with the sentence Meta writes for a person. */
   refuseTemplate?: string
   /** Refuse template sends, as Meta does for a paused template. */
   failSends?: boolean
@@ -3516,6 +3534,21 @@ async function startMetaGraphStub(opts: {
       })
       return
     }
+    // An edit to an existing template: Meta answers { success: true } and
+    // reviews it again.
+    const templateEdit = path.match(/^\/(?:v[\d.]+\/)?(tpl-[\w-]+)$/)
+    if (templateEdit && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (chunk) => (raw += chunk))
+      req.on('end', () => {
+        if (opts.refuseTemplate) {
+          return send(400, { error: { message: 'Invalid parameter', error_user_title: 'Template refused', error_user_msg: opts.refuseTemplate, code: 100 } })
+        }
+        metaGraphStubTemplateEdits.push({ ...JSON.parse(raw || '{}'), _id: templateEdit[1] })
+        send(200, { success: true })
+      })
+      return
+    }
     if (path.endsWith('/message_templates')) {
       // The error branch is the point: an expired token and a wrong Business
       // Account ID both land here, and the endpoint used to describe neither.
@@ -3525,12 +3558,18 @@ async function startMetaGraphStub(opts: {
       if (opts.templates) {
         return send(200, {
           data: opts.templates.map((t) => ({
+            id: t.id ?? `tpl-${t.name}-${t.language}`,
             name: t.name,
             language: t.language,
-            category: 'UTILITY',
+            category: t.category ?? 'UTILITY',
             status: t.status,
             ...(t.rejectedReason ? { rejected_reason: t.rejectedReason } : {}),
-            components: [...(t.header ? [{ type: 'HEADER', format: t.header }] : []), { type: 'BODY', text: t.body }],
+            components: [
+              ...(t.header ? [{ type: 'HEADER', format: t.header }] : []),
+              { type: 'BODY', text: t.body, ...(t.examples ? { example: { body_text: [t.examples] } } : {}) },
+              ...(t.footer ? [{ type: 'FOOTER', text: t.footer }] : []),
+              ...(t.buttons ? [{ type: 'BUTTONS', buttons: t.buttons }] : []),
+            ],
           })),
         })
       }
@@ -3637,6 +3676,7 @@ async function stopMetaGraphStub() {
   metaGraphStubSubscriptions = []
   metaGraphStubTemplateCreates = []
   metaGraphStubUploads = []
+  metaGraphStubTemplateEdits = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }

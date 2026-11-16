@@ -727,8 +727,12 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   const f = filters ?? {}
   const used: FilterKey[] = []
   const has = (k: string) => f[k] !== undefined && f[k] !== null
-  if ((Array.isArray(f.appointment_type_ids) && f.appointment_type_ids.length) || typeof f.appointment_type_id === 'string') used.push('appointment_types')
-  if (Array.isArray(f.practitioner_ids) && f.practitioner_ids.length) used.push('practitioners')
+  // A list filter counts as soon as its list exists, even empty: adding one
+  // writes `[]` (defaultFilterValue), and requiring an entry hid the row the
+  // moment it was added -- so "Tipo de cita" could never be picked at all.
+  // An empty list means "any" to evaluateAutomationFilters and segmentAudience.
+  if (Array.isArray(f.appointment_type_ids) || typeof f.appointment_type_id === 'string') used.push('appointment_types')
+  if (Array.isArray(f.practitioner_ids)) used.push('practitioners')
   if (has('total_visits')) used.push('total_visits')
   if (f.no_prior_appointments === true) used.push('no_prior_appointments')
   if (has('has_future_appointment')) used.push('has_future_appointment')
@@ -742,7 +746,7 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   if (typeof f.tag_contains === 'string') used.push('tag_contains')
   if (f.balance === 'debit' || f.balance === 'credit') used.push('balance')
   if (f.membership_active === true || (Array.isArray(f.membership_ids) && f.membership_ids.length)) used.push('membership')
-  if (Array.isArray(f.clinic_ids) && f.clinic_ids.length) used.push('clinics')
+  if (Array.isArray(f.clinic_ids)) used.push('clinics')
   return used
 }
 

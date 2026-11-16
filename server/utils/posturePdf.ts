@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { POSTURE_VIEWS, VIEW_POINTS, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
+import { POSTURE_GRID_COLOR, POSTURE_VIEWS, VIEW_POINTS, postureGrid, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
 import { postureConclusion, postureEvolutionTable, postureProgressSentence, postureReportCopy, postureReportSections, viewTitle, type PostureHistoryEntry, type ReportLang } from '~/utils/postureReport'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendMetric, type TrendPoint } from '~/utils/postureTrend'
 
@@ -46,9 +46,26 @@ const WORSE = '#B45309'
 const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
 
 /**
+ * The squared grid of components/posture/Overlay.vue, as an SVG of its own:
+ * it is laid over the photo with sharp's DARKEN blend, which SVG drawn on
+ * its own transparent canvas cannot do, so it shows on the white around a
+ * cut-out person and not across them.
+ */
+export function postureGridSvg(view: PostureView, p: Points, width: number, height: number): string {
+  const paired = view === 'front' || view === 'back'
+  const plumbX = paired ? mid(p.ankleR!, p.ankleL!)[0] : p.ankle![0]
+  const { xs, ys } = postureGrid(width, height, plumbX)
+  const lines = [...ys.map((y) => `<line x1="0" y1="${y}" x2="${width}" y2="${y}"/>`), ...xs.map((x) => `<line x1="${x}" y1="0" x2="${x}" y2="${height}"/>`)]
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<g stroke="${POSTURE_GRID_COLOR}" stroke-width="${Math.max(1, Math.round(width / 300) / 2)}">${lines.join('')}</g>
+</svg>`
+}
+
+/**
  * The same drawing as components/posture/Overlay.vue, as an SVG to lay over
- * the photo, plus a grid. `ghost`: another assessment's points already placed
- * on this photo (utils/postureCompare.ts), drawn dashed white under these.
+ * the photo (the grid goes under it, postureGridSvg). `ghost`: another
+ * assessment's points already placed on this photo (utils/postureCompare.ts),
+ * drawn dashed white under these.
  */
 export function postureOverlaySvg(view: PostureView, p: Points, width: number, height: number, ghost: Points | null = null): string {
   const paired = view === 'front' || view === 'back'
@@ -57,10 +74,6 @@ export function postureOverlaySvg(view: PostureView, p: Points, width: number, h
   const plumbX = paired ? mid(p.ankleR!, p.ankleL!)[0] : p.ankle![0]
   const joints = ['ear', 'shoulder', 'hip', 'knee', 'ankle']
   const chain = joints.map((k) => (paired ? mid(p[`${k}R`]!, p[`${k}L`]!) : p[k]!).join(',')).join(' ')
-  const step = height / 24
-  const grid: string[] = []
-  for (let y = step; y < height; y += step) grid.push(`<line x1="0" y1="${y.toFixed(1)}" x2="${width}" y2="${y.toFixed(1)}"/>`)
-  for (let x = plumbX % step; x < width; x += step) grid.push(`<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${height}"/>`)
   const pairs = paired ? joints.map((k) => `<line x1="${p[`${k}R`]![0]}" y1="${p[`${k}R`]![1]}" x2="${p[`${k}L`]![0]}" y2="${p[`${k}L`]![1]}"/>`) : []
   const ghostAt = (k: string): Pt | null => (!ghost ? null : paired ? (ghost[`${k}R`] && ghost[`${k}L`] ? mid(ghost[`${k}R`]!, ghost[`${k}L`]!) : null) : (ghost[k] ?? null))
   const ghostPts = joints.map(ghostAt)
@@ -72,7 +85,6 @@ export function postureOverlaySvg(view: PostureView, p: Points, width: number, h
     : ''
   const dots = VIEW_POINTS[view].map((n) => `<circle cx="${p[n]![0]}" cy="${p[n]![1]}" r="${r}"/>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-<g stroke="#fff" stroke-opacity=".22" stroke-width="${Math.max(1, stroke / 2)}">${grid.join('')}</g>
 <line x1="${plumbX}" y1="0" x2="${plumbX}" y2="${height}" stroke="#7CC4FF" stroke-width="${stroke}" stroke-dasharray="${stroke * 5} ${stroke * 4}"/>
 ${ghostSvg}
 <g stroke="#FFB020" stroke-width="${stroke}">${pairs.join('')}</g>
@@ -139,7 +151,10 @@ export async function loadPosturePhotos(supabase: SupabaseClient<Database>, view
         if (!blob) return null
         const jpeg = await sharp(Buffer.from(await blob.arrayBuffer()))
           .resize(s.width, s.height, { fit: 'fill' })
-          .composite([{ input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height, ghosts[v] ?? null)), top: 0, left: 0 }])
+          .composite([
+            { input: Buffer.from(postureGridSvg(v, s.points, s.width, s.height)), top: 0, left: 0, blend: 'darken' },
+            { input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height, ghosts[v] ?? null)), top: 0, left: 0 },
+          ])
           .jpeg({ quality: 82 })
           .toBuffer()
         return { view: v, jpeg, width: s.width, height: s.height }

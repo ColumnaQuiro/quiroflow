@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { POINT_LABELS, VIEW_POINTS, type Points, type PostureView, type Pt } from '../../utils/posture'
+import { POINT_LABELS, POSTURE_GRID_COLOR, VIEW_POINTS, postureGrid, type Points, type PostureView, type Pt } from '../../utils/posture'
 
-// One posture photo with what is measured on it: the vertical from the
-// ankle (or between the ankles), the points, and the lines between them. In
+// One posture photo with what is measured on it: a squared grid behind the
+// person (utils/posture.ts postureGrid), the vertical from the ankle (or
+// between the ankles), the points, and the lines between them. In
 // the capture screen the points can be dragged (mouse, finger or pencil);
 // everywhere else it only shows. Drawn in the photo's own pixels, so the
 // points sit where they were placed at any size. Shared with mobile/.
@@ -67,6 +68,7 @@ const ghostChain = computed(() => {
   const pts = ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map(at)
   return pts.every(Boolean) ? pts.map((p) => p!.join(',')).join(' ') : ''
 })
+const grid = computed(() => (f.value ? postureGrid(f.value.width, f.value.height, plumbX.value) : { xs: [], ys: [] }))
 const pairs = computed(() => (paired.value && f.value ? ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => [f.value!.points[`${k}R`]!, f.value!.points[`${k}L`]!] as [Pt, Pt]) : []))
 const drawnWidth = computed(() => f.value?.width ?? props.width)
 const stroke = computed(() => Math.max(2, Math.round(drawnWidth.value / 300)))
@@ -199,6 +201,10 @@ const loupe = computed(() => {
     >
       <template v-if="f">
         <image :href="f.src" x="0" y="0" :width="f.width" :height="f.height" preserveAspectRatio="none" />
+        <g :stroke="POSTURE_GRID_COLOR" :stroke-width="Math.max(1, stroke / 2)" style="mix-blend-mode: darken" data-cy="posture-grid">
+          <line v-for="y in grid.ys" :key="`y${y}`" x1="0" :y1="y" :x2="f.width" :y2="y" />
+          <line v-for="x in grid.xs" :key="`x${x}`" :x1="x" y1="0" :x2="x" :y2="f.height" />
+        </g>
         <line :x1="plumbX" y1="0" :x2="plumbX" :y2="f.height" stroke="#7CC4FF" :stroke-width="stroke" :stroke-dasharray="`${stroke * 5} ${stroke * 4}`" />
         <g v-if="ghostChain" data-cy="posture-ghost">
           <polyline :points="ghostChain" fill="none" stroke="rgba(0,0,0,.45)" :stroke-width="stroke * 2.2" stroke-linejoin="round" />

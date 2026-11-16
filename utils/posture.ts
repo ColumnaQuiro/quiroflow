@@ -178,6 +178,24 @@ export function measureView(view: PostureView, p: Points, heightCm: number, faci
   }
 }
 
+/**
+ * The squared grid behind a posture photo: 24 rows to the photo's height, and
+ * one column line on the vertical so the rest step out from it evenly. Drawn
+ * DARKEN over the photo (Overlay.vue, posturePdf.ts) -- it shows on the white
+ * around a cut-out person and gives way to anything darker than itself, which
+ * is the person, so it reads as behind them rather than across them.
+ */
+export const POSTURE_GRID_COLOR = '#C9D3DE'
+export function postureGrid(width: number, height: number, plumbX: number): { xs: number[]; ys: number[] } {
+  const step = height / 24
+  const xs: number[] = []
+  const ys: number[] = []
+  if (!(step > 0)) return { xs, ys }
+  for (let y = step; y < height - 0.5; y += step) ys.push(Math.round(y * 10) / 10)
+  for (let x = (((plumbX % step) + step) % step); x < width; x += step) xs.push(Math.round(x * 10) / 10)
+  return { xs, ys }
+}
+
 export interface StoredView { photo: string; width: number; height: number; points: Points; facing: 'right' | 'left' | null }
 export type StoredViews = Partial<Record<PostureView, StoredView>>
 

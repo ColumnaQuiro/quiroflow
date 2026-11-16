@@ -10,20 +10,32 @@ import type { Landmark } from '../utils/posture'
 // break every cloud build the day shared code reached for it. A string URL
 // behind @vite-ignore is something no bundler tries to resolve.
 //
+// The same run also outlines the person (outputSegmentationMasks): how
+// likely each pixel is to be them rather than the room, which is what lets
+// the capture screen put them on a white background (Capture.vue cutOut).
+// No second model to download, and nothing more leaves the device.
+//
 // window.__postureDetect, when a test sets it, answers instead -- the e2e
-// specs place known points without fetching an 11 MB model.
+// specs place known points without fetching an 11 MB model. It answers with
+// landmarks only, so a test photo keeps its own background unless the test
+// also sets window.__postureMask.
 const VERSION = '1.0.1'
 const BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}`
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'
 
-interface Landmarker { detect: (image: HTMLImageElement | HTMLCanvasElement) => { landmarks: Landmark[][] } }
+interface MpMask { width: number; height: number; getAsFloat32Array: () => Float32Array; close: () => void }
+interface Landmarker { detect: (image: HTMLImageElement | HTMLCanvasElement) => { landmarks: Landmark[][]; segmentationMasks?: MpMask[] } }
+
+/** Per pixel, row by row, how sure the model is that it is the person (0-1). Usually the photo's size, but not assumed to be. */
+export interface PersonMask { width: number; height: number; data: Float32Array }
+export interface PoseResult { landmarks: Landmark[] | null; mask: PersonMask | null }
 let loading: Promise<Landmarker> | null = null
 
 async function load(): Promise<Landmarker> {
   const vision: any = await import(/* @vite-ignore */ `${BASE}/vision_bundle.mjs`)
   const fileset = await vision.FilesetResolver.forVisionTasks(`${BASE}/wasm`)
   const make = (delegate: 'GPU' | 'CPU') =>
-    vision.PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'IMAGE', numPoses: 1 })
+    vision.PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'IMAGE', numPoses: 1, outputSegmentationMasks: true })
   let model: Landmarker
   try {
     model = await make('GPU')
@@ -35,7 +47,7 @@ async function load(): Promise<Landmarker> {
   const blank = document.createElement('canvas')
   blank.width = blank.height = 64
   blank.getContext('2d')!.fillRect(0, 0, 64, 64)
-  model.detect(blank)
+  for (const m of model.detect(blank).segmentationMasks ?? []) m.close()
   return model
 }
 
@@ -55,18 +67,33 @@ export function usePoseModel() {
       console.error('[posture] pose model', e)
     })
   }
-  /** The first person's 33 landmarks (0-1), or null when nobody is found or the model cannot load. */
-  async function detect(image: HTMLImageElement | HTMLCanvasElement): Promise<Landmark[] | null> {
-    const stub = (window as unknown as { __postureDetect?: (img: unknown) => Landmark[] | null }).__postureDetect
-    if (stub) return stub(image)
+  /**
+   * The first person's 33 landmarks (0-1) and their outline; each null when
+   * nobody is found or the model cannot load.
+   */
+  async function detect(image: HTMLImageElement | HTMLCanvasElement): Promise<PoseResult> {
+    const w = window as unknown as { __postureDetect?: (img: unknown) => Landmark[] | null; __postureMask?: (img: unknown) => PersonMask | null }
+    if (w.__postureDetect) return { landmarks: w.__postureDetect(image), mask: w.__postureMask?.(image) ?? null }
     try {
       loading ??= load()
       const model = await loading
-      return model.detect(image).landmarks?.[0] ?? null
+      const result = model.detect(image)
+      const landmarks = result.landmarks?.[0] ?? null
+      let mask: PersonMask | null = null
+      const masks = result.segmentationMasks ?? []
+      try {
+        // Copied out: the model's own mask lives on the GPU and has to be closed.
+        if (landmarks && masks[0]) mask = { width: masks[0].width, height: masks[0].height, data: masks[0].getAsFloat32Array().slice() }
+      } catch (e) {
+        console.error('[posture] person mask', e)
+      } finally {
+        for (const m of masks) m.close()
+      }
+      return { landmarks, mask }
     } catch (e) {
       loading = null
       console.error('[posture] pose model', e)
-      return null
+      return { landmarks: null, mask: null }
     }
   }
   return { detect, warm }

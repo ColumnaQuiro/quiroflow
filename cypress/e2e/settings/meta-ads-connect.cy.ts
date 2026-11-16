@@ -126,6 +126,26 @@ describe('Connecting Meta Ads', () => {
       connection(account.accountId).should('deep.equal', { adAccountId: null, token: null })
     })
 
+    it('exchanges a user-token code with the app root it was issued for, and no other', () => {
+      // The Meta Ads login is a user-token configuration, whose code Meta
+      // only exchanges with the redirect_uri the dialog opened with -- the
+      // app's own root, sent as fallback_redirect_uri (16 Nov 2026).
+      cy.location('origin').then((origin) => {
+        const root = `${origin}/`
+        cy.task('db:startMetaGraphStub', {
+          requireRedirectUri: root,
+          adAccounts: [{ id: 'act_6666', account_id: '6666', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 }],
+        })
+        // Anywhere else is not sent on to Meta at all, so the exchange fails.
+        connect({ code: 'AQBxyz-not-a-real-code', redirectUri: 'https://elsewhere.example/' }).its('status').should('eq', 502)
+        connection(account.accountId).its('adAccountId').should('eq', null)
+        connect({ code: 'AQBxyz-not-a-real-code', redirectUri: root }).then((res) => {
+          expect(res.status).to.eq(200)
+          expect(res.body).to.deep.include({ connected: true, adAccountId: '6666' })
+        })
+      })
+    })
+
     it('stores nothing when the grant has no ad account on it', () => {
       cy.task('db:startMetaGraphStub', { adAccounts: [] })
       connect().its('status').should('eq', 400)

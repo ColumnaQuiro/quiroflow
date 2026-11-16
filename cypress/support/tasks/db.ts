@@ -3444,6 +3444,8 @@ async function startMetaGraphStub(opts: {
    * for a token with leads_retrieval but no ads permission.
    */
   refuseAdNames?: boolean
+  /** Refuse a code exchange that does not send exactly this redirect_uri, as Meta does for a user-token code. */
+  requireRedirectUri?: string
   /** debug_token's expires_at (unix seconds), as a 60-day user token carries it. */
   tokenExpiresAt?: number
   /** Ad accounts the login grants (GET /me/adaccounts), for the Meta Ads connect. */
@@ -3469,6 +3471,10 @@ async function startMetaGraphStub(opts: {
 
     if (path.endsWith('/oauth/access_token')) {
       if (opts.failAt === 'exchange') return refuse('This authorization code has been used.')
+      const exchangeQuery = new URL(req.url ?? '', 'http://stub').searchParams
+      if (opts.requireRedirectUri && exchangeQuery.has('code') && exchangeQuery.get('redirect_uri') !== opts.requireRedirectUri) {
+        return refuse('Error validating verification code. Please make sure your redirect_uri is identical to the one you used in the OAuth dialog request')
+      }
       return send(200, { access_token: 'STUB-BUSINESS-TOKEN' })
     }
     if (path.endsWith('/debug_token')) {

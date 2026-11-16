@@ -49,6 +49,20 @@ function ticketKey(appSecret: string): string {
   return createHash('sha256').update(`quiroflow:meta-ads-connect-ticket:${appSecret}`).digest('base64')
 }
 
+/** The redirect_uri the browser says it used, only when it is this app's own root ("https://<this host>/"). */
+function ownRootOrNull(candidate: string | null | undefined, host: string): string | null {
+  if (!candidate) return null
+  try {
+    const url = new URL(candidate)
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    if (url.host !== host || url.pathname !== '/' || url.search || url.hash) return null
+    if (url.protocol !== 'https:' && !local) return null
+    return `${url.origin}/`
+  } catch {
+    return null
+  }
+}
+
 /**
  * The ad accounts the grant itself names, without the act_ prefix: the
  * target_ids of its ads_read (or ads_management) granular scope. Empty when
@@ -86,7 +100,7 @@ export default defineEventHandler(async (event) => {
   // permission, and accounts_settings_permission puts meta_ads_* under it.
   const { teamMember } = await requireSettingsPermission(event, 'communication_config')
 
-  const body = await readBody<{ code?: string; ticket?: string; adAccountId?: string }>(event)
+  const body = await readBody<{ code?: string; ticket?: string; adAccountId?: string; redirectUri?: string | null }>(event)
   const code = (body?.code ?? '').trim()
   const ticket = (body?.ticket ?? '').trim()
   if (!code && !ticket) throw createError({ statusCode: 400, statusMessage: 'code is required.' })
@@ -117,9 +131,17 @@ export default defineEventHandler(async (event) => {
     chosen = pick
   } else {
     // 1. Code -> token, server to server, because it needs the app secret.
+    //
+    //    A user-token code is only exchanged with the redirect_uri the dialog
+    //    was opened with (fallback_redirect_uri in useFacebookPageConnect).
+    //    Only this app's own root is accepted from the browser, so the
+    //    endpoint cannot be used to exchange codes issued for anywhere else;
+    //    a code without one -- a system-user configuration -- is tried bare
+    //    as before.
+    const redirectUri = ownRootOrNull(body?.redirectUri, getRequestHost(event))
     try {
       const exchanged = await $fetch<{ access_token: string }>(`${GRAPH}/oauth/access_token`, {
-        query: { client_id: appId, client_secret: appSecret, code },
+        query: { client_id: appId, client_secret: appSecret, code, ...(redirectUri ? { redirect_uri: redirectUri } : {}) },
       })
       token = exchanged.access_token
     } catch (err) {

@@ -8527,7 +8527,11 @@
   "Direct debit set up": "Lastschrift eingerichtet",
   "Direct debit not set up": "Lastschrift nicht eingerichtet",
   "Thanks -- your clinic can now collect by direct debit from your account. You can close this window now.": "Danke – Ihre Praxis kann jetzt per Lastschrift von Ihrem Konto abbuchen. Sie können dieses Fenster jetzt schließen.",
-  "Nothing was set up. You can close this window and open the link again whenever you like.": "Es wurde nichts eingerichtet. Sie können dieses Fenster schließen und den Link jederzeit erneut öffnen."
+  "Nothing was set up. You can close this window and open the link again whenever you like.": "Es wurde nichts eingerichtet. Sie können dieses Fenster schließen und den Link jederzeit erneut öffnen.",
+  "Receipt details": "Details zur Abrechnung",
+  "Remove bono · undo visit": "Paket entfernen · Besuch rückgängig machen",
+  "How this visit is paid": "Wie dieser Besuch bezahlt wird",
+  "Add services or split the payment": "Leistungen hinzufügen oder Zahlung aufteilen"
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
@@ -9890,6 +9894,10 @@
   "{0}–{1} is free": "{0}–{1} ist frei",
   "“Has” includes up to {0} unused days carried over from last year.": "„Hat“ enthält bis zu {0} nicht genutzte, aus dem Vorjahr übertragene Tage.",
   "“{0}” is now a type, with {1} patients": "„{0}“ ist jetzt ein Typ mit {1} Patienten",
-  "Sign-up link sent {0}, not signed yet.": "Link am {0} gesendet, noch nicht unterschrieben."
+  "Sign-up link sent {0}, not signed yet.": "Link am {0} gesendet, noch nicht unterschrieben.",
+  "Process · 1 session of {0}": "Abschließen · 1 Sitzung von {0}",
+  "Process · charge {0}": "Abschließen · {0} kassieren",
+  "{0} left, {1} after this visit": "Noch {0}, danach {1}",
+  "No bono, charge {0}": "Ohne Paket, {0} kassieren"
  }
 }

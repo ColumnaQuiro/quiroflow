@@ -316,7 +316,8 @@ const nextLabel = computed(() => {
     case 'checkout':
       return t('To checkout', 'Pasar a cobro')
     case 'charge':
-      return t('Charge', 'Cobrar')
+      // With the checkout on this screen, the tab is where the receipt is.
+      return checkoutOffered.value ? t('Receipt details', 'Detalle del cobro') : t('Charge', 'Cobrar')
     default:
       return ''
   }
@@ -712,6 +713,15 @@ function onBillingCompleted() {
   emit('changed')
 }
 const canAct = computed(() => props.appointment.status === 'booked' && !readOnly.value)
+// The checkout on the first screen (CalendarVisitCheckout). While it is
+// offered, "Procesar" is this screen's one filled button and the flow step
+// beside the track steps down to an outline: the track is for clinics that
+// follow the patient through the building, not a toll on the way to charging.
+const checkoutOffered = ref(false)
+const showsCheckout = computed(() => props.appointment.status === 'booked' || props.appointment.status === 'completed')
+watch(showsCheckout, (v) => {
+  if (!v) checkoutOffered.value = false
+})
 
 // The care plan's re-exam, booked as some other type: one click puts it right.
 // Only the type -- the time and length the patient was given stay as they are.
@@ -836,6 +846,18 @@ async function useExpectedType() {
       <p v-if="error" class="mb-3 rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ error }}</p>
 
       <div v-if="tab === 'summary'" class="flex flex-col gap-6">
+        <CalendarVisitCheckout
+          v-if="showsCheckout"
+          :key="appointment.id"
+          :appointment-id="appointment.id"
+          :patient-id="appointment.patient_id"
+          :appointment-type-name="appointment.appointment_types?.name"
+          :appointment-type-price-cents="priceCents"
+          @completed="onBillingCompleted"
+          @details="tab = 'billing'"
+          @offered="checkoutOffered = $event"
+        />
+
         <!-- Where it stands: status + confirmation + flow, one track. -->
         <section>
           <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Where it stands', 'En qué punto está') }}</h3>
@@ -850,7 +872,7 @@ async function useExpectedType() {
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
           <div v-if="!readOnly && (next || undoable || canUndoVisit || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
-            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="advance">
+            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl px-4 text-[14px] disabled:opacity-60" :class="checkoutOffered ? 'border border-line-control font-semibold text-ink-700 hover:bg-surface-subtle' : 'bg-brand font-bold text-brand-on hover:bg-brand-hover'" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
               <kbd class="ml-0.5 rounded border border-current px-1 font-mono text-[11px] font-semibold leading-4 opacity-70 [@media(pointer:coarse)]:hidden" aria-hidden="true">A</kbd>
@@ -858,7 +880,7 @@ async function useExpectedType() {
             <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark as confirmed', 'Marcar como confirmada') }}</button>
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
-            <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
+            <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ view.bono?.drawn ? t('Remove bono · undo visit', 'Quitar bono · deshacer visita') : t('Undo visit', 'Deshacer visita') }}</button>
           </div>
 
           <!-- Red flags first: the one thing about the patient that changes

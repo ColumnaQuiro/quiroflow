@@ -15,6 +15,8 @@ interface Status {
   configured: boolean
   connected: boolean
   organisationId?: string | null
+  organisationName?: string | null
+  verifyUrl?: string | null
   environment?: 'live' | 'sandbox' | null
   verificationStatus?: string | null
   revokedElsewhere?: boolean
@@ -22,15 +24,24 @@ interface Status {
 
 const status = ref<Status | null>(null)
 const loading = ref(true)
+// The status could not be read. The card says so rather than vanishing: a
+// clinic that is connected and cannot see its connection has no way to
+// tell that apart from never having had one.
+const loadFailed = ref(false)
 const connectError = ref(typeof route.query.gocardless_error === 'string' ? route.query.gocardless_error : '')
 const justConnected = ref(route.query.gocardless === 'connected')
 
 async function load() {
   loading.value = true
+  loadFailed.value = false
   try {
+    // refresh=1 re-reads the verification status from GoCardless. That is
+    // also what GoCardless's return from its verification pages
+    // (post_onboarding_url, ?gocardless=verified) relies on.
     status.value = await useStaffFetch<Status>('/api/gocardless/status', { query: { refresh: '1' } })
   } catch {
     status.value = null
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -47,6 +58,9 @@ onMounted(() => {
 // "successful" is the only state in which GoCardless pays out. The others
 // mean the clinic still has something to finish in GoCardless itself.
 const unverified = computed(() => status.value?.connected && status.value.verificationStatus && status.value.verificationStatus !== 'successful')
+// GoCardless needs something from the clinic (documents, details), as
+// opposed to reviewing what it already sent.
+const actionRequired = computed(() => unverified.value && status.value?.verificationStatus === 'action_required')
 
 const disconnectOpen = ref(false)
 const disconnecting = ref(false)
@@ -65,7 +79,7 @@ async function disconnect() {
 </script>
 
 <template>
-  <section v-if="loading || status?.configured || status?.connected" aria-labelledby="h-gocardless" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="gocardless-section">
+  <section v-if="loading || loadFailed || status?.configured || status?.connected" aria-labelledby="h-gocardless" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="gocardless-section">
     <div class="flex items-start gap-3.5 px-[18px] py-4">
       <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-brand-tint text-brand-text" aria-hidden="true">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10M19 21V10M9 21V10M15 21V10M2 10l10-6 10 6" /></svg>
@@ -74,6 +88,8 @@ async function disconnect() {
         <div class="flex flex-wrap items-center gap-2.5">
           <h2 id="h-gocardless" class="text-[16px] font-bold text-ink-900">{{ t('Direct debit with GoCardless', 'Domiciliación con GoCardless') }}</h2>
           <UiSkeleton v-if="loading" class="h-6 w-24 rounded-pill" />
+          <UiPill v-else-if="loadFailed" tone="danger" data-cy="gocardless-status">{{ t('Unavailable', 'No disponible') }}</UiPill>
+          <UiPill v-else-if="actionRequired" tone="warning" dot data-cy="gocardless-status">{{ t('Verification needed', 'Falta verificar') }}</UiPill>
           <UiPill v-else-if="unverified" tone="warning" dot data-cy="gocardless-status">{{ t('Pending verification', 'Pendiente de verificar') }}</UiPill>
           <UiPill v-else-if="status?.connected" tone="success" dot data-cy="gocardless-status">{{ t('Connected', 'Conectado') }}</UiPill>
           <UiPill v-else tone="neutral" data-cy="gocardless-status">{{ t('Not connected', 'Sin conectar') }}</UiPill>
@@ -92,14 +108,25 @@ async function disconnect() {
     <div v-if="status?.revokedElsewhere" class="mx-[18px] mb-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] text-warning-text">
       {{ t('QuiroFlow was disconnected from your GoCardless dashboard. Connect again to keep collecting.', 'QuiroFlow se desconectó desde tu panel de GoCardless. Vuelve a conectar para seguir cobrando.') }}
     </div>
-    <div v-if="unverified" class="mx-[18px] mb-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] text-warning-text" data-cy="gocardless-unverified">
-      {{ t('GoCardless has not verified this account yet, so it cannot collect. Finish the steps it asks for in your GoCardless dashboard.', 'GoCardless todavía no ha verificado esta cuenta, así que no puede cobrar. Completa los pasos que te pide en tu panel de GoCardless.') }}
+    <div v-if="loadFailed" class="mx-[18px] mb-3 flex flex-wrap items-center gap-3 rounded-ctl border border-danger-border bg-danger-bg px-3 py-2.5 text-[13px] text-danger-text" data-cy="gocardless-load-error">
+      <span class="flex-1">{{ t('Could not check the GoCardless connection. Collections are not affected.', 'No se pudo comprobar la conexión con GoCardless. Los cobros no se ven afectados.') }}</span>
+      <UiBtn size="sm" data-cy="gocardless-retry" @click="load">{{ t('Try again', 'Reintentar') }}</UiBtn>
+    </div>
+    <div v-if="actionRequired" class="mx-[18px] mb-3 flex flex-wrap items-center gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] text-warning-text" data-cy="gocardless-unverified">
+      <span class="min-w-[220px] flex-1">{{ t('GoCardless needs more information before this account can collect. It takes a few minutes, on GoCardless’s own page.', 'GoCardless necesita más información antes de que esta cuenta pueda cobrar. Son unos minutos, en la propia página de GoCardless.') }}</span>
+      <a v-if="status?.verifyUrl" :href="status.verifyUrl" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover" data-cy="gocardless-verify">
+        {{ t('Verify in GoCardless', 'Verificar en GoCardless') }}
+      </a>
+    </div>
+    <div v-else-if="unverified" class="mx-[18px] mb-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] text-warning-text" data-cy="gocardless-unverified">
+      {{ t('GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.', 'GoCardless está revisando esta cuenta, así que todavía no puede cobrar. No hay nada que hacer aquí; se actualiza solo.') }}
     </div>
 
     <template v-if="!loading && status">
       <div v-if="status.connected" class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3">
         <span class="text-[13px] text-ink-muted">{{ t('Organisation', 'Organización') }}</span>
-        <code class="rounded-ctlSm bg-surface-page px-2 py-1 font-mono text-[12.5px] text-ink-500">{{ status.organisationId }}</code>
+        <strong v-if="status.organisationName" class="text-[13.5px] text-ink-900" data-cy="gocardless-organisation-name">{{ status.organisationName }}</strong>
+        <code class="rounded-ctlSm bg-surface-page px-2 py-1 font-mono text-[12.5px] text-ink-500" data-cy="gocardless-organisation-id">{{ status.organisationId }}</code>
         <span class="flex-1" />
         <NuxtLink to="/settings/import?source=practicehub&type=gocardless" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-line bg-surface px-3.5 text-[13px] font-semibold text-ink-900 hover:bg-surface-subtle" data-cy="gocardless-import-link">
           {{ t('Match direct debits', 'Emparejar domiciliaciones') }}

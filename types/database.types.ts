@@ -242,6 +242,38 @@ export type Database = {
           },
         ]
       }
+      gocardless_processed_events: {
+        Row: {
+          account_id: string
+          action: string | null
+          gocardless_event_id: string
+          processed_at: string
+          resource_type: string | null
+        }
+        Insert: {
+          account_id: string
+          action?: string | null
+          gocardless_event_id: string
+          processed_at?: string
+          resource_type?: string | null
+        }
+        Update: {
+          account_id?: string
+          action?: string | null
+          gocardless_event_id?: string
+          processed_at?: string
+          resource_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gocardless_processed_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       habit_checkins: {
         Row: {
           account_id: string
@@ -300,6 +332,7 @@ export type Database = {
           matched_by_member: string | null
           origin: string
           patient_id: string
+          reference: string | null
           scheme: string | null
           status: string
           updated_at: string
@@ -316,6 +349,7 @@ export type Database = {
           matched_by_member?: string | null
           origin?: string
           patient_id: string
+          reference: string | null
           scheme?: string | null
           status: string
           updated_at?: string
@@ -332,6 +366,7 @@ export type Database = {
           matched_by_member?: string | null
           origin?: string
           patient_id?: string
+          reference?: string | null
           scheme?: string | null
           status?: string
           updated_at?: string

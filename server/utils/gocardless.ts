@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { GOCARDLESS_PATIENT_METADATA_KEY, mergedCustomerMetadata } from '~/utils/gocardlessMatch'
 
 // GoCardless, reached as a PARTNER: each clinic connects its own GoCardless
 // account by OAuth and we act on it with the token that hands us. Nothing
@@ -22,6 +23,9 @@ export function gocardlessHosts() {
     environment: (live ? 'live' : 'sandbox') as 'live' | 'sandbox',
     api: (config.gocardlessApiBaseUrl as string) || (live ? 'https://api.gocardless.com' : 'https://api-sandbox.gocardless.com'),
     connect: (config.gocardlessConnectBaseUrl as string) || (live ? 'https://connect.gocardless.com' : 'https://connect-sandbox.gocardless.com'),
+    // Where a clinic finishes GoCardless's own verification (KYC). Its partner
+    // guide asks for a button there whenever the status is action_required.
+    verify: live ? 'https://verify.gocardless.com' : 'https://verify-sandbox.gocardless.com',
   }
 }
 
@@ -139,6 +143,63 @@ export interface GcCustomer {
   family_name: string | null
   company_name: string | null
   phone_number: string | null
+  metadata?: Record<string, string> | null
+}
+
+/** The clinic as GoCardless holds it: its name and whether it may collect yet. */
+export interface GcCreditor {
+  id: string
+  name: string | null
+  // successful, in_review, action_required
+  verification_status: string | null
+}
+
+/**
+ * The clinic's creditor: its name for the Settings card, and its
+ * verification status, which changes on GoCardless's side as the clinic
+ * finishes onboarding there.
+ */
+export async function readGoCardlessCreditor(request: GoCardlessRequest): Promise<GcCreditor | null> {
+  const json = await request<{ creditors?: GcCreditor[] }>('GET', '/creditors', { query: { limit: 1 } })
+  return json?.creditors?.[0] ?? null
+}
+
+// ---------------------------------------------------------------------
+// Our patient id on the GoCardless customer
+// ---------------------------------------------------------------------
+// GoCardless's partner guide asks integrators to write their own id onto the
+// customer, so a mandate can be paired again from GoCardless itself (another
+// connection, a re-import) rather than guessed from an email. Two rules make
+// it delicate: a metadata update REPLACES the whole object, and it holds at
+// most three keys. Other apps on the same account -- PracticeHub -- may use
+// some, so what is there is read first and kept, and when all three are
+// taken by others ours is simply not written (mergedCustomerMetadata, in
+// utils/gocardlessMatch.ts, which also reads the key back).
+
+/**
+ * Writes (patientId) or removes (null) our patient id on a customer. Only
+ * removes it while it still names `expectedPatientId`, so unpairing one
+ * patient never wipes a later pairing to another.
+ *
+ * Best effort: the pairing in QuiroFlow is what collects, and a customer
+ * GoCardless will not let us tag is no reason to refuse it. Failures are
+ * logged, never thrown.
+ */
+export async function tagGoCardlessCustomer(request: GoCardlessRequest, customerId: string, patientId: string | null, expectedPatientId?: string): Promise<'written' | 'unchanged' | 'full' | 'failed'> {
+  try {
+    const { customers: customer } = await request<{ customers: GcCustomer }>('GET', `/customers/${encodeURIComponent(customerId)}`)
+    const current = customer.metadata ?? {}
+    if (!patientId && expectedPatientId && current[GOCARDLESS_PATIENT_METADATA_KEY] !== expectedPatientId) return 'unchanged'
+    const next = mergedCustomerMetadata(current, patientId)
+    if (!next) {
+      return patientId && current[GOCARDLESS_PATIENT_METADATA_KEY] !== patientId ? 'full' : 'unchanged'
+    }
+    await request('PUT', `/customers/${encodeURIComponent(customerId)}`, { body: { customers: { metadata: next } } })
+    return 'written'
+  } catch (err) {
+    console.error('[gocardless] customer metadata not written', customerId, (err as Error).message)
+    return 'failed'
+  }
 }
 
 export interface GcCustomerBankAccount {

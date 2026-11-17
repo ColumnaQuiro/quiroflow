@@ -16,9 +16,25 @@ type Admin = SupabaseClient<Database>
 
 export async function handleGoCardlessEvent(supabase: Admin, accountId: string, event: GcEvent, origin: string): Promise<void> {
   if (event.resource_type === 'organisations' && event.action === 'disconnected') {
-    // The clinic removed QuiroFlow from its own GoCardless dashboard.
+    // The clinic removed QuiroFlow from its own GoCardless dashboard. This
+    // event carries no id, so it is never deduplicated; forgetting twice is
+    // harmless.
     await forgetGoCardlessConnection(supabase, accountId)
     return
+  }
+
+  // Every other event is handled once (gocardless_processed_events): a
+  // retried batch or the reconcile cron's nightly replay skips what was
+  // already done, without asking GoCardless again. Recorded only after the
+  // handler finished without throwing, so a failure is tried again.
+  if (event.id) {
+    const { data: done } = await supabase
+      .from('gocardless_processed_events')
+      .select('gocardless_event_id')
+      .eq('account_id', accountId)
+      .eq('gocardless_event_id', event.id)
+      .maybeSingle()
+    if (done) return
   }
 
   const request = await gocardlessForAccount(supabase, accountId)
@@ -42,6 +58,17 @@ export async function handleGoCardlessEvent(supabase: Admin, accountId: string, 
       return
     }
     throw err
+  }
+
+  if (event.id) {
+    // ignoreDuplicates: two deliveries of the same event racing each other
+    // both get here, and the second has nothing to add.
+    const { error } = await supabase
+      .from('gocardless_processed_events')
+      .upsert({ account_id: accountId, gocardless_event_id: event.id, resource_type: event.resource_type, action: event.action }, { onConflict: 'account_id,gocardless_event_id', ignoreDuplicates: true })
+    // The event was handled; failing to note it only means a replay does it
+    // again, which every handler survives.
+    if (error) console.error('[gocardless] event not recorded as processed', accountId, event.id, error.message)
   }
 }
 
@@ -236,6 +263,7 @@ export async function syncGoCardlessBillingRequest(supabase: Admin, request: GoC
         gocardless_customer_id: mandate.links.customer,
         status: mandate.status,
         scheme: mandate.scheme,
+        reference: mandate.reference,
         bank_name: bank?.bank_name ?? null,
         account_number_ending: bank?.account_number_ending ?? null,
         origin: 'created_here',
@@ -247,6 +275,9 @@ export async function syncGoCardlessBillingRequest(supabase: Admin, request: GoC
       { onConflict: 'account_id,gocardless_mandate_id' },
     )
     if (error) throw error
+    // Our patient id onto the customer the patient just created, as a pair
+    // made on the Import page is (best effort; never fails the sync).
+    await tagGoCardlessCustomer(request, mandate.links.customer, row.patient_id)
     await supabase.from('gocardless_billing_requests').update({ status: 'fulfilled', gocardless_mandate_id: mandate.id, updated_at: now }).eq('id', row.id)
     return { status: 'fulfilled', mandateId: mandate.id }
   }
@@ -301,13 +332,13 @@ async function handleMandateEvent(supabase: Admin, request: GoCardlessRequest, a
     const { mandates: replacement } = await request<{ mandates: GcMandate }>('GET', `/mandates/${mandate.links.new_mandate}`)
     await supabase
       .from('patient_gocardless_mandates')
-      .update({ gocardless_mandate_id: replacement.id, status: replacement.status, scheme: replacement.scheme, updated_at: new Date().toISOString() })
+      .update({ gocardless_mandate_id: replacement.id, status: replacement.status, scheme: replacement.scheme, reference: replacement.reference, updated_at: new Date().toISOString() })
       .eq('id', row.id)
     await supabase.from('payment_schedules').update({ gocardless_mandate_id: replacement.id }).eq('account_id', accountId).eq('gocardless_mandate_id', mandate.id)
     return
   }
 
-  await supabase.from('patient_gocardless_mandates').update({ status: mandate.status, updated_at: new Date().toISOString() }).eq('id', row.id)
+  await supabase.from('patient_gocardless_mandates').update({ status: mandate.status, reference: mandate.reference, updated_at: new Date().toISOString() }).eq('id', row.id)
 
   // A mandate that can no longer be collected on takes its subscriptions with
   // it (GoCardless cancels them). The patient has to sign again -- the one

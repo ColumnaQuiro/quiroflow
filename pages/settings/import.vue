@@ -179,10 +179,15 @@ const sources = computed<Source[]>(() => [
 // Kept in the URL so a reload, a bookmark, or a link sent to whoever is running
 // the migration lands on the same step. Settings > Files links straight to
 // PracticeHub's Files step this way.
-const sourceKey = ref(typeof route.query.source === 'string' && sources.value.some((s) => s.key === route.query.source) ? route.query.source : 'practicehub')
+//
+// `?source=gocardless` is the payment_setup_url registered with GoCardless's
+// partner apps: where GoCardless sends a clinic to pair its mandates. The
+// GoCardless step lives under PracticeHub, so it opens that step there.
+const gocardlessAlias = route.query.source === 'gocardless'
+const sourceKey = ref(gocardlessAlias ? 'practicehub' : typeof route.query.source === 'string' && sources.value.some((s) => s.key === route.query.source) ? route.query.source : 'practicehub')
 const activeSource = computed(() => sources.value.find((s) => s.key === sourceKey.value) ?? sources.value[0]!)
 const allSteps = computed(() => activeSource.value.groups.flatMap((g) => g.steps))
-const stepKey = ref(typeof route.query.type === 'string' ? route.query.type : 'general')
+const stepKey = ref(gocardlessAlias ? 'gocardless' : typeof route.query.type === 'string' ? route.query.type : 'general')
 // An address naming a step that does not exist opens the first one, rather
 // than a blank panel.
 const activeStep = computed(() => allSteps.value.find((s) => s.key === stepKey.value) ?? allSteps.value[0]!)
@@ -212,6 +217,9 @@ watch(() => activeStep.value.key, () => {
 watch([sourceKey, () => activeStep.value.key], ([source, type]) => {
   router.replace({ query: { ...route.query, source, type } })
 })
+// The alias becomes the real address once open, so a reload or a copied link
+// reads like every other step's.
+if (gocardlessAlias) onMounted(() => router.replace({ query: { ...route.query, source: 'practicehub', type: 'gocardless' } }))
 
 function selectSource(key: string) {
   if (key === sourceKey.value) return

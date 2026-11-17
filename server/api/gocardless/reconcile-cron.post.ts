@@ -7,7 +7,12 @@ import type { Database } from '~/types/database.types'
 // payments/confirmed is collected money that no report shows. Once a day this
 // lists each connected clinic's events of the last three days and runs them
 // through the same handler the webhook uses. Everything there is idempotent,
-// so events the webhook already handled change nothing.
+// so events the webhook already handled change nothing -- and since
+// gocardless_processed_events, they are skipped without asking GoCardless.
+//
+// It also re-reads each clinic's verification status, which GoCardless
+// changes on its side as the clinic finishes onboarding there, so the
+// Settings card is current even for a clinic that never opens it.
 //
 // Called by a pg_cron job (scheduled by hand in production, like every
 // *-cron endpoint: CLAUDE.md, "Scheduling a cron is a manual step too").
@@ -26,6 +31,17 @@ export default defineEventHandler(async (event) => {
   for (const account of accounts ?? []) {
     const request = await gocardlessForAccount(supabase, account.id)
     if (!request) continue
+    try {
+      const creditor = await readGoCardlessCreditor(request)
+      if (creditor?.verification_status) {
+        await supabase.from('accounts').update({ gocardless_verification_status: creditor.verification_status }).eq('id', account.id)
+      }
+    } catch (err) {
+      // The event listing below hears about a revoked token too; anything
+      // else here only leaves yesterday's status on the card.
+      if (!(err instanceof GoCardlessError && err.tokenGone)) console.error('[gocardless reconcile] verification not refreshed', account.id, (err as Error).message)
+    }
+
     let events: GcEvent[] = []
     try {
       events = (
@@ -54,5 +70,9 @@ export default defineEventHandler(async (event) => {
     }
     summary.push({ accountId: account.id, events: events.length, failed })
   }
+  // What is older than GoCardless's retry window (about a week) and this
+  // cron's three-day replay can never arrive again.
+  await supabase.from('gocardless_processed_events').delete().lt('processed_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
+
   return { accounts: summary }
 })

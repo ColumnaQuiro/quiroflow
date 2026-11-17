@@ -17,6 +17,8 @@ const GOCARDLESS_STUB_PORT = 9148
 
 interface StubState {
   organisationId: string
+  /** The creditor's name: what the Settings card shows beside the OR… id. */
+  organisationName: string
   verificationStatus: string
   customers: Record<string, any>[]
   bankAccounts: Record<string, any>[]
@@ -38,6 +40,12 @@ interface StubState {
   refundBodies: Record<string, any>[]
   /** Answer 403 to creating a refund, as GoCardless does until it enables refunds for a merchant. */
   refundsForbidden: boolean
+  /** The query string of each OAuth authorise visit (prefill, initial_view, language). */
+  authorizeQueries: Record<string, string>[]
+  /** Each metadata a customer was updated with, as PUT. */
+  customerUpdates: { id: string; metadata: Record<string, string> }[]
+  /** Every authenticated API call, "GET /payments/PM1", to see what was asked again. */
+  requests: string[]
 }
 
 let server: Server | null = null
@@ -46,6 +54,7 @@ let state: StubState = blank()
 function blank(): StubState {
   return {
     organisationId: 'OR-STUB',
+    organisationName: 'Clínica Demo',
     verificationStatus: 'successful',
     customers: [],
     bankAccounts: [],
@@ -63,6 +72,9 @@ function blank(): StubState {
     refunds: [],
     refundBodies: [],
     refundsForbidden: false,
+    authorizeQueries: [],
+    customerUpdates: [],
+    requests: [],
   }
 }
 
@@ -71,7 +83,7 @@ function blank(): StubState {
 let seq = 0
 const stubId = (prefix: string) => `${prefix}-${Date.now()}-${++seq}`
 
-async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'created' | 'cancelled'>> = {}) {
+async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'created' | 'cancelled' | 'authorizeQueries' | 'customerUpdates' | 'requests'>> = {}) {
   await stopGoCardlessStub()
   state = { ...blank(), ...opts }
 
@@ -99,6 +111,7 @@ async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'cr
       // OAuth: the authorise screen hands straight back to the callback, as a
       // clinic that clicked "Allow" would.
       if (path === '/oauth/authorize') {
+        state.authorizeQueries.push(Object.fromEntries(url.searchParams))
         const back = new URL(url.searchParams.get('redirect_uri')!)
         back.searchParams.set('code', 'STUB-CODE')
         back.searchParams.set('state', url.searchParams.get('state') ?? '')
@@ -116,8 +129,22 @@ async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'cr
         return send(401, { error: { message: 'Access token not found', type: 'invalid_api_usage', errors: [{ reason: 'access_token_not_found' }] } })
       }
 
-      if (path === '/creditors') return list('creditors', [{ id: 'CR-STUB', verification_status: state.verificationStatus }])
+      state.requests.push(`${req.method} ${path}`)
+
+      if (path === '/creditors') return list('creditors', [{ id: 'CR-STUB', name: state.organisationName, verification_status: state.verificationStatus }])
       if (path === '/customers') return list('customers', state.customers)
+      if (path.startsWith('/customers/') && req.method === 'PUT') {
+        // GoCardless REPLACES metadata whole, and refuses more than three keys.
+        const id = path.split('/')[2]!
+        const customer = state.customers.find((c) => c.id === id)
+        if (!customer) return send(404, { error: { message: 'not found', type: 'invalid_api_usage', errors: [{ reason: 'resource_not_found' }] } })
+        const metadata = JSON.parse(raw || '{}').customers?.metadata ?? {}
+        if (Object.keys(metadata).length > 3) return send(422, { error: { message: 'metadata has too many keys', type: 'validation_failed', errors: [{ reason: 'too_many_keys' }] } })
+        customer.metadata = metadata
+        state.customerUpdates.push({ id, metadata })
+        return send(200, { customers: customer })
+      }
+      if (path.startsWith('/customers/')) return one('customers', state.customers, path.split('/')[2]!)
       if (path === '/customer_bank_accounts') return list('customer_bank_accounts', state.bankAccounts)
       if (path.startsWith('/customer_bank_accounts/')) return one('customer_bank_accounts', state.bankAccounts, path.split('/')[2]!)
       if (path === '/mandates') return list('mandates', statusIn(state.mandates))
@@ -222,6 +249,9 @@ async function goCardlessStubState() {
     billingRequestBodies: state.billingRequestBodies,
     flowBodies: state.flowBodies,
     refundBodies: state.refundBodies,
+    authorizeQueries: state.authorizeQueries,
+    customerUpdates: state.customerUpdates,
+    requests: state.requests,
   }
 }
 

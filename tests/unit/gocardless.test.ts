@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { suggestMandatePatient, mandateNameKey, type MatchablePatient } from '../../utils/gocardlessMatch'
+import { suggestMandatePatient, mandateNameKey, mergedCustomerMetadata, GOCARDLESS_PATIENT_METADATA_KEY, type MatchablePatient } from '../../utils/gocardlessMatch'
 import { gocardlessSignatureValid, gocardlessInterval } from '../../server/utils/gocardless'
 
 const patients: MatchablePatient[] = [
@@ -68,5 +68,52 @@ describe('gocardlessInterval', () => {
     expect(gocardlessInterval('month', 1)).toEqual({ interval_unit: 'monthly', interval: 1 })
     expect(gocardlessInterval('week', 2)).toEqual({ interval_unit: 'weekly', interval: 2 })
     expect(gocardlessInterval('year', null)).toEqual({ interval_unit: 'yearly', interval: 1 })
+  })
+})
+
+describe('suggestMandatePatient: our id and similar names', () => {
+  it('trusts our own patient id on the customer before anything else', () => {
+    expect(suggestMandatePatient(customer({ email: 'ana@example.com', metadata: { quiroflow_patient_id: 'luis' } }), patients)).toEqual({ patientId: 'luis', by: 'metadata' })
+  })
+
+  it('ignores an id that is not one of this clinic’s patients', () => {
+    expect(suggestMandatePatient(customer({ email: 'ana@example.com', metadata: { quiroflow_patient_id: 'elsewhere' } }), patients)).toEqual({ patientId: 'ana', by: 'email' })
+  })
+
+  it('suggests a name written with an initial, marked as loose', () => {
+    expect(suggestMandatePatient(customer({ given_name: 'A.', family_name: 'García' }), patients)).toEqual({ patientId: 'ana', by: 'name', loose: true })
+  })
+
+  it('suggests one surname where the patient has two', () => {
+    expect(suggestMandatePatient(customer({ given_name: 'Ana', family_name: 'Garcia' }), patients)).toEqual({ patientId: 'ana', by: 'name', loose: true })
+  })
+
+  it('does not loosen a name two patients share', () => {
+    expect(suggestMandatePatient(customer({ given_name: 'P.', family_name: 'Ruiz' }), patients)).toEqual({ patientId: null, by: null, ambiguous: true })
+  })
+
+  it('does not suggest a different first name with the same surname', () => {
+    expect(suggestMandatePatient(customer({ given_name: 'Marta', family_name: 'García' }), patients)).toEqual({ patientId: null, by: null, ambiguous: false })
+  })
+})
+
+describe('mergedCustomerMetadata', () => {
+  it('adds our key beside another app’s', () => {
+    expect(mergedCustomerMetadata({ practicehub: 'x' }, 'p1')).toEqual({ practicehub: 'x', [GOCARDLESS_PATIENT_METADATA_KEY]: 'p1' })
+  })
+  it('writes nothing when it already names the patient', () => {
+    expect(mergedCustomerMetadata({ [GOCARDLESS_PATIENT_METADATA_KEY]: 'p1' }, 'p1')).toBeNull()
+  })
+  it('writes nothing when other apps hold all three keys', () => {
+    expect(mergedCustomerMetadata({ a: '1', b: '2', c: '3' }, 'p1')).toBeNull()
+  })
+  it('replaces our own key even when the object is full', () => {
+    expect(mergedCustomerMetadata({ a: '1', b: '2', [GOCARDLESS_PATIENT_METADATA_KEY]: 'old' }, 'p1')).toEqual({ a: '1', b: '2', [GOCARDLESS_PATIENT_METADATA_KEY]: 'p1' })
+  })
+  it('removes only our key', () => {
+    expect(mergedCustomerMetadata({ a: '1', [GOCARDLESS_PATIENT_METADATA_KEY]: 'p1' }, null)).toEqual({ a: '1' })
+  })
+  it('writes nothing to remove a key that is not there', () => {
+    expect(mergedCustomerMetadata({ a: '1' }, null)).toBeNull()
   })
 })

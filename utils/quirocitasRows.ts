@@ -84,6 +84,26 @@ export function quirocitasReadState(s: QuirocitasSnapshot) {
 }
 
 /**
+ * The patients (by Quirocitas id) whose record says what Quirocitas holds as
+ * of the copy's own read, so that something MISSING from it is missing there.
+ *
+ * Everything else an import step does adds or corrects what a record names,
+ * and a stale record only makes that late. Acting on what a record no longer
+ * names is the opposite: a record kept from an earlier pass, or a pass that
+ * stopped part way, would call a real appointment gone. So this is empty
+ * unless the pass read every patient (it has its ledger, or ended at a ledger
+ * it could not read), and it leaves out anyone whose record failed this time
+ * -- theirs is the earlier copy -- or was not fetched in this pass at all.
+ * A copy from before passes were recorded names nobody.
+ */
+export function quirocitasRecordsReadThisPass(s: QuirocitasSnapshot): Set<string> {
+  const pass = s.passStartedAt
+  const everyone = s.ledgerMonths.length > 0 || !!s.ledgerError
+  if (!pass || !everyone || (s.version ?? 1) < QUIROCITAS_COPY_VERSION) return new Set()
+  return new Set(Object.values(s.patients).filter((r) => !(r.ficha.id in s.failed) && (r.readAt ?? '') >= pass).map((r) => r.ficha.id))
+}
+
+/**
  * Which patients a read has to fetch from Quirocitas.
  *
  * A finished copy (its ledger is read last, so it has months) is out of date

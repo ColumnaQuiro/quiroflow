@@ -87,7 +87,7 @@ function clinic(team: Row[], appointments: Row[]): Record<string, Row[]> {
     team_members: team.map((m) => ({ account_id: ACCOUNT, deleted_at: null, is_practitioner: true, ...m })),
     patients: [{ id: 'p1', account_id: ACCOUNT, external_reference: 'QC-101' }],
     appointment_types: [{ id: 'ajuste', account_id: ACCOUNT, name: 'Ajuste', duration_minutes: 15 }],
-    appointments: appointments.map((a) => ({ account_id: ACCOUNT, checked_in_at: null, rescheduled: false, practitioner_id: null, ...a })),
+    appointments: appointments.map((a) => ({ account_id: ACCOUNT, patient_id: 'p1', checked_in_at: null, rescheduled: false, practitioner_id: null, note: null, deleted_at: null, ...a })),
   }
 }
 
@@ -157,5 +157,149 @@ describe('the Appointments step, run again', () => {
     const tables = clinic([{ id: 'demo', full_name: 'Dra. Demo Prueba' }], broken)
     await runAppointments(tables, snapshot())
     expect(tables.appointments!.find((a) => a.id === 'a3')).toMatchObject({ starts_at: '2026-11-09T09:00:00.000Z', ends_at: '2026-11-09T09:15:00.000Z' })
+  })
+})
+
+// A copy from a pass that read everyone, in which Quirocitas has stopped
+// listing cita 5003: cancelled there after it was imported, so it is gone from
+// the search list and the record's visit list has an entry for it instead,
+// with no id.
+function afterCancelling(entry: 'cancelacion' | 'cambio' | null = 'cancelacion', reason = 'Viaje'): QuirocitasSnapshot {
+  const s = snapshot()
+  const r = s.patients[101]!
+  r.ficha.appointments = r.ficha.appointments.filter((a) => a.id !== '5003')
+  if (entry) r.ficha.visits = [{ date: '09-11-2026', time: '10:00', type: 'Cancelación', chiro: 'Dra. Demo', paid: 0, bono: false, reason, status: entry }]
+  r.readAt = '2026-11-17T08:05:00.000Z'
+  return { ...s, passStartedAt: '2026-11-17T08:00:00.000Z', version: 2, listTotal: 1, ledgerMonths: [{ month: '2026-11', rows: 0, printed: { cash: null, card: null, transfer: null }, summed: { cash: 0, card: 0, transfer: 0 } }] }
+}
+
+describe('an appointment cancelled in Quirocitas after it was imported', () => {
+  const team = [{ id: 'demo', full_name: 'Dra. Demo Prueba' }]
+  const here = (booked: Row = {}) => [
+    { id: 'a1', external_reference: 'QC-5001', status: 'completed', starts_at: '2026-10-05T13:45:00.000Z', ends_at: '2026-10-05T14:00:00.000Z', practitioner_id: 'demo' },
+    { id: 'a3', external_reference: 'QC-5003', status: 'booked', starts_at: '2026-11-09T09:00:00.000Z', ends_at: '2026-11-09T09:15:00.000Z', practitioner_id: 'demo', ...booked },
+    { id: 'a4', external_reference: 'QC-5004', status: 'booked', starts_at: '2026-11-16T09:00:00.000Z', ends_at: '2026-11-16T09:15:00.000Z', practitioner_id: 'demo' },
+  ]
+  const at0900 = (tables: Record<string, Row[]>) => tables.appointments!.filter((a) => a.starts_at === '2026-11-09T09:00:00.000Z')
+  const statuses = (tables: Record<string, Row[]>) => Object.fromEntries(tables.appointments!.map((a) => [a.external_reference, a.status]))
+
+  it('is cancelled here, as the one row for that time', async () => {
+    const tables = clinic(team, here())
+    const { plan, result } = await runAppointments(tables, afterCancelling())
+    expect(result).toEqual({ written: 1, errors: [] })
+    expect(statuses(tables)).toEqual({ 'QC-5001': 'completed', 'QC-5003': 'cancelled', 'QC-5004': 'booked' })
+    // The reason Quirocitas gives comes with it, since its own row does not.
+    expect(at0900(tables)).toEqual([expect.objectContaining({ id: 'a3', status: 'cancelled', rescheduled: false, note: 'Viaje' })])
+    expect(plan.total).toBe(1)
+    expect(plan.stats.find((x) => x.label === 'Cancelled in Quirocitas')?.value).toBe('1')
+    expect(plan.warnings.join(' ')).toContain('1 appointments still booked here are no longer in Quirocitas')
+    expect(plan.rows[0]).toMatchObject({ status: 'Booked → Cancelled', note: 'Viaje' })
+  })
+
+  it('stays one row when the step runs again', async () => {
+    const tables = clinic(team, here())
+    await runAppointments(tables, afterCancelling())
+    const again = await runAppointments(tables, afterCancelling())
+    expect(again.plan.total).toBe(0)
+    expect(again.plan.warnings).toEqual([])
+    expect(at0900(tables)).toHaveLength(1)
+  })
+
+  it('is marked as moved when Quirocitas moved it, and keeps a note written here', async () => {
+    const tables = clinic(team, here({ note: 'Trae la resonancia' }))
+    await runAppointments(tables, afterCancelling('cambio'))
+    expect(at0900(tables)).toEqual([expect.objectContaining({ id: 'a3', status: 'cancelled', rescheduled: true, note: 'Trae la resonancia' })])
+  })
+
+  it('is cancelled when Quirocitas lists nothing in its place either', async () => {
+    const tables = clinic(team, here())
+    await runAppointments(tables, afterCancelling(null))
+    expect(at0900(tables)).toEqual([expect.objectContaining({ id: 'a3', status: 'cancelled' })])
+  })
+
+  it('does not gain a third row where an earlier run already wrote the cancelled one', async () => {
+    const tables = clinic(team, [...here(), { id: 'a9', external_reference: 'QC-101-202611091000-1', status: 'cancelled', starts_at: '2026-11-09T09:00:00.000Z', ends_at: '2026-11-09T09:15:00.000Z' }])
+    await runAppointments(tables, afterCancelling())
+    expect(at0900(tables).map((a) => [a.id, a.status])).toEqual([['a3', 'cancelled'], ['a9', 'cancelled']])
+  })
+
+  it('is not written a second time when the desk already cancelled it here', async () => {
+    const tables = clinic(team, here({ status: 'cancelled' }))
+    const { plan } = await runAppointments(tables, afterCancelling())
+    expect(plan.total).toBe(0)
+    expect(at0900(tables)).toHaveLength(1)
+  })
+
+  it('still writes a cancellation nothing here stands for', async () => {
+    // Two cancellations at that time in Quirocitas, one appointment here.
+    const s = afterCancelling()
+    s.patients[101]!.ficha.visits.push({ ...s.patients[101]!.ficha.visits[0]!, reason: 'Otra' })
+    const tables = clinic(team, here())
+    await runAppointments(tables, s)
+    await runAppointments(tables, s)
+    expect(at0900(tables).map((a) => [a.external_reference, a.status])).toEqual([['QC-5003', 'cancelled'], ['QC-101-202611091000-1', 'cancelled']])
+  })
+
+  it('is left alone once QuiroFlow has moved it or checked the patient in', async () => {
+    for (const acted of [{ rescheduled: true, starts_at: '2026-11-10T09:00:00.000Z', ends_at: '2026-11-10T09:15:00.000Z' }, { checked_in_at: '2026-11-09T08:58:00.000Z' }]) {
+      const tables = clinic(team, here(acted))
+      const { plan } = await runAppointments(tables, afterCancelling(null))
+      expect(statuses(tables)['QC-5003']).toBe('booked')
+      expect(plan.stats.find((x) => x.label === 'Kept as QuiroFlow has them')?.value).toBe('1')
+      expect(plan.stats.some((x) => x.label === 'Cancelled in Quirocitas')).toBe(false)
+    }
+  })
+
+  it('is left alone when someone acts on it between the preview and the write', async () => {
+    const tables = clinic(team, here())
+    const importer = quirocitasImporter({ supabase: fakeSupabase(tables) as never, accountId: ACCOUNT, clinicId: 'clinic', t, fetchFile: async () => ({}), compressFile: async () => {} })
+    const plan = await importer.plan('appointments', afterCancelling(null))
+    Object.assign(tables.appointments!.find((a) => a.id === 'a3')!, { checked_in_at: '2026-11-09T08:58:00.000Z' })
+    expect(await plan.apply(() => {}, () => false)).toEqual({ written: 0, errors: [] })
+    expect(statuses(tables)['QC-5003']).toBe('booked')
+  })
+
+  it('is left alone unless its patient was read in a pass that read everyone', async () => {
+    const untouched = async (s: QuirocitasSnapshot, tables = clinic(team, here())) => {
+      const { plan } = await runAppointments(tables, s)
+      expect(statuses(tables)['QC-5003']).toBe('booked')
+      expect(plan.stats.some((x) => x.label === 'Cancelled in Quirocitas')).toBe(false)
+    }
+    // The read stopped part way: no ledger yet.
+    await untouched({ ...afterCancelling(null), ledgerMonths: [] })
+    // Their record could not be read this time; the copy holds an earlier one.
+    await untouched({ ...afterCancelling(null), failed: { 101: 'timeout' } })
+    const stale = afterCancelling(null)
+    stale.patients[101]!.readAt = '2026-11-16T08:05:00.000Z'
+    await untouched(stale)
+    // A copy from before passes were recorded.
+    await untouched({ ...afterCancelling(null), passStartedAt: undefined })
+    // Someone else's appointment, whose record is not in the copy at all.
+    const other = clinic(team, here({ patient_id: 'p2' }))
+    other.patients!.push({ id: 'p2', account_id: ACCOUNT, external_reference: 'QC-102' })
+    await untouched(afterCancelling(null), other)
+  })
+
+  it('is cancelled from a pass that read everyone and could not read the ledger', async () => {
+    const tables = clinic(team, here())
+    await runAppointments(tables, { ...afterCancelling(null), ledgerMonths: [], ledgerError: 'Quirocitas did not show a month of the cash ledger.' })
+    expect(statuses(tables)['QC-5003']).toBe('cancelled')
+  })
+
+  it('is left alone when its cita is now on another record', async () => {
+    const s = afterCancelling(null)
+    s.patients[102] = { ...s.patients[101]!, list: { id: '102', name: 'Marc Demo Prueba', phones: [] }, ficha: { ...s.patients[101]!.ficha, id: '102', appointments: [{ id: '5003', date: '09-11-2026', time: '10:00', type: 'Ajuste', chiro: 'Dra. Demo', status: 'futuro' }] } }
+    const tables = clinic(team, here())
+    await runAppointments(tables, s)
+    expect(statuses(tables)['QC-5003']).toBe('booked')
+  })
+
+  it('cancels nothing from a record that came back with no appointment list', async () => {
+    const s = afterCancelling(null)
+    s.patients[101]!.ficha.appointments = []
+    const tables = clinic(team, here())
+    const { plan } = await runAppointments(tables, s)
+    expect(statuses(tables)).toEqual({ 'QC-5001': 'completed', 'QC-5003': 'booked', 'QC-5004': 'booked' })
+    expect(plan.warnings.join(' ')).toContain('showed no appointment list for 1 patients')
   })
 })

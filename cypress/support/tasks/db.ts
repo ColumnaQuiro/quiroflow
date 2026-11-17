@@ -1211,7 +1211,7 @@ async function createAccountCredit(opts: {
 async function paymentsFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('payments')
-    .select('amount_cents, method, purpose, invoice_id, package_purchase_id')
+    .select('amount_cents, method, purpose, invoice_id, package_purchase_id, paid_at')
     .eq('patient_id', opts.patientId)
     .order('paid_at')
   if (error) throw error

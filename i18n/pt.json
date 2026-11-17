@@ -8542,7 +8542,9 @@
   "GoCardless needs more information before this account can collect. It takes a few minutes, on GoCardless’s own page.": "O GoCardless precisa de mais informação antes de esta conta poder cobrar. Demora uns minutos, na própria página do GoCardless.",
   "Verify in GoCardless": "Verificar no GoCardless",
   "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "O GoCardless está a rever esta conta, por isso ainda não pode cobrar. Não há nada a fazer aqui; isto atualiza-se sozinho.",
-  "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Este recibo foi pago em parte através da GoCardless, por isso isto apenas regista o reembolso. Para devolver o dinheiro através da GoCardless, reembolse a partir da linha do próprio pagamento por débito direto."
+  "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Este recibo foi pago em parte através da GoCardless, por isso isto apenas regista o reembolso. Para devolver o dinheiro através da GoCardless, reembolse a partir da linha do próprio pagamento por débito direto.",
+  "Date paid": "Data do pagamento",
+  "The payment date cannot be in the future.": "A data do pagamento não pode ser posterior a hoje."
  },
  "p": {
   " ({0} from last year)": " ({0} do ano passado)",

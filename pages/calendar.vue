@@ -3105,7 +3105,9 @@ function showNowLineOn(day: Date) {
           <option value="month">{{ t('Month', 'Mes') }}</option>
         </select>
         <!-- Visits at the same time side by side, or one under the other.
-             Not in the month, which draws no visits. -->
+             Not in the month, which draws no visits. Icons below 2xl: with
+             its labels the toolbar no longer fits beside the title at 1440px,
+             the header wraps to two lines and the grid loses 39px. -->
         <div v-if="viewMode !== 'month'" role="group" :aria-label="t('Visits at the same time', 'Citas a la misma hora')" class="flex h-8 items-center gap-0.5 rounded-ctlSm border border-line-control bg-surface p-0.5 [@media(pointer:coarse)]:h-11" data-cy="stack-mode">
           <button
             v-for="m in ([['columns', t('Side by side', 'En columnas')], ['rows', t('One under the other', 'En filas')]] as const)"
@@ -3115,12 +3117,13 @@ function showNowLineOn(day: Date) {
             :class="stackMode === m[0] ? 'bg-chip-bg text-ink-900' : 'text-ink-muted hover:bg-surface-subtle'"
             :aria-pressed="stackMode === m[0]"
             :title="m[1]"
+            :aria-label="m[1]"
             :data-cy="`stack-mode-${m[0]}`"
             @click="stackMode = m[0]"
           >
             <svg v-if="m[0] === 'columns'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="3.6" height="11" rx="1" /><rect x="6.2" y="2.5" width="3.6" height="11" rx="1" /><rect x="10.9" y="2.5" width="3.6" height="11" rx="1" /></svg>
             <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
-            <span class="hidden xl:inline">{{ m[1] }}</span>
+            <span class="hidden 2xl:inline">{{ m[1] }}</span>
           </button>
         </div>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash shift', 'Turno de caja') }}</UiBtn>

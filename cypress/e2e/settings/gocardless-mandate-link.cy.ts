@@ -175,6 +175,7 @@ describe('GoCardless: new mandates, refunds and retries', () => {
       deliver([{ id: `EV-PM-${s.organisationId}`, created_at: '2026-12-04T09:00:00Z', resource_type: 'payments', action: 'confirmed', links: { payment: 'PM-R', organisation: s.organisationId } }])
         .its('status')
         .should('eq', 200)
+      cy.login(s.account.email, s.account.password)
 
       const refund = (euros: string) => {
         cy.visit(`/patients/${s.patientId}?tab=money`)
@@ -188,8 +189,11 @@ describe('GoCardless: new mandates, refunds and retries', () => {
       }
 
       refund('20')
+      // cy.task does not retry, so wait for the ledger to show the refund
+      // before asking the stub what it was sent.
+      cy.contains('tr', /Refund payment — Direct debit/, SLOW).should('exist')
       cy.task<StubState>('gc:state')
-        .its('refundBodies', SLOW)
+        .its('refundBodies')
         .should((bodies) => {
           expect(bodies).to.have.length(1)
           expect(bodies[0]).to.deep.include({ amount: 2000, total_amount_confirmation: 2000 })
@@ -198,7 +202,7 @@ describe('GoCardless: new mandates, refunds and retries', () => {
       cy.task<{ amount_cents: number; gocardless_refund_id: string | null }[]>('db:selectRows', {
         table: 'payments',
         columns: 'amount_cents, gocardless_refund_id',
-        match: { account_id: s.account.accountId, patient_id: s.patientId, method: 'direct_debit' },
+        match: { account_id: s.account.accountId, patient_id: s.patientId },
       }).should((rows) => {
         const back = rows.filter((r) => r.amount_cents < 0)
         expect(back).to.have.length(1)

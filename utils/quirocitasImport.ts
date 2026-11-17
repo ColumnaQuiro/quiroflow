@@ -1,7 +1,7 @@
-import type { TablesInsert, TablesUpdate } from '~/types/database.types'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database, TablesInsert, TablesUpdate } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { quiroflowKeeps } from '~/utils/importAppointmentGuard'
-import { quirocitasCall } from '~/composables/useQuirocitas'
 import {
   qcPatientRef,
   quirocitasAppointmentRows,
@@ -16,9 +16,18 @@ import {
 } from '~/utils/quirocitasRows'
 
 // What each Quirocitas import step will write, worked out from the copy the
-// Read step made (useQuirocitas.ts) and what is already here -- then written
-// on Apply. Every row carries a "QC-" external_reference, so a step run twice
-// finds what it wrote the first time and writes only what is missing.
+// Read step made and what is already here -- then written on Apply. Every row
+// carries a "QC-" external_reference, so a step run twice finds what it wrote
+// the first time and writes only what is missing.
+//
+// That is also what lets the server run a step in slices
+// (server/utils/importJobs.ts): a slice that runs out of time stops between
+// chunks, and the next one plans again and finds only what is still missing.
+//
+// It runs on the server only, with the service role, so every read here is
+// scoped to the account by hand: RLS is not there to do it. The preview the
+// step screens show comes from /api/import/quirocitas-preview, which plans
+// with this same code and never applies.
 //
 // Order matters the same way it does for PracticeHub: everything is matched
 // to its patient by the patient's reference, appointments must exist before
@@ -26,6 +35,10 @@ import {
 // them. A step run too early says what it is waiting for instead of guessing.
 
 export type QuirocitasStepKind = 'patients' | 'appointments' | 'clinical' | 'bonos' | 'ledger' | 'files'
+
+// The order a full import runs them in. Files go last: they are the slowest by
+// far (some are videos), and everything else is useful to the clinic sooner.
+export const QUIROCITAS_STEPS: QuirocitasStepKind[] = ['patients', 'appointments', 'clinical', 'bonos', 'ledger', 'files']
 
 export interface QuirocitasPlan {
   stats: { label: string; value: number | string; tone?: 'good' | 'plain' }[]
@@ -35,6 +48,20 @@ export interface QuirocitasPlan {
   /** Units of work Apply will do, for its progress bar. */
   total: number
   apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[] }>
+}
+
+export interface QuirocitasFileResult { storagePath?: string; size?: number; contentType?: string; missing?: true; blank?: true }
+
+export interface QuirocitasImportContext {
+  supabase: SupabaseClient<Database>
+  accountId: string
+  /** The clinic appointments are booked into. */
+  clinicId: string | null
+  t: (en: string, es: string) => string
+  /** Copies one photo or attached test from Quirocitas into Storage. */
+  fetchFile(body: { patientId: string; src: string; kind: 'photo' | 'test'; testId?: string }): Promise<QuirocitasFileResult>
+  /** Re-encodes a stored file and makes its thumbnail (processStoredPatientFile). */
+  compressFile(fileId: string): Promise<unknown>
 }
 
 const CHUNK = 200
@@ -56,10 +83,8 @@ async function withConcurrency<T>(items: T[], n: number, run: (item: T) => Promi
   await Promise.all(Array.from({ length: n }, async () => { for (let x; (x = queue.shift()) !== undefined;) await run(x) }))
 }
 
-export function useQuirocitasImport() {
-  const supabase = useSupabaseClient()
-  const store = useAccountStore()
-  const t = useT()
+export function quirocitasImporter(ctx: QuirocitasImportContext) {
+  const { supabase, accountId, clinicId, t } = ctx
   const nf = new Intl.NumberFormat('es-ES')
   // Previews name statuses and payment methods in words, not by their keys.
   const statusName = (status: string) =>
@@ -72,7 +97,7 @@ export function useQuirocitasImport() {
   async function readAll<T>(table: string, columns: string, refPrefix?: string): Promise<T[]> {
     const out: T[] = []
     for (let from = 0; ; from += 1000) {
-      let q = (supabase.from(table as any) as any).select(columns).eq('account_id', store.accountId!).order('id').range(from, from + 999)
+      let q = (supabase.from(table as never) as any).select(columns).eq('account_id', accountId).order('id').range(from, from + 999)
       if (refPrefix) q = q.like('external_reference', `${refPrefix}%`)
       const { data, error } = await q
       if (error) throw new Error(error.message)
@@ -87,13 +112,13 @@ export function useQuirocitasImport() {
   }
 
   async function clinicZone() {
-    if (!store.currentClinicId) return DEFAULT_CLINIC_TIMEZONE
-    const { data } = await supabase.from('clinics').select('timezone').eq('id', store.currentClinicId).maybeSingle()
+    if (!clinicId) return DEFAULT_CLINIC_TIMEZONE
+    const { data } = await supabase.from('clinics').select('timezone').eq('id', clinicId).maybeSingle()
     return data?.timezone || DEFAULT_CLINIC_TIMEZONE
   }
 
   async function team() {
-    const { data } = await supabase.from('team_members').select('id, full_name')
+    const { data } = await supabase.from('team_members').select('id, full_name').eq('account_id', accountId).is('deleted_at', null)
     const byName = new Map((data ?? []).map((m) => [m.full_name.trim().toLowerCase(), m.id]))
     return (name: string) => byName.get(name.trim().toLowerCase()) ?? null
   }
@@ -124,7 +149,7 @@ export function useQuirocitasImport() {
       const found = byRef.get(m.ref) ?? (m.fields.email ? byEmail.get(m.fields.email.toLowerCase()) : undefined)
       if (!found) {
         inserts.push({
-          row: { ...m.fields, account_id: store.accountId!, clinic_id: store.currentClinicId ?? null, external_reference: m.ref, default_practitioner_id: practitionerId, created_at: m.firstSeen ?? new Date().toISOString() },
+          row: { ...m.fields, account_id: accountId, clinic_id: clinicId ?? null, external_reference: m.ref, default_practitioner_id: practitionerId, created_at: m.firstSeen ?? new Date().toISOString() },
           phones,
         })
         continue
@@ -186,14 +211,14 @@ export function useQuirocitasImport() {
           if (error) { errors.push(error.message); return }
           written += data.length
           const idOf = new Map(data.map((d) => [d.external_reference, d.id]))
-          const numbers = chunk.flatMap((c) => c.phones.map((p) => ({ account_id: store.accountId!, patient_id: idOf.get(c.row.external_reference!)!, number: p.number, country_code: p.country_code, is_whatsapp: false })))
+          const numbers = chunk.flatMap((c) => c.phones.map((p) => ({ account_id: accountId, patient_id: idOf.get(c.row.external_reference!)!, number: p.number, country_code: p.country_code, is_whatsapp: false })))
           if (numbers.length) { const { error: e } = await supabase.from('patient_contact_numbers').insert(numbers); if (e) errors.push(e.message) }
         }, progress, shouldStop)
         let done = inserts.length
         await withConcurrency(changed, 8, async (u) => {
           if (shouldStop()) return
           if (Object.keys(u.changes).length) { const { error } = await supabase.from('patients').update(u.changes).eq('id', u.id); if (error) errors.push(`${u.label}: ${error.message}`); else written++ }
-          if (u.phones.length) await supabase.from('patient_contact_numbers').insert(u.phones.map((p) => ({ account_id: store.accountId!, patient_id: u.id, number: p.number, country_code: p.country_code, is_whatsapp: false })))
+          if (u.phones.length) await supabase.from('patient_contact_numbers').insert(u.phones.map((p) => ({ account_id: accountId, patient_id: u.id, number: p.number, country_code: p.country_code, is_whatsapp: false })))
           progress(++done)
         })
         return { written, errors }
@@ -207,7 +232,7 @@ export function useQuirocitasImport() {
     const zone = await clinicZone()
     const patients = await patientIds()
     const practitioner = await team()
-    const { data: typeRows } = await supabase.from('appointment_types').select('id, name, duration_minutes').eq('account_id', store.accountId!)
+    const { data: typeRows } = await supabase.from('appointment_types').select('id, name, duration_minutes').eq('account_id', accountId)
     const types = new Map((typeRows ?? []).map((ty) => [ty.name.trim().toLowerCase(), ty]))
     const existing = await readAll<{ id: string; external_reference: string; status: string; starts_at: string; checked_in_at: string | null; rescheduled: boolean }>('appointments', 'id, external_reference, status, starts_at, checked_in_at, rescheduled', 'QC-')
     const byRef = new Map(existing.map((a) => [a.external_reference, a]))
@@ -228,7 +253,7 @@ export function useQuirocitasImport() {
       updates.push({ id: here.id, status: a.status, starts_at: a.startsAt, label: `${a.startsAt.slice(0, 16).replace('T', ' ')} ${here.status} → ${a.status}` })
     }
     const now = new Date().toISOString()
-    const noClinic = !store.currentClinicId
+    const noClinic = !clinicId
     const upcoming = inserts.filter((a) => a.status === 'booked' && a.startsAt > now).length
 
     return {
@@ -250,7 +275,7 @@ export function useQuirocitasImport() {
         if (noClinic) return { written: 0, errors: [t('Nothing was written: no clinic is chosen (see above).', 'No se escribió nada: no hay clínica elegida (ver arriba).')] }
         const errors: string[] = []
         for (const name of newTypes) {
-          const { data, error } = await supabase.from('appointment_types').insert({ account_id: store.accountId!, name, duration_minutes: 15 }).select('id, name, duration_minutes').single()
+          const { data, error } = await supabase.from('appointment_types').insert({ account_id: accountId, name, duration_minutes: 15 }).select('id, name, duration_minutes').single()
           if (error) errors.push(`${name}: ${error.message}`)
           else types.set(name.toLowerCase(), data)
         }
@@ -260,8 +285,8 @@ export function useQuirocitasImport() {
             const type = a.type ? types.get(a.type.toLowerCase()) : undefined
             const quiet = opts.quietUpcoming && a.status === 'booked' && a.startsAt > now
             return {
-              account_id: store.accountId!,
-              clinic_id: store.currentClinicId!,
+              account_id: accountId,
+              clinic_id: clinicId!,
               patient_id: patients.get(a.patientRef)!,
               appointment_type_id: type?.id ?? null,
               practitioner_id: practitioner(a.practitioner),
@@ -334,11 +359,11 @@ export function useQuirocitasImport() {
         const errors: string[] = []
         let written = 0
         await inChunks(noteRows, CHUNK, async (chunk) => {
-          const { error } = await supabase.from('visit_notes').insert(chunk.map((n) => ({ account_id: store.accountId!, appointment_id: n.appointmentId, body: n.body, created_at: n.at ?? new Date().toISOString() })))
+          const { error } = await supabase.from('visit_notes').insert(chunk.map((n) => ({ account_id: accountId, appointment_id: n.appointmentId, body: n.body, created_at: n.at ?? new Date().toISOString() })))
           if (error) errors.push(error.message); else written += chunk.length
         }, progress, shouldStop)
         await inChunks(logRows, CHUNK, async (chunk) => {
-          const { error } = await supabase.from('contact_log').insert(chunk.map((l) => ({ account_id: store.accountId!, patient_id: patients.get(l.patientRef)!, action: l.action, note: l.note, external_reference: l.ref, created_at: l.at ?? new Date().toISOString() })))
+          const { error } = await supabase.from('contact_log').insert(chunk.map((l) => ({ account_id: accountId, patient_id: patients.get(l.patientRef)!, action: l.action, note: l.note, external_reference: l.ref, created_at: l.at ?? new Date().toISOString() })))
           if (error) errors.push(error.message); else written += chunk.length
         }, (n) => progress(noteRows.length + n), shouldStop)
         return { written, errors }
@@ -378,13 +403,13 @@ export function useQuirocitasImport() {
         let written = 0
         await inChunks(inserts, CHUNK, async (chunk) => {
           const { data, error } = await supabase.from('package_purchases').insert(chunk.map((b) => ({
-            account_id: store.accountId!, patient_id: patients.get(b.ownerRef)!, package_name: b.name, price_cents: b.priceCents,
+            account_id: accountId, patient_id: patients.get(b.ownerRef)!, package_name: b.name, price_cents: b.priceCents,
             sessions_total: b.sessionsTotal, sessions_used: b.sessionsUsed, purchased_at: b.purchasedAt, owed_cents: b.owedCents, is_closed: b.isClosed, external_reference: b.ref,
           }))).select('id, external_reference')
           if (error) { errors.push(error.message); return }
           written += data.length
           const idOf = new Map(data.map((d) => [d.external_reference, d.id]))
-          const shares = chunk.flatMap((b) => b.sharedWithRefs.filter((r) => patients.has(r)).map((r) => ({ account_id: store.accountId!, package_purchase_id: idOf.get(b.ref)!, patient_id: patients.get(r)! })))
+          const shares = chunk.flatMap((b) => b.sharedWithRefs.filter((r) => patients.has(r)).map((r) => ({ account_id: accountId, package_purchase_id: idOf.get(b.ref)!, patient_id: patients.get(r)! })))
           if (shares.length) { const { error: e } = await supabase.from('package_purchase_shares').insert(shares); if (e) errors.push(e.message) }
         }, progress, shouldStop)
         let done = inserts.length
@@ -409,7 +434,7 @@ export function useQuirocitasImport() {
     const haveInvoices = new Map((await readAll<{ id: string; external_reference: string }>('invoices', 'id, external_reference', 'QC-inv-')).map((i) => [i.external_reference, i.id]))
     const havePayments = new Set((await readAll<{ external_reference: string }>('payments', 'external_reference', 'QC-pay-')).map((p) => p.external_reference))
     const logged = new Set((await readAll<{ external_reference: string }>('contact_log', 'external_reference', 'QC-factura-')).map((l) => l.external_reference))
-    const { data: methods } = await supabase.from('payment_methods').select('key').eq('account_id', store.accountId!)
+    const { data: methods } = await supabase.from('payment_methods').select('key').eq('account_id', accountId)
     const missingMethods = (['cash', 'card', 'transfer'] as const).filter((k) => !(methods ?? []).some((m) => m.key === k))
 
     const { bonoOfSale } = quirocitasBonoRows(s, zone)
@@ -460,7 +485,7 @@ export function useQuirocitasImport() {
         let written = 0
         await inChunks(charges, CHUNK, async (chunk) => {
           const { data, error } = await supabase.from('invoices').insert(chunk.map((c) => ({
-            account_id: store.accountId!, patient_id: patients.get(c.patientRef)!, appointment_id: appts.get(c.appointmentRef)!,
+            account_id: accountId, patient_id: patients.get(c.patientRef)!, appointment_id: appts.get(c.appointmentRef)!,
             invoice_number: c.number, total_cents: c.totalCents, status: c.status, created_at: c.at, external_reference: c.ref,
           }))).select('id, external_reference')
           if (error) { errors.push(error.message); return }
@@ -469,13 +494,13 @@ export function useQuirocitasImport() {
         }, progress, shouldStop)
         await inChunks(payments, CHUNK, async (chunk) => {
           const { error } = await supabase.from('payments').insert(chunk.map((p) => ({
-            account_id: store.accountId!, patient_id: patients.get(p.patientRef)!, amount_cents: p.amountCents, method: p.method, paid_at: p.paidAt,
+            account_id: accountId, patient_id: patients.get(p.patientRef)!, amount_cents: p.amountCents, method: p.method, paid_at: p.paidAt,
             invoice_id: p.chargeRef ? haveInvoices.get(p.chargeRef) ?? null : null, package_purchase_id: p.bonoRef ? bonoIds.get(p.bonoRef) ?? null : null, external_reference: p.ref,
           })))
           if (error) errors.push(error.message); else written += chunk.length
         }, (n) => progress(charges.length + n), shouldStop)
         await inChunks(invoiceNotes, CHUNK, async (chunk) => {
-          const { error } = await supabase.from('contact_log').insert(chunk.map((n) => ({ account_id: store.accountId!, patient_id: patients.get(n.patientRef)!, action: 'other', note: n.note, external_reference: n.ref, created_at: n.at ?? new Date().toISOString() })))
+          const { error } = await supabase.from('contact_log').insert(chunk.map((n) => ({ account_id: accountId, patient_id: patients.get(n.patientRef)!, action: 'other', note: n.note, external_reference: n.ref, created_at: n.at ?? new Date().toISOString() })))
           if (error) errors.push(error.message); else written += chunk.length
         }, (n) => progress(charges.length + payments.length + n), shouldStop)
         return { written, errors }
@@ -516,20 +541,20 @@ export function useQuirocitasImport() {
         await withConcurrency(files, 3, async (f) => {
           if (shouldStop()) return
           try {
-            const res = await quirocitasCall<{ storagePath?: string; size?: number; contentType?: string; missing?: true }>({ op: 'file', patientId: patients.get(f.patientRef), src: f.src, kind: 'test', testId: f.testId })
+            const res = await ctx.fetchFile({ patientId: patients.get(f.patientRef)!, src: f.src, kind: 'test', testId: f.testId })
             if (res.missing || !res.storagePath) { missing++; return }
             // The reference's unique index is partial (where not null), which
             // PostgREST's upsert cannot target: look first, then write.
             const row = { file_name: f.fileName, file_type: res.contentType ?? null, size_bytes: res.size ?? null, storage_path: res.storagePath, is_xray: f.isXray }
-            const { data: here } = await supabase.from('patient_files').select('id').eq('account_id', store.accountId!).eq('external_reference', f.ref).maybeSingle()
+            const { data: here } = await supabase.from('patient_files').select('id').eq('account_id', accountId).eq('external_reference', f.ref).maybeSingle()
             // A re-run has just written the original over the compressed copy,
             // so the row must stop saying it was compressed and resized.
             const { data, error } = here
               ? await supabase.from('patient_files').update({ ...row, compressed_at: null, resized_at: null }).eq('id', here.id).select('id').single()
-              : await supabase.from('patient_files').insert({ ...row, account_id: store.accountId!, patient_id: patients.get(f.patientRef)!, external_reference: f.ref }).select('id').single()
+              : await supabase.from('patient_files').insert({ ...row, account_id: accountId, patient_id: patients.get(f.patientRef)!, external_reference: f.ref }).select('id').single()
             if (error) throw error
             written++
-            await useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId: data.id } }).catch(() => {})
+            await ctx.compressFile(data.id).catch(() => {})
           } catch (e) {
             errors.push(`${f.fileName}: ${errText(e)}`)
           } finally {
@@ -539,7 +564,7 @@ export function useQuirocitasImport() {
         await withConcurrency(photos, 3, async (p) => {
           if (shouldStop()) return
           try {
-            const res = await quirocitasCall<{ storagePath?: string; blank?: true; missing?: true }>({ op: 'file', patientId: patients.get(p.ref), src: `${p.id}/photo.jpg`, kind: 'photo' })
+            const res = await ctx.fetchFile({ patientId: patients.get(p.ref)!, src: `${p.id}/photo.jpg`, kind: 'photo' })
             if (res.storagePath) {
               const { error } = await supabase.from('patients').update({ photo_storage_path: res.storagePath }).eq('id', patients.get(p.ref)!)
               if (error) throw error

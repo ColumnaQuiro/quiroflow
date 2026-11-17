@@ -41,6 +41,8 @@ const props = withDefaults(
      * create once every response is already in).
      */
     allowEmptyApply?: boolean
+    /** How many rows there are in all, when `rows` is only a sample of them (a preview planned on the server). */
+    rowCount?: number
   }>(),
   { sampleLimit: 10, applyDisabled: false, allowEmptyApply: false },
 )
@@ -50,7 +52,7 @@ const emit = defineEmits<{ apply: []; cancel: [] }>()
 const t = useT()
 
 const sample = computed(() => props.rows.slice(0, props.sampleLimit))
-const hiddenCount = computed(() => Math.max(0, props.rows.length - props.sampleLimit))
+const hiddenCount = computed(() => Math.max(0, (props.rowCount ?? props.rows.length) - props.sampleLimit))
 </script>
 
 <template>

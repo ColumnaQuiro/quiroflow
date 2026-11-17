@@ -1,30 +1,45 @@
-import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasLedgerRow, QuirocitasListPatient, QuirocitasPatient } from '~/utils/quirocitasPages'
-import type { QuirocitasLedgerMonth, QuirocitasRecord, QuirocitasSnapshot, QuirocitasTechniques } from '~/utils/quirocitasRows'
-import { quirocitasDate, quirocitasReadQueue } from '~/utils/quirocitasRows'
+import type { ShallowRef } from 'vue'
+import type { Tables } from '~/types/database.types'
 
-// The Quirocitas importer's shared state: the saved connection, and the
-// clinic's records once read.
+// The Quirocitas importer's shared state: the saved connection, what the copy
+// read from Quirocitas holds, and the import job running for this clinic.
 //
-// Quirocitas has no API, so reading a clinic is thousands of page loads
-// through /api/import/quirocitas -- about ten minutes for 1,900 patients. That
-// read happens once, in the Read step, and every import step then works from
-// the copy it made rather than going back to Quirocitas. The copy is kept in
-// this browser (IndexedDB, per account), so a reload or a second sitting does
-// not mean reading the whole clinic again, and an interrupted read resumes
-// where it stopped. It holds patient data, so it is never sent anywhere and is
-// deleted with "Forget" on the Read step.
+// Quirocitas has no API, so reading a clinic is thousands of page loads --
+// about ten minutes for 1,900 patients. That used to be a loop in this tab,
+// with the copy kept in IndexedDB, and closing the tab stopped it. Now the
+// read and every import step run on the server as an import job
+// (server/utils/importJobs.ts): the screens start one, watch import_jobs, and
+// can be closed. The copy stays on the server (import_snapshots); the browser
+// only ever sees its counts and the previews planned from it.
 
 export interface QuirocitasConnection { baseUrl: string | null; username: string | null; hasPassword: boolean }
 
+export interface QuirocitasCopy {
+  readAt: string
+  state: { finished: boolean; read: number; total: number | null }
+  failed: number
+  months: number
+  ledgerRows: number
+  firstMonth: string | null
+  mismatched: string[]
+  counts: { patients: number; appointments: number; notes: number; segments: number; bonos: number; invoices: number; files: number } | null
+}
+
+export type ImportJobRow = Tables<'import_jobs'>
+
 const connection = ref<QuirocitasConnection | null>(null)
-const snapshot = shallowRef<QuirocitasSnapshot | null>(null)
+const copy = ref<QuirocitasCopy | null>(null)
+const copyLoaded = ref(false)
+// shallowRef: a row with Json columns sends UnwrapRef into its recursive type.
+const job = shallowRef<ImportJobRow | null>(null)
 
 export function useQuirocitasConnection() {
   return connection
 }
 
-export function useQuirocitasSnapshot() {
-  return snapshot
+/** What the copy read from Quirocitas holds. Null when nothing has been read. */
+export function useQuirocitasCopy() {
+  return { copy, loaded: copyLoaded }
 }
 
 export async function loadQuirocitasConnection(force = false) {
@@ -34,6 +49,17 @@ export async function loadQuirocitasConnection(force = false) {
 }
 
 export const quirocitasConnected = (c: QuirocitasConnection | null) => Boolean(c?.baseUrl && c.username && c.hasPassword)
+
+export async function loadQuirocitasCopy(opts: { counts?: boolean } = {}) {
+  copy.value = await useStaffFetch<QuirocitasCopy | null>('/api/import/quirocitas-copy', { query: opts.counts ? { counts: '1' } : {} }).catch(() => copy.value)
+  copyLoaded.value = true
+  return copy.value
+}
+
+export async function forgetQuirocitasCopy() {
+  await useStaffFetch('/api/import/quirocitas-copy', { method: 'DELETE' })
+  copy.value = null
+}
 
 /** One call to the server's Quirocitas reader, retried through a blip. */
 export async function quirocitasCall<T>(body: Record<string, unknown>): Promise<T> {
@@ -49,179 +75,76 @@ export async function quirocitasCall<T>(body: Record<string, unknown>): Promise<
   }
 }
 
-// --- the copy in this browser ----------------------------------------------------
+// --- the import job ------------------------------------------------------------------
 
-const DB = 'quiroflow-import'
-const STORE = 'quirocitas'
+export const importJobActive = (j: ImportJobRow | null) => j?.status === 'queued' || j?.status === 'running'
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function idb<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest): Promise<T> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = run(db.transaction(STORE, mode).objectStore(STORE))
-    req.onsuccess = () => resolve(req.result as T)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-export async function loadQuirocitasSnapshot(accountId: string) {
-  if (snapshot.value) return snapshot.value
-  snapshot.value = (await idb<QuirocitasSnapshot | undefined>('readonly', (s) => s.get(accountId)).catch(() => undefined)) ?? null
-  return snapshot.value
-}
-
-async function saveSnapshot(accountId: string, s: QuirocitasSnapshot) {
-  await idb('readwrite', (store) => store.put(s, accountId)).catch(() => {})
-}
-
-export async function forgetQuirocitasSnapshot(accountId: string) {
-  snapshot.value = null
-  await idb('readwrite', (s) => s.delete(accountId)).catch(() => {})
-}
-
-// --- reading the clinic --------------------------------------------------------------
-
-export interface QuirocitasReadProgress {
-  phase: 'list' | 'patients' | 'ledger' | 'done'
-  done: number
-  total: number
-  failed: number
-  month?: string
-}
-
-// Three patients in flight: Quirocitas is one PHP server answering a
-// session at a time, and more only queue there.
-const CONCURRENCY = 3
-const TECHNIQUE_BATCH = 20
-const LEDGER_MONTHS_PER_CALL = 4
+let timer: ReturnType<typeof setInterval> | null = null
+let watchers = 0
 
 /**
- * Reads the whole clinic: the patient list, every patient's record, history,
- * invoices and adjusted segments, then the cash ledger back to the month of
- * the oldest visit. A finished copy is read again in full, for what changed
- * since; a read that stopped part way picks up where it was (see
- * quirocitasReadQueue). `again` throws the copy away first.
- *
- * While it runs, leaving the page asks first. A read is ten minutes or more
- * of page loads and lives in this tab: a reload or a closed tab ends it
- * silently, and the copy keeps only what was saved before (every 100
- * patients). The guard is held here rather than by the Read screen, because
- * the read carries on when that screen is left for another step.
+ * The newest Quirocitas import job for this clinic, kept up to date while any
+ * screen watches it. When one finishes, the copy's counts are read again, so
+ * the step list shows what it did.
  */
-export async function readQuirocitas(
-  accountId: string,
-  opts: { again?: boolean; onProgress: (p: QuirocitasReadProgress) => void; shouldStop: () => boolean },
-) {
-  const guard = (e: BeforeUnloadEvent) => e.preventDefault()
-  window.addEventListener('beforeunload', guard)
-  try {
-    return await readPass(accountId, opts)
-  } finally {
-    window.removeEventListener('beforeunload', guard)
-  }
+export interface QuirocitasJobControls {
+  job: ShallowRef<ImportJobRow | null>
+  refresh(): Promise<void>
+  start(steps: string[], options?: { quietUpcoming?: boolean; fromScratch?: boolean }): Promise<ImportJobRow | null>
+  cancel(): Promise<void>
 }
 
-async function readPass(
-  accountId: string,
-  opts: { again?: boolean; onProgress: (p: QuirocitasReadProgress) => void; shouldStop: () => boolean },
-) {
-  const previous = opts.again ? null : await loadQuirocitasSnapshot(accountId)
-  opts.onProgress({ phase: 'list', done: 0, total: 0, failed: 0 })
-  const { patients: list } = await quirocitasCall<{ patients: QuirocitasListPatient[] }>({ op: 'patients' })
-  const now = new Date().toISOString()
-  const { passStartedAt, queue: ids } = quirocitasReadQueue(previous, list.map((p) => p.id), now)
-  const s: QuirocitasSnapshot = {
-    baseUrl: connection.value?.baseUrl ?? '',
-    readAt: now,
-    bonoTypes: previous?.bonoTypes ?? [],
-    // Records already in the copy stay until they are fetched again, so a
-    // patient Quirocitas fails to send this time keeps the earlier copy rather
-    // than dropping out of every import step.
-    patients: Object.fromEntries(Object.entries(previous?.patients ?? {}).filter(([id]) => list.some((p) => p.id === id))),
-    failed: {},
-    ledger: [],
-    ledgerMonths: [],
-    passStartedAt,
-    listTotal: list.length,
-  }
+export function useQuirocitasJob(): QuirocitasJobControls {
+  const supabase = useSupabaseClient()
+  const store = useAccountStore()
+  const { preference } = useLang()
 
-  const waiting = new Set(ids)
-  const queue = list.filter((p) => waiting.has(p.id))
-  let done = list.length - queue.length
-  let bonoTypesRead = false
-  let sinceSave = 0
-  const report = () => opts.onProgress({ phase: 'patients', done, total: list.length, failed: Object.keys(s.failed).length })
-  report()
-
-  async function readOne(p: QuirocitasListPatient) {
-    const read = await quirocitasCall<{ ficha: QuirocitasPatient; history: QuirocitasHistory; invoices: QuirocitasInvoice[]; bonoTypes: QuirocitasBonoType[] }>({ op: 'patient', id: p.id, name: p.name })
-    if (!bonoTypesRead) { s.bonoTypes = read.bonoTypes; bonoTypesRead = true }
-    const techniques: Record<string, QuirocitasTechniques> = {}
-    const citaIds = read.history.visits.map((v) => v.citaId).filter(Boolean)
-    for (let i = 0; i < citaIds.length; i += TECHNIQUE_BATCH) {
-      const { techniques: t } = await quirocitasCall<{ techniques: Record<string, QuirocitasTechniques> }>({ op: 'techniques', citaIds: citaIds.slice(i, i + TECHNIQUE_BATCH), segments: read.history.segments })
-      Object.assign(techniques, t)
+  async function refresh() {
+    if (!store.accountId) return
+    const before = job.value
+    const { data } = await supabase
+      .from('import_jobs')
+      .select('*')
+      .eq('account_id', store.accountId)
+      .eq('source', 'quirocitas')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const fresh = (data ?? null) as ImportJobRow | null
+    job.value = fresh
+    if (before && importJobActive(before) && fresh && !importJobActive(fresh)) {
+      await loadQuirocitasCopy({ counts: true })
     }
-    const record: QuirocitasRecord = { list: p, ficha: read.ficha, history: read.history, invoices: read.invoices, techniques, readAt: new Date().toISOString() }
-    s.patients[p.id] = record
   }
 
-  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
-    for (let p; (p = queue.shift());) {
-      if (opts.shouldStop()) return
-      try {
-        await readOne(p)
-        delete s.failed[p.id]
-      } catch (err: any) {
-        s.failed[p.id] = err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'failed'
-      }
-      done++
-      report()
-      if (++sinceSave >= 100) { sinceSave = 0; snapshot.value = { ...s }; await saveSnapshot(accountId, s) }
-    }
-  }))
-  snapshot.value = { ...s }
-  await saveSnapshot(accountId, s)
-  if (opts.shouldStop()) return s
-
-  // The cash ledger, newest month first, back to the oldest visit anyone has.
-  let earliest = '9999-99'
-  for (const r of Object.values(s.patients)) {
-    for (const v of r.ficha.visits) { const d = quirocitasDate(v.date); if (d && d.slice(0, 7) < earliest) earliest = d.slice(0, 7) }
+  function poll() {
+    if (timer) return
+    timer = setInterval(() => { if (importJobActive(job.value)) refresh().catch(() => {}) }, 3000)
   }
-  const ledger: QuirocitasLedgerRow[] = []
-  const months: QuirocitasLedgerMonth[] = []
-  for (let restart = true; ;) {
-    if (opts.shouldStop()) return s
-    const { months: batch } = await quirocitasCall<{ months: { month: string; rows: QuirocitasLedgerRow[]; totals: QuirocitasLedgerMonth['printed'] }[] }>({ op: 'ledger', restart, months: LEDGER_MONTHS_PER_CALL })
-    restart = false
-    for (const m of batch) {
-      ledger.push(...m.rows)
-      const sum = (k: 'cash' | 'card' | 'transfer') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
-      months.push({ month: m.month, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') } })
-    }
-    const last = batch[batch.length - 1]!.month
-    opts.onProgress({ phase: 'ledger', done: months.length, total: 0, failed: Object.keys(s.failed).length, month: last })
-    if (last <= earliest) break
-  }
-  s.ledger = ledger
-  s.ledgerMonths = months
-  s.readAt = new Date().toISOString()
-  snapshot.value = { ...s }
-  await saveSnapshot(accountId, s)
-  opts.onProgress({ phase: 'done', done: list.length, total: list.length, failed: Object.keys(s.failed).length })
-  return s
-}
 
-/** Months whose rows do not add up to what Quirocitas printed under them. */
-export function quirocitasLedgerMismatches(s: QuirocitasSnapshot) {
-  return s.ledgerMonths.filter((m) => (['cash', 'card', 'transfer'] as const).some((k) => m.printed[k] !== null && Math.abs(m.printed[k]! - m.summed[k]) > 0.011))
+  onMounted(() => {
+    watchers++
+    refresh().catch(() => {})
+    poll()
+  })
+  onBeforeUnmount(() => {
+    if (--watchers <= 0 && timer) { clearInterval(timer); timer = null }
+  })
+
+  async function start(steps: string[], options: { quietUpcoming?: boolean; fromScratch?: boolean } = {}) {
+    job.value = await useStaffFetch<ImportJobRow>('/api/import/jobs', {
+      method: 'POST',
+      body: { source: 'quirocitas', steps, clinicId: store.currentClinicId ?? null, options: { ...options, lang: preference.value } },
+    })
+    poll()
+    return job.value
+  }
+
+  async function cancel() {
+    if (!job.value) return
+    await useStaffFetch(`/api/import/jobs/${job.value.id}/cancel`, { method: 'POST' })
+    await refresh()
+  }
+
+  return { job, refresh, start, cancel }
 }

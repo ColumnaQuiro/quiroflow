@@ -1,25 +1,36 @@
 <script setup lang="ts">
-import type { QuirocitasPlan, QuirocitasStepKind } from '~/composables/useQuirocitasImport'
+import type { QuirocitasStepKind } from '~/utils/quirocitasImport'
 
 // One import step, any of them: prepare a preview from the copy the Read step
 // made, show it, write it on Apply. What each step maps and writes is in
-// composables/useQuirocitasImport.ts; this is only the screen around it, the
-// same shape for all of them so each can be trusted without reading the code.
+// utils/quirocitasImport.ts; this is only the screen around it, the same
+// shape for all of them so each can be trusted without reading the code.
+//
+// Both halves run on the server. The preview is planned there from the copy
+// (/api/import/quirocitas-preview), and Apply starts an import job of this
+// one step, which plans again and writes -- so the page can be closed while
+// it does, and whoever pressed Apply gets an email when it is done.
 const props = defineProps<{ kind: QuirocitasStepKind }>()
+
+interface Preview {
+  stats: { label: string; value: number | string; tone?: 'good' | 'plain' }[]
+  columns: { key: string; label: string; wrap?: boolean }[]
+  rows: Record<string, string>[]
+  rowCount: number
+  warnings: string[]
+  total: number
+}
 
 const t = useT()
 const store = useAccountStore()
-const snapshot = useQuirocitasSnapshot()
-const { plan: buildPlan } = useQuirocitasImport()
+const { copy, loaded } = useQuirocitasCopy()
+const { job, start, cancel } = useQuirocitasJob()
+const { preference } = useLang()
 const nf = new Intl.NumberFormat('es-ES')
 
-const stage = ref<'idle' | 'planning' | 'preview' | 'applying' | 'done' | 'error'>('idle')
-useImportWriting(() => stage.value === 'applying')
-const plan = shallowRef<QuirocitasPlan | null>(null)
+const stage = ref<'idle' | 'planning' | 'preview' | 'error'>('idle')
+const plan = shallowRef<Preview | null>(null)
 const error = ref('')
-const done = ref(0)
-const stopping = ref(false)
-const result = ref<{ written: number; errors: string[] } | null>(null)
 // Quirocitas keeps reminding its patients until the clinic switches over, so
 // by default the visits still to come are marked as already reminded here.
 const quietUpcoming = ref(true)
@@ -28,12 +39,16 @@ const quietUpcoming = ref(true)
 // their visits -- were simply missing afterwards. So an unfinished copy stops
 // every step until it is finished, unless importing only what was read is
 // chosen in so many words.
-const readState = computed(() => (snapshot.value ? quirocitasReadState(snapshot.value) : null))
+const readState = computed(() => copy.value?.state ?? null)
 const partialChosen = ref(false)
 const blockedByRead = computed(() => Boolean(readState.value && !readState.value.finished && !partialChosen.value))
 
-onMounted(() => { if (store.accountId) loadQuirocitasSnapshot(store.accountId) })
-watch(() => props.kind, () => { stage.value = 'idle'; plan.value = null; result.value = null; partialChosen.value = false })
+const running = computed(() => importJobActive(job.value))
+// This step's own job, running or the last one that ran.
+const stepJob = computed(() => (job.value && job.value.steps.length === 1 && job.value.steps[0] === props.kind ? job.value : null))
+
+onMounted(() => { if (!loaded.value) loadQuirocitasCopy() })
+watch(() => props.kind, () => { stage.value = 'idle'; plan.value = null; partialChosen.value = false })
 
 const INTRO: Record<QuirocitasStepKind, { lead: () => string; notes: () => { title: string; body: string }[] }> = {
   patients: {
@@ -76,28 +91,28 @@ const INTRO: Record<QuirocitasStepKind, { lead: () => string; notes: () => { tit
 }
 
 async function prepare() {
-  if (!snapshot.value) return
   stage.value = 'planning'
   error.value = ''
   try {
-    plan.value = await buildPlan(props.kind, snapshot.value, { quietUpcoming: quietUpcoming.value })
+    plan.value = await useStaffFetch<Preview>('/api/import/quirocitas-preview', {
+      method: 'POST',
+      body: { kind: props.kind, clinicId: store.currentClinicId ?? null, quietUpcoming: quietUpcoming.value, lang: preference.value },
+    })
     stage.value = 'preview'
   } catch (e: any) {
-    error.value = e?.message ?? String(e)
+    error.value = importErrorText(e, t, { en: 'The preview could not be prepared.', es: 'No se pudo preparar la vista previa.' })
     stage.value = 'error'
   }
 }
 
 async function apply() {
-  if (!plan.value) return
-  stage.value = 'applying'
-  stopping.value = false
-  done.value = 0
+  error.value = ''
   try {
-    result.value = await plan.value.apply((n) => { done.value = n }, () => stopping.value)
-    stage.value = 'done'
+    await start([props.kind], { quietUpcoming: quietUpcoming.value })
+    stage.value = 'idle'
+    plan.value = null
   } catch (e: any) {
-    error.value = e?.message ?? String(e)
+    error.value = importErrorText(e, t, { en: 'The import could not start.', es: 'No se pudo empezar la importación.' })
     stage.value = 'error'
   }
 }
@@ -107,16 +122,21 @@ async function apply() {
   <div class="space-y-4" :data-cy="`qc-step-${kind}`">
     <ImportIntro :lead="INTRO[kind].lead()" :notes="INTRO[kind].notes()" />
 
-    <p v-if="!snapshot" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
+    <p v-if="loaded && !copy" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
       {{ t('Read Quirocitas first: every step imports from that copy.', 'Lee antes Quirocitas: cada paso importa desde esa copia.') }}
     </p>
+
+    <template v-else-if="running">
+      <ImportQuirocitasJob v-if="stepJob" :job="stepJob" @cancel="cancel" />
+      <p v-else class="text-[13px] text-ink-muted2" data-cy="qc-other-job">{{ t('An import is running for this clinic. This step can be run once it has finished.', 'Hay una importación en marcha para esta clínica. Este paso se podrá hacer cuando termine.') }}</p>
+    </template>
 
     <div v-else-if="blockedByRead && (stage === 'idle' || stage === 'error') && readState" class="space-y-3 rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text" data-cy="qc-read-unfinished">
       <p class="font-medium">
         <template v-if="readState.total">{{ t(`The Quirocitas read has not finished: ${nf.format(readState.read)} of ${nf.format(readState.total)} patients read, cash ledger not yet.`, `La lectura de Quirocitas no ha terminado: ${nf.format(readState.read)} de ${nf.format(readState.total)} pacientes leídos, y la caja sin leer.`) }}</template>
         <template v-else>{{ t(`The Quirocitas read has not finished: ${nf.format(readState.read)} patients read, cash ledger not yet.`, `La lectura de Quirocitas no ha terminado: ${nf.format(readState.read)} pacientes leídos, y la caja sin leer.`) }}</template>
       </p>
-      <p>{{ t('Importing now would leave out every patient not read yet, with all their visits. Go back to Read and press "Carry on reading": it picks up where it stopped. Keep this tab open until it finishes.', 'Importar ahora dejaría fuera a todos los pacientes aún sin leer, con todas sus visitas. Vuelve a Leer y pulsa «Seguir leyendo»: sigue donde se quedó. Deja esta pestaña abierta hasta que termine.') }}</p>
+      <p>{{ t('Importing now would leave out every patient not read yet, with all their visits. Go back to Read and press "Carry on reading": it picks up where it stopped, on the server.', 'Importar ahora dejaría fuera a todos los pacientes aún sin leer, con todas sus visitas. Vuelve a Leer y pulsa «Seguir leyendo»: sigue donde se quedó, en el servidor.') }}</p>
       <button type="button" class="text-[12.5px] font-medium underline" data-cy="qc-import-partial" @click="partialChosen = true">
         {{ t('Import only what has been read', 'Importar solo lo leído') }}
       </button>
@@ -127,10 +147,11 @@ async function apply() {
         <input v-model="quietUpcoming" type="checkbox" class="mt-0.5" data-cy="qc-quiet-upcoming" />
         <span>{{ t('Quirocitas is still sending reminders: do not send them from QuiroFlow for the upcoming visits imported now.', 'Quirocitas aún envía los recordatorios: no enviarlos desde QuiroFlow para las próximas visitas que se importan ahora.') }}</span>
       </label>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" data-cy="qc-prepare" @click="prepare">
+      <button v-if="copy" type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" data-cy="qc-prepare" @click="prepare">
         {{ t('Prepare preview', 'Preparar vista previa') }}
       </button>
       <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+      <ImportQuirocitasJob v-if="stepJob" :job="stepJob" @cancel="cancel" />
     </template>
 
     <p v-else-if="stage === 'planning'" class="text-[13px] text-ink-muted2">{{ t('Comparing with what is already here…', 'Comparando con lo que ya hay…') }}</p>
@@ -140,6 +161,7 @@ async function apply() {
       :stats="plan.stats"
       :columns="plan.columns"
       :rows="plan.rows"
+      :row-count="plan.rowCount"
       :apply-label="t('Apply', 'Aplicar')"
       :more-label="t('more', 'más')"
       :apply-disabled="plan.total === 0"
@@ -153,23 +175,5 @@ async function apply() {
         <p v-if="plan.total === 0" class="text-[13px] text-success-text">{{ t('Everything is already here. Nothing to write.', 'Ya está todo aquí. No hay nada que escribir.') }}</p>
       </template>
     </ImportPreviewPanel>
-
-    <div v-else-if="stage === 'applying' && plan" class="space-y-2" data-cy="qc-applying">
-      <div class="h-2 overflow-hidden rounded-full bg-surface-subtle"><div class="h-full bg-brand transition-all" :style="{ width: `${Math.round((done / Math.max(plan.total, 1)) * 100)}%` }" /></div>
-      <div class="flex items-center gap-3 text-[13px] text-ink-muted2">
-        <span>{{ t(`${nf.format(done)} of ${nf.format(plan.total)}`, `${nf.format(done)} de ${nf.format(plan.total)}`) }}</span>
-        <button type="button" class="font-medium text-ink-700 hover:underline disabled:opacity-50" :disabled="stopping" @click="stopping = true">{{ stopping ? t('Stopping…', 'Parando…') : t('Stop', 'Parar') }}</button>
-      </div>
-    </div>
-
-    <div v-else-if="stage === 'done' && result" class="space-y-2" data-cy="qc-done">
-      <p class="text-sm" :class="result.errors.length ? 'text-warning-text' : 'text-success-text'">
-        {{ stopping ? t(`Stopped after saving ${nf.format(result.written)}. Prepare the preview again to carry on.`, `Parado tras guardar ${nf.format(result.written)}. Vuelve a preparar la vista previa para seguir.`) : result.errors.length ? t(`Finished: ${nf.format(result.written)} saved, with the problems below.`, `Terminado: ${nf.format(result.written)} guardados, con los problemas de abajo.`) : t(`Done: ${nf.format(result.written)} saved.`, `Hecho: ${nf.format(result.written)} guardados.`) }}
-      </p>
-      <ul v-if="result.errors.length" class="max-h-60 space-y-1 overflow-y-auto rounded-ctl border border-line-divider p-3 text-[12.5px] text-danger-text">
-        <li v-for="(e, i) in result.errors.slice(0, 100)" :key="i">{{ e }}</li>
-      </ul>
-      <button type="button" class="text-sm font-medium text-ink-700 hover:underline" @click="prepare">{{ t('Check again', 'Comprobar de nuevo') }}</button>
-    </div>
   </div>
 </template>

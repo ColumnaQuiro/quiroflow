@@ -11,7 +11,7 @@ import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
-import { gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
+import { gridEndHour, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
 import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
@@ -20,8 +20,6 @@ import { isRouteAllowed } from '~/utils/routePermissions'
 import type { Database } from '~/types/database.types'
 
 const START_HOUR = 8
-const END_HOUR = 20
-const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 
 // Row scale: these are floors, not fixed values -- on a viewport taller
 // than 12 hours' worth of rows, the actual per-hour height grows to fill
@@ -65,8 +63,8 @@ onMounted(() => {
 })
 onUnmounted(() => scrollAreaObserver?.disconnect())
 
-const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - dayHeaderPx.value) / (END_HOUR - START_HOUR))))
-const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - weekHeaderPx.value) / (END_HOUR - START_HOUR))))
+const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - dayHeaderPx.value) / gridHours.value)))
+const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - weekHeaderPx.value) / gridHours.value)))
 
 // A short appointment's floor only needs to fit one line: below 40px a
 // block collapses to name, stage and money on a single row (utils/
@@ -491,6 +489,25 @@ async function loadReferenceData() {
 const clinicTeamMembers = computed(() =>
   teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),
 )
+
+// Where the grid ends (utils/calendarRows gridEndHour): 20:00, or the latest
+// anyone here closes, or the latest a visit or class in the range ends --
+// whichever is later. It was a fixed 20:00, and a clinic open until 20:30
+// had its last half hour, and every visit booked in it, off the bottom.
+const endHour = computed(() => {
+  const closing = [store.currentClinic?.business_hours as BusinessHours | null | undefined, ...clinicTeamMembers.value.map((m) => m.business_hours)]
+    .flatMap((hours) => Object.values(hours ?? {}).flat().map((w) => w[1]))
+  const ends = [...appointments.value, ...classSessions.value].map((v) => {
+    const s = new Date(v.starts_at)
+    const e = new Date(v.ends_at)
+    const startMin = s.getHours() * 60 + s.getMinutes()
+    if (e <= s) return startMin
+    return startOfDay(e).getTime() === startOfDay(s).getTime() ? e.getHours() * 60 + e.getMinutes() : 24 * 60
+  })
+  return gridEndHour(closing, ends)
+})
+const gridHours = computed(() => endHour.value - START_HOUR)
+const totalMin = computed(() => gridHours.value * 60)
 
 // Keeps practitionerFilter pointing at a real, visible tab -- restores the
 // last-used practitioner from localStorage when it's still valid for this
@@ -1218,28 +1235,27 @@ function roomPractitionerLabel(roomId: string) {
 // fit the most visits any column on screen has starting in it. Everything
 // that turns a time into a position, or a position into a time, goes
 // through these -- never hours x hourPx, which is only true of the first.
-const HOURS = END_HOUR - START_HOUR
 // Held still while a visit is dragged in rows mode: the hours would
 // otherwise grow and shrink under the pointer as the visit changes hour,
 // and the time under the pointer with them.
 let heldTops: HourTops | null = null
 function rowsTops(hourPx: number, rowPx: number, days: Date[]) {
   const keys = new Set(days.map(toDateKey))
-  const rows = new Array<number>(HOURS).fill(0)
+  const rows = new Array<number>(gridHours.value).fill(0)
   for (const [key, list] of columnRows.value) {
     if (!keys.has(key.split('|')[0])) continue
-    gridRowsPerHour(list.map((a) => minuteOfGrid(a.starts_at)), HOURS).forEach((n, h) => (rows[h] = Math.max(rows[h], n)))
+    gridRowsPerHour(list.map((a) => minuteOfGrid(a.starts_at)), gridHours.value).forEach((n, h) => (rows[h] = Math.max(rows[h], n)))
   }
   return gridStretchedTops(hourPx, rows, rowPx)
 }
 const dayTops = computed<HourTops>(() => {
   if (dragState.value && heldTops && viewMode.value === 'day') return heldTops
-  if (!rowsMode.value || viewMode.value !== 'day') return gridLinearTops(HOURS, DAY_HOUR_PX.value)
+  if (!rowsMode.value || viewMode.value !== 'day') return gridLinearTops(gridHours.value, DAY_HOUR_PX.value)
   return rowsTops(DAY_HOUR_PX.value, DAY_ROW_PX, [anchorDate.value])
 })
 const weekTops = computed<HourTops>(() => {
   if (dragState.value && heldTops && viewMode.value !== 'day') return heldTops
-  if (!rowsMode.value || viewMode.value === 'day' || viewMode.value === 'month') return gridLinearTops(HOURS, WEEK_HOUR_PX.value)
+  if (!rowsMode.value || viewMode.value === 'day' || viewMode.value === 'month') return gridLinearTops(gridHours.value, WEEK_HOUR_PX.value)
   return rowsTops(WEEK_HOUR_PX.value, WEEK_ROW_PX, visibleWeekDays.value)
 })
 
@@ -1264,9 +1280,9 @@ function slotHeight(tops: HourTops, min: number) {
   return gridYAt(tops, min + SLOT_MIN.value) - gridYAt(tops, min)
 }
 
-const dayGridHeight = computed(() => dayTops.value[HOURS])
-const weekGridHeight = computed(() => weekTops.value[HOURS])
-const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
+const dayGridHeight = computed(() => dayTops.value[gridHours.value])
+const weekGridHeight = computed(() => weekTops.value[gridHours.value])
+const hourMarks = computed(() => Array.from({ length: gridHours.value }, (_, i) => START_HOUR + i))
 function hourLabel(h: number) {
   return `${pad(h)}:00`
 }
@@ -1281,7 +1297,7 @@ function slotLabel(m: number) {
 // like PracticeHub's, rather than only marking full hours.
 const slotMarks = computed(() => {
   const marks: number[] = []
-  for (let m = SLOT_MIN.value; m < TOTAL_MIN; m += SLOT_MIN.value) {
+  for (let m = SLOT_MIN.value; m < totalMin.value; m += SLOT_MIN.value) {
     if (m % 60 !== 0) marks.push(m)
   }
   return marks
@@ -1340,7 +1356,7 @@ function closedSlotRects(forDate: Date, tops: HourTops) {
   const windows = workingWindowsFor(forDate)
   if (windows === null) return []
   const rects: { top: number; height: number }[] = []
-  for (let m = 0; m < TOTAL_MIN; m += SLOT_MIN.value) {
+  for (let m = 0; m < totalMin.value; m += SLOT_MIN.value) {
     if (withinWindows(START_HOUR * 60 + m, windows)) continue
     const top = slotTop(tops, m)
     const slotPx = slotHeight(tops, m)
@@ -1770,7 +1786,7 @@ function blockBoxOnDay(block: AvailabilityBlock, day: Date, tops: HourTops, minF
   const gridStart = startOfDay(day)
   gridStart.setHours(START_HOUR)
   const gridEnd = startOfDay(day)
-  gridEnd.setHours(END_HOUR)
+  gridEnd.setHours(endHour.value)
   const s = Math.max(new Date(block.starts_at).getTime(), gridStart.getTime())
   const e = Math.min(new Date(block.ends_at).getTime(), gridEnd.getTime())
   const top = gridYAt(tops, (s - gridStart.getTime()) / 60_000)
@@ -2672,7 +2688,7 @@ function yInColumn(e: MouseEvent) {
 function snapMin(offsetY: number, tops: HourTops) {
   if (!Number.isFinite(offsetY)) return 0
   const m = Math.floor(gridMinuteAt(tops, offsetY) / SLOT_MIN.value) * SLOT_MIN.value
-  return Math.min(Math.max(0, m), TOTAL_MIN - SLOT_MIN.value)
+  return Math.min(Math.max(0, m), totalMin.value - SLOT_MIN.value)
 }
 
 // The visible appointment covering a cell, if any -- what Enter opens.
@@ -2814,7 +2830,7 @@ function activateKeyboardFocus() {
     // anybody works.
     const nowMin = now.value.getHours() * 60 + now.value.getMinutes() - START_HOUR * 60
     const onScreen = gridColumns.value.findIndex((c) => isSameDate(c.day, now.value))
-    const min = onScreen >= 0 && nowMin >= 0 && nowMin < TOTAL_MIN ? Math.floor(nowMin / SLOT_MIN.value) * SLOT_MIN.value : 0
+    const min = onScreen >= 0 && nowMin >= 0 && nowMin < totalMin.value ? Math.floor(nowMin / SLOT_MIN.value) * SLOT_MIN.value : 0
     focusCell.value = { col: Math.max(0, onScreen), min }
   }
 }
@@ -2831,7 +2847,7 @@ function onGridKeydown(e: KeyboardEvent) {
   const cell = focusCell.value
   if (!cell) return
   const lastCol = gridColumns.value.length - 1
-  const lastMin = TOTAL_MIN - SLOT_MIN.value
+  const lastMin = totalMin.value - SLOT_MIN.value
   let next: Cell | null = null
   switch (e.key) {
     case 'ArrowUp':
@@ -2981,7 +2997,7 @@ onUnmounted(() => {
   if (nowTimer) clearInterval(nowTimer)
   document.removeEventListener('visibilitychange', onVisible)
 })
-const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
+const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < endHour.value)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
 const nowLinePx = computed(() => timeToPx(now.value.toISOString(), dayTops.value))
 // Week views: the line runs across today's room columns only, and the time

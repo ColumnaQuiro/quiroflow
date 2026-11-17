@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gridHourOf, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt } from '../../utils/calendarRows'
+import { gridEndHour, gridHourOf, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt } from '../../utils/calendarRows'
 
 // The calendar's vertical scale (utils/calendarRows): the linear grid it has
 // always drawn, and rows mode, where an hour grows to fit the visits stacked
@@ -73,5 +73,32 @@ describe('rows mode', () => {
     const tops = gridLinearTops(HOURS, 60)
     const rows = gridStackRows([0, 0, 0], tops, 30)
     expect(rows).toEqual([0, 30, 60])
+  })
+})
+
+// Where the grid ends: a fixed 20:00 hid a clinic's last half hour (open
+// until 20:30) and every visit booked from 20:00 on.
+describe('gridEndHour', () => {
+  it('stays at 20:00 when nothing goes later', () => {
+    expect(gridEndHour(['13:00', '19:30'], [19 * 60 + 45])).toBe(20)
+    expect(gridEndHour([], [])).toBe(20)
+  })
+
+  it('reaches the latest closing time, rounded up to the hour', () => {
+    expect(gridEndHour(['13:00', '20:30'], [])).toBe(21)
+    expect(gridEndHour(['21:00'], [])).toBe(21)
+  })
+
+  it('reaches the latest visit on screen, even past closing', () => {
+    expect(gridEndHour(['20:30'], [21 * 60 + 30])).toBe(22)
+  })
+
+  it('stops at midnight for a visit that runs past it', () => {
+    expect(gridEndHour([], [24 * 60])).toBe(24)
+    expect(gridEndHour([], [25 * 60])).toBe(24)
+  })
+
+  it('ignores a malformed closing time', () => {
+    expect(gridEndHour(['', 'abc'], [])).toBe(20)
   })
 })

@@ -136,6 +136,8 @@ export const UNAUTHENTICATED_PAGES = [
   '/signup',
   '/check-email',
   '/payment-done',
+  // Where GoCardless's direct-debit sign-up returns a patient, who has no session.
+  '/direct-debit-done',
   '/forgot-password',
   '/legal/declaracion-responsable',
   '/legal/security',

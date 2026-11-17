@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     try {
       events = (
         await Promise.all(
-          ['payments', 'mandates', 'subscriptions'].map((resource) =>
+          ['payments', 'mandates', 'subscriptions', 'billing_requests', 'refunds'].map((resource) =>
             gocardlessListAll<GcEvent>(request, '/events', 'events', { resource_type: resource, 'created_at[gt]': since }),
           ),
         )

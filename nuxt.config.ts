@@ -285,6 +285,9 @@ export default defineNuxtConfig({
         // same lack of a session: it sent them to the clinic's login page,
         // with the card saved and nothing to say so.
         '/card-saved',
+        // Where GoCardless's direct-debit sign-up page returns the patient,
+        // from the link a clinic sends: same browser, same lack of a session.
+        '/direct-debit-done',
         // The waitlist claim link and the photo-upload QR: opened on a
         // patient's phone with no QuiroFlow login, gated by their own token.
         // Not a '*' glob: the module turns each pattern into a regex by

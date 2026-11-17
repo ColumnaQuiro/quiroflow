@@ -3896,7 +3896,6 @@
   "No card on file yet.": "Ainda não há cartão guardado.",
   "No card on file. Add one to put the rest on autopay.": "Sem cartão guardado. Adicione um para passar o restante para pagamento automático.",
   "No card on file. Add one to put this membership on autopay.": "Sem cartão guardado. Adicione um para passar esta subscrição para pagamento automático.",
-  "No card or direct debit. Add a card, or pair the patient’s mandate in Settings › Import, to put this membership on autopay.": "Sem cartão nem débito direto. Adicione um cartão, ou associe a autorização do paciente em Definições › Importar, para pôr esta assinatura em pagamento automático.",
   "No card saved": "Nenhum cartão guardado",
   "No card was saved. Go back to the app to try again.": "Nenhum cartão foi guardado. Volte à app para tentar novamente.",
   "No card was saved. You can close this window and try the link again if you'd like to add one.": "Nenhum cartão foi guardado. Pode fechar esta janela e abrir a ligação novamente se quiser adicionar um.",
@@ -8472,7 +8471,27 @@
   "★ Suggested for their reason for visit.": "★ Sugeridos pelo motivo da consulta.",
   "✓ Added": "✓ Adicionado",
   "✓ Done today": "✓ Feito hoje",
-  "✓ In library": "✓ Na biblioteca"
+  "✓ In library": "✓ Na biblioteca",
+  "Sends the money back to the patient's bank through GoCardless, then records the refund and its rectifying invoice here. If GoCardless refuses, nothing is recorded.": "Devolve o dinheiro ao banco do paciente através da GoCardless e depois regista aqui o reembolso e a respetiva fatura retificativa. Se a GoCardless o recusar, nada é registado.",
+  "The direct debit link could not be created. Try again.": "Não foi possível criar a ligação de débito direto. Tente novamente.",
+  "Direct debit link copied. Send it to the patient.": "Ligação de débito direto copiada. Envie-a ao paciente.",
+  "Could not copy. Select the link and copy it by hand.": "Não foi possível copiar. Selecione a ligação e copie-a manualmente.",
+  "Direct debit link sent by email": "Ligação de débito direto enviada por email",
+  "Direct debit link sent by WhatsApp": "Ligação de débito direto enviada por WhatsApp",
+  "The link could not be sent. Copy it and send it another way.": "Não foi possível enviar a ligação. Copie-a e envie-a de outra forma.",
+  "GoCardless did not refund it, so nothing was recorded. Try again.": "A GoCardless não o reembolsou, por isso nada foi registado. Tente novamente.",
+  "No direct debit": "Sem débito direto",
+  "Send the patient a link to set it up with their bank. Nothing to fill in here.": "Envie ao paciente uma ligação para o configurar no seu banco. Aqui não há nada a preencher.",
+  "Show sign-up link": "Ver ligação",
+  "Direct debit link": "Ligação de débito direto",
+  "Sign-up link (GoCardless)": "Ligação de adesão (GoCardless)",
+  "Send by WhatsApp": "Enviar por WhatsApp",
+  "Closes this link and makes a new one": "Anula esta ligação e cria uma nova",
+  "No card or direct debit. Add a card, or send a direct debit link from How they pay, to put this membership on autopay.": "Sem cartão nem débito direto. Adicione um cartão, ou envie uma ligação de débito direto a partir de Como paga, para passar esta subscrição a pagamento automático.",
+  "Direct debit set up": "Débito direto configurado",
+  "Direct debit not set up": "Débito direto não configurado",
+  "Thanks -- your clinic can now collect by direct debit from your account. You can close this window now.": "Obrigado: a sua clínica já pode cobrar por débito direto na sua conta. Já pode fechar esta janela.",
+  "Nothing was set up. You can close this window and open the link again whenever you like.": "Nada foi configurado. Pode fechar esta janela e abrir a ligação novamente quando quiser."
  },
  "p": {
   " ({0} from last year)": " ({0} do ano passado)",
@@ -9815,6 +9834,7 @@
   "{0}–{1} doesn’t fit": "{0}–{1} não cabe",
   "{0}–{1} is free": "{0}–{1} está livre",
   "“Has” includes up to {0} unused days carried over from last year.": "“Tem” inclui até {0} dias não usados transitados do ano passado.",
-  "“{0}” is now a type, with {1} patients": "«{0}» já é um tipo, com {1} pacientes"
+  "“{0}” is now a type, with {1} patients": "«{0}» já é um tipo, com {1} pacientes",
+  "Sign-up link sent {0}, not signed yet.": "Ligação enviada a {0}, ainda por assinar."
  }
 }

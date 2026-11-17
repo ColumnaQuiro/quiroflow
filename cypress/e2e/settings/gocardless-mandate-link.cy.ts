@@ -177,12 +177,18 @@ describe('GoCardless: new mandates, refunds and retries', () => {
         .should('eq', 200)
       cy.login(s.account.email, s.account.password)
 
-      const refund = (euros: string) => {
+      const refund = (euros: string, from: 'payment' | 'receipt' = 'payment') => {
         cy.visit(`/patients/${s.patientId}?tab=money`)
-        // The collected payment's row (not "Refund payment"), and its own
-        // Refund action, which names an amount (the receipt's does not).
-        cy.contains('tr', /Payment — Direct debit/, SLOW).click()
-        cy.contains('button', /^Refund…\s+\d/).click()
+        if (from === 'payment') {
+          // The collected payment's row (not "Refund payment"), and its own
+          // Refund action, which names an amount (the receipt's does not).
+          cy.contains('tr', /Payment — Direct debit/, SLOW).click()
+          cy.contains('button', /^Refund…\s+\d/).click()
+        } else {
+          // The receipt's own Refund: GoCardless collected all of it, so this
+          // is that payment's refund too. It used to only record the refund.
+          cy.contains('td', /^\s*Receipt\s*$/, SLOW).parents('tr').contains('button', /^Refund…$/).click()
+        }
         cy.get('[data-cy=refund-through-gocardless]').should('be.visible')
         cy.get('[role=dialog] input[type=number]').clear().type(euros)
         cy.get('[role=dialog]').contains('button', /^Refund$/).click()
@@ -210,9 +216,10 @@ describe('GoCardless: new mandates, refunds and retries', () => {
         expect(back[0]!.gocardless_refund_id).to.match(/^RF-/)
       })
 
-      // GoCardless will not refund the rest: the books are left alone.
+      // GoCardless will not refund the rest: the books are left alone. Asked
+      // from the receipt this time, which reaches GoCardless all the same.
       cy.task('gc:update', { refundsForbidden: true })
-      refund('25')
+      refund('25', 'receipt')
       cy.contains('Refunds are not enabled', SLOW).should('be.visible')
       cy.task<{ amount_cents: number }[]>('db:selectRows', {
         table: 'payments',

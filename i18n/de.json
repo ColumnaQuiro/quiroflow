@@ -8541,7 +8541,8 @@
   "Could not check the GoCardless connection. Collections are not affected.": "Die GoCardless-Verbindung konnte nicht geprüft werden. Einzüge sind nicht betroffen.",
   "GoCardless needs more information before this account can collect. It takes a few minutes, on GoCardless’s own page.": "GoCardless braucht weitere Angaben, bevor dieses Konto einziehen kann. Das dauert ein paar Minuten, auf der Seite von GoCardless selbst.",
   "Verify in GoCardless": "Bei GoCardless verifizieren",
-  "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "GoCardless prüft dieses Konto, daher kann es noch nicht einziehen. Hier ist nichts zu tun; das aktualisiert sich von selbst."
+  "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "GoCardless prüft dieses Konto, daher kann es noch nicht einziehen. Hier ist nichts zu tun; das aktualisiert sich von selbst.",
+  "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Dieser Beleg wurde teilweise über GoCardless bezahlt, daher wird die Erstattung hier nur erfasst. Um das Geld über GoCardless zurückzuzahlen, erstatte die Lastschriftzahlung in ihrer eigenen Zeile."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",

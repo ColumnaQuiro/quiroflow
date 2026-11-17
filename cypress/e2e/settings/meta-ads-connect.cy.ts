@@ -137,11 +137,28 @@ describe('Connecting Meta Ads', () => {
           adAccounts: [{ id: 'act_6666', account_id: '6666', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 }],
         })
         // Anywhere else is not sent on to Meta at all, so the exchange fails.
-        connect({ code: 'AQBxyz-not-a-real-code', redirectUri: 'https://elsewhere.example/' }).its('status').should('eq', 502)
+        connect({ code: 'AQBxyz-not-a-real-code', redirectUris: ['https://elsewhere.example/'] }).its('status').should('eq', 502)
         connection(account.accountId).its('adAccountId').should('eq', null)
-        connect({ code: 'AQBxyz-not-a-real-code', redirectUri: root }).then((res) => {
+        connect({ code: 'AQBxyz-not-a-real-code', redirectUris: [root] }).then((res) => {
           expect(res.status).to.eq(200)
           expect(res.body).to.deep.include({ connected: true, adAccountId: '6666' })
+        })
+      })
+    })
+
+    it("exchanges with the SDK's own landing page when that is what the popup used", () => {
+      // In a popup the SDK binds the code to its xd_arbiter page with a
+      // per-login token, read by the browser as the popup opens. The app root
+      // is sent second, as a fallback, and is not needed here.
+      cy.location('origin').then((origin) => {
+        const sdk = 'https://staticxx.facebook.com/x/connect/xd_arbiter/?version=46#cb=f1a2b3&domain=app&relation=opener'
+        cy.task('db:startMetaGraphStub', {
+          requireRedirectUri: sdk,
+          adAccounts: [{ id: 'act_7777', account_id: '7777', name: 'Clínica Demo Ads', currency: 'EUR', account_status: 1 }],
+        })
+        connect({ code: 'AQBxyz-not-a-real-code', redirectUris: [sdk, `${origin}/`] }).then((res) => {
+          expect(res.status).to.eq(200)
+          expect(res.body).to.deep.include({ connected: true, adAccountId: '7777' })
         })
       })
     })

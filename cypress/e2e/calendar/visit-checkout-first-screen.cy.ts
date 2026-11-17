@@ -71,9 +71,10 @@ describe('Charging a visit from the first screen of its panel', () => {
           // with the session back -- not only after closing and reopening it.
           cy.get('[data-cy=undo-visit]').click()
           cy.get('[data-cy=confirm-dialog-confirm]').click()
-          // 'exist', not 'be.visible': the confirm dialog is still leaving the
-          // screen above the panel when the block comes back.
-          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('exist')
+          // Scrolled to before asking whether it shows: the block comes back
+          // at the top of a panel that may have been scrolled down to the
+          // undo button, and Cypress calls what is scrolled out not visible.
+          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).scrollIntoView().should('be.visible')
           cy.get('[data-cy=checkout-bono]').should('contain.text', '4 left, 3 after this visit')
         })
       })

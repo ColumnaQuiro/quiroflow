@@ -13,7 +13,9 @@ import {
   quirocitasPatientRow,
   quirocitasPhone,
   quirocitasPractitionerMatcher,
+  quirocitasRecordsReadThisPass,
   quirocitasVisitNotes,
+  type QuirocitasAppointmentRow,
   type QuirocitasSnapshot,
 } from '~/utils/quirocitasRows'
 
@@ -243,15 +245,80 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const { of: practitioner, nobody } = await team(s)
     const { data: typeRows } = await supabase.from('appointment_types').select('id, name, duration_minutes').eq('account_id', accountId)
     const types = new Map((typeRows ?? []).map((ty) => [ty.name.trim().toLowerCase(), ty]))
-    const existing = await readAll<{ id: string; external_reference: string; status: string; starts_at: string; ends_at: string; practitioner_id: string | null; checked_in_at: string | null; rescheduled: boolean }>('appointments', 'id, external_reference, status, starts_at, ends_at, practitioner_id, checked_in_at, rescheduled', 'QC-')
+    const existing = await readAll<{ id: string; external_reference: string; patient_id: string; status: string; starts_at: string; ends_at: string; practitioner_id: string | null; checked_in_at: string | null; rescheduled: boolean; note: string | null; deleted_at: string | null }>('appointments', 'id, external_reference, patient_id, status, starts_at, ends_at, practitioner_id, checked_in_at, rescheduled, note, deleted_at', 'QC-')
     const byRef = new Map(existing.map((a) => [a.external_reference, a]))
 
     const all = Object.values(s.patients).flatMap((r) => quirocitasAppointmentRows(r, zone).appointments)
     const waiting = all.filter((a) => !patients.has(a.patientRef))
     const ready = all.filter((a) => patients.has(a.patientRef))
     const newTypes = [...new Set(ready.map((a) => a.type).filter((n): n is string => !!n && !types.has(n.toLowerCase())))]
-    const inserts = ready.filter((a) => !byRef.has(a.ref))
     const updates: { id: string; changes: TablesUpdate<'appointments'> }[] = []
+    let kept = 0
+
+    // Appointments Quirocitas no longer has. Its search list drops one the
+    // moment it is cancelled, annulled or moved there: the cita id is simply
+    // gone, and the record's visit list gains an entry with no id at the same
+    // time. Nothing here used to look at a row the copy had stopped naming,
+    // so one cancelled there after it was imported stayed booked here, with a
+    // second, cancelled row beside it.
+    //
+    // "Gone" is asked of the whole copy, not of one record, and acted on only
+    // for a patient whose record was fetched in a pass that read everyone
+    // (quirocitasRecordsReadThisPass): an older record, or one that failed
+    // this time, cannot say what Quirocitas has stopped listing.
+    const isCita = (ref: string) => /^QC-\d+$/.test(ref)
+    const listed = new Set(Object.values(s.patients).flatMap((r) => r.ficha.appointments.map((a) => a.id)))
+    const recordOf = new Map(Object.values(s.patients).map((r) => [qcPatientRef(r.ficha.id), r]))
+    const refOf = new Map([...patients].map(([ref, id]) => [id, ref]))
+    const readThisPass = quirocitasRecordsReadThisPass(s)
+    const gone = existing.filter((a) => isCita(a.external_reference) && !a.deleted_at && !listed.has(a.external_reference.slice(3)))
+    // A visit that took place never leaves the list. So a record naming no
+    // appointment at all, for someone whose visits were imported from it, is
+    // a list that was not shown, not one that was emptied.
+    const seenHere = new Set(existing.filter((a) => isCita(a.external_reference) && (a.status === 'completed' || a.status === 'no_show')).map((a) => a.patient_id))
+    const slot = (patientId: string, at: string) => `${patientId}|${Date.parse(at)}`
+    const cancels: { id: string; slot: string; startsAt: string; noteHere: string | null; changes: TablesUpdate<'appointments'> }[] = []
+    const noList = new Set<string>()
+    for (const a of gone) {
+      if (a.status !== 'booked') continue
+      const record = recordOf.get(refOf.get(a.patient_id) ?? '')
+      if (!record || !readThisPass.has(record.ficha.id)) continue
+      if (!record.ficha.appointments.length && (seenHere.has(a.patient_id) || !listed.size)) { noList.add(a.patient_id); continue }
+      // Moved or checked in here: the visit is QuiroFlow's now.
+      if (quiroflowKeeps({ status: a.status, checkedInAt: a.checked_in_at, rescheduled: a.rescheduled }, ['status'])) { kept++; continue }
+      cancels.push({ id: a.id, slot: slot(a.patient_id, a.starts_at), startsAt: a.starts_at, noteHere: a.note, changes: { status: 'cancelled' } })
+    }
+
+    // One cancelled row for each cancellation Quirocitas lists at a time, and
+    // no more. The visit list's entry carries no id, so it is written under a
+    // reference of its own -- a second row for the appointment just cancelled
+    // above, or for one cancelled here by hand when the desk cancelled it in
+    // both. So an entry is written only for what the cancelled rows already
+    // at that time do not account for.
+    const count = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1)
+    const standing = new Map<string, number>()
+    for (const a of gone) if (a.status === 'cancelled') count(standing, slot(a.patient_id, a.starts_at))
+    const cancelling = new Map<string, typeof cancels>()
+    for (const c of cancels) { count(standing, c.slot); cancelling.set(c.slot, [...(cancelling.get(c.slot) ?? []), c]) }
+    const entries = new Map<string, number>()
+    const entriesHere = new Map<string, number>()
+    const slotOf = (a: QuirocitasAppointmentRow) => slot(patients.get(a.patientRef)!, a.startsAt)
+    for (const a of ready) if (!a.citaId) { count(entries, slotOf(a)); if (byRef.has(a.ref)) count(entriesHere, slotOf(a)) }
+    const room = new Map<string, number>()
+    const inserts: QuirocitasAppointmentRow[] = []
+    for (const a of ready) {
+      if (byRef.has(a.ref)) continue
+      if (a.citaId) { inserts.push(a); continue }
+      const at = slotOf(a)
+      const left = room.get(at) ?? Math.max(0, entries.get(at)! - (standing.get(at) ?? 0) - (entriesHere.get(at) ?? 0))
+      room.set(at, Math.max(0, left - 1))
+      if (left > 0) { inserts.push(a); continue }
+      // The row standing for it takes what the entry would have said: that it
+      // was a move, and why.
+      const c = cancelling.get(at)?.shift()
+      if (c && a.rescheduled) c.changes.rescheduled = true
+      if (c && a.note && !c.noteHere) c.changes.note = a.note
+    }
     // Appointments already here with no practitioner, whose only change is
     // gaining one: by practitioner, so they are written many at a time. A
     // clinic imported before its chiropractor's name was matched has tens of
@@ -259,7 +326,6 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     // nobody's tab in the calendar.
     const assigns = new Map<string, string[]>()
     const unmatched = new Map<string, number>()
-    let kept = 0
     for (const a of ready) {
       const practitionerId = practitioner(a.practitioner)
       const here = byRef.get(a.ref)
@@ -284,6 +350,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const now = new Date().toISOString()
     const noClinic = !clinicId
     const upcoming = inserts.filter((a) => a.status === 'booked' && a.startsAt > now).length
+    const when = (at: string) => new Date(at).toLocaleString('es-ES', { timeZone: zone, dateStyle: 'short', timeStyle: 'short' })
 
     return {
       stats: [
@@ -291,10 +358,23 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         { label: t('Updated', 'Actualizadas'), value: nf.format(updates.length + assigned), tone: 'good' },
         { label: t('Upcoming', 'Próximas'), value: nf.format(upcoming) },
         { label: t('Kept as QuiroFlow has them', 'Se mantienen como en QuiroFlow'), value: nf.format(kept) },
+        ...(cancels.length ? [{ label: t('Cancelled in Quirocitas', 'Canceladas en Quirocitas'), value: nf.format(cancels.length) }] : []),
       ],
       columns: [{ key: 'when', label: t('When', 'Cuándo') }, { key: 'type', label: t('Type', 'Tipo') }, { key: 'status', label: t('Status', 'Estado') }, { key: 'note', label: t('Note', 'Nota'), wrap: true }],
-      rows: inserts.map((a) => ({ when: new Date(a.startsAt).toLocaleString('es-ES', { timeZone: zone, dateStyle: 'short', timeStyle: 'short' }), type: a.type ?? '—', status: statusName(a.status) + (a.rescheduled ? ` (${t('moved', 'cambiada')})` : ''), note: a.note ?? '' })),
+      rows: [
+        // First, so the preview's sample always shows them.
+        ...cancels.map((c) => ({ when: when(c.startsAt), type: '—', status: `${statusName('booked')} → ${statusName('cancelled')}` + (c.changes.rescheduled ? ` (${t('moved', 'cambiada')})` : ''), note: c.changes.note ?? c.noteHere ?? '' })),
+        ...inserts.map((a) => ({ when: when(a.startsAt), type: a.type ?? '—', status: statusName(a.status) + (a.rescheduled ? ` (${t('moved', 'cambiada')})` : ''), note: a.note ?? '' })),
+      ],
       warnings: [
+        ...(cancels.length ? [t(
+          `${nf.format(cancels.length)} appointments still booked here are no longer in Quirocitas, where they were cancelled or moved after being imported: they are cancelled here too (${nf.format(cancels.filter((c) => c.startsAt > now).length)} of them still to come).`,
+          `${nf.format(cancels.length)} citas que aquí siguen reservadas ya no están en Quirocitas, donde se cancelaron o cambiaron después de importarlas: se cancelan también aquí (${nf.format(cancels.filter((c) => c.startsAt > now).length)} de ellas aún por venir).`,
+        )] : []),
+        ...(noList.size ? [t(
+          `Quirocitas showed no appointment list for ${nf.format(noList.size)} patients with appointments here, so none of theirs was cancelled. Read again to check them.`,
+          `Quirocitas no mostró la lista de citas de ${nf.format(noList.size)} pacientes con citas aquí, así que no se canceló ninguna de las suyas. Vuelve a leer para comprobarlo.`,
+        )] : []),
         ...(noClinic ? [t('Choose the clinic these appointments belong to, in the clinic switcher in the sidebar, before applying.', 'Elige la clínica de estas citas en el selector de clínica de la barra lateral antes de aplicar.')] : []),
         ...(waiting.length ? [t(`${nf.format(waiting.length)} appointments belong to patients not imported yet: run Patients first.`, `${nf.format(waiting.length)} citas son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
         ...(newTypes.length ? [t(`Creates ${newTypes.length} appointment types (${newTypes.join(', ')}) of 15 minutes; adjust their length and price under Settings → Appointment types afterwards.`, `Crea ${newTypes.length} tipos de cita (${newTypes.join(', ')}) de 15 minutos; ajusta su duración y precio en Ajustes → Tipos de cita después.`)] : []),
@@ -307,7 +387,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
           'Quirocitas no dice con qué quiropráctico es cada cita y esta clínica tiene más de uno: llegan sin quiropráctico y el calendario solo las muestra en «Todos» o «Sin asignar».',
         )] : []),
       ],
-      total: inserts.length + updates.length + assigned,
+      total: inserts.length + updates.length + cancels.length + assigned,
       async apply(progress, shouldStop) {
         if (noClinic) return { written: 0, errors: [t('Nothing was written: no clinic is chosen (see above).', 'No se escribió nada: no hay clínica elegida (ver arriba).')] }
         const errors: string[] = []
@@ -347,6 +427,14 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
           if (shouldStop()) return
           const { error } = await supabase.from('appointments').update(u.changes).eq('id', u.id)
           if (error) errors.push(error.message); else written++
+          progress(++done)
+        })
+        await withConcurrency(cancels, 8, async (c) => {
+          if (shouldStop()) return
+          // Only while it is still as it was planned: someone may have moved
+          // it or checked the patient in meanwhile.
+          const { data, error } = await supabase.from('appointments').update(c.changes).eq('id', c.id).eq('status', 'booked').eq('rescheduled', false).is('checked_in_at', null).select('id')
+          if (error) errors.push(error.message); else written += data?.length ?? 0
           progress(++done)
         })
         for (const [practitionerId, ids] of assigns) {

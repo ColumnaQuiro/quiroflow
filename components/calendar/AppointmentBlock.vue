@@ -83,8 +83,11 @@ const props = withDefaults(
     selected?: boolean
     dim?: boolean
     privacy?: boolean
+    /** Lead a one-line block with its start time. The calendar's rows mode
+     *  stacks visits one per line, off their exact times, so the line says it. */
+    leadTime?: boolean
   }>(),
-  { selected: false, dim: false, privacy: false },
+  { selected: false, dim: false, privacy: false, leadTime: false },
 )
 
 const t = useT()
@@ -109,10 +112,12 @@ const owesText = computed(() => t(`Owes ${formatEur(props.view.owesCents)}`, `De
 const formsText = computed(() => pendingFormsLabel(props.view.pendingForms, t))
 const bonoText = computed(() => (props.view.bono ? `Bono ${props.view.bono.remaining}/${props.view.bono.total}` : ''))
 
+// "09:30" and its gap, at the 11.5px mono the time is set in.
+const LEAD_TIME_PX = 40
 const ladder = computed(() =>
   blockLadder({
     density: props.density,
-    width: width.value,
+    width: width.value - (props.leadTime ? LEAD_TIME_PX : 0),
     height: props.height,
     stage: props.view.stage,
     owes: props.view.owesCents > 0,
@@ -220,6 +225,7 @@ const ariaLabel = computed(() =>
     :aria-label="ariaLabel"
   >
     <div class="flex min-w-0 items-center gap-[5px]">
+      <span v-if="leadTime && ladder.compact" class="shrink-0 font-mono text-[11.5px] text-ink-muted" data-cy="appt-block-lead-time">{{ view.timeLabel }}</span>
       <CalendarPractitionerBadge
         v-if="ladder.badge === 'name' && view.practitioner"
         :initials="view.practitioner.initials"

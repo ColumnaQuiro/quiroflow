@@ -49,18 +49,36 @@ function ticketKey(appSecret: string): string {
   return createHash('sha256').update(`quiroflow:meta-ads-connect-ticket:${appSecret}`).digest('base64')
 }
 
-/** The redirect_uri the browser says it used, only when it is this app's own root ("https://<this host>/"). */
-function ownRootOrNull(candidate: string | null | undefined, host: string): string | null {
-  if (!candidate) return null
-  try {
-    const url = new URL(candidate)
-    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
-    if (url.host !== host || url.pathname !== '/' || url.search || url.hash) return null
-    if (url.protocol !== 'https:' && !local) return null
-    return `${url.origin}/`
-  } catch {
-    return null
+// The JavaScript SDK's own landing page, which it names as redirect_uri when
+// it opens the login in a popup (see useFacebookPageConnect).
+const SDK_REDIRECT_PREFIX = 'https://staticxx.facebook.com/x/connect/xd_arbiter/'
+
+/**
+ * The redirect_uris the browser says a code may be bound to, kept only when
+ * each is one of the two a login from this app can really have used: the
+ * SDK's own landing page, or this app's root. Nothing else is passed on to
+ * Meta, so the endpoint cannot be used to exchange codes issued elsewhere.
+ * In the order to try them; at most three.
+ */
+function allowedRedirectUris(candidates: unknown, host: string): string[] {
+  const out: string[] = []
+  for (const candidate of Array.isArray(candidates) ? candidates.slice(0, 3) : []) {
+    if (typeof candidate !== 'string' || candidate.length > 2000) continue
+    if (candidate.startsWith(SDK_REDIRECT_PREFIX)) {
+      out.push(candidate)
+      continue
+    }
+    try {
+      const url = new URL(candidate)
+      const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+      if (url.host !== host || url.pathname !== '/' || url.search || url.hash) continue
+      if (url.protocol !== 'https:' && !local) continue
+      out.push(`${url.origin}/`)
+    } catch {
+      // Not a URL; dropped.
+    }
   }
+  return [...new Set(out)]
 }
 
 /**
@@ -100,7 +118,7 @@ export default defineEventHandler(async (event) => {
   // permission, and accounts_settings_permission puts meta_ads_* under it.
   const { teamMember } = await requireSettingsPermission(event, 'communication_config')
 
-  const body = await readBody<{ code?: string; ticket?: string; adAccountId?: string; redirectUri?: string | null }>(event)
+  const body = await readBody<{ code?: string; ticket?: string; adAccountId?: string; redirectUris?: unknown }>(event)
   const code = (body?.code ?? '').trim()
   const ticket = (body?.ticket ?? '').trim()
   if (!code && !ticket) throw createError({ statusCode: 400, statusMessage: 'code is required.' })
@@ -132,21 +150,31 @@ export default defineEventHandler(async (event) => {
   } else {
     // 1. Code -> token, server to server, because it needs the app secret.
     //
-    //    A user-token code is only exchanged with the redirect_uri the dialog
-    //    was opened with (fallback_redirect_uri in useFacebookPageConnect).
-    //    Only this app's own root is accepted from the browser, so the
-    //    endpoint cannot be used to exchange codes issued for anywhere else;
-    //    a code without one -- a system-user configuration -- is tried bare
-    //    as before.
-    const redirectUri = ownRootOrNull(body?.redirectUri, getRequestHost(event))
-    try {
-      const exchanged = await $fetch<{ access_token: string }>(`${GRAPH}/oauth/access_token`, {
-        query: { client_id: appId, client_secret: appSecret, code, ...(redirectUri ? { redirect_uri: redirectUri } : {}) },
-      })
-      token = exchanged.access_token
-    } catch (err) {
-      throw createError({ statusCode: 502, statusMessage: `Meta refused the authorization code: ${metaErrorMessage(err)}` })
+    //    A user-token code is only exchanged with the exact redirect_uri the
+    //    dialog was opened with, which the browser reads as the SDK opens it
+    //    (useFacebookPageConnect). Each allowed candidate is tried in turn --
+    //    a refused redirect_uri does not use the code up -- and a code with
+    //    none, from a system-user configuration, is tried bare as before.
+    //    Stops at the first refusal that is not about the redirect_uri.
+    const tries: (string | null)[] = [...allowedRedirectUris(body?.redirectUris, getRequestHost(event)), null]
+    let lastError: unknown = null
+    let exchangedToken: string | null = null
+    for (const redirectUri of tries) {
+      try {
+        const exchanged = await $fetch<{ access_token: string }>(`${GRAPH}/oauth/access_token`, {
+          query: { client_id: appId, client_secret: appSecret, code, ...(redirectUri ? { redirect_uri: redirectUri } : {}) },
+        })
+        exchangedToken = exchanged.access_token
+        break
+      } catch (err) {
+        lastError = err
+        if (!/redirect_uri/i.test(metaErrorMessage(err))) break
+      }
     }
+    if (!exchangedToken) {
+      throw createError({ statusCode: 502, statusMessage: `Meta refused the authorization code: ${metaErrorMessage(lastError)}` })
+    }
+    token = exchangedToken
 
     // 2. A long-lived token when this is a user token: the short-lived one
     //    dies within hours and spend would stop being read a day later, with

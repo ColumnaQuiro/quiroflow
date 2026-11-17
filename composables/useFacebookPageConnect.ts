@@ -19,32 +19,60 @@ export function useFacebookPageConnect(purpose: 'leadAds' | 'instagram' | 'metaA
   const available = computed(() => Boolean(appId && configId))
 
   // A USER-token configuration (Meta Ads' -- see metaAdsConfigId in
-  // nuxt.config.ts) hands back a code that Meta will only exchange with the
-  // redirect_uri the dialog was opened with, and the JavaScript SDK otherwise
-  // picks one of its own that nobody can repeat on the server: the exchange
-  // failed with "Error validating verification code. Please make sure your
-  // redirect_uri is identical..." (16 Nov 2026). So that purpose names one,
-  // the app's own root, which is listed under Facebook Login for Business >
-  // Settings > Valid OAuth Redirect URIs, and the server sends it back.
-  // System-user configurations need none and keep working as they did.
-  const redirectUri = purpose === 'metaAds' && import.meta.client ? `${window.location.origin}/` : null
+  // nuxt.config.ts) hands back a code that Meta only exchanges with the exact
+  // redirect_uri the dialog was opened with. System-user configurations have
+  // no such binding, which is why the other three never needed this.
+  //
+  // In a popup the JavaScript SDK chooses that redirect_uri itself: its own
+  // staticxx.facebook.com/x/connect/xd_arbiter/ page with a per-login token on
+  // the end, which the server cannot know. fallback_redirect_uri is only used
+  // when popups are blocked (found 16 Nov 2026, after setting it and seeing
+  // the same "Error validating verification code"). So for this purpose the
+  // URL the SDK opens is read as it opens, and the redirect_uri inside it goes
+  // to the server with the code. The app root stays as the fallback, for the
+  // no-popup path, and is listed under Valid OAuth Redirect URIs.
+  const fallbackRedirectUri = purpose === 'metaAds' && import.meta.client ? `${window.location.origin}/` : null
+  let dialogRedirectUri: string | null = null
 
   /** Resolves with the code; rejects with 'CANCELLED' when the dialog is closed. */
   async function launch(): Promise<string> {
     if (!available.value) throw new Error('This Meta connection is not configured on this deployment.')
     await loadFacebookSdk(appId)
 
-    return new Promise<string>((resolve, reject) => {
-      window.FB.login(
-        (response: any) => {
-          const code = response?.authResponse?.code
-          if (code) resolve(code)
-          else reject(new Error('CANCELLED'))
-        },
-        { config_id: configId, response_type: 'code', override_default_response_type: true, ...(redirectUri ? { fallback_redirect_uri: redirectUri } : {}) },
-      )
-    })
+    dialogRedirectUri = null
+    const originalOpen = fallbackRedirectUri ? window.open : null
+    if (originalOpen) {
+      window.open = function (url?: string | URL, ...rest: any[]) {
+        try {
+          const found = url ? new URL(String(url), window.location.href).searchParams.get('redirect_uri') : null
+          if (found) dialogRedirectUri = found
+        } catch {
+          // Not a URL we can read; the fallback still goes.
+        }
+        return originalOpen.call(window, url as any, ...rest)
+      } as typeof window.open
+    }
+
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        window.FB.login(
+          (response: any) => {
+            const code = response?.authResponse?.code
+            if (code) resolve(code)
+            else reject(new Error('CANCELLED'))
+          },
+          { config_id: configId, response_type: 'code', override_default_response_type: true, ...(fallbackRedirectUri ? { fallback_redirect_uri: fallbackRedirectUri } : {}) },
+        )
+      })
+    } finally {
+      if (originalOpen) window.open = originalOpen
+    }
   }
 
-  return { available, launch, redirectUri }
+  /** The redirect_uri(s) the last code may be bound to, most likely first. Empty for a system-user configuration. */
+  function redirectUris(): string[] {
+    return [dialogRedirectUri, fallbackRedirectUri].filter((u): u is string => Boolean(u))
+  }
+
+  return { available, launch, redirectUris }
 }

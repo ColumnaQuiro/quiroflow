@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 // Unit tests: code that needs no browser, no database and no server.
@@ -23,6 +24,11 @@ export default defineConfig({
   // not an object: an object is merged with the file, which still reads it.
   esbuild: {
     tsconfigRaw: '{}',
+  },
+  // The one path Nuxt adds that plain modules use among themselves: a module
+  // under utils/ that imports another as '~/utils/...' can be tested here.
+  resolve: {
+    alias: { '~': fileURLToPath(new URL('.', import.meta.url)) },
   },
   test: {
     include: ['tests/unit/**/*.test.ts'],

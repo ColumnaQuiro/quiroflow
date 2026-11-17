@@ -13,12 +13,15 @@ import {
   quirocitasBonoRows,
   quirocitasDate,
   quirocitasLedgerRows,
+  quirocitasNamesChiropractors,
   quirocitasPatientRow,
   quirocitasPhone,
+  quirocitasPractitionerMatcher,
   quirocitasReadQueue,
   quirocitasReadState,
   quirocitasVisitNotes,
   splitQuirocitasName,
+  QUIROCITAS_COPY_VERSION,
   type QuirocitasSnapshot,
 } from '../../utils/quirocitasRows'
 
@@ -182,6 +185,44 @@ describe('quirocitas pages', () => {
     expect(body.map(([k]) => k)).not.toContain('aceptar')
     expect(body.map(([k]) => k)).not.toContain('Facturas')
   })
+
+  // A Quirocitas with one chiropractor has nowhere to say which: no column in
+  // either list, no select on the record, no filter on the cash page.
+  describe('a clinic with a single chiropractor', () => {
+    const SOLO = FICHA('101', 'Laura Demo Prueba')
+      .replace(/<th>Quiro(pr\.)?<\/th>/g, '')
+      .replace(/<td>(Dra\. Demo|-----)<\/td>/g, '')
+      .replace(/<select name="suquiro">.*?<\/select>/, '')
+    const SOLO_CAJA = CAJA.replace(/<select name="quiro".*?<\/select>/, '')
+
+    it('still reads the visit list, which has one column fewer', () => {
+      // Read by position, no row of this table was a visit: every record came
+      // back with none, so nothing cancelled or moved was ever imported.
+      const f = parseQuirocitasFicha(SOLO)!
+      expect(f.chiro).toBe('')
+      expect(f.appointments.map((a) => [a.id, a.type, a.chiro])).toEqual([['5001', 'Ajuste', ''], ['5002', 'Charla', ''], ['5003', 'Ajuste', '']])
+      expect(f.visits.map((v) => [v.date, v.time, v.type, v.chiro, v.paid, v.status])).toEqual([
+        ['09-11-2026', '10:00', 'Ajuste', '', 0, 'futuro'],
+        ['12-10-2026', '09:15', 'Charla', '', 0, 'ausencia'],
+        ['06-10-2026', '16:00', 'Cambio', '', 0, 'cambio'],
+        ['05-10-2026', '15:45', 'Ajuste', '', 40, 'pasado'],
+      ])
+      expect(f.visits[1]!.reason).toBe('quan vol venir?')
+    })
+
+    it('takes a cash page with no chiropractor filter as everyone\'s', () => {
+      // Demanding "-- Todos --" of a page with no such choice stopped this
+      // clinic's read at its ledger on every sync.
+      const m = parseQuirocitasCajaMonth(SOLO_CAJA)
+      expect(m).toMatchObject({ month: '2026-10', hasChiroFilter: false, everyChiro: true })
+      expect(m.rows).toHaveLength(2)
+    })
+
+    it('still refuses a cash page filtered to one chiropractor of several', () => {
+      const one = CAJA.replace('<option selected value="-1">', '<option value="-1">').replace('<option value="1">', '<option selected value="1">')
+      expect(parseQuirocitasCajaMonth(one)).toMatchObject({ hasChiroFilter: true, everyChiro: false, chiroShown: 'Dra. Demo' })
+    })
+  })
 })
 
 describe('quirocitas rows', () => {
@@ -263,9 +304,85 @@ describe('quirocitas rows', () => {
     expect(invoiceNotes[0]!.note).toContain('[Factura Quirocitas 13/2026]')
   })
 
+  describe('who an appointment is with', () => {
+    const team = [{ id: 'oriol', full_name: 'Oriol Demo Prueba' }, { id: 'isabel', full_name: 'Isabel' }]
+
+    it('finds a chiropractor Quirocitas names more briefly than the team does', () => {
+      // "Oriol Demo" there, "Oriol Demo Prueba" here: compared as written,
+      // every appointment of his came in with no practitioner, and the
+      // calendar -- which opens on one person's tab -- showed none of them.
+      const of = quirocitasPractitionerMatcher(team)
+      expect(of('Oriol Demo')).toBe('oriol')
+      expect(of('  ORIOL  demo prueba ')).toBe('oriol')
+      expect(of('Dra. Isabel')).toBe('isabel')
+      expect(of('Isábel')).toBe('isabel')
+    })
+
+    it('guesses nobody when the name fits more than one person, or none', () => {
+      const of = quirocitasPractitionerMatcher([...team, { id: 'oriol2', full_name: 'Oriol Demo Segundo' }])
+      expect(of('Oriol Demo')).toBeNull()
+      expect(of('Oriol Demo Prueba')).toBe('oriol')
+      expect(of('Daniel')).toBeNull()
+      // A shared surname is not the same person.
+      expect(of('Demo')).toBeNull()
+      expect(of('Dr. Demo Prueba')).toBeNull()
+      expect(of('Cualquiera')).toBeNull()
+      expect(of('')).toBeNull()
+    })
+
+    it('gives a clinic that names no chiropractor its only one', () => {
+      const r = record('101', 'Laura Demo Prueba')
+      expect(quirocitasNamesChiropractors({ patients: { 101: r } })).toBe(true)
+      const solo = { ...r, ficha: { ...r.ficha, chiro: '', appointments: r.ficha.appointments.map((a) => ({ ...a, chiro: '' })), visits: r.ficha.visits.map((v) => ({ ...v, chiro: '' })) } }
+      expect(quirocitasNamesChiropractors({ patients: { 101: solo } })).toBe(false)
+      const of = quirocitasPractitionerMatcher([{ id: 'emma', full_name: 'Emma Demo' }], 'emma')
+      expect(of('')).toBe('emma')
+      // "Any of them" is still nobody in particular.
+      expect(of('Cualquiera')).toBeNull()
+    })
+  })
+
+  describe('a bono past its expiry date', () => {
+    // Quirocitas greys an expired bono out ("pasado") and goes on taking
+    // visits off it. The visit list marks those with a B.
+    const withBono = (expires: string, remaining: number, bonoVisits: string[]) => {
+      const s = snapshot()
+      const f = s.patients[101]!.ficha
+      f.bonos = [{ id: '900', name: 'Bono 12', remaining, expires, owed: 0, paid: 450, status: 'pasado' }]
+      f.visits = bonoVisits.map((date) => ({ date, time: '10:00', type: 'Ajuste', chiro: 'Dra. Demo', paid: 0, bono: true, reason: '', status: 'pasado' }))
+      return s
+    }
+    const closed = (s: QuirocitasSnapshot) => quirocitasBonoRows(s, zone, '2026-11-17').rows[0]!.isClosed
+
+    it('stays open while the clinic is still taking visits off it', () => {
+      // Two sessions left, used a month ago, months after it expired: closed
+      // on import, it was not there to pay with at the desk.
+      expect(closed(withBono('31-07-2026', 2, ['29-07-2026', '08-09-2026', '13-10-2026']))).toBe(false)
+    })
+
+    it('is closed when nobody has used it since it expired', () => {
+      expect(closed(withBono('31-07-2026', 2, ['29-07-2026']))).toBe(true)
+    })
+
+    it('is closed when its last use is more than a year back', () => {
+      expect(closed(withBono('31-07-2024', 2, ['08-09-2024']))).toBe(true)
+    })
+
+    it('is closed when it has nothing left, whenever it was used', () => {
+      expect(closed(withBono('31-07-2026', 0, ['13-10-2026']))).toBe(true)
+    })
+
+    it('is closed when its holder has a later bono, which is the one in use', () => {
+      const s = withBono('31-07-2026', 2, ['13-10-2026'])
+      s.patients[101]!.ficha.bonos.push({ id: '901', name: 'Bono 12', remaining: 9, expires: '01-09-2027', owed: 0, paid: 450, status: 'presente' })
+      const rows = quirocitasBonoRows(s, zone, '2026-11-17').rows
+      expect(rows.map((b) => [b.ref, b.isClosed])).toEqual([['QC-bono-900', true], ['QC-bono-901', false]])
+    })
+  })
+
   describe('which patients a read fetches', () => {
     const ids = ['101', '102', '103']
-    const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), ...over })
+    const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), version: QUIROCITAS_COPY_VERSION, ...over })
 
     it('reads everyone when there is no copy', () => {
       expect(quirocitasReadQueue(null, ids, '2026-11-16T10:00:00Z')).toEqual({ passStartedAt: '2026-11-16T10:00:00Z', queue: ids })
@@ -288,6 +405,22 @@ describe('quirocitas rows', () => {
 
     it('carries on a stopped copy from before passes were recorded with the patients it lacks', () => {
       expect(quirocitasReadQueue(copy({}), ids, '2026-11-16T11:00:00Z')).toEqual({ passStartedAt: '', queue: ['102', '103'] })
+    })
+
+    it('reads everyone again after a pass whose cash ledger could not be read', () => {
+      // Such a copy has no months, like a stopped one, but its patients were
+      // all read. Carried on from, it would fetch nobody on every later sync.
+      const noLedger = copy({ passStartedAt: '2026-11-16T10:00:00Z', ledgerError: 'Quirocitas did not show a month of the cash ledger.' })
+      noLedger.patients[101]!.readAt = '2026-11-16T10:02:00Z'
+      expect(quirocitasReadQueue(noLedger, ids, '2026-11-17T09:00:00Z')).toEqual({ passStartedAt: '2026-11-17T09:00:00Z', queue: ids })
+    })
+
+    it('reads everyone again when the copy was left unfinished by an older reader', () => {
+      // Its records were parsed the old way: only fetching them again brings
+      // the visits that reader could not see.
+      const old = copy({ passStartedAt: '2026-11-16T10:00:00Z', version: undefined })
+      old.patients[101]!.readAt = '2026-11-16T10:02:00Z'
+      expect(quirocitasReadQueue(old, ids, '2026-11-17T09:00:00Z')).toEqual({ passStartedAt: '2026-11-17T09:00:00Z', queue: ids })
     })
   })
 

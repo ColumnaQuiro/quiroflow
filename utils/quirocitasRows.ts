@@ -44,7 +44,23 @@ export interface QuirocitasSnapshot {
   passStartedAt?: string
   /** How many patients Quirocitas' list named when the read began. Absent on copies from before it was recorded. */
   listTotal?: number
+  /** Which reader made this copy (QUIROCITAS_COPY_VERSION). Absent on copies from before it was recorded. */
+  version?: number
+  /**
+   * Why the cash ledger could not be read, on a pass that read every patient.
+   * Such a copy has no months, like one that stopped part way, but its
+   * patients are all there: everything except payments can be imported from it.
+   */
+  ledgerError?: string
 }
+
+/**
+ * Raised when the reader starts parsing a page differently, so that records
+ * stored by an older reader are fetched again instead of being carried on
+ * from. 2: a clinic with a single chiropractor has no chiropractor column,
+ * and every record read before that was understood has an empty visit list.
+ */
+export const QUIROCITAS_COPY_VERSION = 2
 
 export const qcPatientRef = (id: string) => `QC-${id}`
 
@@ -82,9 +98,16 @@ export function quirocitasReadState(s: QuirocitasSnapshot) {
  * carries on: only records not yet fetched in that pass are read. A copy from
  * before passes were recorded has no start, and carries on as it always did,
  * with the patients it does not have.
+ *
+ * Two copies without months are not a pass to carry on. One whose ledger
+ * could not be read (`ledgerError`) did read every patient, so the next read
+ * is a new pass like any other: carrying on from it would fetch nobody, ever
+ * again, while the clinic goes on booking in Quirocitas. And one made by an
+ * older reader holds records parsed the old way, which only fetching them
+ * again puts right.
  */
 export function quirocitasReadQueue(previous: QuirocitasSnapshot | null, listIds: string[], now: string) {
-  const resuming = previous && previous.ledgerMonths.length === 0
+  const resuming = previous && previous.ledgerMonths.length === 0 && !previous.ledgerError && (previous.version ?? 1) >= QUIROCITAS_COPY_VERSION
   const passStartedAt = resuming ? previous.passStartedAt ?? '' : now
   const queue = listIds.filter((id) => {
     if (!resuming) return true
@@ -218,6 +241,48 @@ export function quirocitasPatientRow(r: QuirocitasRecord): QuirocitasPatientRow 
     phones,
     firstSeen: dates[0] ? `${dates[0]}T00:00:00Z` : null,
   }
+}
+
+// --- who saw them --------------------------------------------------------------------
+
+const personKey = (name: string) => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\b(dr|dra|d)\./g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
+
+/**
+ * Finds the team member Quirocitas means by a chiropractor's name.
+ *
+ * An appointment that names nobody on the team comes in with no practitioner,
+ * and the calendar opens on one person's tab: it is in the database and on
+ * nobody's screen. Two clinics reported "not every appointment is there" for
+ * exactly that, for two different reasons, and both are answered here.
+ *
+ * - The names differ by more than case. Quirocitas has "Oriol Demo" and the
+ *   team has "Oriol Demo Prueba", so a match is the same name, or one name
+ *   wholly contained in the other and starting the same way, when only one
+ *   member fits. Sharing a surname is not enough.
+ * - Quirocitas names nobody at all. A clinic with a single chiropractor has no
+ *   chiropractor column to read, so every name is blank; `sole` then says who
+ *   that one person is. It is passed only when the whole copy names nobody,
+ *   never for the odd blank in a clinic that does name its chiropractors.
+ */
+export function quirocitasPractitionerMatcher(team: { id: string; full_name: string }[], sole: string | null = null) {
+  const members = team.map((m) => ({ id: m.id, key: personKey(m.full_name), words: new Set(personKey(m.full_name).split(' ')) })).filter((m) => m.key)
+  const found = new Map<string, string | null>()
+  return (name: string): string | null => {
+    const key = personKey(name)
+    if (!key || key === 'cualquiera') return key ? null : sole
+    if (found.has(key)) return found.get(key)!
+    const words = key.split(' ')
+    const exact = members.filter((m) => m.key === key)
+    const within = members.filter((m) => m.key.split(' ')[0] === words[0] && (words.every((w) => m.words.has(w)) || [...m.words].every((w) => words.includes(w))))
+    const id = exact.length === 1 ? exact[0]!.id : exact.length === 0 && within.length === 1 ? within[0]!.id : null
+    found.set(key, id)
+    return id
+  }
+}
+
+/** Whether a copy names a chiropractor anywhere. One from a single-chiropractor clinic never does. */
+export function quirocitasNamesChiropractors(s: Pick<QuirocitasSnapshot, 'patients'>) {
+  return Object.values(s.patients).some((r) => clean(r.ficha.chiro) || r.ficha.appointments.some((a) => clean(a.chiro)) || r.ficha.visits.some((v) => clean(v.chiro)))
 }
 
 // --- appointments, visit notes and calls ---------------------------------------------
@@ -372,8 +437,12 @@ const ledgerAmount = (r: QuirocitasLedgerRow) => (r.cash ?? 0) + (r.card ?? 0) +
  * payer's name in the cash ledger -- so the owner is whoever the ledger says
  * paid for it, and everyone else who holds it shares it.
  */
-export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string) {
+export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, today = new Date().toISOString().slice(0, 10)) {
   const owners = quirocitasOwners(s)
+  const byId = s.patients
+  // The last visit each patient paid for with a bono ("B" in their visit list).
+  const lastBonoVisit = (id: string) => (byId[id]?.ficha.visits ?? []).filter((v) => v.bono).map((v) => quirocitasDate(v.date)).filter((d): d is string => !!d).sort().pop() ?? ''
+  const yearAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10)
   const types = new Map(s.bonoTypes.map((t) => [t.name.toLowerCase(), t]))
   const holders = new Map<string, { bono: QuirocitasPatient['bonos'][number]; ids: string[] }>()
   for (const r of Object.values(s.patients)) {
@@ -389,6 +458,23 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string) {
     if (!row.note || ledgerAmount(row) + (row.debt ?? 0) <= 0) continue
     const owner = owners.of(row)
     if (owner) sales.set(owner, [...(sales.get(owner) ?? []), { row, used: false }])
+  }
+
+  // Quirocitas greys a bono out the day it expires ("pasado") and goes on
+  // taking visits off it for as long as the clinic lets the patient use it.
+  // Closing every expired bono hid the ones still in use: a patient with two
+  // sessions left, last used a month before, had no bono to pay with at the
+  // desk. So an expired bono stays open while it is the one its holders are
+  // on -- none of them holds a later one with sessions left -- and one of them
+  // has paid a visit with it since it expired, within the last year. One that
+  // expired and was never touched again stays closed.
+  const stillUsed = (bonoId: string, bono: QuirocitasPatient['bonos'][number], ids: string[]) => {
+    const expires = quirocitasDate(bono.expires)
+    if (!expires) return false
+    const later = ids.some((id) => (byId[id]?.ficha.bonos ?? []).some((b) => b.id !== bonoId && b.remaining > 0 && (quirocitasDate(b.expires) ?? '') > expires))
+    if (later) return false
+    const last = ids.map(lastBonoVisit).sort().pop() ?? ''
+    return last > expires && last >= yearAgo
   }
 
   const rows: QuirocitasBonoRow[] = []
@@ -434,7 +520,7 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string) {
       priceCents: amount,
       owedCents: cents(bono.owed),
       purchasedAt,
-      isClosed: bono.remaining <= 0 || bono.status === 'pasado',
+      isClosed: bono.remaining <= 0 || (bono.status === 'pasado' && !stillUsed(bonoId, bono, ids)),
       dateFromLedger: !!sale,
     })
   }

@@ -46,6 +46,15 @@ export class QuirocitasError extends Error {
 }
 
 /**
+ * The cash ledger answered, but not with a page this reader can take money
+ * from. Asking again gets the same page, so it is not retried -- and it is
+ * kept apart from every other failure because it must not cost the clinic the
+ * rest of its import: the patients are read by then, and their appointments
+ * do not depend on the ledger.
+ */
+export class QuirocitasLedgerError extends QuirocitasError {}
+
+/**
  * A logged-in session against one clinic's Quirocitas.
  *
  * The session cookie is kept in account_secrets so consecutive calls -- the
@@ -178,12 +187,19 @@ export class QuirocitasClient {
     }
     let page: string
     if (cursor) page = await submit(cursor, { previo: '◄' })
-    else page = await submit(await submit(await this.page('diario.php'), { quiro: '-1' }), { franja: 'Mes entero' })
+    else {
+      // "-- Todos --" is only asked for where the page offers the choice: a
+      // clinic with one chiropractor has no such filter, and nothing is ever
+      // submitted that the page did not render.
+      const first = await this.page('diario.php')
+      const everyone = parseQuirocitasCajaMonth(first).hasChiroFilter ? await submit(first, { quiro: '-1' }) : first
+      page = await submit(everyone, { franja: 'Mes entero' })
+    }
     const out: ReturnType<typeof parseQuirocitasCajaMonth>[] = []
     for (let i = 0; ; i++) {
       const month = parseQuirocitasCajaMonth(page)
-      if (!month.month) throw new QuirocitasError('Quirocitas did not show a month of the cash ledger.')
-      if (!month.everyChiro) throw new QuirocitasError(`The cash ledger for ${month.month} is not showing every chiropractor.`)
+      if (!month.month) throw new QuirocitasLedgerError('Quirocitas did not show a month of the cash ledger.')
+      if (!month.everyChiro) throw new QuirocitasLedgerError(`The cash ledger for ${month.month} is showing only ${month.chiroShown || 'one chiropractor'}, not everyone.`)
       out.push(month)
       if (i + 1 >= months) break
       page = await submit(page, { previo: '◄' })

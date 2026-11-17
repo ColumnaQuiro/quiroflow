@@ -341,6 +341,7 @@ const {
   paymentRows,
   paymentTotalCents,
   init: initCharging,
+  loadInvoice,
   chargeVisit,
   usePackageSession,
   recordPayment,
@@ -394,6 +395,9 @@ async function openBilling() {
   billingOpen.value = true
   await loadVisitPrice()
   await initCharging()
+  // The method the checkout opens on is the account's default (init sets it).
+  checkoutMethod.value = paymentRows.value[0]?.method ?? 'cash'
+  chargingReady.value = true
 }
 function euros(cents: number) {
   return formatEur(cents)
@@ -405,6 +409,72 @@ function bonoRateLabel(p: { price_cents: number; sessions_total: number; charged
   if (!p.sessions_total) return '—'
   if (p.charged_at_purchase) return t('already paid', 'ya pagado')
   return euros(bonoVisitChargeCents(p))
+}
+
+// -- Checkout: how the visit is paid, already chosen, and one button -------------
+// The web panel's CalendarVisitCheckout, for the same reason: taking a bono
+// session here was "Bill this visit" at the foot of the screen, under the
+// notes, and then the bono; paying in money was a third tap. Now the choice
+// sits under the stage track as soon as the visit can be charged, the bono
+// selected, and "Process" does it. Nothing is written until it is pressed.
+// The billing card further down stays for a part payment or a split.
+const chargingReady = ref(false)
+const processing = ref(false)
+const checkoutMethod = ref('cash')
+const dueCents = computed(() => (invoice.value ? balanceDueCents.value : (visitPriceCents.value ?? 0)))
+const canTakeMoney = computed(() => can('payments_allocate') && dueCents.value > 0)
+const checkoutOffered = computed(
+  () =>
+    chargingReady.value &&
+    !readOnlyCalendar.value &&
+    (processing.value ||
+      (can('billing_access') &&
+        (appointment.value?.status === 'booked' || appointment.value?.status === 'completed') &&
+        !packageCoverage.value &&
+        invoice.value?.status !== 'paid' &&
+        invoice.value?.status !== 'void' &&
+        !(appointmentIsUpcoming.value && !invoice.value) &&
+        (activePackages.value.length > 0 || canTakeMoney.value))),
+)
+// 'money', or the id of the bono to draw from: a patient holding a bono has
+// already paid for this visit, so the bono is what opens selected.
+const checkoutChoice = ref('money')
+let checkoutChosen = false
+watch(
+  [activePackages, chargingReady],
+  () => {
+    if (!checkoutChosen) checkoutChoice.value = activePackages.value[0]?.id ?? 'money'
+  },
+  { immediate: true },
+)
+function pickCheckout(value: string) {
+  checkoutChosen = true
+  checkoutChoice.value = value
+}
+const checkoutPackage = computed(() => activePackages.value.find((p) => p.id === checkoutChoice.value) ?? null)
+const checkoutLabel = computed(() => {
+  if (saving.value || processing.value) return t('Processing…', 'Procesando…')
+  if (checkoutPackage.value) return t(`Process · 1 session of ${checkoutPackage.value.package_name}`, `Procesar · 1 sesión de ${checkoutPackage.value.package_name}`)
+  return t(`Process · charge ${euros(dueCents.value)}`, `Procesar · cobrar ${euros(dueCents.value)}`)
+})
+async function processCheckout() {
+  if (saving.value || processing.value) return
+  if (!checkoutPackage.value && !canTakeMoney.value) return
+  // Held on screen until both writes are in: charging in money raises the
+  // receipt and then pays it, with a reload between that is not "done".
+  processing.value = true
+  try {
+    if (checkoutPackage.value) {
+      await usePackageSession(checkoutPackage.value)
+      return
+    }
+    if (!invoice.value) await chargeVisit()
+    if (!invoice.value || balanceDueCents.value <= 0) return
+    paymentRows.value = [{ method: checkoutMethod.value, amount: (balanceDueCents.value / 100).toFixed(2) }]
+    await recordPayment()
+  } finally {
+    processing.value = false
+  }
 }
 
 // -- Today's note ------------------------------------------------------------------
@@ -764,6 +834,11 @@ async function undoVisit() {
     return
   }
   await loadAppointment()
+  // The session is back on the bono and its charge void: offer the visit again.
+  if (chargingReady.value) {
+    await loadInvoice()
+    refreshMoney()
+  }
   bookedNotice.value = t('Visit undone.', 'Visita deshecha.')
 }
 function undoVisitError(hint: string | null | undefined, message: string) {
@@ -810,6 +885,9 @@ watch(
       loadPastNotes()
     }
     if (showMoney.value) refreshMoney()
+    // Read at once rather than behind "Bill this visit", so the checkout can
+    // be offered under the stage track. A read: see openBilling.
+    if (!billingOpen.value && can('billing_access') && !readOnlyCalendar.value && appointment.value?.status !== 'cancelled') openBilling()
   },
   { immediate: true },
 )
@@ -912,6 +990,56 @@ watch(
             <AppButton v-if="next" variant="tint" class="flex-1" :disabled="busy" :data-cy="next === 'checkin' ? 'visit-check-in' : 'visit-advance'" :data-next="next" @click="advance">{{ nextLabel }}</AppButton>
             <AppButton v-if="undoable" variant="quiet" :disabled="busy" data-cy="visit-undo-stage" @click="undoStep">{{ undoable.label }}</AppButton>
           </div>
+        </section>
+
+        <!-- Checkout: the bono already chosen, and one button (see the script) -->
+        <section v-if="checkoutOffered" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-checkout">
+          <h2 class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">
+            {{ t('Charge this visit', 'Cobro de esta visita') }}<span v-if="dueCents > 0" class="font-mono font-medium normal-case tracking-normal"> · {{ euros(dueCents) }}</span>
+          </h2>
+          <div role="radiogroup" :aria-label="t('How this visit is paid', 'Cómo se paga esta visita')" class="flex flex-col gap-2">
+            <button
+              v-for="p in activePackages"
+              :key="p.id"
+              type="button"
+              role="radio"
+              :aria-checked="checkoutChoice === p.id"
+              :disabled="saving || processing"
+              data-cy="checkout-bono"
+              class="flex min-h-11 items-center gap-3 rounded-ctl border px-3.5 py-2.5 text-left"
+              :class="checkoutChoice === p.id ? 'border-brand bg-brand-tint' : 'border-line-control'"
+              @click="pickCheckout(p.id)"
+            >
+              <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border" :class="checkoutChoice === p.id ? 'border-brand' : 'border-line-control'" aria-hidden="true">
+                <span v-if="checkoutChoice === p.id" class="h-2 w-2 rounded-full bg-brand" />
+              </span>
+              <span class="flex min-w-0 flex-1 flex-col">
+                <span class="text-[14px] font-semibold text-ink-900">{{ p.package_name }}</span>
+                <span class="text-[12.5px] text-ink-muted">
+                  {{ t(`${p.sessions_total - p.sessions_used} left, ${p.sessions_total - p.sessions_used - 1} after this visit`, `Quedan ${p.sessions_total - p.sessions_used}, pasará a ${p.sessions_total - p.sessions_used - 1}`) }}
+                  · {{ bonoRateLabel(p) }}
+                </span>
+              </span>
+            </button>
+            <div v-if="canTakeMoney" class="rounded-ctl border" :class="checkoutChoice === 'money' ? 'border-brand bg-brand-tint' : 'border-line-control'">
+              <button type="button" role="radio" :aria-checked="checkoutChoice === 'money'" :disabled="saving || processing" data-cy="checkout-money" class="flex min-h-11 w-full items-center gap-3 px-3.5 py-2.5 text-left" @click="pickCheckout('money')">
+                <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border" :class="checkoutChoice === 'money' ? 'border-brand' : 'border-line-control'" aria-hidden="true">
+                  <span v-if="checkoutChoice === 'money'" class="h-2 w-2 rounded-full bg-brand" />
+                </span>
+                <span class="text-[14px] font-semibold text-ink-900">
+                  {{ activePackages.length > 0 ? t(`No bono, charge ${euros(dueCents)}`, `Sin bono, cobrar ${euros(dueCents)}`) : t(`Charge ${euros(dueCents)}`, `Cobrar ${euros(dueCents)}`) }}
+                </span>
+              </button>
+              <div v-if="checkoutChoice === 'money'" class="px-3.5 pb-3">
+                <select v-model="checkoutMethod" :aria-label="t('Method', 'Método')" :disabled="saving || processing" data-cy="checkout-method" class="h-11 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700">
+                  <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
+                  <option v-if="spendableCreditCents >= dueCents" value="credit">{{ t(`Credit on account (${euros(spendableCreditCents)} available)`, `Saldo a favor (${euros(spendableCreditCents)} disponible)`) }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <AppButton variant="primary" class="mt-2.5 w-full" :disabled="saving || processing" data-cy="checkout-process" @click="processCheckout">{{ checkoutLabel }}</AppButton>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </section>
 
         <!-- The plan is ending: the review, and what comes next (web My Day has the same). -->
@@ -1049,7 +1177,7 @@ watch(
           </AppButton>
         </div>
 
-        <div v-else-if="billingOpen" ref="billingCard" class="scroll-mt-3 rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
+        <div v-else-if="billingOpen && !(checkoutOffered && !invoice)" ref="billingCard" class="scroll-mt-3 rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
           <p class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Billing', 'Cobro') }}</p>
           <p v-if="loadingInvoice" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</p>
           <p v-else-if="!invoice && appointmentIsUpcoming" class="text-[13px] text-ink-faint">
@@ -1131,7 +1259,7 @@ watch(
           <AppButton variant="danger" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</AppButton>
         </div>
         <!-- Finished by mistake -->
-        <AppButton v-if="canUndoVisit" variant="quiet" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ t('Undo visit', 'Deshacer visita') }}</AppButton>
+        <AppButton v-if="canUndoVisit" variant="quiet" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ packageCoverage ? t('Remove bono · undo visit', 'Quitar bono · deshacer visita') : t('Undo visit', 'Deshacer visita') }}</AppButton>
         </div>
       </div>
 

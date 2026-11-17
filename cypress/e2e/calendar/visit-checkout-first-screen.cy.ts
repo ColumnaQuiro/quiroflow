@@ -66,6 +66,16 @@ describe('Charging a visit from the first screen of its panel', () => {
             expect(eff.payments, 'no money taken').to.have.length(0)
             expect(eff.appointments[0].status).to.eq('completed')
           })
+
+          // Taken by mistake: undone, the visit is offered again on the spot,
+          // with the session back -- not only after closing and reopening it.
+          cy.get('[data-cy=undo-visit]').click()
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
+          // Scrolled to before asking whether it shows: the block comes back
+          // at the top of a panel that may have been scrolled down to the
+          // undo button, and Cypress calls what is scrolled out not visible.
+          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).scrollIntoView().should('be.visible')
+          cy.get('[data-cy=checkout-bono]').should('contain.text', '4 left, 3 after this visit')
         })
       })
     })

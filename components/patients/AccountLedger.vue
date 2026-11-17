@@ -427,7 +427,25 @@ const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defau
 // transfer)" and was the ONLY screen that mentioned bank transfer at all.
 const refundMethod = ref<string>('card')
 
+// The receipt's own Refund refunds no payment in particular, so it could never
+// send anything back through GoCardless: a direct-debit membership refunded
+// from its receipt was recorded, given its rectificativa, and the patient's
+// bank never saw a cent of it. Only the payment row's Refund went through
+// GoCardless, and nothing on the receipt said so. When GoCardless collected
+// the receipt's money on its own, the receipt's Refund now IS that payment's
+// refund. When the receipt was split with another method, there is no single
+// payment to pick, so the modal says where the GoCardless part is refunded.
+const refundReceiptGoCardless = ref(false)
 function openRefundModal(invoiceId: string, maxCents: number) {
+  const received = props.payments.filter((p) => p.invoice_id === invoiceId && p.amount_cents > 0 && isReceipt(p.method))
+  const collected = received.filter((p) => props.gocardlessPaymentIds?.includes(p.id))
+  const only = collected.length === 1 && received.length === 1 ? collected[0]! : null
+  const onlyRefundable = only ? (rows.value.find((r) => r.paymentId === only.id)?.paymentRefundableCents ?? 0) : 0
+  if (only && onlyRefundable > 0) {
+    openPaymentRefundModal(only.id, invoiceId, Math.min(maxCents, onlyRefundable), only.method)
+    return
+  }
+  refundReceiptGoCardless.value = collected.length > 0
   menuOpen.value = false
   ensurePaymentMethodsLoaded()
   refundModalOpen.value = true
@@ -446,6 +464,7 @@ function openRefundModal(invoiceId: string, maxCents: number) {
 // "EUR 50 back to card" could be recorded against EUR 20 of card. Still a
 // dropdown, because a card refund genuinely does sometimes go back as cash.
 function openPaymentRefundModal(paymentId: string, invoiceId: string | null, maxCents: number, method: string) {
+  refundReceiptGoCardless.value = false
   menuOpen.value = false
   ensurePaymentMethodsLoaded()
   refundModalOpen.value = true
@@ -1070,6 +1089,9 @@ const fieldId = useId()
         <select :id="`${fieldId}-refundMethod`" v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
         </select>
+        <p v-if="refundReceiptGoCardless && refundMethod === 'direct_debit'" class="mt-1.5 text-[11.5px] text-warning-text" data-cy="refund-receipt-gocardless">
+          {{ t("This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.", 'Este recibo se pagó en parte con GoCardless, así que esto solo registra el reembolso. Para devolver el dinero a través de GoCardless, reembolsa desde la fila del pago por domiciliación.') }}
+        </p>
       </div>
       <div v-if="refundProducts.length" class="mt-3" data-cy="refund-restock">
         <p class="text-[11px] text-ink-muted">{{ t('Back to stock (units)', 'Vuelve al stock (unidades)') }}</p>

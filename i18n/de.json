@@ -8531,7 +8531,8 @@
   "Receipt details": "Details zur Abrechnung",
   "Remove bono · undo visit": "Paket entfernen · Besuch rückgängig machen",
   "How this visit is paid": "Wie dieser Besuch bezahlt wird",
-  "Add services or split the payment": "Leistungen hinzufügen oder Zahlung aufteilen"
+  "Add services or split the payment": "Leistungen hinzufügen oder Zahlung aufteilen",
+  "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Dieser Beleg wurde teilweise über GoCardless bezahlt, daher wird die Erstattung hier nur erfasst. Um das Geld über GoCardless zurückzuzahlen, erstatte die Lastschriftzahlung in ihrer eigenen Zeile."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",

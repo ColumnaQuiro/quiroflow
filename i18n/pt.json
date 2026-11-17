@@ -8531,7 +8531,8 @@
   "Receipt details": "Detalhe da cobrança",
   "Remove bono · undo visit": "Retirar pack · anular visita",
   "How this visit is paid": "Como se paga esta visita",
-  "Add services or split the payment": "Adicionar serviços ou dividir o pagamento"
+  "Add services or split the payment": "Adicionar serviços ou dividir o pagamento",
+  "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Este recibo foi pago em parte através da GoCardless, por isso isto apenas regista o reembolso. Para devolver o dinheiro através da GoCardless, reembolse a partir da linha do próprio pagamento por débito direto."
  },
  "p": {
   " ({0} from last year)": " ({0} do ano passado)",

@@ -576,3 +576,8 @@ export function quirocitasFileRows(r: QuirocitasRecord): QuirocitasFileRow[] {
     description: t.description,
   }))
 }
+
+/** Months whose rows do not add up to what Quirocitas printed under them. */
+export function quirocitasLedgerMismatches(s: Pick<QuirocitasSnapshot, 'ledgerMonths'>) {
+  return s.ledgerMonths.filter((m) => (['cash', 'card', 'transfer'] as const).some((k) => m.printed[k] !== null && Math.abs(m.printed[k]! - m.summed[k]) > 0.011))
+}

@@ -32,6 +32,7 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 import type { BusinessHours } from '../../../utils/businessHours'
 import { appointmentStage } from '../../../utils/appointmentStage'
 import { practitionerBadgeLabels, shortPatientName } from '../../../utils/appointmentBlock'
+import { gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '../../../utils/calendarRows'
 import type { BlockView, PractitionerBadgeView } from '../../../components/calendar/AppointmentBlock.vue'
 
 const user = useSupabaseUser()
@@ -98,6 +99,22 @@ watch(view, (v) => {
   selectedId.value = null
   try {
     localStorage.setItem(VIEW_KEY, v)
+  } catch {}
+})
+// Visits at the same time side by side, or one under the other with the
+// hour growing to fit (utils/calendarRows), as on the web calendar. For an
+// open treatment room: ten visits at 09:00 side by side on a phone are ten
+// slivers with no name in them. Remembered on the device.
+const STACK_KEY = 'quiroflow_agenda_stack'
+const rowsMode = ref(false)
+onMounted(() => {
+  try {
+    rowsMode.value = localStorage.getItem(STACK_KEY) === 'rows'
+  } catch {}
+})
+watch(rowsMode, (v) => {
+  try {
+    localStorage.setItem(STACK_KEY, v ? 'rows' : 'columns')
   } catch {}
 })
 const isWeek = computed(() => view.value === 'week')
@@ -343,8 +360,26 @@ const hours = computed(() => {
   for (let m = range.value.start; m < range.value.end; m += 60) out.push(m / 60)
   return out
 })
-const totalHeight = computed(() => ((range.value.end - range.value.start) / 60) * HOUR.value)
-const yOf = (minute: number) => ((minute - range.value.start) / 60) * HOUR.value
+// Where each hour of the range starts. Every hour HOUR tall, except in rows
+// mode, where an hour grows to fit the most visits any column has starting
+// in it. A dragged visit holds the scale still, so the hours do not move
+// under the finger if a refresh lands mid-drag.
+// One line each, under the block's compact threshold; a phone's day row
+// stays a comfortable tap.
+const ROW = computed(() => (multiDay.value ? 28 : 36))
+let heldTops: HourTops | null = null
+const tops = computed<HourTops>(() => {
+  if (drag.value && heldTops) return heldTops
+  const hourCount = (range.value.end - range.value.start) / 60
+  if (!rowsMode.value) return gridLinearTops(hourCount, HOUR.value)
+  const rows = new Array<number>(hourCount).fill(0)
+  for (const { list, date } of Object.values(listsByColumn.value)) {
+    gridRowsPerHour(list.map((a) => minuteOfDay(a.starts_at, date) - range.value.start), hourCount).forEach((n, h) => (rows[h] = Math.max(rows[h], n)))
+  }
+  return gridStretchedTops(HOUR.value, rows, ROW.value)
+})
+const totalHeight = computed(() => tops.value[tops.value.length - 1])
+const yOf = (minute: number) => gridYAt(tops.value, minute - range.value.start)
 
 // -- Columns ------------------------------------------------------------------
 // A column is a practitioner's day, everyone's day, or (week) one day of the
@@ -405,8 +440,14 @@ const shownAppointments = computed<Appointment[]>(() => {
 // A week-list row's first line: the patient, or the class and how full it is
 // (never shortened by privacy mode -- it names nobody).
 const tileLabel = (a: Appointment) => (a._class ? `${a.appointment_types?.name ?? t('Class', 'Clase')} · ${a._class.taken}/${a._class.capacity}` : shown(nameOf(a)))
+// Rows mode: each visit full width, one row, stacked in the hour it starts in.
+function stack(sorted: Appointment[], date: string): Placed[] {
+  const rowTops = gridStackRows(sorted.map((a) => minuteOfDay(a.starts_at, date) - range.value.start), tops.value, ROW.value)
+  return sorted.map((a, i) => ({ a, top: rowTops[i], height: ROW.value, lane: 0, lanes: 1 }))
+}
 function layout(list: Appointment[], date: string): Placed[] {
   const sorted = [...list].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
+  if (rowsMode.value) return stack(sorted, date)
   const out: Placed[] = []
   let cluster: Placed[] = []
   let clusterEnd = -1
@@ -439,12 +480,18 @@ function layout(list: Appointment[], date: string): Placed[] {
   flush()
   return out
 }
-const placedByColumn = computed(() => {
-  const map: Record<string, Placed[]> = {}
+// What each column holds; rows mode's scale counts from it.
+const listsByColumn = computed(() => {
+  const map: Record<string, { list: Appointment[]; date: string }> = {}
   for (const c of columns.value) {
     const list = shownAppointments.value.filter((a) => inWho(a) && (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
-    map[c.key] = layout(list, c.date)
+    map[c.key] = { list, date: c.date }
   }
+  return map
+})
+const placedByColumn = computed(() => {
+  const map: Record<string, Placed[]> = {}
+  for (const [key, { list, date }] of Object.entries(listsByColumn.value)) map[key] = layout(list, date)
   return map
 })
 // A practitioner's own blocks in their column; a whole-clinic closure in every
@@ -603,11 +650,11 @@ const SNAP = 15
 let holdTimer: ReturnType<typeof setTimeout> | undefined
 let pressStart: { x: number; y: number } | null = null
 let suppressClick = false
-const ghost = ref<{ columnKey: string; top: number; label: string } | null>(null)
+const ghost = ref<{ columnKey: string; top: number; height: number; label: string } | null>(null)
 
 function minuteAtY(column: HTMLElement, clientY: number) {
   const rect = column.getBoundingClientRect()
-  const m = range.value.start + ((clientY - rect.top) / HOUR.value) * 60
+  const m = range.value.start + gridMinuteAt(tops.value, clientY - rect.top)
   return Math.max(range.value.start, Math.min(range.value.end - SNAP, Math.floor(m / SNAP) * SNAP))
 }
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
@@ -625,7 +672,7 @@ function onSlotDown(e: PointerEvent, c: Column) {
   holdTimer = setTimeout(() => {
     pressStart = null
     const m = minuteAtY(column, y)
-    ghost.value = { columnKey: c.key, top: yOf(m), label: hhmm(m) }
+    ghost.value = { columnKey: c.key, top: yOf(m), height: yOf(m + 30) - yOf(m), label: hhmm(m) }
     navigator.vibrate?.(10)
     newVisit.value = { preferredStart: new Date(wallClockToUtc(c.date, hhmm(m), tz.value)).toISOString(), practitionerId: columnPractitioner(c), date: c.date }
   }, HOLD_MS)
@@ -655,6 +702,7 @@ function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
     const s = minuteOfDay(a.starts_at, c.date)
     const col = columnEls.value[c.key]
     const at = col ? minuteAtY(col, y) : s
+    heldTops = tops.value
     drag.value = { a, columnKey: c.key, offsetMin: at - s, minute: s, duration: minuteOfDay(a.ends_at, c.date) - s }
     lastPointer = { clientX: e.clientX, clientY: y }
     navigator.vibrate?.(10)
@@ -693,7 +741,7 @@ function moveDrag(e: { clientX: number; clientY: number }) {
   const col = columnEls.value[d.columnKey]
   if (!col) return
   const r = col.getBoundingClientRect()
-  const raw = range.value.start + ((e.clientY - r.top) / HOUR.value) * 60 - d.offsetMin
+  const raw = range.value.start + gridMinuteAt(tops.value, e.clientY - r.top) - d.offsetMin
   d.minute = Math.max(range.value.start, Math.min(range.value.end - d.duration, Math.round(raw / SNAP) * SNAP))
 }
 function onPointerUp() {
@@ -772,6 +820,21 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         </button>
       </div>
       <div v-else class="flex-1" />
+      <!-- Side by side or one under the other. Not on the iPhone week, which
+           is a list already. -->
+      <button
+        v-if="!(isWeek && !wide)"
+        type="button"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        :class="rowsMode ? 'bg-brand text-brand-on' : 'bg-chip-bg text-ink-muted'"
+        :aria-pressed="rowsMode"
+        :aria-label="t('One under the other', 'En filas')"
+        :title="t('One under the other', 'En filas')"
+        data-cy="agenda-stack-rows"
+        @click="rowsMode = !rowsMode"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
+      </button>
       <div role="tablist" :aria-label="t('View', 'Vista')" class="grid shrink-0 gap-1 rounded-full bg-chip-bg p-[3px]" :class="wide ? 'w-[152px] grid-cols-2' : 'w-[164px] grid-cols-3'">
         <button v-for="v in viewOptions" :key="v" type="button" role="tab" :aria-selected="activeView === v" class="h-9 rounded-full px-0.5 text-[13px] font-semibold" :class="activeView === v ? 'bg-brand text-brand-on' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
           {{ v === 'day' ? t('Day', 'Día') : v === 'three' ? t('3 days', '3 días') : t('Week', 'Semana') }}
@@ -860,17 +923,17 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                     <strong class="max-w-full truncate font-semibold">{{ p.a.appointment_types?.name ?? t('Class', 'Clase') }} · {{ p.a._class.taken }}/{{ p.a._class.capacity }}</strong>
                     <span v-if="p.height >= 38" class="max-w-full truncate opacity-85">{{ p.a._class.capacity - p.a._class.taken > 0 ? t(`${p.a._class.capacity - p.a._class.taken} places left`, `${p.a._class.capacity - p.a._class.taken} plazas libres`) : t('Full', 'Completa') }}</span>
                   </template>
-                  <CalendarAppointmentBlock v-else :view="blockView(p.a, c)" :density="multiDay ? 'week' : 'day'" :height="p.height - 2" :selected="selectedId === p.a.id" />
+                  <CalendarAppointmentBlock v-else :view="blockView(p.a, c)" :density="multiDay ? 'week' : 'day'" :height="p.height - 2" :selected="selectedId === p.a.id" :lead-time="rowsMode && !multiDay" />
                 </button>
 
                 <!-- Now, in today's column of the week -->
                 <div v-if="multiDay && nowTop !== null && c.date === todayDate" class="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now" />
                 <!-- Where a held slot will book -->
-                <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 flex items-center rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint px-2 text-[12px] font-semibold text-brand-text" :style="{ top: `${ghost.top + 1}px`, height: `${HOUR / 2 - 2}px` }">
+                <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 flex items-center rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint px-2 text-[12px] font-semibold text-brand-text" :style="{ top: `${ghost.top + 1}px`, height: `${ghost.height - 2}px` }">
                   + {{ t('New visit at', 'Nueva cita a las') }} {{ ghost.label }}
                 </div>
                 <!-- Where a dragged visit will land -->
-                <div v-if="drag && drag.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 rounded-[8px] border-[1.5px] border-brand bg-surface px-2 py-1 shadow-popover" :style="{ top: `${yOf(drag.minute) + 1}px`, height: `${(drag.duration / 60) * HOUR - 2}px` }" data-cy="agenda-drag">
+                <div v-if="drag && drag.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 rounded-[8px] border-[1.5px] border-brand bg-surface px-2 py-1 shadow-popover" :style="{ top: `${yOf(drag.minute) + 1}px`, height: `${yOf(drag.minute + drag.duration) - yOf(drag.minute) - 2}px` }" data-cy="agenda-drag">
                   <span class="block truncate text-[12.5px] font-semibold text-ink-900">{{ shown(nameOf(drag.a)) }}</span>
                   <span class="block font-mono text-[11.5px] text-brand-text">{{ hhmm(drag.minute) }}–{{ hhmm(drag.minute + drag.duration) }}</span>
                 </div>

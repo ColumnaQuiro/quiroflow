@@ -11,6 +11,7 @@ import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
+import { gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
 import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
@@ -87,6 +88,10 @@ const WEEK_MIN_AVAILABILITY_PX = 16
 const DAY_MAX_LANES = 6
 const WEEK_MAX_LANES = 4
 const OVERFLOW_CHIP_PX = 20
+// Rows mode (stackMode below): each visit one line, under the compact
+// threshold so a day block reads time, name, stage and money on one row.
+const DAY_ROW_PX = 30
+const WEEK_ROW_PX = 22
 
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null; class_capacity?: number | null }
@@ -185,6 +190,18 @@ onMounted(() => {
   else if (window.matchMedia('(max-width: 767px)').matches) viewMode.value = 'day'
 })
 watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
+// How visits at the same time share a column: side by side ('columns', the
+// default) or one under the other ('rows'), with the hour growing to fit
+// them. Rows are for an open treatment room -- one room, several tables, ten
+// visits at 09:00 -- where columns leave each name a sliver. Remembered per
+// browser, like the view.
+const CALENDAR_STACK_MODE_KEY = 'quiroflow-calendar-stack-mode'
+const stackMode = ref<'columns' | 'rows'>('columns')
+onMounted(() => {
+  if (localStorage.getItem(CALENDAR_STACK_MODE_KEY) === 'rows') stackMode.value = 'rows'
+})
+watch(stackMode, (v) => localStorage.setItem(CALENDAR_STACK_MODE_KEY, v))
+const rowsMode = computed(() => stackMode.value === 'rows')
 // PracticeHub never shows a merged "all practitioners" calendar -- with
 // several practitioners double-booking the same room at different times,
 // a merged view stacks unrelated appointments on top of each other into an
@@ -1196,18 +1213,59 @@ function roomPractitionerLabel(roomId: string) {
   return names.join(' · ')
 }
 
-function timeToPx(iso: string, hourPx: number) {
-  const d = new Date(iso)
-  const mins = d.getHours() * 60 + d.getMinutes() - START_HOUR * 60
-  return Math.max(0, (mins / 60) * hourPx)
+// The grid's vertical scale: where each hour starts (utils/calendarRows).
+// Every hour the same height in columns mode; in rows mode an hour grows to
+// fit the most visits any column on screen has starting in it. Everything
+// that turns a time into a position, or a position into a time, goes
+// through these -- never hours x hourPx, which is only true of the first.
+const HOURS = END_HOUR - START_HOUR
+// Held still while a visit is dragged in rows mode: the hours would
+// otherwise grow and shrink under the pointer as the visit changes hour,
+// and the time under the pointer with them.
+let heldTops: HourTops | null = null
+function rowsTops(hourPx: number, rowPx: number, days: Date[]) {
+  const keys = new Set(days.map(toDateKey))
+  const rows = new Array<number>(HOURS).fill(0)
+  for (const [key, list] of columnRows.value) {
+    if (!keys.has(key.split('|')[0])) continue
+    gridRowsPerHour(list.map((a) => minuteOfGrid(a.starts_at)), HOURS).forEach((n, h) => (rows[h] = Math.max(rows[h], n)))
+  }
+  return gridStretchedTops(hourPx, rows, rowPx)
 }
-function durationToPx(startIso: string, endIso: string, hourPx: number, minFloor: number) {
+const dayTops = computed<HourTops>(() => {
+  if (dragState.value && heldTops && viewMode.value === 'day') return heldTops
+  if (!rowsMode.value || viewMode.value !== 'day') return gridLinearTops(HOURS, DAY_HOUR_PX.value)
+  return rowsTops(DAY_HOUR_PX.value, DAY_ROW_PX, [anchorDate.value])
+})
+const weekTops = computed<HourTops>(() => {
+  if (dragState.value && heldTops && viewMode.value !== 'day') return heldTops
+  if (!rowsMode.value || viewMode.value === 'day' || viewMode.value === 'month') return gridLinearTops(HOURS, WEEK_HOUR_PX.value)
+  return rowsTops(WEEK_HOUR_PX.value, WEEK_ROW_PX, visibleWeekDays.value)
+})
+
+/** Minutes from the grid's first hour to a time, on its own day. */
+function minuteOfGrid(iso: string) {
+  const d = new Date(iso)
+  return d.getHours() * 60 + d.getMinutes() - START_HOUR * 60
+}
+function timeToPx(iso: string, tops: HourTops) {
+  return Math.max(0, gridYAt(tops, minuteOfGrid(iso)))
+}
+function durationToPx(startIso: string, endIso: string, tops: HourTops, minFloor: number) {
+  const start = minuteOfGrid(startIso)
   const mins = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
-  return Math.max(minFloor, (mins / 60) * hourPx)
+  return Math.max(minFloor, gridYAt(tops, start + mins) - gridYAt(tops, start))
+}
+/** A slot of the clinic's length starting `min` minutes into the grid. */
+function slotTop(tops: HourTops, min: number) {
+  return gridYAt(tops, min)
+}
+function slotHeight(tops: HourTops, min: number) {
+  return gridYAt(tops, min + SLOT_MIN.value) - gridYAt(tops, min)
 }
 
-const dayGridHeight = computed(() => (END_HOUR - START_HOUR) * DAY_HOUR_PX.value)
-const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX.value)
+const dayGridHeight = computed(() => dayTops.value[HOURS])
+const weekGridHeight = computed(() => weekTops.value[HOURS])
 const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
 function hourLabel(h: number) {
   return `${pad(h)}:00`
@@ -1278,14 +1336,14 @@ function apptOutsideWorkingHours(at: Date, practitionerId: string | null): boole
 // hatched band carrying one "Fuera de horario" label rather than a stack of
 // slot-sized stripes. Worked out at the clinic's slot size, so a lunch break
 // ending at :30 still hatches correctly.
-function closedSlotRects(forDate: Date, hourPx: number) {
+function closedSlotRects(forDate: Date, tops: HourTops) {
   const windows = workingWindowsFor(forDate)
   if (windows === null) return []
-  const slotPx = (SLOT_MIN.value / 60) * hourPx
   const rects: { top: number; height: number }[] = []
   for (let m = 0; m < TOTAL_MIN; m += SLOT_MIN.value) {
     if (withinWindows(START_HOUR * 60 + m, windows)) continue
-    const top = (m / 60) * hourPx
+    const top = slotTop(tops, m)
+    const slotPx = slotHeight(tops, m)
     const last = rects[rects.length - 1]
     if (last && Math.abs(last.top + last.height - top) < 0.5) last.height += slotPx
     else rects.push({ top, height: slotPx })
@@ -1295,9 +1353,9 @@ function closedSlotRects(forDate: Date, hourPx: number) {
 // Per day on screen, at the current view's scale -- every room column of a
 // day shares its day's rects, so they are worked out once, not per column.
 const closedRectsByDay = computed(() => {
-  const hourPx = viewMode.value === 'day' ? DAY_HOUR_PX.value : WEEK_HOUR_PX.value
+  const tops = topsForView()
   const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
-  return new Map(days.map((d) => [toDateKey(d), closedSlotRects(d, hourPx)]))
+  return new Map(days.map((d) => [toDateKey(d), closedSlotRects(d, tops)]))
 })
 function closedRectsFor(day: Date) {
   return closedRectsByDay.value.get(toDateKey(day)) ?? []
@@ -1312,10 +1370,10 @@ const SKELETON_BLOCKS: [number, number][][] = [
   [[2, 1.5], [4.5, 1], [7.5, 0.5], [9, 1]],
   [[1.5, 0.5], [3.5, 1.5], [7, 1]],
 ]
-function skeletonBlocks(index: number, hourPx: number, day?: Date) {
+function skeletonBlocks(index: number, tops: HourTops, day?: Date) {
   const closed = day ? closedRectsFor(day) : []
   return SKELETON_BLOCKS[index % SKELETON_BLOCKS.length]
-    .map(([at, hours]) => ({ top: at * hourPx + 1, height: hours * hourPx - 3 }))
+    .map(([at, hours]) => ({ top: gridYAt(tops, at * 60) + 1, height: gridYAt(tops, (at + hours) * 60) - gridYAt(tops, at * 60) - 3 }))
     .filter((b) => !closed.some((r) => b.top < r.top + r.height && b.top + b.height > r.top))
 }
 // Before the rooms are known: three columns for a day, one per day for a week.
@@ -1578,8 +1636,9 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
 function columnKey(dayKey: string, roomId: string) {
   return `${dayKey}|${roomId}`
 }
-const layoutByColumn = computed(() => {
-  const day = viewMode.value === 'day'
+// What each column holds, in start order. The rows-mode scale counts from
+// this, and the layout below places from it.
+const columnRows = computed(() => {
   const columns = new Map<string, AppointmentRow[]>()
   const place = (dayKey: string, a: AppointmentRow) => {
     if (!isApptVisible(a)) return
@@ -1599,18 +1658,51 @@ const layoutByColumn = computed(() => {
   // appointmentsByDay, which the markers never enter.
   for (const m of movedAwayMarkers.value) place(toDateKey(new Date(m.starts_at)), m)
   for (const c of classBlocks.value) place(toDateKey(new Date(c.starts_at)), c)
-  const layouts = new Map<string, LayoutBlock[]>()
-  for (const [key, rows] of columns) {
-    rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-    layouts.set(
-      key,
-      day
-        ? assignOverlapLayout(rows, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
-        : assignOverlapLayout(rows, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX),
-    )
-  }
-  return layouts
+  for (const rows of columns.values()) rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  return columns
 })
+// Rows mode: every visit full width, one row each, stacked in the hour it
+// starts in (gridStackRows). Its box is kept here, by row, rather than
+// written onto the row like the lanes: a row switched back to columns would
+// otherwise carry its old box with it.
+function assignRowLayout(sorted: AppointmentRow[], tops: HourTops, rowPx: number, boxes: Map<AppointmentRow, { top: number; height: number }>): LayoutBlock[] {
+  const rowTops = gridStackRows(sorted.map((a) => minuteOfGrid(a.starts_at)), tops, rowPx)
+  return sorted.map((a, i) => {
+    const raw = toRaw(a) as LaidOutAppointment
+    raw._col = 0
+    raw._totalCols = 1
+    boxes.set(raw, { top: rowTops[i], height: rowPx })
+    return a as LaidOutAppointment
+  })
+}
+const layoutByColumn = computed(() => {
+  const day = viewMode.value === 'day'
+  const rows = rowsMode.value
+  const blocks = new Map<string, LayoutBlock[]>()
+  const boxes = new Map<AppointmentRow, { top: number; height: number }>()
+  for (const [key, list] of columnRows.value) {
+    if (rows) blocks.set(key, day ? assignRowLayout(list, dayTops.value, DAY_ROW_PX, boxes) : assignRowLayout(list, weekTops.value, WEEK_ROW_PX, boxes))
+    else
+      blocks.set(
+        key,
+        day
+          ? assignOverlapLayout(list, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
+          : assignOverlapLayout(list, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX),
+      )
+  }
+  return { blocks, boxes }
+})
+// Where a visit's block goes: its row in rows mode, else its time and length.
+function apptBox(appt: AppointmentRow, tops: HourTops, minFloor: number) {
+  const box = layoutByColumn.value.boxes.get(toRaw(appt))
+  if (box) return box
+  return { top: timeToPx(appt.starts_at, tops), height: durationToPx(appt.starts_at, appt.ends_at, tops, minFloor) }
+}
+/** columnStyle for a visit, inset from its box by `above` and `below` px. */
+function apptStyle(appt: LayoutBlock, tops: HourTops, minFloor: number, above: number, below: number) {
+  const box = apptBox(appt as AppointmentRow, tops, minFloor)
+  return columnStyle(appt, box.top + above, Math.max(0, box.height - above - below))
+}
 // Each group class as one block: its time, room and type, and how many of
 // its places are taken -- counted from the places loaded with the range.
 const classBlocks = computed<AppointmentRow[]>(() => {
@@ -1654,7 +1746,7 @@ function openClassPlace(id: string) {
   openEditModal(appt)
 }
 function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
-  return layoutByColumn.value.get(columnKey(toDateKey(day), roomId)) ?? []
+  return layoutByColumn.value.blocks.get(columnKey(toDateKey(day), roomId)) ?? []
 }
 function blocksForRoomOnDay(day: Date, roomId: string) {
   if (!settings.showAvailability) return []
@@ -1674,16 +1766,17 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
 // days below the column's end -- and its label, centred in all of it, landed
 // wherever that clipping left it, or nowhere. Cut to the day, the label sits
 // in the middle of what is visible.
-function blockBoxOnDay(block: AvailabilityBlock, day: Date, hourPx: number, minFloor: number) {
+function blockBoxOnDay(block: AvailabilityBlock, day: Date, tops: HourTops, minFloor: number) {
   const gridStart = startOfDay(day)
   gridStart.setHours(START_HOUR)
   const gridEnd = startOfDay(day)
   gridEnd.setHours(END_HOUR)
   const s = Math.max(new Date(block.starts_at).getTime(), gridStart.getTime())
   const e = Math.min(new Date(block.ends_at).getTime(), gridEnd.getTime())
+  const top = gridYAt(tops, (s - gridStart.getTime()) / 60_000)
   return {
-    top: ((s - gridStart.getTime()) / 3_600_000) * hourPx,
-    height: Math.max(minFloor, ((e - s) / 3_600_000) * hourPx),
+    top,
+    height: Math.max(minFloor, gridYAt(tops, (e - gridStart.getTime()) / 60_000) - top),
   }
 }
 // The week column is too narrow for "Vacaciones · Lucía Fisio" on one line,
@@ -1735,6 +1828,10 @@ interface DragState {
   // wheel), so the time is measured from where the pointer is in the grid,
   // not on the screen.
   startScrollTop: number
+  // Where in the grid the pointer went down, in px from its top: a drag is
+  // measured in minutes under the pointer, which in rows mode are not the
+  // same number of px in every hour.
+  startGridY: number
   // The column the block was last over. Over the time gutter or a
   // period-change strip there is no column, and the block stays where it was
   // rather than jumping back to the day it came from.
@@ -1754,14 +1851,16 @@ let dragRectsStale = false
 const dragMoved = ref(false)
 let dragColumnRects: { roomId: string | null; dayKey: string; rect: DOMRect }[] = []
 
-function hourPxForView() {
-  return viewMode.value === 'day' ? DAY_HOUR_PX.value : WEEK_HOUR_PX.value
+function topsForView() {
+  return viewMode.value === 'day' ? dayTops.value : weekTops.value
 }
-// Inverse of timeToPx, but returns a raw (signed, snapped) minute delta for
-// drag math instead of an absolute "HH:MM" -- snapMin always measures from
-// the grid's top and can't represent a negative offset.
-function pxToMinutesSinceStart(px: number, hourPx: number) {
-  const totalMin = (px / hourPx) * 60
+// How far a drag has gone, as a signed minute delta snapped to the slot:
+// the minutes under where the pointer is now less those under where it went
+// down. On a linear grid that is px / hourPx x 60, as it always was; in rows
+// mode a tall hour takes more px to cross than a short one, and the delta
+// follows the hour lines the pointer actually passes.
+function dragDeltaMinutes(startY: number, dy: number, tops: HourTops) {
+  const totalMin = gridMinuteAt(tops, startY + dy) - gridMinuteAt(tops, startY)
   return Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
 }
 function captureColumnRects() {
@@ -1799,6 +1898,8 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
   // other block mid-pick would just be confusing.
   if (reschedulingAppointment.value) return
   e.stopPropagation()
+  // Read before the drag starts: once it has, the scale is the held one.
+  heldTops = rowsMode.value ? topsForView() : null
   dragState.value = {
     apptId: appt.id,
     mode,
@@ -1809,6 +1910,7 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
     origEndsAt: appt.ends_at,
     origRoomId: appt.room_id,
     startScrollTop: gridScroller()?.scrollTop ?? 0,
+    startGridY: 0,
     lastCol: null,
   }
   dragRow = appt
@@ -1817,6 +1919,9 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
   dragMoved.value = false
   captureColumnRects()
   dragRectsStale = false
+  // Every column starts at the grid's top, so any of them says where it is.
+  const col = dragColumnRects[0]
+  if (col && dragState.value) dragState.value.startGridY = e.clientY - col.rect.top
   window.addEventListener('pointermove', onAppointmentDragMove)
   window.addEventListener('pointerup', onAppointmentDragEnd)
   window.addEventListener('pointercancel', onAppointmentDragCancel)
@@ -2003,7 +2108,7 @@ function applyDrag() {
   const appt = appointments.value.find((a) => a.id === s.apptId)
   if (!appt) return
   const scrolled = (gridScroller()?.scrollTop ?? s.startScrollTop) - s.startScrollTop
-  const deltaMin = pxToMinutesSinceStart(dragLastY - s.startClientY + scrolled, hourPxForView())
+  const deltaMin = dragDeltaMinutes(s.startGridY, dragLastY - s.startClientY + scrolled, topsForView())
 
   if (s.mode === 'resize') {
     const newEnd = new Date(new Date(s.origEndsAt).getTime() + deltaMin * 60000)
@@ -2564,9 +2669,9 @@ function cellTimeLabel(cell: Cell) {
 function yInColumn(e: MouseEvent) {
   return e.clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top
 }
-function snapMin(offsetY: number, hourPx: number) {
+function snapMin(offsetY: number, tops: HourTops) {
   if (!Number.isFinite(offsetY)) return 0
-  const m = Math.floor(((offsetY / hourPx) * 60) / SLOT_MIN.value) * SLOT_MIN.value
+  const m = Math.floor(gridMinuteAt(tops, offsetY) / SLOT_MIN.value) * SLOT_MIN.value
   return Math.min(Math.max(0, m), TOTAL_MIN - SLOT_MIN.value)
 }
 
@@ -2644,7 +2749,7 @@ watch(
   },
 )
 
-function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, hourPx: number) {
+function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, tops: HourTops) {
   if (e.pointerType !== 'mouse' || dragState.value) return
   // Only the bare column: over a block or a band the pointer is on that, not
   // on a free slot.
@@ -2653,7 +2758,7 @@ function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, ho
     return
   }
   const col = colIndex(dayKey, roomId)
-  const min = snapMin(yInColumn(e), hourPx)
+  const min = snapMin(yInColumn(e), tops)
   if (hoverCell.value?.col !== col || hoverCell.value?.min !== min) hoverCell.value = { col, min }
 }
 function onColumnPointerDown(e: PointerEvent) {
@@ -2663,10 +2768,10 @@ function onColumnPointerDown(e: PointerEvent) {
 // A tap on touch shows the ghost first and books on the second tap on the
 // same cell, so a finger resting on the grid while scrolling does not open a
 // form. A mouse click books straight away, as it always has.
-function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number) {
+function onColumnClick(e: MouseEvent, day: Date, roomId: string, tops: HourTops) {
   // The cell under the pointer, not the nearest slot boundary: a click in the
   // lower half of 18:00-18:30 is a click on 18:00.
-  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(yInColumn(e), hourPx) }
+  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(yInColumn(e), tops) }
   const time = slotLabel(cell.min)
   const room = roomId === '__none' ? null : roomId
   if (reschedulingAppointment.value) {
@@ -2778,12 +2883,12 @@ const focusAnnouncement = computed(() => {
   return `${where}: ${cellIsFree(cell) ? t('free', 'libre') : t('unavailable', 'no disponible')}`
 })
 // Where the keyboard's cell sits in its column, for the focus ring.
-function focusRectFor(dayKey: string, roomId: string, hourPx: number) {
+function focusRectFor(dayKey: string, roomId: string, tops: HourTops) {
   const cell = focusCell.value
   if (!gridHasFocus.value || !cell) return null
   const c = gridColumns.value[cell.col]
   if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
-  return { top: (cell.min / 60) * hourPx, height: (SLOT_MIN.value / 60) * hourPx }
+  return { top: slotTop(tops, cell.min), height: slotHeight(tops, cell.min) }
 }
 
 // A slot freed by a cancellation and offered to the waitlist. It is not free
@@ -2878,11 +2983,11 @@ onUnmounted(() => {
 })
 const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
-const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.value))
+const nowLinePx = computed(() => timeToPx(now.value.toISOString(), dayTops.value))
 // Week views: the line runs across today's room columns only, and the time
 // sits in the gutter when today is one of the days shown.
 const showWeekNowLabel = computed(() => viewMode.value !== 'day' && nowWithinHours.value && visibleWeekDays.value.some((d) => isSameDate(d, now.value)))
-const nowLineWeekPx = computed(() => timeToPx(now.value.toISOString(), WEEK_HOUR_PX.value))
+const nowLineWeekPx = computed(() => timeToPx(now.value.toISOString(), weekTops.value))
 function showNowLineOn(day: Date) {
   return nowWithinHours.value && isSameDate(day, now.value)
 }
@@ -2999,6 +3104,28 @@ function showNowLineOn(day: Date) {
           <option value="week">{{ t('Week', 'Semana') }}</option>
           <option value="month">{{ t('Month', 'Mes') }}</option>
         </select>
+        <!-- Visits at the same time side by side, or one under the other.
+             Not in the month, which draws no visits. Icons below 2xl: with
+             its labels the toolbar no longer fits beside the title at 1440px,
+             the header wraps to two lines and the grid loses 39px. -->
+        <div v-if="viewMode !== 'month'" role="group" :aria-label="t('Visits at the same time', 'Citas a la misma hora')" class="flex h-8 items-center gap-0.5 rounded-ctlSm border border-line-control bg-surface p-0.5 [@media(pointer:coarse)]:h-11" data-cy="stack-mode">
+          <button
+            v-for="m in ([['columns', t('Side by side', 'En columnas')], ['rows', t('One under the other', 'En filas')]] as const)"
+            :key="m[0]"
+            type="button"
+            class="flex h-full items-center gap-1.5 rounded-[5px] px-2 text-[12.5px] font-medium"
+            :class="stackMode === m[0] ? 'bg-chip-bg text-ink-900' : 'text-ink-muted hover:bg-surface-subtle'"
+            :aria-pressed="stackMode === m[0]"
+            :title="m[1]"
+            :aria-label="m[1]"
+            :data-cy="`stack-mode-${m[0]}`"
+            @click="stackMode = m[0]"
+          >
+            <svg v-if="m[0] === 'columns'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="3.6" height="11" rx="1" /><rect x="6.2" y="2.5" width="3.6" height="11" rx="1" /><rect x="10.9" y="2.5" width="3.6" height="11" rx="1" /></svg>
+            <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
+            <span class="hidden 2xl:inline">{{ m[1] }}</span>
+          </button>
+        </div>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash shift', 'Turno de caja') }}</UiBtn>
         <template v-if="!readOnly">
           <span v-if="bookingFor" class="inline-flex h-8 items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="booking-for">
@@ -3269,7 +3396,7 @@ function showNowLineOn(day: Date) {
           <div class="w-[58px] shrink-0 border-r border-line">
             <div class="border-b border-line" :style="{ height: `${viewMode === 'day' ? DAY_HEADER_PX : WEEK_HEADER_PX}px` }" />
             <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
-              <span v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint" :style="{ top: `${Math.max(0, (h - START_HOUR) * hourPxForView() - 7)}px` }">{{ hourLabel(h) }}</span>
+              <span v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint" :style="{ top: `${Math.max(0, gridYAt(topsForView(), (h - START_HOUR) * 60) - 7)}px` }">{{ hourLabel(h) }}</span>
             </div>
           </div>
           <div v-for="(day, i) in skeletonColumns" :key="i" class="flex min-w-0 flex-1 flex-col border-r border-line last:border-r-0">
@@ -3278,8 +3405,8 @@ function showNowLineOn(day: Date) {
               <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
             </div>
             <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
-              <div v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * hourPxForView()}px` }" />
-              <UiSkeleton v-for="(b, j) in skeletonBlocks(i, hourPxForView())" :key="j" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+              <div v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(topsForView(), (h - START_HOUR) * 60)}px` }" />
+              <UiSkeleton v-for="(b, j) in skeletonBlocks(i, topsForView())" :key="j" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
             </div>
           </div>
         </div>
@@ -3335,7 +3462,7 @@ function showNowLineOn(day: Date) {
                     v-for="h in hourMarks"
                     :key="h"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                    :style="{ top: `${Math.max(0, (h - START_HOUR) * DAY_HOUR_PX - 7)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(dayTops, (h - START_HOUR) * 60) - 7)}px` }"
                   >
                     {{ hourLabel(h) }}
                   </span>
@@ -3343,7 +3470,7 @@ function showNowLineOn(day: Date) {
                     v-for="m in slotMarks"
                     :key="`slot-label-${m}`"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint2"
-                    :style="{ top: `${Math.max(0, (m / 60) * DAY_HOUR_PX - 6)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(dayTops, m) - 6)}px` }"
                   >
                     {{ slotLabel(m) }}
                   </span>
@@ -3358,20 +3485,20 @@ function showNowLineOn(day: Date) {
                   class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
                   :class="{ 'pointer-events-none': loading }"
                   @pointerdown="onColumnPointerDown"
-                  @pointermove="onColumnPointerMove($event, toDateKey(anchorDate), col.id, DAY_HOUR_PX)"
+                  @pointermove="onColumnPointerMove($event, toDateKey(anchorDate), col.id, dayTops)"
                   @pointerleave="hoverCell = null"
-                  @click="onColumnClick($event, anchorDate, col.id, DAY_HOUR_PX)"
+                  @click="onColumnClick($event, anchorDate, col.id, dayTops)"
                 >
                   <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
                     <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
                   </div>
-                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
-                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(dayTops, m)}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(dayTops, (h - START_HOUR) * 60)}px` }" />
 
                   <!-- A range loading: placeholders where the visits go, and
                        nothing to click until it is known what is free. -->
                   <template v-if="loading">
-                    <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(ci, DAY_HOUR_PX, anchorDate) : []" :key="`sk-${j}`" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+                    <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(ci, dayTops, anchorDate) : []" :key="`sk-${j}`" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
                   </template>
                   <template v-else>
 
@@ -3379,7 +3506,7 @@ function showNowLineOn(day: Date) {
                     v-for="block in blocksForRoom(col.id)"
                     :key="block.id"
                     class="cal-blocked absolute left-1 right-1 z-0 flex cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-ctl border border-line text-[12px] text-ink-muted"
-                    :style="{ top: `${blockBoxOnDay(block, anchorDate, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX).top + 1}px`, height: `${blockBoxOnDay(block, anchorDate, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX).height - 3}px` }"
+                    :style="{ top: `${blockBoxOnDay(block, anchorDate, dayTops, DAY_MIN_AVAILABILITY_PX).top + 1}px`, height: `${blockBoxOnDay(block, anchorDate, dayTops, DAY_MIN_AVAILABILITY_PX).height - 3}px` }"
                     data-cy="cal-blocked"
                     @click.stop="openBlockEditModal(block)"
                   >
@@ -3392,7 +3519,7 @@ function showNowLineOn(day: Date) {
                     data-cy="freed-slot"
                     role="note"
                     class="absolute left-1 right-1 z-[5] flex cursor-default items-center gap-1.5 overflow-hidden rounded-ctl border-[1.5px] border-dashed border-success-accent bg-success-bg px-2.5 text-[12px] text-success-text"
-                    :style="{ top: `${timeToPx(o.offered_starts_at, DAY_HOUR_PX) + 1}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3}px` }"
+                    :style="{ top: `${timeToPx(o.offered_starts_at, dayTops) + 1}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, dayTops, DAY_MIN_BLOCK_PX) - 3}px` }"
                     @click.stop
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6" /></svg>
@@ -3405,7 +3532,7 @@ function showNowLineOn(day: Date) {
                       v-if="isOverflowBlock(appt)"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card"
                       :title="appt.count === 1 ? t('1 more appointment at this time', '1 cita más a esta hora') : t(`${appt.count} more appointments at this time`, `${appt.count} citas más a esta hora`)"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, dayTops), OVERFLOW_CHIP_PX)"
                     >
                       +{{ appt.count }} {{ t('more', 'más') }}
                     </div>
@@ -3415,7 +3542,7 @@ function showNowLineOn(day: Date) {
                       data-cy="class-block"
                       :data-session-id="appt._class.sessionId"
                       class="absolute flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2.5 py-1 text-left text-[12px] leading-tight text-brand-on shadow-card"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      :style="apptStyle(appt, dayTops, DAY_MIN_BLOCK_PX, 1, 2)"
                       @click.stop="classPanelId = appt._class.sessionId"
                     >
                       <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
@@ -3427,7 +3554,7 @@ function showNowLineOn(day: Date) {
                       data-cy="moved-away-marker"
                       :data-appt-id="appt._movedFrom.id"
                       class="absolute cursor-pointer"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      :style="apptStyle(appt, dayTops, DAY_MIN_BLOCK_PX, 1, 2)"
                       :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
                       @click.stop="openEditModal(appt._movedFrom)"
                     >
@@ -3444,7 +3571,7 @@ function showNowLineOn(day: Date) {
                       :data-dimmed="isDimmed(appt) || undefined"
                       class="absolute scroll-mt-10 select-none"
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      :style="apptStyle(appt, dayTops, DAY_MIN_BLOCK_PX, 1, 2)"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"
                       @pointerenter="onBlockPointerEnter(appt, $event)"
@@ -3454,13 +3581,16 @@ function showNowLineOn(day: Date) {
                       <CalendarAppointmentBlock
                         :view="blockView(appt)"
                         density="day"
-                        :height="Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)"
+                        :height="Math.max(0, apptBox(appt, dayTops, DAY_MIN_BLOCK_PX).height - 3)"
+                        :lead-time="rowsMode"
                         :selected="selectedApptId === appt.id"
                         :dim="isDimmed(appt)"
                         :privacy="settings.privacyMode"
                       />
+                      <!-- Rows are one line each whatever the visit's length, so
+                           there is no end to drag in rows mode. -->
                       <div
-                        v-if="appt.status === 'booked'"
+                        v-if="appt.status === 'booked' && !rowsMode"
                         class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
                         @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
                       ></div>
@@ -3472,7 +3602,7 @@ function showNowLineOn(day: Date) {
                       v-if="g && g.free"
                       data-cy="slot-ghost"
                       class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center gap-1.5 rounded-ctl border-2 border-brand bg-surface px-2.5 text-[13px] font-semibold text-brand-text"
-                      :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
+                      :style="{ top: `${slotTop(dayTops, g.min) + 1}px`, height: `${slotHeight(dayTops, g.min) - 3}px` }"
                     >
                       + {{ t(`Book ${g.label}`, `Reservar ${g.label}`) }}<span class="font-normal text-ink-muted"> · {{ t('Enter', 'Intro') }}</span>
                     </div>
@@ -3482,13 +3612,13 @@ function showNowLineOn(day: Date) {
                       v-if="g"
                       data-cy="create-ghost"
                       class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
-                      :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
+                      :style="{ top: `${slotTop(dayTops, g.min) + 1}px`, height: `${slotHeight(dayTops, g.min) - 3}px` }"
                     >
                       {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
                     </div>
                   </template>
                   </template>
-                  <template v-for="r in [focusRectFor(toDateKey(anchorDate), col.id, DAY_HOUR_PX)]" :key="`focus-${col.id}`">
+                  <template v-for="r in [focusRectFor(toDateKey(anchorDate), col.id, dayTops)]" :key="`focus-${col.id}`">
                     <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0.5 right-0.5 z-[16] rounded-ctl ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
                   </template>
                 </div>
@@ -3512,7 +3642,7 @@ function showNowLineOn(day: Date) {
                     v-for="h in hourMarks"
                     :key="h"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                    :style="{ top: `${Math.max(0, (h - START_HOUR) * WEEK_HOUR_PX - 7)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(weekTops, (h - START_HOUR) * 60) - 7)}px` }"
                   >
                     {{ hourLabel(h) }}
                   </span>
@@ -3520,7 +3650,7 @@ function showNowLineOn(day: Date) {
                     v-for="m in slotMarks"
                     :key="`slot-label-${m}`"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint2"
-                    :style="{ top: `${Math.max(0, (m / 60) * WEEK_HOUR_PX - 5)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(weekTops, m) - 5)}px` }"
                   >
                     {{ slotLabel(m) }}
                   </span>
@@ -3574,16 +3704,16 @@ function showNowLineOn(day: Date) {
                     :class="{ 'pointer-events-none': loading }"
                     :style="{ minWidth: `${weekColPx}px` }"
                     @pointerdown="onColumnPointerDown"
-                    @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, WEEK_HOUR_PX)"
+                    @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, weekTops)"
                     @pointerleave="hoverCell = null"
-                    @click="onColumnClick($event, day, col.id, WEEK_HOUR_PX)"
+                    @click="onColumnClick($event, day, col.id, weekTops)"
                   >
                     <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
-                    <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
-                    <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+                    <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(weekTops, m)}px` }" />
+                    <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(weekTops, (h - START_HOUR) * 60)}px` }" />
 
                     <template v-if="loading">
-                      <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(di + ci, WEEK_HOUR_PX, day) : []" :key="`sk-${j}`" class="absolute left-0.5 right-0.5 rounded-[6px]" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+                      <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(di + ci, weekTops, day) : []" :key="`sk-${j}`" class="absolute left-0.5 right-0.5 rounded-[6px]" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
                     </template>
                     <template v-else>
 
@@ -3600,7 +3730,7 @@ function showNowLineOn(day: Date) {
                       v-for="block in blocksForRoomOnDay(day, col.id)"
                       :key="block.id"
                       class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line px-0.5 text-[11px] text-ink-muted2"
-                      :style="{ top: `${blockBoxOnDay(block, day, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX).top}px`, height: `${blockBoxOnDay(block, day, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX).height}px` }"
+                      :style="{ top: `${blockBoxOnDay(block, day, weekTops, WEEK_MIN_AVAILABILITY_PX).top}px`, height: `${blockBoxOnDay(block, day, weekTops, WEEK_MIN_AVAILABILITY_PX).height}px` }"
                       :title="blockLabel(block)"
                       data-cy="cal-blocked"
                       @click.stop="openBlockEditModal(block)"
@@ -3619,7 +3749,7 @@ function showNowLineOn(day: Date) {
                       role="note"
                       class="absolute left-0.5 right-0.5 z-[5] flex cursor-default items-center overflow-hidden rounded-[6px] border-[1.5px] border-dashed border-success-accent bg-success-bg px-1 text-[11px] font-semibold text-success-text"
                       :title="`${freedSlotLabel(o)} · ${freedSlotUntil(o)}`"
-                      :style="{ top: `${timeToPx(o.offered_starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2}px` }"
+                      :style="{ top: `${timeToPx(o.offered_starts_at, weekTops)}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, weekTops, WEEK_MIN_BLOCK_PX) - 2}px` }"
                       @click.stop
                     >
                       <span class="truncate">{{ freedSlotLabel(o) }}</span>
@@ -3631,7 +3761,7 @@ function showNowLineOn(day: Date) {
                         type="button"
                         class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                         :title="appt.count === 1 ? t('1 more appointment at this time. Click to see it in Day view.', '1 cita más a esta hora. Haz clic para verla en la vista Día.') : t(`${appt.count} more appointments at this time. Click to see them all in Day view.`, `${appt.count} citas más a esta hora. Haz clic para verlas todas en la vista Día.`)"
-                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, weekTops), OVERFLOW_CHIP_PX)"
                         @click.stop="showOverflowDay(day)"
                       >
                         +{{ appt.count }}
@@ -3642,7 +3772,7 @@ function showNowLineOn(day: Date) {
                         data-cy="class-block"
                         :data-session-id="appt._class.sessionId"
                         class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[11px] leading-tight text-brand-on"
-                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        :style="apptStyle(appt, weekTops, WEEK_MIN_BLOCK_PX, 0, 2)"
                         @click.stop="classPanelId = appt._class.sessionId"
                       >
                         <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
@@ -3653,7 +3783,7 @@ function showNowLineOn(day: Date) {
                         data-cy="moved-away-marker"
                         :data-appt-id="appt._movedFrom.id"
                         class="absolute cursor-pointer"
-                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        :style="apptStyle(appt, weekTops, WEEK_MIN_BLOCK_PX, 0, 2)"
                         :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
                         @click.stop="openEditModal(appt._movedFrom)"
                       >
@@ -3670,7 +3800,7 @@ function showNowLineOn(day: Date) {
                       :data-dimmed="isDimmed(appt) || undefined"
                         class="absolute select-none"
                         :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
-                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        :style="apptStyle(appt, weekTops, WEEK_MIN_BLOCK_PX, 0, 2)"
                         @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                         @click.stop="handleAppointmentClick(appt)"
                         @pointerenter="onBlockPointerEnter(appt, $event)"
@@ -3680,13 +3810,13 @@ function showNowLineOn(day: Date) {
                         <CalendarAppointmentBlock
                           :view="blockView(appt)"
                           density="week"
-                          :height="Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)"
+                          :height="Math.max(0, apptBox(appt, weekTops, WEEK_MIN_BLOCK_PX).height - 2)"
                           :selected="selectedApptId === appt.id"
                           :dim="isDimmed(appt)"
                           :privacy="settings.privacyMode"
                         />
                         <div
-                          v-if="appt.status === 'booked'"
+                          v-if="appt.status === 'booked' && !rowsMode"
                           class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
                           @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
                         ></div>
@@ -3698,7 +3828,7 @@ function showNowLineOn(day: Date) {
                         v-if="g && g.free"
                         data-cy="slot-ghost"
                         class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] border-2 border-brand bg-surface px-1 text-[11px] font-semibold text-brand-text"
-                        :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
+                        :style="{ top: `${slotTop(weekTops, g.min)}px`, height: `${slotHeight(weekTops, g.min) - 2}px` }"
                       >
                         + {{ g.label }}
                       </div>
@@ -3708,13 +3838,13 @@ function showNowLineOn(day: Date) {
                         v-if="g"
                         data-cy="create-ghost"
                         class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-brand-on"
-                        :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
+                        :style="{ top: `${slotTop(weekTops, g.min)}px`, height: `${slotHeight(weekTops, g.min) - 2}px` }"
                       >
                         {{ g.label }}
                       </div>
                     </template>
                     </template>
-                    <template v-for="r in [focusRectFor(toDateKey(day), col.id, WEEK_HOUR_PX)]" :key="`focus-${toDateKey(day)}-${col.id}`">
+                    <template v-for="r in [focusRectFor(toDateKey(day), col.id, weekTops)]" :key="`focus-${toDateKey(day)}-${col.id}`">
                       <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0 right-0 z-[16] rounded-[6px] ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
                     </template>
                   </div>

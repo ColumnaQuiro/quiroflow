@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { QuirocitasStepKind } from '~/composables/useQuirocitasImport'
+import type { QuirocitasStepKind } from '~/utils/quirocitasImport'
 
 interface Step {
   key: string
@@ -35,7 +35,8 @@ const route = useRoute()
 const router = useRouter()
 const connection = usePracticeHubConnection()
 const quirocitas = useQuirocitasConnection()
-const quirocitasCopy = useQuirocitasSnapshot()
+const { copy: quirocitasCopy } = useQuirocitasCopy()
+const { job: quirocitasJob } = useQuirocitasJob()
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
@@ -126,10 +127,11 @@ const sources = computed<Source[]>(() => [
       {
         key: 'setup',
         label: t('Set up', 'Configurar'),
-        note: t('Quirocitas has no export of its own beyond patients: QuiroFlow reads it page by page, once, then imports from that copy.', 'Quirocitas no exporta más que los pacientes: QuiroFlow lo lee página a página, una vez, y luego importa desde esa copia.'),
+        note: t('Quirocitas has no export of its own beyond patients: QuiroFlow reads it page by page, on its server, then imports from that copy. "Import everything" does it all in one go; the steps below do it one at a time, with a preview.', 'Quirocitas no exporta más que los pacientes: QuiroFlow lo lee página a página, en su servidor, y luego importa desde esa copia. «Importar todo» lo hace todo de una vez; los pasos de abajo, uno a uno y con vista previa.'),
         steps: [
           { key: 'general', label: t('Connection', 'Conexión'), hint: t('Quirocitas address and a staff login.', 'Dirección de Quirocitas y un usuario del personal.') },
-          { key: 'read', label: t('Read Quirocitas', 'Leer Quirocitas'), hint: t('Reads every record into this browser. Writes nothing.', 'Lee cada ficha a este navegador. No escribe nada.') },
+          { key: 'full', label: t('Import everything', 'Importar todo'), hint: t('Reads Quirocitas and runs every step below, on the server. You can close the page.', 'Lee Quirocitas y hace todos los pasos de abajo, en el servidor. Puedes cerrar la página.') },
+          { key: 'read', label: t('Read Quirocitas', 'Leer Quirocitas'), hint: t('Reads every record into a copy on the server. Writes nothing.', 'Lee cada ficha a una copia en el servidor. No escribe nada.') },
         ],
       },
       {
@@ -265,10 +267,23 @@ provideImportWriting((writing) => {
 })
 onBeforeUnmount(stopLiveCount)
 
+// A Quirocitas import runs on the server, not in a step on this page, so the
+// counts follow its job instead: a few seconds apart while it writes, and
+// once more when it ends.
+let lastJobCount = 0
+watch(() => quirocitasJob.value && [quirocitasJob.value.status, quirocitasJob.value.step_index, JSON.stringify(quirocitasJob.value.progress)].join('|'), () => {
+  if (sourceKey.value !== 'quirocitas') return
+  const active = importJobActive(quirocitasJob.value)
+  if (active && Date.now() - lastJobCount < 6000) return
+  lastJobCount = Date.now()
+  loadCounts({ quiet: true })
+  if (!active) loadQuirocitasCopy()
+})
+
 onMounted(() => {
   loadSavedPracticeHubConnection()
   loadQuirocitasConnection()
-  if (store.accountId) loadQuirocitasSnapshot(store.accountId)
+  loadQuirocitasCopy()
   loadCounts()
 })
 // Each source counts its own steps.
@@ -281,9 +296,15 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
     const saved = sourceKey.value === 'quirocitas' ? quirocitasConnected(quirocitas.value) : !!connection.value
     return saved ? { text: t('Saved', 'Guardada'), done: true } : { text: t('Not set up yet', 'Aún sin configurar'), done: false }
   }
+  if (step.key === 'full') {
+    const j = quirocitasJob.value
+    if (j && importJobActive(j)) return { text: t(`Running · ${importJobPercent(j)}%`, `En marcha · ${importJobPercent(j)}%`), done: false }
+    if (j?.status === 'done' && j.steps.length > 1) return { text: t(`Done ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`, `Hecho el ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`), done: true }
+    return null
+  }
   if (step.key === 'read') {
     const s = quirocitasCopy.value
-    return s?.ledgerMonths.length ? { text: t(`Read ${new Date(s.readAt).toLocaleDateString('es-ES')}`, `Leído el ${new Date(s.readAt).toLocaleDateString('es-ES')}`), done: true } : { text: s ? t('Partly read', 'Leído en parte') : t('Not read yet', 'Aún sin leer'), done: false }
+    return s?.state.finished ? { text: t(`Read ${new Date(s.readAt).toLocaleDateString('es-ES')}`, `Leído el ${new Date(s.readAt).toLocaleDateString('es-ES')}`), done: true } : { text: s ? t('Partly read', 'Leído en parte') : t('Not read yet', 'Aún sin leer'), done: false }
   }
   if (!step.count) return null
   if (!countsLoaded.value) return { text: '…', done: false }
@@ -421,6 +442,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
               </template>
               <template v-else-if="sourceKey === 'quirocitas'">
                 <ImportQuirocitasConnection v-if="activeStep.key === 'general'" />
+                <ImportQuirocitasFullImport v-else-if="activeStep.key === 'full'" />
                 <ImportQuirocitasRead v-else-if="activeStep.key === 'read'" />
                 <ImportQuirocitasStep v-else :kind="activeStep.key as QuirocitasStepKind" />
               </template>

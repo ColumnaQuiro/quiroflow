@@ -4599,6 +4599,78 @@ export type Database = {
         }
         Relationships: []
       }
+      import_jobs: {
+        Row: {
+          id: string
+          account_id: string
+          clinic_id: string | null
+          source: string
+          steps: string[]
+          options: Json
+          status: string
+          step_index: number
+          progress: Json
+          results: Json
+          error: string | null
+          cancel_requested: boolean
+          started_by: string | null
+          locked_until: string | null
+          slices: number
+          created_at: string
+          started_at: string | null
+          finished_at: string | null
+          notified_at: string | null
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          clinic_id?: string | null
+          source: string
+          steps: string[]
+          options?: Json
+          status?: string
+          step_index?: number
+          progress?: Json
+          results?: Json
+          error?: string | null
+          cancel_requested?: boolean
+          started_by?: string | null
+          locked_until?: string | null
+          slices?: number
+          created_at?: string
+          started_at?: string | null
+          finished_at?: string | null
+          notified_at?: string | null
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          clinic_id?: string | null
+          source?: string
+          steps?: string[]
+          options?: Json
+          status?: string
+          step_index?: number
+          progress?: Json
+          results?: Json
+          error?: string | null
+          cancel_requested?: boolean
+          started_by?: string | null
+          locked_until?: string | null
+          slices?: number
+          created_at?: string
+          started_at?: string | null
+          finished_at?: string | null
+          notified_at?: string | null
+        }
+        Relationships: []
+      }
+      import_snapshots: {
+        Row: { account_id: string; source: string; key: string; data: Json; updated_at: string }
+        Insert: { account_id: string; source: string; key: string; data: Json; updated_at?: string }
+        Update: { account_id?: string; source?: string; key?: string; data?: Json; updated_at?: string }
+        Relationships: []
+      }
       verifactu_alerts: {
         Row: { id: string; account_id: string; kind: string; key: string; sent_at: string }
         Insert: { id?: string; account_id: string; kind: string; key: string; sent_at?: string }

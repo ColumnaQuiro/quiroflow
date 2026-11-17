@@ -23,6 +23,8 @@ const props = defineProps<{
   patientId: string
   appointmentTypeName?: string
   appointmentTypePriceCents?: number
+  /** The appointment's status, so an undone visit is offered again. */
+  status?: string
 }>()
 const emit = defineEmits<{ completed: []; details: []; offered: [value: boolean] }>()
 
@@ -43,6 +45,8 @@ const {
   paymentMethods,
   paymentRows,
   init,
+  loadInvoice,
+  refresh: refreshMoney,
   chargeVisit,
   usePackageSession,
   recordPayment,
@@ -65,6 +69,20 @@ onMounted(async () => {
   method.value = paymentRows.value[0]?.method ?? 'cash'
   ready.value = true
 })
+
+// "Undo visit" gives the bono session back and voids its charge from outside
+// this component (undo_visit). What was read before that says the visit is
+// covered, so read it again: without this the visit stayed off the screen
+// until the panel was closed and reopened.
+watch(
+  () => props.status,
+  async (now, before) => {
+    if (before !== 'completed' || now !== 'booked' || !ready.value) return
+    chosen.value = false
+    await loadInvoice()
+    await refreshMoney()
+  },
+)
 
 // What the money option would collect: what is left on the receipt this visit
 // already has, or the type's price when nothing has been raised yet.

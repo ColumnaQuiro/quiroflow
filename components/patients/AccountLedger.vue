@@ -39,6 +39,8 @@ const props = defineProps<{
   payments: PaymentRow[]
   /** Payments collected through GoCardless: refunding one by direct debit sends the money back through it. */
   gocardlessPaymentIds?: string[]
+  /** GoCardless's payment id (PM…) of each payment it collected, by our payment id. */
+  gocardlessPaymentRefs?: Record<string, string>
   credits: CreditRow[]
   packageSessions: PackageSessionRow[]
   spendableCreditCents: number
@@ -115,6 +117,7 @@ function recordedBy(p: PaymentRow): string {
   const name = p.team_members?.full_name
   if (name) return name
   if (p.stripe_payment_intent_id) return t('Automatic (card on file)', 'Automático (tarjeta guardada)')
+  if (props.gocardlessPaymentRefs?.[p.id]) return t('Automatic (direct debit)', 'Automático (domiciliación)')
   return t('Not recorded', 'Sin registrar')
 }
 
@@ -261,7 +264,9 @@ const rows = computed<LedgerRow[]>(() => {
 
   const paymentRows: LedgerRow[] = countablePayments.map((p) => ({
     key: `payment-${p.id}`,
-    ref: '',
+    // A direct debit's reference is GoCardless's payment id (PM…), the
+    // handle its dashboard and support know the collection by.
+    ref: props.gocardlessPaymentRefs?.[p.id] ?? '',
     paymentId: p.id,
     paymentAmountCents: p.amount_cents,
     // Deliberately NOT `invoiceId`: that field gates the invoice action block
@@ -309,6 +314,9 @@ const rows = computed<LedgerRow[]>(() => {
       // simply omits the line can't tell them apart. Rows written before
       // created_by existed are the honest third case: nothing recorded it.
       { label: t('Recorded by', 'Registrado por'), value: recordedBy(p) },
+      // The collection as GoCardless names it, which is what its dashboard
+      // and support search by.
+      ...(props.gocardlessPaymentRefs?.[p.id] ? [{ label: t('GoCardless payment', 'Cobro de GoCardless'), value: props.gocardlessPaymentRefs[p.id]! }] : []),
     ],
   }))
 

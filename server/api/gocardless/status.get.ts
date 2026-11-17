@@ -2,8 +2,9 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 
 // What Settings > Payments shows about GoCardless. `refresh=1` re-reads the
-// verification status from GoCardless, which changes on its side as the
-// clinic finishes onboarding there.
+// organisation's name and verification status from GoCardless; the status
+// changes on its side as the clinic finishes onboarding there (the reconcile
+// cron re-reads it daily too).
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requirePermission(event, 'billing_config')
   setHeader(event, 'Cache-Control', 'no-store')
@@ -15,13 +16,17 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   let verification = account?.gocardless_verification_status ?? null
+  // The organisation's name is only ever read live: it is GoCardless's to
+  // change, and the card falls back to the OR… id when it cannot be read.
+  let organisationName: string | null = null
   let tokenGone = false
   if (account?.gocardless_organisation_id && getQuery(event).refresh === '1') {
     const request = await gocardlessForAccount(admin, teamMember.account_id)
     if (request) {
       try {
-        const creditors = await request('GET', '/creditors', { query: { limit: 1 } })
-        verification = creditors?.creditors?.[0]?.verification_status ?? verification
+        const creditor = await readGoCardlessCreditor(request)
+        organisationName = creditor?.name ?? null
+        verification = creditor?.verification_status ?? verification
         await admin.from('accounts').update({ gocardless_verification_status: verification }).eq('id', teamMember.account_id)
       } catch (err) {
         if (err instanceof GoCardlessError && err.tokenGone) tokenGone = true
@@ -39,8 +44,12 @@ export default defineEventHandler(async (event) => {
     configured: gocardlessConfigured(),
     connected: Boolean(account?.gocardless_organisation_id),
     organisationId: account?.gocardless_organisation_id ?? null,
+    organisationName,
     environment: account?.gocardless_environment ?? null,
     verificationStatus: verification,
+    // GoCardless's own page for finishing verification, offered on the card
+    // while the status is action_required.
+    verifyUrl: account?.gocardless_organisation_id ? gocardlessHosts().verify : null,
     connectedAt: account?.gocardless_connected_at ?? null,
   }
 })

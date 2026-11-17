@@ -5,9 +5,13 @@ import type { Database } from '~/types/database.types'
 // from GoCardless again rather than trusted from the page: what is stored is
 // what GoCardless says now, and a mandate id from another organisation is
 // refused because it is not found there.
+//
+// The pair is also written onto the GoCardless customer, as our patient id
+// in its metadata (tagGoCardlessCustomer), which the import list reads back
+// first. Best effort: the row here is what collects.
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requirePermission(event, 'billing_config')
-  const body = await readBody<{ mandateId?: string; patientId?: string; matchedBy?: 'email' | 'phone' | 'name' | 'manual' }>(event)
+  const body = await readBody<{ mandateId?: string; patientId?: string; matchedBy?: 'metadata' | 'email' | 'phone' | 'name' | 'manual' }>(event)
   if (!body?.mandateId || !body?.patientId) throw createError({ statusCode: 400, statusMessage: 'mandateId and patientId are required' })
 
   const admin = serverSupabaseServiceRole<Database>(event)
@@ -35,6 +39,7 @@ export default defineEventHandler(async (event) => {
       gocardless_customer_id: mandate.links.customer,
       status: mandate.status,
       scheme: mandate.scheme,
+      reference: mandate.reference,
       bank_name: bank?.bank_name ?? null,
       account_number_ending: bank?.account_number_ending ?? null,
       origin: 'imported',
@@ -46,5 +51,6 @@ export default defineEventHandler(async (event) => {
     { onConflict: 'account_id,gocardless_mandate_id' },
   )
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  return { ok: true }
+  const metadata = await tagGoCardlessCustomer(request, mandate.links.customer, patient.id)
+  return { ok: true, metadata }
 })

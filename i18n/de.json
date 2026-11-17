@@ -2745,7 +2745,6 @@
   "Go to the step": "Zum Schritt",
   "GoCardless account connected. Next, match your patients’ direct debits in Settings › Import.": "GoCardless-Konto verbunden. Ordnen Sie als Nächstes die Lastschriften Ihrer Patienten unter Einstellungen › Import zu.",
   "GoCardless does not show QuiroFlow the subscriptions other apps created, so whether PracticeHub is still collecting on a mandate is not shown here. Check it in PracticeHub or in your GoCardless dashboard.": "GoCardless zeigt QuiroFlow keine Abonnements anderer Apps, daher ist hier nicht zu sehen, ob PracticeHub noch über ein Mandat einzieht. Prüfen Sie es in PracticeHub oder in Ihrem GoCardless-Dashboard.",
-  "GoCardless has not verified this account yet, so it cannot collect. Finish the steps it asks for in your GoCardless dashboard.": "GoCardless hat dieses Konto noch nicht verifiziert und kann daher nicht einziehen. Schließen Sie die angeforderten Schritte in Ihrem GoCardless-Dashboard ab.",
   "GoCardless is not connected yet.": "GoCardless ist noch nicht verbunden.",
   "GoCardless is still connected.": "GoCardless ist weiterhin verbunden.",
   "Goal": "Ziel",
@@ -8531,7 +8530,18 @@
   "Receipt details": "Details zur Abrechnung",
   "Remove bono · undo visit": "Paket entfernen · Besuch rückgängig machen",
   "How this visit is paid": "Wie dieser Besuch bezahlt wird",
-  "Add services or split the payment": "Leistungen hinzufügen oder Zahlung aufteilen"
+  "Add services or split the payment": "Leistungen hinzufügen oder Zahlung aufteilen",
+  "paired before": "schon einmal zugeordnet",
+  "similar name": "ähnlicher Name",
+  "Automatic (direct debit)": "Automatisch (Lastschrift)",
+  "GoCardless payment": "GoCardless-Zahlung",
+  "Mandate reference": "Mandatsreferenz",
+  "Unavailable": "Nicht verfügbar",
+  "Verification needed": "Verifizierung nötig",
+  "Could not check the GoCardless connection. Collections are not affected.": "Die GoCardless-Verbindung konnte nicht geprüft werden. Einzüge sind nicht betroffen.",
+  "GoCardless needs more information before this account can collect. It takes a few minutes, on GoCardless’s own page.": "GoCardless braucht weitere Angaben, bevor dieses Konto einziehen kann. Das dauert ein paar Minuten, auf der Seite von GoCardless selbst.",
+  "Verify in GoCardless": "Bei GoCardless verifizieren",
+  "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "GoCardless prüft dieses Konto, daher kann es noch nicht einziehen. Hier ist nichts zu tun; das aktualisiert sich von selbst."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
@@ -9898,6 +9908,7 @@
   "Process · 1 session of {0}": "Abschließen · 1 Sitzung von {0}",
   "Process · charge {0}": "Abschließen · {0} kassieren",
   "{0} left, {1} after this visit": "Noch {0}, danach {1}",
-  "No bono, charge {0}": "Ohne Paket, {0} kassieren"
+  "No bono, charge {0}": "Ohne Paket, {0} kassieren",
+  "Search a patient (GoCardless: {0})": "Patient suchen (GoCardless: {0})"
  }
 }

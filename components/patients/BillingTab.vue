@@ -965,25 +965,31 @@ async function loadAll({ silent = loadedOnce }: { silent?: boolean } = {}) {
 // columns it returns and knows nothing of providers. Three small selects, all
 // RLS-scoped to what this member may see.
 const gocardlessConnected = ref(false)
-const mandates = ref<{ gocardless_mandate_id: string; status: string; bank_name: string | null; account_number_ending: string | null }[]>([])
+const mandates = ref<{ gocardless_mandate_id: string; status: string; bank_name: string | null; account_number_ending: string | null; reference: string | null }[]>([])
 const scheduleProviders = ref<Record<string, string>>({})
 const directDebitCharges = ref<Record<string, number>>({})
 // The newest sign-up link still out and unsigned, if any.
 const pendingDdLink = ref<{ created_at: string } | null>(null)
-// Payments GoCardless collected: their refund goes back through GoCardless.
-const gocardlessPaymentIds = ref<string[]>([])
+// Payments GoCardless collected, by our payment id, with GoCardless's own
+// (PM…): their refund goes back through GoCardless, and the ledger shows the
+// PM id so the desk can find the collection in GoCardless.
+const gocardlessPaymentRefs = ref<Record<string, string>>({})
+const gocardlessPaymentIds = computed(() => Object.keys(gocardlessPaymentRefs.value))
+// When each direct-debit schedule is next collected, from GoCardless
+// (server/api/gocardless/subscriptions/upcoming). Empty until it answers.
+const directDebitNextCharge = ref<Record<string, string | null>>({})
 async function loadDirectDebit(synced = false) {
   const [{ data: account }, { data: mandateRows }, { data: providerRows }, { data: linkRows }, { data: gcPayments }] = await Promise.all([
     supabase.from('accounts').select('gocardless_organisation_id').eq('id', store.accountId!).maybeSingle(),
-    supabase.from('patient_gocardless_mandates').select('gocardless_mandate_id, status, bank_name, account_number_ending').eq('patient_id', props.patientId),
-    supabase.from('payment_schedules').select('id, provider').eq('patient_id', props.patientId),
+    supabase.from('patient_gocardless_mandates').select('gocardless_mandate_id, status, bank_name, account_number_ending, reference').eq('patient_id', props.patientId),
+    supabase.from('payment_schedules').select('id, provider, status').eq('patient_id', props.patientId),
     supabase.from('gocardless_billing_requests').select('created_at').eq('patient_id', props.patientId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1),
-    supabase.from('payments').select('id').eq('patient_id', props.patientId).not('gocardless_payment_id', 'is', null),
+    supabase.from('payments').select('id, gocardless_payment_id').eq('patient_id', props.patientId).not('gocardless_payment_id', 'is', null),
   ])
   gocardlessConnected.value = Boolean(account?.gocardless_organisation_id)
   mandates.value = mandateRows ?? []
   pendingDdLink.value = linkRows?.[0] ?? null
-  gocardlessPaymentIds.value = (gcPayments ?? []).map((p) => p.id)
+  gocardlessPaymentRefs.value = Object.fromEntries((gcPayments ?? []).map((p) => [p.id, p.gocardless_payment_id!]))
   // A link out may have been signed since: the patient is often still at the
   // desk, ahead of GoCardless's webhook. Ask once, and reload if it was.
   if (pendingDdLink.value && gocardlessConnected.value && !synced) {
@@ -993,6 +999,13 @@ async function loadDirectDebit(synced = false) {
   }
   scheduleProviders.value = Object.fromEntries((providerRows ?? []).map((r) => [r.id, r.provider]))
   const gcIds = (providerRows ?? []).filter((r) => r.provider === 'gocardless').map((r) => r.id)
+  if (gocardlessConnected.value && (providerRows ?? []).some((r) => r.provider === 'gocardless' && (r.status === 'active' || r.status === 'past_due'))) {
+    useStaffFetch<{ next: Record<string, string | null> }>('/api/gocardless/subscriptions/upcoming', { query: { patientId: props.patientId } })
+      .then((r) => (directDebitNextCharge.value = r.next))
+      .catch(() => (directDebitNextCharge.value = {}))
+  } else {
+    directDebitNextCharge.value = {}
+  }
   if (gcIds.length) {
     const { data: events } = await supabase.from('gocardless_payment_events').select('payment_schedule_id').in('payment_schedule_id', gcIds).eq('action', 'confirmed')
     const counts: Record<string, number> = {}
@@ -2841,6 +2854,9 @@ const fieldId = useId()
           <p class="text-[14px] font-medium text-ink-900">
             {{ t('Direct debit', 'Domiciliación') }}: <span class="font-mono">{{ mandateLabel }}</span>
           </p>
+          <p v-if="(usableMandate ?? mandates[0])?.reference" class="mt-0.5 text-[12px] text-ink-muted2" data-cy="patient-direct-debit-reference">
+            {{ t('Mandate reference', 'Referencia de la orden') }}: <span class="font-mono">{{ (usableMandate ?? mandates[0])!.reference }}</span>
+          </p>
           <p class="mt-0.5 text-[12px] text-ink-muted2">
             {{ usableMandate
               ? t('Memberships can be collected from it.', 'Se pueden cobrar membresías con ella.')
@@ -3360,6 +3376,9 @@ const fieldId = useId()
                 {{ scheduleProviders[scheduleForMembership(m.id)!.id] === 'gocardless' ? t('Direct debit', 'Domiciliación') : t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleStatusLabel(scheduleForMembership(m.id)!.status) }}</UiPill>
                 {{ t('every', 'cada') }} {{ intervalLabel(scheduleForMembership(m.id)!.interval, scheduleForMembership(m.id)!.interval_count) }} &middot;
                 {{ chargesForSchedule(scheduleForMembership(m.id)!.id) }} {{ t('charge(s)', 'cobro(s)') }}
+                <template v-if="directDebitNextCharge[scheduleForMembership(m.id)!.id]">
+                  &middot; <span data-cy="membership-next-charge">{{ t('next charge', 'próximo cobro') }} {{ new Date(`${directDebitNextCharge[scheduleForMembership(m.id)!.id]}T12:00:00`).toLocaleDateString(uiLocaleTag(lang), { day: 'numeric', month: 'short', year: 'numeric' }) }}</span>
+                </template>
               </span>
               <UiBtn v-if="scheduleForMembership(m.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForMembership(m.id)!.id)">
                 {{ t('Cancel', 'Cancelar') }}
@@ -3518,6 +3537,7 @@ const fieldId = useId()
       :line-item-descriptions="lineItemDescriptions"
       :payments="ledgerPayments"
       :gocardless-payment-ids="gocardlessPaymentIds"
+      :gocardless-payment-refs="gocardlessPaymentRefs"
       :credits="ledgerCredits"
       :package-sessions="ledgerPackageSessions"
       :spendable-credit-cents="spendableCreditCents"

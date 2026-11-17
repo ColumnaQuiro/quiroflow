@@ -20,6 +20,23 @@
  *  entry for where the last hour ends (the grid's height). */
 export type HourTops = number[]
 
+/** The hour the grid ends at: 20:00, or later when anyone closes later or a
+ *  visit on screen ends later. A fixed 20:00 hid everything after it -- a
+ *  clinic open until 20:30 could not see its last half hour, nor the visits
+ *  booked in it. The app's calendar (mobile/pages/calendar) stretches the
+ *  same way. `closingTimes` are "HH:MM"; `visitEndMinutes` count from
+ *  midnight of the day the visit starts on, so one ending after midnight is
+ *  past 1440 and stops the grid at 24:00. */
+export function gridEndHour(closingTimes: string[], visitEndMinutes: number[], fallbackHour = 20): number {
+  let end = fallbackHour * 60
+  for (const t of closingTimes) {
+    const [h, m] = t.split(':').map(Number)
+    if (Number.isFinite(h)) end = Math.max(end, h * 60 + (Number.isFinite(m) ? m : 0))
+  }
+  for (const m of visitEndMinutes) end = Math.max(end, m)
+  return Math.min(24, Math.ceil(end / 60))
+}
+
 export function gridLinearTops(hours: number, hourPx: number): HourTops {
   return Array.from({ length: hours + 1 }, (_, i) => i * hourPx)
 }

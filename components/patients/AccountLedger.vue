@@ -264,9 +264,11 @@ const rows = computed<LedgerRow[]>(() => {
 
   const paymentRows: LedgerRow[] = countablePayments.map((p) => ({
     key: `payment-${p.id}`,
-    // A direct debit's reference is GoCardless's payment id (PM…), the
-    // handle its dashboard and support know the collection by.
-    ref: props.gocardlessPaymentRefs?.[p.id] ?? '',
+    ref: '',
+    // A direct debit names GoCardless's payment id (PM…) under its
+    // description: the handle GoCardless's dashboard and support know the
+    // collection by. Not in Ref, which numbers every payment PAY-n.
+    note: props.gocardlessPaymentRefs?.[p.id] ? `GoCardless ${props.gocardlessPaymentRefs[p.id]}` : undefined,
     paymentId: p.id,
     paymentAmountCents: p.amount_cents,
     // Deliberately NOT `invoiceId`: that field gates the invoice action block

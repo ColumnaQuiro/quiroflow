@@ -34,7 +34,6 @@ const {
   activePackages,
   spendableCreditCents,
   invoice,
-  loadingInvoice,
   appointmentIsUpcoming,
   packageCoverage,
   saving,
@@ -74,10 +73,19 @@ const canTakeMoney = computed(() => can('payments_allocate') && dueCents.value >
 
 // Offered once the visit can be charged and has not been: the same conditions
 // the Cobro tab applies before it shows its buttons.
+//
+// Held while a press is being processed. Charging in money is two writes with
+// a reload of the receipt between them, and reading that reload as "not
+// offered" took the block off the screen halfway through: the button vanished
+// before the payment existed, which reads as done when it is not.
+const processing = ref(false)
 const offered = computed(
   () =>
     ready.value &&
-    !loadingInvoice.value &&
+    (processing.value || chargeable.value),
+)
+const chargeable = computed(
+  () =>
     can('billing_access') &&
     !packageCoverage.value &&
     invoice.value?.status !== 'paid' &&
@@ -106,19 +114,27 @@ function pick(value: string) {
 
 const selectedPackage = computed(() => activePackages.value.find((p) => p.id === choice.value) ?? null)
 const buttonLabel = computed(() => {
-  if (saving.value) return t('Processing…', 'Procesando…')
+  if (saving.value || processing.value) return t('Processing…', 'Procesando…')
   if (selectedPackage.value) return t(`Process · 1 session of ${selectedPackage.value.package_name}`, `Procesar · 1 sesión de ${selectedPackage.value.package_name}`)
   return t(`Process · charge ${formatEur(dueCents.value)}`, `Procesar · cobrar ${formatEur(dueCents.value)}`)
 })
 
 async function process() {
-  if (saving.value) return
-  if (selectedPackage.value) {
-    await usePackageSession(selectedPackage.value)
+  if (saving.value || processing.value) return
+  if (!selectedPackage.value && !canTakeMoney.value) {
+    emit('details')
     return
   }
-  if (!canTakeMoney.value) {
-    emit('details')
+  processing.value = true
+  try {
+    await charge()
+  } finally {
+    processing.value = false
+  }
+}
+async function charge() {
+  if (selectedPackage.value) {
+    await usePackageSession(selectedPackage.value)
     return
   }
   // Raise the receipt if the visit has none, then pay what is due on it in
@@ -143,7 +159,7 @@ async function process() {
         role="radio"
         :aria-checked="choice === p.id"
         data-cy="checkout-bono"
-        :disabled="saving"
+        :disabled="saving || processing"
         class="flex items-center gap-3 rounded-ctl border px-3.5 py-2.5 text-left"
         :class="choice === p.id ? 'border-brand bg-brand-tint' : 'border-line-control hover:bg-surface-subtle'"
         @click="pick(p.id)"
@@ -171,7 +187,7 @@ async function process() {
       </button>
 
       <div v-if="canTakeMoney" class="rounded-ctl border" :class="choice === 'money' ? 'border-brand bg-brand-tint' : 'border-line-control hover:bg-surface-subtle'">
-        <button type="button" role="radio" :aria-checked="choice === 'money'" data-cy="checkout-money" :disabled="saving" class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left" @click="pick('money')">
+        <button type="button" role="radio" :aria-checked="choice === 'money'" data-cy="checkout-money" :disabled="saving || processing" class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left" @click="pick('money')">
           <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border" :class="choice === 'money' ? 'border-brand' : 'border-line-control'" aria-hidden="true">
             <span v-if="choice === 'money'" class="h-2 w-2 rounded-full bg-brand" />
           </span>
@@ -181,7 +197,7 @@ async function process() {
         </button>
         <label v-if="choice === 'money'" class="flex items-center gap-2 px-3.5 pb-3 pl-[2.85rem] text-[12.5px] font-medium text-ink-600">
           {{ t('Method', 'Método') }}
-          <select v-model="method" data-cy="checkout-method" :disabled="saving" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+          <select v-model="method" data-cy="checkout-method" :disabled="saving || processing" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
             <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
             <option v-if="spendableCreditCents >= dueCents" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }})</option>
           </select>
@@ -190,7 +206,7 @@ async function process() {
     </div>
 
     <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <button type="button" data-cy="checkout-process" :disabled="saving" class="flex h-10 touch:h-12 items-center rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="process">
+      <button type="button" data-cy="checkout-process" :disabled="saving || processing" class="flex h-10 touch:h-12 items-center rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="process">
         {{ buttonLabel }}
       </button>
       <button type="button" data-cy="checkout-details" class="h-9 touch:h-11 text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="emit('details')">

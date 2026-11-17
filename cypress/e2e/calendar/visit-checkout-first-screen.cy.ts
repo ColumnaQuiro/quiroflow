@@ -71,7 +71,9 @@ describe('Charging a visit from the first screen of its panel', () => {
           // with the session back -- not only after closing and reopening it.
           cy.get('[data-cy=undo-visit]').click()
           cy.get('[data-cy=confirm-dialog-confirm]').click()
-          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('be.visible')
+          // 'exist', not 'be.visible': the confirm dialog is still leaving the
+          // screen above the panel when the block comes back.
+          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('exist')
           cy.get('[data-cy=checkout-bono]').should('contain.text', '4 left, 3 after this visit')
         })
       })

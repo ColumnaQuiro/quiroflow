@@ -853,6 +853,7 @@ async function useExpectedType() {
           :patient-id="appointment.patient_id"
           :appointment-type-name="appointment.appointment_types?.name"
           :appointment-type-price-cents="priceCents"
+          :status="appointment.status"
           @completed="onBillingCompleted"
           @details="tab = 'billing'"
           @offered="checkoutOffered = $event"

@@ -8,6 +8,7 @@ import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefund'
 import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
+import { backdatedPaidAt, isFuturePaymentDate, todayPaymentDate } from '~/utils/paymentDate'
 import { bonoVisitChargeCents } from '~/utils/visitCharging'
 import { loadUnloggedVisits, localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
@@ -295,6 +296,9 @@ const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTempla
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
 const addCreditMethod = ref<string>('cash')
+// The day the money came in -- today unless the desk is writing down a
+// payment it forgot to record at the time. See utils/paymentDate.
+const addCreditDate = ref(todayPaymentDate())
 const addingCredit = ref(false)
 const applyCreditInvoiceId = ref('')
 const applyCreditAmount = ref('')
@@ -309,9 +313,18 @@ async function onMoneyAdded() {
   await Promise.all([loadAll(), loadFacturas()])
 }
 
+function futureDateMessage() {
+  return t('The payment date cannot be in the future.', 'La fecha del pago no puede ser posterior a hoy.')
+}
+
 async function addCredit() {
   const amountCents = Math.round((parseFloat(addCreditAmount.value) || 0) * 100)
   if (amountCents <= 0) return
+  if (isFuturePaymentDate(addCreditDate.value)) {
+    creditError.value = futureDateMessage()
+    return
+  }
+  const paidAt = backdatedPaidAt(addCreditDate.value)
   creditError.value = ''
   addingCredit.value = true
   // Money in is a payment, and a payment gets a factura -- whatever the
@@ -333,6 +346,7 @@ async function addCredit() {
       amount_cents: amountCents,
       method: addCreditMethod.value,
       purpose: 'on_account' as const,
+      ...(paidAt ? { paid_at: paidAt } : {}),
     })
     .select('id')
     .single()
@@ -368,6 +382,7 @@ async function addCredit() {
   addCreditAmount.value = ''
   addCreditReason.value = ''
   addCreditMethod.value = 'cash'
+  addCreditDate.value = todayPaymentDate()
   addingCredit.value = false
   if (!creditRowError) activePanel.value = null
   await Promise.all([loadAll(), loadFacturas()])
@@ -435,6 +450,7 @@ async function applyCreditToInvoice() {
 const paymentInvoiceId = ref('')
 const takingPayment = ref(false)
 const paymentError = ref('')
+const paymentDate = ref(todayPaymentDate())
 const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment('cash', computed(() => paymentMethods.value.map((m) => m.key)))
 
 function openTakePayment() {
@@ -442,6 +458,7 @@ function openTakePayment() {
   paymentError.value = ''
   const firstUnpaid = unpaidInvoices.value[0]
   paymentInvoiceId.value = firstUnpaid?.id ?? ''
+  paymentDate.value = todayPaymentDate()
   resetPaymentRows(firstUnpaid ? (firstUnpaid.total_cents / 100).toFixed(2) : '')
 }
 
@@ -467,6 +484,11 @@ async function takePayment() {
     paymentError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
+  if (isFuturePaymentDate(paymentDate.value)) {
+    paymentError.value = futureDateMessage()
+    return
+  }
+  const paidAt = backdatedPaidAt(paymentDate.value)
   takingPayment.value = true
 
   const { data: insertedPayments, error: insertError } = await supabase
@@ -479,6 +501,10 @@ async function takePayment() {
         amount_cents: paymentRowCents(r),
         method: r.method,
         purpose: 'visit' as const,
+        // Spread, not `paid_at: undefined`: an array insert names every key
+        // any row has as a column, and a named column with no value is
+        // written as null rather than taking the default.
+        ...(paidAt ? { paid_at: paidAt } : {}),
       })),
     )
     .select('id, amount_cents, method')
@@ -774,6 +800,8 @@ async function recordPackagePayment(
     method: string,
     description: string,
     bono?: { priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null },
+    /** Set only for money taken on an earlier day; see utils/paymentDate. */
+    paidAt?: string,
   ): Promise<string | null> {
   if (!packagePurchaseId) return null
   // Attached to the bono, not to an invoice. Selling a bono used to raise an
@@ -797,6 +825,7 @@ async function recordPackagePayment(
       amount_cents: amountCents,
       method,
       purpose: 'bono',
+      ...(paidAt ? { paid_at: paidAt } : {}),
     })
     .select('id')
     .single()
@@ -2022,6 +2051,7 @@ function packageInstallmentLine(purchase: PackagePurchaseRow): string {
 const collectOnPackageId = ref<string | null>(null)
 const collectAmount = ref('')
 const collectMethod = ref<string>('cash')
+const collectDate = ref(todayPaymentDate())
 const collectError = ref('')
 const collectingPayment = ref(false)
 
@@ -2035,6 +2065,7 @@ function collectOnPackage(purchase: PackagePurchaseRow) {
   const prefill = purchase.installments && purchase.installment_cents ? (due > 0 ? due : Math.min(owed, purchase.installment_cents)) : owed
   collectAmount.value = (prefill / 100).toFixed(2)
   collectMethod.value = 'cash'
+  collectDate.value = todayPaymentDate()
   collectOnPackageId.value = collectOnPackageId.value === purchase.id ? null : purchase.id
 }
 
@@ -2047,6 +2078,10 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
     collectError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
+  if (isFuturePaymentDate(collectDate.value)) {
+    collectError.value = futureDateMessage()
+    return
+  }
   collectError.value = ''
   collectingPayment.value = true
   const problem = await recordPackagePayment(purchase.id, amountCents, collectMethod.value, purchase.package_name, {
@@ -2057,7 +2092,7 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
       purchase.price_cents - packageOwedCents(purchase),
       amountCents,
     ),
-  })
+  }, backdatedPaidAt(collectDate.value))
   collectingPayment.value = false
   if (problem) {
     collectError.value = problem
@@ -2918,6 +2953,10 @@ const fieldId = useId()
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
             </select>
           </div>
+          <div>
+            <label :for="`${fieldId}-addCreditDate`" class="block text-[11px] text-ink-muted">{{ t('Date paid', 'Fecha del pago') }}</label>
+            <input :id="`${fieldId}-addCreditDate`" v-model="addCreditDate" type="date" :max="todayPaymentDate()" data-cy="add-credit-date" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+          </div>
           <div class="flex-1">
             <label :for="`${fieldId}-addCreditReason`" class="block text-[11px] text-ink-muted">{{ t('Reason', 'Motivo') }}</label>
             <input :id="`${fieldId}-addCreditReason`" v-model="addCreditReason" type="text" :placeholder="t('e.g. Birthday gift', 'p. ej. regalo de cumpleaños')" class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
@@ -2952,6 +2991,10 @@ const fieldId = useId()
             <select :id="`${fieldId}-paymentInvoiceId`" v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
+          </div>
+          <div>
+            <label :for="`${fieldId}-paymentDate`" class="block text-[11px] text-ink-muted">{{ t('Date paid', 'Fecha del pago') }}</label>
+            <input :id="`${fieldId}-paymentDate`" v-model="paymentDate" type="date" :max="todayPaymentDate()" data-cy="take-payment-date" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
           </div>
 
           <!-- One row per payment method -- usually just one, but "+ split
@@ -3191,6 +3234,10 @@ const fieldId = useId()
                       ({{ spendableCreditCents > 0 ? `${money(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
                     </option>
                   </select>
+                </div>
+                <div>
+                  <label :for="`${fieldId}-collectDate-${p.id}`" class="block text-[11px] text-ink-muted">{{ t('Date paid', 'Fecha del pago') }}</label>
+                  <input :id="`${fieldId}-collectDate-${p.id}`" v-model="collectDate" type="date" :max="todayPaymentDate()" data-cy="bono-collect-date" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
                 </div>
                 <UiBtn size="sm" variant="primary" :disabled="collectingPayment" @click="submitPackageCollection(p)">
                   {{ collectingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}

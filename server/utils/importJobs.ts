@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json, Tables } from '~/types/database.types'
 import { getAccountSecret, setAccountSecret } from '~/server/utils/accountSecrets'
-import { QuirocitasError, quirocitasClientFor, quirocitasLogin, type QuirocitasClient } from '~/server/utils/quirocitas'
+import { QuirocitasError, QuirocitasLedgerError, quirocitasClientFor, quirocitasLogin, type QuirocitasClient } from '~/server/utils/quirocitas'
 import { storeQuirocitasFile } from '~/server/utils/quirocitasFiles'
 import {
   dropQuirocitasRecords,
@@ -19,7 +19,7 @@ import { processStoredPatientFile } from '~/server/utils/patientFileProcessing'
 import { deliverEmail } from '~/server/utils/resend'
 import { quirocitasImporter, type QuirocitasStepKind } from '~/utils/quirocitasImport'
 import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasListPatient, QuirocitasPatient } from '~/utils/quirocitasPages'
-import { quirocitasDate, quirocitasReadQueue, type QuirocitasRecord, type QuirocitasTechniques } from '~/utils/quirocitasRows'
+import { QUIROCITAS_COPY_VERSION, quirocitasDate, quirocitasReadQueue, type QuirocitasRecord, type QuirocitasTechniques } from '~/utils/quirocitasRows'
 import { importJobEmail, type ImportJobProgress, type ImportJobStepResult } from '~/utils/importJobReport'
 import { uiCatalogTranslate } from '~/utils/uiCatalog'
 
@@ -47,6 +47,10 @@ export interface ImportJobOptions { lang?: string; quietUpcoming?: boolean; from
 
 /** Time a slice spends working. A function is cut off at 60 s; a file download or a 200-row insert in flight finishes after this. */
 const SLICE_MS = 35_000
+/** What an import step may always spend writing, however long its plan took. */
+const MIN_APPLY_MS = 8_000
+/** No write starts later than this into a slice: the function is cut off at 60 s. */
+const HARD_STOP_MS = 50_000
 /** How long a slice holds its job. Longer than any slice can run, so the cron never starts a second one beside it. */
 const LEASE_MS = 65_000
 /** A slice that throws is tried again this many times in a row before the job is given up as failed. */
@@ -230,6 +234,10 @@ async function readSlice(
       ledgerMonths: [],
       passStartedAt,
       listTotal: list.length,
+      // A copy an older reader left unfinished is not carried on from: its
+      // records are fetched again (quirocitasReadQueue), and it is this
+      // reader's copy from here on.
+      version: QUIROCITAS_COPY_VERSION,
     })
     Object.assign(p, { phase: 'patients', passStartedAt, total: list.length, done: 0, failed: 0 })
     beat(p)
@@ -277,10 +285,13 @@ async function readSlice(
     if (queue.length) return { progress: p }
 
     // Every patient has been read: on to the ledger, back to the oldest visit.
+    // From both lists a record carries: the walk stops at `earliest`, so a
+    // record whose visit list came back empty must not leave it at "never" --
+    // that ended the walk after its first few months.
     const copy = await loadQuirocitasSnapshot(admin, accountId)
     let earliest = '9999-99'
     for (const r of Object.values(copy?.patients ?? {})) {
-      for (const v of r.ficha.visits) { const d = quirocitasDate(v.date); if (d && d.slice(0, 7) < earliest) earliest = d.slice(0, 7) }
+      for (const v of [...r.ficha.visits, ...r.ficha.appointments]) { const d = quirocitasDate(v.date); if (d && d.slice(0, 7) < earliest) earliest = d.slice(0, 7) }
     }
     await saveLedgerPartial(admin, accountId, { ledger: [], months: [], earliest })
     Object.assign(p, { phase: 'ledger', ledgerStarted: false, month: undefined })
@@ -300,7 +311,30 @@ async function readSlice(
       // submitted to Quirocitas' cash page is only ever a form it rendered.
       const saved = restart ? null : await getAccountSecret(admin, accountId, 'quirocitas_ledger_cursor')
       if (!restart && !saved) { restart = true; partial.ledger = []; partial.months = []; continue }
-      const { months, cursor } = await client.ledger(saved ? JSON.parse(saved) : null, LEDGER_MONTHS_PER_CALL)
+      let read: Awaited<ReturnType<QuirocitasClient['ledger']>>
+      try {
+        read = await client.ledger(saved ? JSON.parse(saved) : null, LEDGER_MONTHS_PER_CALL)
+      } catch (e) {
+        if (!(e instanceof QuirocitasLedgerError)) throw e
+        // The ledger page is not one this reader can take money from, and
+        // asking again will not change it. Every patient is read by now, so
+        // the read ends here, saying so, and the import goes on without
+        // payments. It used to fail the whole job at this point: a clinic's
+        // read stopped at its ledger on every sync, and none of the
+        // appointments it had just read were ever written.
+        const meta = (await loadQuirocitasMeta(admin, accountId))!
+        await saveQuirocitasMeta(admin, accountId, { ...meta, ledger: [], ledgerMonths: [], ledgerError: errText(e), readAt: new Date().toISOString() })
+        await saveLedgerPartial(admin, accountId, null)
+        console.error(`[import-jobs] ${job.id} cash ledger not read:`, errText(e))
+        return {
+          progress: p,
+          result: readResult(meta, t, [t(
+            `The cash ledger could not be read from Quirocitas (${errText(e)}). Patients, appointments, clinical history and bonos are imported all the same; payments and invoices are not.`,
+            `No se pudo leer la caja de Quirocitas (${errText(e)}). Los pacientes, las citas, el historial clínico y los bonos se importan igualmente; los pagos y las facturas no.`,
+          )]),
+        }
+      }
+      const { months, cursor } = read
       await setAccountSecret(admin, accountId, 'quirocitas_ledger_cursor', JSON.stringify(cursor))
       restart = false
       p.ledgerStarted = true
@@ -319,18 +353,22 @@ async function readSlice(
     const meta = (await loadQuirocitasMeta(admin, accountId))!
     await saveQuirocitasMeta(admin, accountId, { ...meta, ledger: partial.ledger, ledgerMonths: partial.months, readAt: new Date().toISOString() })
     await saveLedgerPartial(admin, accountId, null)
-    const failed = Object.keys(meta.failed).length
-    return {
-      progress: p,
-      result: {
-        step: 'read',
-        written: Number(meta.listTotal ?? 0) - failed,
-        errors: failed ? [t(`${failed} patients could not be read from Quirocitas. Read again to retry them.`, `${failed} pacientes no se pudieron leer de Quirocitas. Vuelve a leer para reintentarlo.`)] : [],
-        warnings: [],
-      },
-    }
+    return { progress: p, result: readResult(meta, t) }
   }
   return { progress: p }
+}
+
+function readResult(meta: { listTotal?: number; failed: Record<string, string> }, t: (en: string, es: string) => string, errors: string[] = []): ImportJobStepResult {
+  const failed = Object.keys(meta.failed).length
+  return {
+    step: 'read',
+    written: Number(meta.listTotal ?? 0) - failed,
+    errors: [
+      ...(failed ? [t(`${failed} patients could not be read from Quirocitas. Read again to retry them.`, `${failed} pacientes no se pudieron leer de Quirocitas. Vuelve a leer para reintentarlo.`)] : []),
+      ...errors,
+    ],
+    warnings: [],
+  }
 }
 
 // --- import steps ---------------------------------------------------------------------
@@ -371,9 +409,15 @@ async function applySlice(
   const doneBefore = p.done ?? 0
   const writtenBefore = p.written ?? 0
   let outOfTime = false
+  // Planning is on the slice's clock too, and for a big clinic it can use all
+  // of it: a step whose plan took longer than the slice was stopped before
+  // its first write, three times over, and given up as "made no progress"
+  // with everything still to write. So writing always gets a few seconds,
+  // short of where the function itself is cut off.
+  const until = Math.min(Math.max(deadline, Date.now() + MIN_APPLY_MS), deadline - SLICE_MS + HARD_STOP_MS)
   const res = await plan.apply(
     (n) => { p.done = Math.min(p.total ?? Infinity, doneBefore + n); beat(p) },
-    () => { if (Date.now() >= deadline) outOfTime = true; return outOfTime },
+    () => { if (Date.now() >= until) outOfTime = true; return outOfTime },
   )
   p.written = writtenBefore + res.written
   p.errors = [...(p.errors ?? []), ...res.errors].slice(0, 200)

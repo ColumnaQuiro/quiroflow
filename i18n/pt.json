@@ -8526,7 +8526,11 @@
   "Direct debit set up": "Débito direto configurado",
   "Direct debit not set up": "Débito direto não configurado",
   "Thanks -- your clinic can now collect by direct debit from your account. You can close this window now.": "Obrigado: a sua clínica já pode cobrar por débito direto na sua conta. Já pode fechar esta janela.",
-  "Nothing was set up. You can close this window and open the link again whenever you like.": "Nada foi configurado. Pode fechar esta janela e abrir a ligação novamente quando quiser."
+  "Nothing was set up. You can close this window and open the link again whenever you like.": "Nada foi configurado. Pode fechar esta janela e abrir a ligação novamente quando quiser.",
+  "Receipt details": "Detalhe da cobrança",
+  "Remove bono · undo visit": "Retirar pack · anular visita",
+  "How this visit is paid": "Como se paga esta visita",
+  "Add services or split the payment": "Adicionar serviços ou dividir o pagamento"
  },
  "p": {
   " ({0} from last year)": " ({0} do ano passado)",
@@ -9887,6 +9891,10 @@
   "{0}–{1} is free": "{0}–{1} está livre",
   "“Has” includes up to {0} unused days carried over from last year.": "“Tem” inclui até {0} dias não usados transitados do ano passado.",
   "“{0}” is now a type, with {1} patients": "«{0}» já é um tipo, com {1} pacientes",
-  "Sign-up link sent {0}, not signed yet.": "Ligação enviada a {0}, ainda por assinar."
+  "Sign-up link sent {0}, not signed yet.": "Ligação enviada a {0}, ainda por assinar.",
+  "Process · 1 session of {0}": "Processar · 1 sessão de {0}",
+  "Process · charge {0}": "Processar · cobrar {0}",
+  "{0} left, {1} after this visit": "Restam {0}, ficará com {1}",
+  "No bono, charge {0}": "Sem pack, cobrar {0}"
  }
 }

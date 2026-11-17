@@ -21,7 +21,27 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'A membership is being collected on this mandate. Stop its direct debit first.' })
   }
 
-  const { error } = await admin.from('patient_gocardless_mandates').delete().eq('account_id', teamMember.account_id).eq('gocardless_mandate_id', body.mandateId)
+  const { data: removed, error } = await admin
+    .from('patient_gocardless_mandates')
+    .delete()
+    .eq('account_id', teamMember.account_id)
+    .eq('gocardless_mandate_id', body.mandateId)
+    .select('patient_id, gocardless_customer_id')
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+
+  const row = removed?.[0]
+  if (row) {
+    const { data: stillPaired } = await admin
+      .from('patient_gocardless_mandates')
+      .select('id')
+      .eq('account_id', teamMember.account_id)
+      .eq('gocardless_customer_id', row.gocardless_customer_id)
+      .eq('patient_id', row.patient_id)
+      .limit(1)
+    if (!stillPaired?.length) {
+      const request = await gocardlessForAccount(admin, teamMember.account_id)
+      if (request) await tagGoCardlessCustomer(request, row.gocardless_customer_id, null, row.patient_id)
+    }
+  }
   return { ok: true }
 })

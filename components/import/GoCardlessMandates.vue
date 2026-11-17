@@ -28,7 +28,9 @@ interface MandateRow {
   bank: { name: string | null; ending: string | null } | null
   matched: boolean
   patient: { id: string; name: string } | null
-  suggestedBy: 'email' | 'phone' | 'name' | 'manual' | null
+  suggestedBy: 'metadata' | 'email' | 'phone' | 'name' | 'manual' | 'link' | null
+  /** A similar name rather than the same one ("J. Muestra" for "Jorge Muestra"). */
+  suggestedLoosely: boolean
   ambiguous: boolean
   subscriptions: { id: string; name: string | null; status: string; amountCents: number; intervalUnit: string; interval: number; nextChargeDate: string | null; ours: boolean }[]
 }
@@ -99,34 +101,54 @@ async function unmatch(m: MandateRow) {
   }
 }
 
-// Choosing a different patient: the same search the merge dialog uses.
+// Choosing a different patient. Every word typed has to appear in the first
+// name, the surname or the email, so "Ana García" finds Ana García Pérez,
+// which one pattern over each column separately never did.
+type PatientResult = { id: string; first_name: string; last_name: string | null; email: string | null }
 const picking = ref<string | null>(null)
 const search = ref('')
-const results = ref<{ id: string; first_name: string; last_name: string | null; email: string | null }[]>([])
+const results = ref<PatientResult[]>([])
 let searchToken = 0
+async function findPatients(value: string): Promise<PatientResult[]> {
+  const words = value.replace(/[,()%*.]/g, ' ').trim().split(/\s+/).filter(Boolean)
+  if (words.join('').length < 2) return []
+  let query = supabase.from('patients').select('id, first_name, last_name, email').eq('account_id', store.accountId!)
+  for (const w of words) query = query.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%,email.ilike.%${w}%`)
+  const { data } = await query.order('first_name').limit(8)
+  return data ?? []
+}
 watch(search, async (value) => {
-  const term = value.trim().replace(/[,()]/g, ' ')
-  if (term.length < 2) {
-    results.value = []
-    return
-  }
   const token = ++searchToken
-  const { data } = await supabase
-    .from('patients')
-    .select('id, first_name, last_name, email')
-    .eq('account_id', store.accountId!)
-    .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%`)
-    .order('first_name')
-    .limit(8)
-  if (token === searchToken) results.value = data ?? []
+  const found = await findPatients(value)
+  if (token === searchToken) results.value = found
 })
-function startPicking(m: MandateRow) {
+// Opens with the GoCardless name in the box only when that name finds
+// someone. A box prefilled with a search that finds nothing ("J. Muestra")
+// reads as "this patient does not exist"; an empty one with the name as a
+// hint reads as "type to search".
+async function startPicking(m: MandateRow) {
   picking.value = m.id
-  search.value = m.customer?.name ?? ''
+  search.value = ''
+  results.value = []
+  const name = m.customer?.name ?? ''
+  if (!name) return
+  const token = ++searchToken
+  const found = await findPatients(name)
+  if (token !== searchToken || picking.value !== m.id || search.value) return
+  if (found.length) {
+    search.value = name
+    results.value = found
+  }
 }
 
-const suggestedLabel = (by: MandateRow['suggestedBy']) =>
-  by === 'email' ? t('same email', 'mismo email') : by === 'phone' ? t('same phone', 'mismo teléfono') : by === 'name' ? t('same name', 'mismo nombre') : t('chosen by hand', 'elegido a mano')
+const suggestedLabel = (m: MandateRow) => {
+  const by = m.suggestedBy
+  if (by === 'metadata') return t('paired before', 'emparejada antes')
+  if (by === 'email') return t('same email', 'mismo email')
+  if (by === 'phone') return t('same phone', 'mismo teléfono')
+  if (by === 'name') return m.suggestedLoosely ? t('similar name', 'nombre parecido') : t('same name', 'mismo nombre')
+  return t('chosen by hand', 'elegido a mano')
+}
 
 const everyLabel = (unit: string, n: number) => {
   if (unit === 'weekly') return n === 1 ? t('every week', 'cada semana') : t(`every ${n} weeks`, `cada ${n} semanas`)
@@ -198,7 +220,7 @@ const everyLabel = (unit: string, n: number) => {
                 </span>
                 <span class="flex flex-wrap items-center gap-1.5 text-[12px]">
                   <UiPill v-if="m.matched" tone="success" dot data-cy="gocardless-paired">{{ t('Paired', 'Emparejada') }}</UiPill>
-                  <UiPill v-else tone="neutral">{{ t('Suggested', 'Sugerida') }}: {{ suggestedLabel(m.suggestedBy) }}</UiPill>
+                  <UiPill v-else tone="neutral">{{ t('Suggested', 'Sugerida') }}: {{ suggestedLabel(m) }}</UiPill>
                 </span>
               </template>
               <span v-else-if="picking !== m.id" class="text-[13px] text-ink-muted">
@@ -209,7 +231,7 @@ const everyLabel = (unit: string, n: number) => {
                   v-model="search"
                   type="search"
                   class="h-9 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px]"
-                  :placeholder="t('Search a patient', 'Buscar un paciente')"
+                  :placeholder="m.customer?.name ? t(`Search a patient (GoCardless: ${m.customer.name})`, `Buscar un paciente (GoCardless: ${m.customer.name})`) : t('Search a patient', 'Buscar un paciente')"
                   data-cy="gocardless-patient-search"
                 >
                 <button

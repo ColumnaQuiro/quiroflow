@@ -51,7 +51,7 @@ function seed(opts: { connected?: boolean } = {}): Cypress.Chainable<Seeded> {
 function practiceHubHoldings(s: Seeded, opts: { practiceHubStillCollecting?: boolean; hideSubscriptions?: boolean } = {}) {
   return {
     organisationId: s.organisationId,
-    customers: [{ id: 'CU1', email: s.email, given_name: 'Ana', family_name: 'Domiciliada', company_name: null, phone_number: null }],
+    customers: [{ id: 'CU1', email: s.email, given_name: 'Ana', family_name: 'Domiciliada', company_name: null, phone_number: null, metadata: { practicehub_ref: 'PH-77' } }],
     bankAccounts: [{ id: 'BA1', bank_name: 'BANCO STUB', account_number_ending: '34' }],
     mandates: [{ id: 'MD1', status: 'active', scheme: 'sepa_core', reference: 'PH-REF', created_at: '2026-01-10T10:00:00Z', next_possible_charge_date: '2026-11-20', links: { customer: 'CU1', customer_bank_account: 'BA1', creditor: 'CR-STUB' } }],
     subscriptions: [
@@ -93,6 +93,19 @@ describe('GoCardless direct debit', () => {
       cy.location('pathname').should('eq', '/settings/payments')
       cy.get('[data-cy=gocardless-connected]', SLOW).should('exist')
       cy.get('[data-cy=gocardless-status]', SLOW).should('contain.text', 'Connected')
+      // The organisation by its name, not only its OR… id.
+      cy.get('[data-cy=gocardless-organisation-name]').should('have.text', 'Clínica Demo')
+      cy.get('[data-cy=gocardless-organisation-id]').should('have.text', s.organisationId)
+
+      // GoCardless's sign-in screen, in Spanish, with what its sign-up form
+      // would otherwise ask again already filled in.
+      cy.task<{ authorizeQueries: Record<string, string>[] }>('gc:state')
+        .its('authorizeQueries')
+        .should((queries) => {
+          expect(queries).to.have.length(1)
+          expect(queries[0]).to.include({ initial_view: 'login', language: 'es', 'prefill[country_code]': 'ES', 'prefill[email]': s.account.email })
+          expect(queries[0]!['prefill[organisation_name]']).to.be.a('string').and.not.be.empty
+        })
 
       cy.task<{ gocardless_organisation_id: string | null }[]>('db:selectRows', { table: 'accounts', columns: 'gocardless_organisation_id', match: { id: s.account.accountId } })
         .its('0.gocardless_organisation_id')
@@ -128,17 +141,24 @@ describe('GoCardless direct debit', () => {
         cy.get('[data-cy=gocardless-confirm]').click()
         cy.get('[data-cy=gocardless-paired]', SLOW).should('exist')
       })
-      cy.task<{ patient_id: string; bank_name: string; account_number_ending: string }[]>('db:selectRows', {
+      cy.task<{ patient_id: string; bank_name: string; account_number_ending: string; reference: string }[]>('db:selectRows', {
         table: 'patient_gocardless_mandates',
-        columns: 'patient_id, bank_name, account_number_ending',
+        columns: 'patient_id, bank_name, account_number_ending, reference',
         match: { account_id: s.account.accountId, gocardless_mandate_id: 'MD1' },
       }).should((rows) => {
         expect(rows).to.have.length(1)
-        expect(rows[0]).to.deep.equal({ patient_id: s.patientId, bank_name: 'BANCO STUB', account_number_ending: '34' })
+        expect(rows[0]).to.deep.equal({ patient_id: s.patientId, bank_name: 'BANCO STUB', account_number_ending: '34', reference: 'PH-REF' })
       })
+      // Our patient id onto the GoCardless customer, beside the key the
+      // other app keeps there, which survives the update.
+      cy.task<{ customerUpdates: { id: string; metadata: Record<string, string> }[] }>('gc:state')
+        .its('customerUpdates')
+        .should('deep.equal', [{ id: 'CU1', metadata: { practicehub_ref: 'PH-77', quiroflow_patient_id: s.patientId } }])
 
       cy.visit(`/patients/${s.patientId}?tab=money`)
       cy.get('[data-cy=patient-direct-debit]', SLOW).should('contain.text', '••34')
+      // The reference the patient sees on their bank statement.
+      cy.get('[data-cy=patient-direct-debit-reference]').should('contain.text', 'PH-REF')
       cy.get('[data-cy=membership-autopay-open]', SLOW).click()
       cy.get('[data-cy=membership-autopay-form]').within(() => {
         cy.root().submit()
@@ -152,6 +172,8 @@ describe('GoCardless direct debit', () => {
       cy.get('[data-cy=membership-autopay-start]').type('2026-12-02')
       cy.get('[data-cy=membership-autopay-form]').submit()
       cy.get('[data-cy=membership-autopay-form]', SLOW).should('not.exist')
+      // When GoCardless will next collect it, read from the subscription.
+      cy.get('[data-cy=membership-next-charge]', SLOW).should('contain.text', 'next charge').and('contain.text', '2 Dec 2026')
 
       cy.task<{ created: { amount: number; currency: string; interval_unit: string; interval: number; start_date: string; links: { mandate: string } }[] }>('gc:state')
         .its('created')
@@ -222,6 +244,18 @@ describe('GoCardless direct debit', () => {
         .its('0.installments_paid')
         .should('eq', 1)
 
+      // Each event is handled once: delivered again, EV1 is not even read
+      // from GoCardless a second time.
+      cy.task<{ gocardless_event_id: string }[]>('db:selectRows', { table: 'gocardless_processed_events', columns: 'gocardless_event_id', match: { account_id: s.account.accountId } })
+        .then((rows) => expect(rows.map((r) => r.gocardless_event_id).sort()).to.deep.equal(['EV1', 'EV2']))
+      cy.task<{ requests: string[] }>('gc:state').then(({ requests }) => {
+        const before = requests.filter((r) => r === 'GET /payments/PM1').length
+        deliver([confirmed('EV1')]).its('status').should('eq', 200)
+        cy.task<{ requests: string[] }>('gc:state').its('requests').should((after) => {
+          expect(after.filter((r) => r === 'GET /payments/PM1')).to.have.length(before)
+        })
+      })
+
       // The patient reclaims it from their bank: reception is told, and the
       // schedule shows it is behind. The refund itself is theirs to record.
       deliver([{ id: 'EV3', created_at: '2026-12-10T09:00:00Z', resource_type: 'payments', action: 'charged_back', links: { payment: 'PM1', organisation: s.organisationId } }])
@@ -235,6 +269,87 @@ describe('GoCardless direct debit', () => {
       cy.task<{ status: string }[]>('db:selectRows', { table: 'payment_schedules', columns: 'status', match: { gocardless_subscription_id: subscriptionId } })
         .its('0.status')
         .should('eq', 'past_due')
+
+      // The ledger names the collection the way GoCardless does (PM…).
+      cy.login(s.account.email, s.account.password)
+      cy.visit(`/patients/${s.patientId}?tab=money`)
+      cy.contains('td', 'PM1', SLOW).click()
+      cy.contains('dt', 'GoCardless payment').next('dd').should('have.text', 'PM1')
+      cy.contains('dd', 'Automatic (direct debit)').should('exist')
+    })
+  })
+
+  it('suggests a similar name, opens the search empty when the name finds nobody, and tags and untags the customer', () => {
+    seed({ connected: true }).then((s) => {
+      cy.task('gc:start', {
+        organisationId: s.organisationId,
+        customers: [
+          // No email or phone: only the name, written with an initial.
+          { id: 'CU-J', email: null, given_name: 'A.', family_name: 'Domiciliada', company_name: null, phone_number: null, metadata: { practicehub_ref: 'PH-1' } },
+          { id: 'CU-X', email: null, given_name: 'Zoe', family_name: 'Inexistente', company_name: null, phone_number: null },
+          // Paired with this patient before: our id is on the customer.
+          { id: 'CU-M', email: null, given_name: 'Otro', family_name: 'Nombre', company_name: null, phone_number: null, metadata: { quiroflow_patient_id: s.patientId } },
+        ],
+        bankAccounts: [{ id: 'BA1', bank_name: 'BANCO STUB', account_number_ending: '34' }],
+        mandates: ['J', 'X', 'M'].map((k) => ({ id: `MD-${k}`, status: 'active', scheme: 'sepa_core', reference: `REF-${k}`, created_at: '2026-01-10T10:00:00Z', next_possible_charge_date: '2026-11-20', links: { customer: `CU-${k}`, customer_bank_account: 'BA1', creditor: 'CR-STUB' } })),
+        subscriptions: [],
+      })
+      cy.login(s.account.email, s.account.password)
+
+      // The payment_setup_url GoCardless sends clinics to.
+      cy.visit('/settings/import?source=gocardless')
+      cy.location('search', SLOW).should('contain', 'type=gocardless')
+      cy.get('[data-cy=gocardless-mandate][data-mandate=MD-M]', SLOW).should('contain.text', 'paired before')
+      cy.get('[data-cy=gocardless-mandate][data-mandate=MD-X]').within(() => {
+        cy.contains('No patient found')
+        cy.get('[data-cy=gocardless-choose]').click()
+        cy.get('[data-cy=gocardless-patient-search]').should('have.value', '').and('have.attr', 'placeholder').and('contain', 'Zoe Inexistente')
+        cy.get('[data-cy=gocardless-patient-search]').type('Domiciliada')
+        cy.get('[data-cy=gocardless-patient-option]', SLOW).should('contain.text', 'Ana Domiciliada')
+      })
+      cy.get('[data-cy=gocardless-mandate][data-mandate=MD-J]').within(() => {
+        cy.contains('Ana Domiciliada')
+        cy.contains('similar name')
+        cy.get('[data-cy=gocardless-confirm]').click()
+        cy.get('[data-cy=gocardless-paired]', SLOW).should('exist')
+      })
+      cy.task<{ customerUpdates: { id: string; metadata: Record<string, string> }[] }>('gc:state')
+        .its('customerUpdates')
+        .should('deep.equal', [{ id: 'CU-J', metadata: { practicehub_ref: 'PH-1', quiroflow_patient_id: s.patientId } }])
+
+      // Unpaired: our key comes off, the other app's stays.
+      cy.get('[data-cy=gocardless-mandate][data-mandate=MD-J]').find('[data-cy=gocardless-unmatch]').click()
+      cy.task<{ customerUpdates: { id: string; metadata: Record<string, string> }[] }>('gc:state')
+        .its('customerUpdates')
+        .should('have.length', 2)
+        .its(1)
+        .should('deep.equal', { id: 'CU-J', metadata: { practicehub_ref: 'PH-1' } })
+    })
+  })
+
+  it('sends the clinic to GoCardless to verify, and shows the card when the status cannot be read', () => {
+    seed({ connected: true }).then((s) => {
+      cy.task('gc:start', { organisationId: s.organisationId, verificationStatus: 'action_required' })
+      cy.login(s.account.email, s.account.password)
+      cy.visit('/settings/payments')
+      cy.get('[data-cy=gocardless-status]', SLOW).should('contain.text', 'Verification needed')
+      cy.get('[data-cy=gocardless-verify]').should('have.attr', 'href', 'https://verify-sandbox.gocardless.com')
+
+      // Back from GoCardless (its post_onboarding_url): read again, verified.
+      cy.task('gc:update', { verificationStatus: 'successful' })
+      cy.visit('/settings/payments?gocardless=verified')
+      cy.get('[data-cy=gocardless-status]', SLOW).should('contain.text', 'Connected')
+      cy.get('[data-cy=gocardless-verify]').should('not.exist')
+      cy.location('search').should('not.contain', 'gocardless=')
+      cy.task<{ gocardless_verification_status: string }[]>('db:selectRows', { table: 'accounts', columns: 'gocardless_verification_status', match: { id: s.account.accountId } })
+        .its('0.gocardless_verification_status')
+        .should('eq', 'successful')
+
+      // A status that cannot be read is an error on the card, not no card.
+      cy.intercept('GET', '/api/gocardless/status*', { statusCode: 500, body: { statusMessage: 'down' } })
+      cy.reload()
+      cy.get('[data-cy=gocardless-section]', SLOW).should('exist')
+      cy.get('[data-cy=gocardless-load-error]').should('contain.text', 'Could not check the GoCardless connection')
     })
   })
 })

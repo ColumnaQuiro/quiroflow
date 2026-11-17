@@ -4,7 +4,9 @@ import { suggestMandatePatient, type MatchablePatient } from '~/utils/gocardless
 
 // Settings > Import > GoCardless direct debits: every collectable mandate in
 // the clinic's GoCardless account, whoever created it, with the patient it is
-// matched to here or the one we suggest. GoCardless's partner checklist
+// matched to here or the one we suggest -- first by our own patient id on the
+// GoCardless customer (written when a pair is made), then by email, phone and
+// name (utils/gocardlessMatch.ts). GoCardless's partner checklist
 // requires exactly this -- mandates set up outside the product must be
 // importable, visible as matched or unmatched, and unmatchable.
 //
@@ -47,7 +49,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [{ data: matched }, { data: patients }, { data: ours }] = await Promise.all([
-    admin.from('patient_gocardless_mandates').select('gocardless_mandate_id, patient_id, matched_by').eq('account_id', teamMember.account_id),
+    admin.from('patient_gocardless_mandates').select('gocardless_mandate_id, patient_id, matched_by, reference').eq('account_id', teamMember.account_id),
     admin.from('patients').select('id, first_name, last_name, email, phone_search').eq('account_id', teamMember.account_id).neq('status', 'archived'),
     admin.from('payment_schedules').select('gocardless_subscription_id').eq('account_id', teamMember.account_id).not('gocardless_subscription_id', 'is', null),
   ])
@@ -58,6 +60,16 @@ export default defineEventHandler(async (event) => {
   const oursIds = new Set((ours ?? []).map((s) => s.gocardless_subscription_id))
   const patientList = (patients ?? []) as MatchablePatient[]
   const patientById = new Map(patientList.map((p) => [p.id, p]))
+
+  // Pairs made before the mandate reference was kept (it is what the patient
+  // sees on their bank statement, shown on their Money tab): fill it in now
+  // that GoCardless has just told us. A handful of rows, once.
+  const missingReference = mandates.filter((m) => m.reference && matchedById.get(m.id) && !matchedById.get(m.id)!.reference)
+  await Promise.all(
+    missingReference.map((m) =>
+      admin.from('patient_gocardless_mandates').update({ reference: m.reference }).eq('account_id', teamMember.account_id).eq('gocardless_mandate_id', m.id),
+    ),
+  )
 
   return {
     otherSubscriptionsKnown,
@@ -82,6 +94,7 @@ export default defineEventHandler(async (event) => {
         matched: Boolean(match),
         patient: patient ? { id: patient.id, name: `${patient.first_name} ${patient.last_name ?? ''}`.trim() } : null,
         suggestedBy: match ? match.matched_by : (suggestion?.by ?? null),
+        suggestedLoosely: !match && suggestion?.patientId ? Boolean(suggestion.loose) : false,
         ambiguous: suggestion && 'ambiguous' in suggestion ? suggestion.ambiguous : false,
         subscriptions: subscriptions
           .filter((s) => s.links.mandate === m.id)

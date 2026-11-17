@@ -21,12 +21,49 @@ export interface QuirocitasLedgerPartial { ledger: QuirocitasLedgerRow[]; months
 
 const PATIENT = 'patient:'
 
+// The cash ledger is kept beside the row it belongs to, a few thousand of its
+// rows to a row of the table, and never inside it. A clinic's whole ledger in
+// the 'meta' row was one 12 MB request for a clinic with thirteen years of
+// it: the API answered 520, the read was thrown back to start its ledger
+// again, and what it then saved was four empty months (see
+// QuirocitasClient.ledger for that half). At this size a request stays near
+// 1 MB however long the clinic has been open.
+const LEDGER = 'ledger:'
+const PARTIAL = 'partial:'
+const LEDGER_CHUNK = 4000
+
+async function loadChunks(admin: Admin, accountId: string, prefix: string, count: number) {
+  const rows: QuirocitasLedgerRow[] = []
+  for (let i = 0; i < count; i++) {
+    const part = await getRow<QuirocitasLedgerRow[]>(admin, accountId, `${prefix}${i}`)
+    // Never a shorter ledger passed off as the whole one.
+    if (!part) throw new Error(`import_snapshots: ${prefix}${i} is missing`)
+    for (const r of part) rows.push(r)
+  }
+  return rows
+}
+
+/** Writes the rows in pieces and returns how many; `after` writes the row that says so. */
+async function saveChunks(admin: Admin, accountId: string, prefix: string, rows: QuirocitasLedgerRow[], after: (count: number) => Promise<void>) {
+  let count = 0
+  for (let i = 0; i < rows.length; i += LEDGER_CHUNK) await putRows(admin, accountId, [{ key: `${prefix}${count++}`, data: rows.slice(i, i + LEDGER_CHUNK) }])
+  // The count is what makes pieces part of the copy, so it is written after
+  // them -- and before they are cleared, when there are none any more.
+  await after(count)
+  if (!count) await deletePrefix(admin, accountId, prefix)
+}
+
 export async function loadQuirocitasMeta(admin: Admin, accountId: string): Promise<QuirocitasMeta | null> {
-  return (await getRow<QuirocitasMeta>(admin, accountId, 'meta'))
+  const row = await getRow<QuirocitasMeta & { ledgerChunks?: number }>(admin, accountId, 'meta')
+  if (!row) return null
+  const { ledgerChunks, ...meta } = row
+  // A copy saved before the ledger was kept apart carries it inline.
+  return ledgerChunks ? { ...meta, ledger: await loadChunks(admin, accountId, LEDGER, ledgerChunks) } : meta
 }
 
 export async function saveQuirocitasMeta(admin: Admin, accountId: string, meta: QuirocitasMeta) {
-  await putRows(admin, accountId, [{ key: 'meta', data: meta }])
+  const { ledger, ...rest } = meta
+  await saveChunks(admin, accountId, LEDGER, ledger, (ledgerChunks) => putRows(admin, accountId, [{ key: 'meta', data: { ...rest, ledger: [], ledgerChunks } }]))
   forgetCached(accountId)
 }
 
@@ -38,13 +75,21 @@ export async function saveQuirocitasList(admin: Admin, accountId: string, list: 
   await putRows(admin, accountId, [{ key: 'list', data: list }])
 }
 
-export async function loadLedgerPartial(admin: Admin, accountId: string) {
-  return getRow<QuirocitasLedgerPartial>(admin, accountId, 'ledger_partial')
+export async function loadLedgerPartial(admin: Admin, accountId: string): Promise<QuirocitasLedgerPartial | null> {
+  const row = await getRow<QuirocitasLedgerPartial & { chunks?: number }>(admin, accountId, 'ledger_partial')
+  if (!row) return null
+  const { chunks, ...partial } = row
+  return chunks ? { ...partial, ledger: await loadChunks(admin, accountId, PARTIAL, chunks) } : partial
 }
 
 export async function saveLedgerPartial(admin: Admin, accountId: string, partial: QuirocitasLedgerPartial | null) {
-  if (partial) await putRows(admin, accountId, [{ key: 'ledger_partial', data: partial }])
-  else await deleteKeys(admin, accountId, ['ledger_partial'])
+  if (!partial) {
+    await deleteKeys(admin, accountId, ['ledger_partial'])
+    await deletePrefix(admin, accountId, PARTIAL)
+    return
+  }
+  const { ledger, ...rest } = partial
+  await saveChunks(admin, accountId, PARTIAL, ledger, (chunks) => putRows(admin, accountId, [{ key: 'ledger_partial', data: { ...rest, ledger: [], chunks } }]))
 }
 
 export async function saveQuirocitasRecords(admin: Admin, accountId: string, records: QuirocitasRecord[]) {
@@ -141,6 +186,11 @@ async function putRows(admin: Admin, accountId: string, rows: { key: string; dat
   const { error } = await admin
     .from('import_snapshots')
     .upsert(rows.map((r) => ({ account_id: accountId, source: SOURCE, key: r.key, data: r.data as Json, updated_at: now })), { onConflict: 'account_id,source,key' })
+  if (error) throw new Error(`import_snapshots: ${error.message}`)
+}
+
+async function deletePrefix(admin: Admin, accountId: string, prefix: string) {
+  const { error } = await admin.from('import_snapshots').delete().eq('account_id', accountId).eq('source', SOURCE).like('key', `${prefix}%`)
   if (error) throw new Error(`import_snapshots: ${error.message}`)
 }
 

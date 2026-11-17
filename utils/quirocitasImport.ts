@@ -97,17 +97,31 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     method === 'cash' ? t('Cash', 'Efectivo') : method === 'card' ? t('Card', 'Tarjeta') : method === 'transfer' ? t('Transfer', 'Transferencia') : method
   const eur = (c: number) => `${(c / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 
-  // PostgREST stops at 1,000 rows per request without saying so.
+  // PostgREST stops at 1,000 rows per request without saying so. The first
+  // page says how many there are, and the rest are asked for several at a
+  // time: one after another, a clinic's 60,000 appointments were sixty round
+  // trips and most of a slice gone before a step had planned anything.
   async function readAll<T>(table: string, columns: string, refPrefix?: string): Promise<T[]> {
-    const out: T[] = []
-    for (let from = 0; ; from += 1000) {
-      let q = (supabase.from(table as never) as any).select(columns).eq('account_id', accountId).order('id').range(from, from + 999)
+    const PAGE = 1000
+    const page = async (from: number, count: boolean) => {
+      let q = (supabase.from(table as never) as any).select(columns, count ? { count: 'exact' } : undefined).eq('account_id', accountId).order('id').range(from, from + PAGE - 1)
       if (refPrefix) q = q.like('external_reference', `${refPrefix}%`)
-      const { data, error } = await q
+      const { data, error, count: total } = await q
       if (error) throw new Error(error.message)
-      out.push(...(data as T[]))
-      if (!data || data.length < 1000) return out
+      return { rows: (data ?? []) as T[], total: total as number | null | undefined }
     }
+    const first = await page(0, true)
+    if (first.rows.length < PAGE) return first.rows
+    const pages: T[][] = [first.rows]
+    if (first.total == null) {
+      // No count came back: one page after another, as before.
+      for (let from = PAGE; ; from += PAGE) { const next = await page(from, false); pages.push(next.rows); if (next.rows.length < PAGE) break }
+      return pages.flat()
+    }
+    const starts: number[] = []
+    for (let from = PAGE; from < first.total; from += PAGE) starts.push(from)
+    await withConcurrency(starts, 6, async (from) => { pages[from / PAGE] = (await page(from, false)).rows })
+    return pages.flat()
   }
 
   async function patientIds() {
@@ -343,7 +357,13 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
       if (changes.starts_at || Date.parse(here.ends_at) < startsAt) changes.ends_at = new Date(startsAt + (length > 0 ? length : 15 * 60000)).toISOString()
       // Only ever fills a blank: a practitioner chosen in QuiroFlow stands.
       const assign = !here.practitioner_id && practitionerId ? practitionerId : null
-      if (!Object.keys(changes).length) { if (assign) assigns.set(assign, [...(assigns.get(assign) ?? []), here.id]); continue }
+      if (!Object.keys(changes).length) {
+        // Added to the list in place. Copying the list for each one, as this
+        // did at first, is nothing for a few and minutes for 39,000: a
+        // clinic's plan never ended inside its slice, so nothing was written.
+        if (assign) { const ids = assigns.get(assign); if (ids) ids.push(here.id); else assigns.set(assign, [here.id]) }
+        continue
+      }
       updates.push({ id: here.id, changes: assign ? { ...changes, practitioner_id: assign } : changes })
     }
     const assigned = [...assigns.values()].reduce((a, ids) => a + ids.length, 0)

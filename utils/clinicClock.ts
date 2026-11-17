@@ -30,19 +30,23 @@ export function localDay(now: Date, timeZone: string) {
   return { start, end, minutesSinceMidnight: hour * 60 + minute }
 }
 
+// One formatter per time zone, kept. Building one is by far the slow part of
+// reading an offset, and an importer asks for two per appointment: over a
+// hundred thousand of them to plan one step for a large clinic.
+const offsetFormatters = new Map<string, Intl.DateTimeFormat>()
+function offsetFormatter(timeZone: string) {
+  let f = offsetFormatters.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    offsetFormatters.set(timeZone, f)
+  }
+  return f
+}
+
 /** How far `timeZone` is ahead of UTC at `at`, in minutes (Madrid in July: 120). */
 export function zoneOffsetMinutes(at: Date, timeZone: string): number {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: timeZone || DEFAULT_CLINIC_TIMEZONE,
-      hourCycle: 'h23',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
+    offsetFormatter(timeZone || DEFAULT_CLINIC_TIMEZONE)
       .formatToParts(at)
       .map((p) => [p.type, p.value]),
   )

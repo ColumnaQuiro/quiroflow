@@ -188,6 +188,14 @@ export class QuirocitasClient {
     let page: string
     if (cursor) page = await submit(cursor, { previo: '◄' })
     else {
+      // Quirocitas keeps the month being shown in the session, and the
+      // session is kept between calls -- so "from the start" on a session a
+      // walk has already been through is from wherever that walk stopped. A
+      // read thrown back to start its ledger again picked it up at December
+      // 2012, the far end of the walk before it, took the four empty months
+      // from there for the whole ledger and called itself finished. A new
+      // sign-in is a new session, which opens on today.
+      await this.signIn()
       // "-- Todos --" is only asked for where the page offers the choice: a
       // clinic with one chiropractor has no such filter, and nothing is ever
       // submitted that the page did not render.
@@ -200,6 +208,13 @@ export class QuirocitasClient {
       const month = parseQuirocitasCajaMonth(page)
       if (!month.month) throw new QuirocitasLedgerError('Quirocitas did not show a month of the cash ledger.')
       if (!month.everyChiro) throw new QuirocitasLedgerError(`The cash ledger for ${month.month} is showing only ${month.chiroShown || 'one chiropractor'}, not everyone.`)
+      // And checked, not assumed: a walk that does not begin this month is
+      // not this clinic's ledger up to today, whatever it goes on to read.
+      // A day either side, for the clinic's clock against this one.
+      if (!cursor && i === 0) {
+        const nearby = [-1, 0, 1].map((days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 7))
+        if (!nearby.includes(month.month)) throw new QuirocitasLedgerError(`The cash ledger opened on ${month.month}, not on the current month.`)
+      }
       out.push(month)
       if (i + 1 >= months) break
       page = await submit(page, { previo: '◄' })

@@ -15,7 +15,7 @@ function fakeSupabase(tables: Record<string, Row[]>) {
     const match = (r: Row) => q.filters.every(([kind, col, v]) =>
       kind === 'eq' ? r[col] === v
         : kind === 'is' ? (r[col] ?? null) === v
-          : kind === 'in' ? (v as unknown[]).includes(r[col])
+          : kind === 'in' ? (v as Set<unknown>).has(r[col])
             : String(r[col] ?? '').startsWith(String(v).replace(/%$/, '')))
     const run = () => {
       if (q.op === 'insert') {
@@ -40,7 +40,7 @@ function fakeSupabase(tables: Record<string, Row[]>) {
       update: (v: unknown) => { q.op = 'update'; q.values = v; return b },
       eq: filter('eq'),
       is: filter('is'),
-      in: filter('in'),
+      in: (col: string, v: unknown[]) => filter('in')(col, new Set(v)),
       like: filter('like'),
       range: (a: number, z: number) => { q.range = [a, z]; return b },
       maybeSingle: () => { q.single = true; return b },
@@ -302,4 +302,34 @@ describe('an appointment cancelled in Quirocitas after it was imported', () => {
     expect(statuses(tables)).toEqual({ 'QC-5001': 'completed', 'QC-5003': 'booked', 'QC-5004': 'booked' })
     expect(plan.warnings.join(' ')).toContain('showed no appointment list for 1 patients')
   })
+})
+
+describe('a clinic imported before its chiropractor was matched', () => {
+  it('assigns tens of thousands of appointments without the plan slowing to a stop', async () => {
+    // Every one of a large clinic's appointments was already here with no
+    // practitioner. Grouping them copied the list once per appointment, which
+    // took longer than a slice has: the step planned, ran out of time before
+    // its first write, and was given up as having made no progress.
+    const N = 30_000
+    const s = snapshot()
+    const at = (i: number) => new Date(Date.UTC(2020, 0, 1, 8, 0) + i * 30 * 60000)
+    const two = (n: number) => String(n).padStart(2, '0')
+    s.patients[101]!.ficha.appointments = Array.from({ length: N }, (_, i) => {
+      const d = at(i)
+      return { id: String(10_000 + i), date: `${two(d.getUTCDate())}-${two(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`, time: `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`, type: 'Ajuste', chiro: 'Dra. Demo', status: 'pasado' }
+    })
+    const tables = clinic([{ id: 'demo', full_name: 'Dra. Demo Prueba' }], [])
+    // Stored as the importer itself would have stored them, so nothing else differs.
+    const first = await runAppointments(tables, s)
+    expect(first.result.written).toBe(N)
+    for (const a of tables.appointments!) a.practitioner_id = null
+
+    const started = Date.now()
+    const { plan, result } = await runAppointments(tables, s)
+    expect(plan.total).toBe(N)
+    expect(result).toEqual({ written: N, errors: [] })
+    expect(tables.appointments!.every((a) => a.practitioner_id === 'demo')).toBe(true)
+    // Seconds at the very most, on a busy machine; the copying took minutes.
+    expect(Date.now() - started).toBeLessThan(8000)
+  }, 30_000)
 })

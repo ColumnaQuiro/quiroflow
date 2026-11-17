@@ -194,6 +194,16 @@ export function parseQuirocitasFicha(html: string): QuirocitasPatient | null {
   const company = str(f.empresa).trim()
 
   const visitsTable = byHeader('Núm.')
+  // Both lists are read by their headers, not by position: a Quirocitas with a
+  // single chiropractor has no chiropractor column at all, in either. Reading
+  // by position, the visit list of such a clinic matched no row -- every
+  // record came back with no visits, so no cancelled or moved appointment and
+  // no reason was ever imported for it.
+  const column = (table: Table | undefined, name: RegExp) => table?.header.findIndex((h) => name.test(h)) ?? -1
+  const listChiro = column(byHeader('Dia'), /^Quiro/i)
+  // "Cita" heads two cells, the weekday and the date, so every cell from the
+  // date on sits one to the right of its header.
+  const visitCell = (r: Row, name: RegExp) => { const i = column(visitsTable, name); return i < 0 ? '' : r.cells[i + 1] ?? '' }
   const bonosTable = all.find((t) => t.header.includes('Bono/Artículo'))
   const family = all.find((t) => t.header[0] === 'Beneficiarios')
 
@@ -225,12 +235,13 @@ export function parseQuirocitasFicha(html: string): QuirocitasPatient | null {
     // The search's own list; its first row is a "----------" placeholder.
     appointments: (byHeader('Dia')?.rows ?? []).map((r) => ({
       id: str(Object.entries(r.inputs).find(([k]) => k.startsWith('buscita_'))?.[1]),
-      date: r.cells[1] ?? '', time: r.cells[2] ?? '', type: r.cells[3] ?? '', chiro: r.cells[4] ?? '', status: r.class ?? '',
+      date: r.cells[1] ?? '', time: r.cells[2] ?? '', type: r.cells[3] ?? '', chiro: listChiro < 0 ? '' : r.cells[listChiro] ?? '', status: r.class ?? '',
     })).filter((a) => a.id && a.id !== '-1'),
-    // Nine cells: number, weekday, date, time, type, chiro, paid, B, reason.
-    // The table ends in "Total: N" rows, which have three.
-    visits: (visitsTable?.rows ?? []).filter((r) => r.cells.length === 9).map((r) => ({
-      date: r.cells[2]!, time: r.cells[3]!, type: r.cells[4]!, chiro: r.cells[5]!, paid: amountDot(r.cells[6]), bono: r.cells[7] === 'B', reason: r.cells[8]!, status: r.class ?? '',
+    // Number, weekday, date, time, type, chiropractor (where the clinic has
+    // more than one), paid, B, reason. The table ends in "Total: N" rows,
+    // which are shorter and carry no date.
+    visits: (visitsTable?.rows ?? []).filter((r) => r.cells.length === visitsTable!.header.length + 1 && /^\d{2}-\d{2}-\d{4}$/.test(visitCell(r, /^Cita/i))).map((r) => ({
+      date: visitCell(r, /^Cita/i), time: visitCell(r, /^Hora/i), type: visitCell(r, /^Tipo/i), chiro: visitCell(r, /^Quiro/i), paid: amountDot(visitCell(r, /^Pago/i)), bono: visitCell(r, /^B$/) === 'B', reason: visitCell(r, /^Motivo/i), status: r.class ?? '',
     })),
     // The bono's id is its radio's value, checked or not.
     bonos: (bonosTable?.rows ?? []).map((r) => ({ r, id: r.html.match(/name="selbono"[^>]*value="(\d+)"/i)?.[1] ?? r.html.match(/value="(\d+)"[^>]*name="selbono"/i)?.[1] })).filter(({ r, id }) => id && r.cells[1]).map(({ r, id }) => ({
@@ -343,11 +354,19 @@ export function parseQuirocitasCajaMonth(html: string) {
     }
   })
   const footer = (id: string) => amountComma(html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? html.match(new RegExp(`value="([^"]*)"[^>]*id="${id}"`))?.[1])
+  // The chiropractor filter is only there when the clinic has more than one.
+  // Without it the page is everyone's already; demanding "-- Todos --" of a
+  // page that has no such choice is what stopped a single-chiropractor
+  // clinic's read at its ledger, every time.
+  const chiroFilter = controls(html).quiro
   return {
     month,
     rows,
     totals: { cash: footer('caja-\\d+'), card: footer('totalmeto-\\d+\\[2\\]'), transfer: footer('totalmeto-\\d+\\[3\\]'), value: footer('valortotal-\\d+') },
-    everyChiro: str(controls(html).quiro) === '-1',
+    hasChiroFilter: chiroFilter !== undefined,
+    everyChiro: chiroFilter === undefined || str(chiroFilter) === '-1',
+    /** Who the page is filtered to, for saying so when it is not everyone. */
+    chiroShown: label(chiroFilter) || str(chiroFilter),
   }
 }
 

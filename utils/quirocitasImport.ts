@@ -9,8 +9,10 @@ import {
   quirocitasClinicalLogs,
   quirocitasFileRows,
   quirocitasLedgerRows,
+  quirocitasNamesChiropractors,
   quirocitasPatientRow,
   quirocitasPhone,
+  quirocitasPractitionerMatcher,
   quirocitasVisitNotes,
   type QuirocitasSnapshot,
 } from '~/utils/quirocitasRows'
@@ -117,10 +119,17 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     return data?.timezone || DEFAULT_CLINIC_TIMEZONE
   }
 
-  async function team() {
-    const { data } = await supabase.from('team_members').select('id, full_name').eq('account_id', accountId).is('deleted_at', null)
-    const byName = new Map((data ?? []).map((m) => [m.full_name.trim().toLowerCase(), m.id]))
-    return (name: string) => byName.get(name.trim().toLowerCase()) ?? null
+  // Who Quirocitas means by each chiropractor's name (quirocitasPractitionerMatcher
+  // says how, and why it is not a plain comparison). `nobody` is a copy that
+  // names no chiropractor and a team with more than one: there is no telling
+  // whose each appointment is, and the step says so.
+  async function team(s: QuirocitasSnapshot) {
+    const { data } = await supabase.from('team_members').select('id, full_name, is_practitioner').eq('account_id', accountId).is('deleted_at', null)
+    const members = data ?? []
+    const practitioners = members.some((m) => m.is_practitioner) ? members.filter((m) => m.is_practitioner) : members
+    const named = quirocitasNamesChiropractors(s)
+    const sole = !named && practitioners.length === 1 ? practitioners[0]!.id : null
+    return { of: quirocitasPractitionerMatcher(members, sole), nobody: !named && !sole }
   }
 
   const errText = (e: unknown) => (e as { message?: string })?.message ?? String(e)
@@ -128,7 +137,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
   // --- 1 · Patients ---------------------------------------------------------------
 
   async function planPatients(s: QuirocitasSnapshot): Promise<QuirocitasPlan> {
-    const practitioner = await team()
+    const { of: practitioner } = await team(s)
     const OVERWRITE = ['first_name', 'last_name', 'email', 'date_of_birth', 'national_id', 'address', 'postal_code', 'city', 'occupation', 'gender', 'referral_source'] as const
     type Existing = { id: string; external_reference: string | null; email: string | null; notes: string | null; tags: string[] | null; default_practitioner_id: string | null } & Record<(typeof OVERWRITE)[number], string | null>
     const existing = await readAll<Existing>('patients', `id, external_reference, email, notes, tags, default_practitioner_id, ${OVERWRITE.join(', ')}`)
@@ -231,10 +240,10 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
   async function planAppointments(s: QuirocitasSnapshot, opts: { quietUpcoming: boolean }): Promise<QuirocitasPlan> {
     const zone = await clinicZone()
     const patients = await patientIds()
-    const practitioner = await team()
+    const { of: practitioner, nobody } = await team(s)
     const { data: typeRows } = await supabase.from('appointment_types').select('id, name, duration_minutes').eq('account_id', accountId)
     const types = new Map((typeRows ?? []).map((ty) => [ty.name.trim().toLowerCase(), ty]))
-    const existing = await readAll<{ id: string; external_reference: string; status: string; starts_at: string; checked_in_at: string | null; rescheduled: boolean }>('appointments', 'id, external_reference, status, starts_at, checked_in_at, rescheduled', 'QC-')
+    const existing = await readAll<{ id: string; external_reference: string; status: string; starts_at: string; ends_at: string; practitioner_id: string | null; checked_in_at: string | null; rescheduled: boolean }>('appointments', 'id, external_reference, status, starts_at, ends_at, practitioner_id, checked_in_at, rescheduled', 'QC-')
     const byRef = new Map(existing.map((a) => [a.external_reference, a]))
 
     const all = Object.values(s.patients).flatMap((r) => quirocitasAppointmentRows(r, zone).appointments)
@@ -242,16 +251,36 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const ready = all.filter((a) => patients.has(a.patientRef))
     const newTypes = [...new Set(ready.map((a) => a.type).filter((n): n is string => !!n && !types.has(n.toLowerCase())))]
     const inserts = ready.filter((a) => !byRef.has(a.ref))
-    const updates: { id: string; status: string; starts_at: string; label: string }[] = []
+    const updates: { id: string; changes: TablesUpdate<'appointments'> }[] = []
+    // Appointments already here with no practitioner, whose only change is
+    // gaining one: by practitioner, so they are written many at a time. A
+    // clinic imported before its chiropractor's name was matched has tens of
+    // thousands of them, and an appointment with no practitioner shows on
+    // nobody's tab in the calendar.
+    const assigns = new Map<string, string[]>()
+    const unmatched = new Map<string, number>()
     let kept = 0
     for (const a of ready) {
+      const practitionerId = practitioner(a.practitioner)
       const here = byRef.get(a.ref)
+      // Counted over what is still to come: those are the ones missed on the calendar.
+      if (!practitionerId && !here?.practitioner_id && a.practitioner && a.status === 'booked') unmatched.set(a.practitioner, (unmatched.get(a.practitioner) ?? 0) + 1)
       if (!here) continue
+      const changes: TablesUpdate<'appointments'> = {}
       const changing = [here.status !== a.status && 'status', Date.parse(here.starts_at) !== Date.parse(a.startsAt) && 'starts_at'].filter(Boolean) as string[]
-      if (!changing.length) continue
-      if (quiroflowKeeps({ status: here.status, checkedInAt: here.checked_in_at, rescheduled: here.rescheduled }, changing)) { kept++; continue }
-      updates.push({ id: here.id, status: a.status, starts_at: a.startsAt, label: `${a.startsAt.slice(0, 16).replace('T', ' ')} ${here.status} → ${a.status}` })
+      if (changing.length && quiroflowKeeps({ status: here.status, checkedInAt: here.checked_in_at, rescheduled: here.rescheduled }, changing)) kept++
+      else if (changing.length) Object.assign(changes, { status: a.status, starts_at: a.startsAt })
+      // An appointment moves whole. Only its start used to be written, so one
+      // moved to later was left ending before it began.
+      const startsAt = Date.parse(changes.starts_at ?? here.starts_at)
+      const length = Date.parse(here.ends_at) - Date.parse(here.starts_at)
+      if (changes.starts_at || Date.parse(here.ends_at) < startsAt) changes.ends_at = new Date(startsAt + (length > 0 ? length : 15 * 60000)).toISOString()
+      // Only ever fills a blank: a practitioner chosen in QuiroFlow stands.
+      const assign = !here.practitioner_id && practitionerId ? practitionerId : null
+      if (!Object.keys(changes).length) { if (assign) assigns.set(assign, [...(assigns.get(assign) ?? []), here.id]); continue }
+      updates.push({ id: here.id, changes: assign ? { ...changes, practitioner_id: assign } : changes })
     }
+    const assigned = [...assigns.values()].reduce((a, ids) => a + ids.length, 0)
     const now = new Date().toISOString()
     const noClinic = !clinicId
     const upcoming = inserts.filter((a) => a.status === 'booked' && a.startsAt > now).length
@@ -259,7 +288,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     return {
       stats: [
         { label: t('New', 'Nuevas'), value: nf.format(inserts.length), tone: 'good' },
-        { label: t('Updated', 'Actualizadas'), value: nf.format(updates.length), tone: 'good' },
+        { label: t('Updated', 'Actualizadas'), value: nf.format(updates.length + assigned), tone: 'good' },
         { label: t('Upcoming', 'Próximas'), value: nf.format(upcoming) },
         { label: t('Kept as QuiroFlow has them', 'Se mantienen como en QuiroFlow'), value: nf.format(kept) },
       ],
@@ -269,8 +298,16 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         ...(noClinic ? [t('Choose the clinic these appointments belong to, in the clinic switcher in the sidebar, before applying.', 'Elige la clínica de estas citas en el selector de clínica de la barra lateral antes de aplicar.')] : []),
         ...(waiting.length ? [t(`${nf.format(waiting.length)} appointments belong to patients not imported yet: run Patients first.`, `${nf.format(waiting.length)} citas son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
         ...(newTypes.length ? [t(`Creates ${newTypes.length} appointment types (${newTypes.join(', ')}) of 15 minutes; adjust their length and price under Settings → Appointment types afterwards.`, `Crea ${newTypes.length} tipos de cita (${newTypes.join(', ')}) de 15 minutos; ajusta su duración y precio en Ajustes → Tipos de cita después.`)] : []),
+        ...[...unmatched].map(([name, n]) => t(
+          `${nf.format(n)} upcoming appointments are with ${name}, who is not on this clinic's team: they come in with no practitioner, and the calendar shows them only under "All" or "Unassigned". Add them under Settings → Team with that name and run this step again to link them.`,
+          `${nf.format(n)} citas próximas son con ${name}, que no está en el equipo: llegan sin quiropráctico y el calendario solo las muestra en «Todos» o «Sin asignar». Añádelo en Ajustes → Equipo con ese nombre y vuelve a ejecutar este paso para enlazarlas.`,
+        )),
+        ...(nobody ? [t(
+          'Quirocitas does not say which chiropractor each appointment is with, and this clinic has more than one: they come in with no practitioner, and the calendar shows them only under "All" or "Unassigned".',
+          'Quirocitas no dice con qué quiropráctico es cada cita y esta clínica tiene más de uno: llegan sin quiropráctico y el calendario solo las muestra en «Todos» o «Sin asignar».',
+        )] : []),
       ],
-      total: inserts.length + updates.length,
+      total: inserts.length + updates.length + assigned,
       async apply(progress, shouldStop) {
         if (noClinic) return { written: 0, errors: [t('Nothing was written: no clinic is chosen (see above).', 'No se escribió nada: no hay clínica elegida (ver arriba).')] }
         const errors: string[] = []
@@ -308,10 +345,18 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         let done = inserts.length
         await withConcurrency(updates, 8, async (u) => {
           if (shouldStop()) return
-          const { error } = await supabase.from('appointments').update({ status: u.status, starts_at: u.starts_at }).eq('id', u.id)
+          const { error } = await supabase.from('appointments').update(u.changes).eq('id', u.id)
           if (error) errors.push(error.message); else written++
           progress(++done)
         })
+        for (const [practitionerId, ids] of assigns) {
+          const before = done
+          // Still blank when it is written: someone may have chosen one meanwhile.
+          done += await inChunks(ids, CHUNK, async (chunk) => {
+            const { error } = await supabase.from('appointments').update({ practitioner_id: practitionerId }).in('id', chunk).is('practitioner_id', null)
+            if (error) errors.push(error.message); else written += chunk.length
+          }, (n) => progress(before + n), shouldStop)
+        }
         return { written, errors }
       },
     }
@@ -381,8 +426,11 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const byRef = new Map(existing.map((p) => [p.external_reference, p]))
     const ready = rows.filter((b) => patients.has(b.ownerRef))
     const inserts = ready.filter((b) => !byRef.has(b.ref))
-    // A session used here is not undone by a re-run: the count only rises.
-    const updates = ready.filter((b) => byRef.has(b.ref)).map((b) => ({ b, here: byRef.get(b.ref)! })).filter(({ b, here }) => b.sessionsUsed > here.sessions_used || b.isClosed !== here.is_closed || b.owedCents !== (here.owed_cents ?? 0))
+    // A session used here is not undone by a re-run: the count only rises. So
+    // a bono Quirocitas still has open, and whose last sessions were used
+    // here, stays closed.
+    const closed = (b: (typeof rows)[number], here: (typeof existing)[number]) => b.isClosed || here.sessions_used >= b.sessionsTotal
+    const updates = ready.filter((b) => byRef.has(b.ref)).map((b) => ({ b, here: byRef.get(b.ref)! })).filter(({ b, here }) => b.sessionsUsed > here.sessions_used || closed(b, here) !== here.is_closed || b.owedCents !== (here.owed_cents ?? 0))
 
     return {
       stats: [
@@ -415,7 +463,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         let done = inserts.length
         await withConcurrency(updates, 8, async ({ b, here }) => {
           if (shouldStop()) return
-          const { error } = await supabase.from('package_purchases').update({ sessions_used: Math.max(b.sessionsUsed, here.sessions_used), is_closed: b.isClosed, owed_cents: b.owedCents }).eq('id', here.id)
+          const { error } = await supabase.from('package_purchases').update({ sessions_used: Math.max(b.sessionsUsed, here.sessions_used), is_closed: closed(b, here), owed_cents: b.owedCents }).eq('id', here.id)
           if (error) errors.push(error.message); else written++
           progress(++done)
         })
@@ -427,6 +475,20 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
   // --- 5 · Payments and invoices ---------------------------------------------------------
 
   async function planLedger(s: QuirocitasSnapshot): Promise<QuirocitasPlan> {
+    // Nothing is worked out from a copy whose cash ledger was not read. Every
+    // charge and payment comes from it, and what would be left to write --
+    // each Quirocitas invoice as a note, for want of a charge to sit on --
+    // would be wrong the day the ledger is read.
+    if (!s.ledgerMonths.length) {
+      return {
+        stats: [], columns: [], rows: [], total: 0,
+        warnings: [t(
+          `The cash ledger has not been read from Quirocitas${s.ledgerError ? ` (${s.ledgerError})` : ''}, so there are no payments or invoices to import yet.`,
+          `La caja de Quirocitas no se ha leído${s.ledgerError ? ` (${s.ledgerError})` : ''}, así que aún no hay pagos ni facturas que importar.`,
+        )],
+        apply: async () => ({ written: 0, errors: [] }),
+      }
+    }
     const zone = await clinicZone()
     const patients = await patientIds()
     const appts = new Map((await readAll<{ id: string; external_reference: string }>('appointments', 'id, external_reference', 'QC-')).map((a) => [a.external_reference, a.id]))

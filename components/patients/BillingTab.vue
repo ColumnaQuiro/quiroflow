@@ -968,14 +968,29 @@ const gocardlessConnected = ref(false)
 const mandates = ref<{ gocardless_mandate_id: string; status: string; bank_name: string | null; account_number_ending: string | null }[]>([])
 const scheduleProviders = ref<Record<string, string>>({})
 const directDebitCharges = ref<Record<string, number>>({})
-async function loadDirectDebit() {
-  const [{ data: account }, { data: mandateRows }, { data: providerRows }] = await Promise.all([
+// The newest sign-up link still out and unsigned, if any.
+const pendingDdLink = ref<{ created_at: string } | null>(null)
+// Payments GoCardless collected: their refund goes back through GoCardless.
+const gocardlessPaymentIds = ref<string[]>([])
+async function loadDirectDebit(synced = false) {
+  const [{ data: account }, { data: mandateRows }, { data: providerRows }, { data: linkRows }, { data: gcPayments }] = await Promise.all([
     supabase.from('accounts').select('gocardless_organisation_id').eq('id', store.accountId!).maybeSingle(),
     supabase.from('patient_gocardless_mandates').select('gocardless_mandate_id, status, bank_name, account_number_ending').eq('patient_id', props.patientId),
     supabase.from('payment_schedules').select('id, provider').eq('patient_id', props.patientId),
+    supabase.from('gocardless_billing_requests').select('created_at').eq('patient_id', props.patientId).eq('status', 'pending').order('created_at', { ascending: false }).limit(1),
+    supabase.from('payments').select('id').eq('patient_id', props.patientId).not('gocardless_payment_id', 'is', null),
   ])
   gocardlessConnected.value = Boolean(account?.gocardless_organisation_id)
   mandates.value = mandateRows ?? []
+  pendingDdLink.value = linkRows?.[0] ?? null
+  gocardlessPaymentIds.value = (gcPayments ?? []).map((p) => p.id)
+  // A link out may have been signed since: the patient is often still at the
+  // desk, ahead of GoCardless's webhook. Ask once, and reload if it was.
+  if (pendingDdLink.value && gocardlessConnected.value && !synced) {
+    useStaffFetch<{ changed: boolean }>('/api/gocardless/mandates/request-sync', { method: 'POST', body: { patientId: props.patientId } })
+      .then((r) => (r.changed ? loadDirectDebit(true) : undefined))
+      .catch(() => {})
+  }
   scheduleProviders.value = Object.fromEntries((providerRows ?? []).map((r) => [r.id, r.provider]))
   const gcIds = (providerRows ?? []).filter((r) => r.provider === 'gocardless').map((r) => r.id)
   if (gcIds.length) {
@@ -994,6 +1009,55 @@ const mandateLabel = computed(() => {
   if (!m) return null
   return `${m.bank_name ?? t('Bank account', 'Cuenta bancaria')}${m.account_number_ending ? ` ••${m.account_number_ending}` : ''}`
 })
+
+// A NEW mandate: a GoCardless sign-up link the patient opens on their phone
+// (server/api/gocardless/mandates/request). Offered only while they have no
+// mandate that can collect -- a second one would be a second mandate. When
+// they sign, the webhook pairs it with this patient and it shows above.
+const canSendDirectDebitLink = computed(() => gocardlessConnected.value && can('billing_config') && !usableMandate.value)
+const directDebitLink = ref<{ url: string; subject: string; text: string } | null>(null)
+const ddLinkBusy = ref<'' | 'create' | 'email' | 'whatsapp'>('')
+async function openDirectDebitLink(fresh = false) {
+  ddLinkBusy.value = 'create'
+  try {
+    const r = await useStaffFetch<{ url: string; subject: string; text: string }>('/api/gocardless/mandates/request', { method: 'POST', body: { patientId: props.patientId, fresh } })
+    directDebitLink.value = { url: r.url, subject: r.subject, text: r.text }
+    await loadDirectDebit(true)
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? t('The direct debit link could not be created. Try again.', 'No se pudo crear el enlace de domiciliación. Inténtalo de nuevo.'), 'error')
+  } finally {
+    ddLinkBusy.value = ''
+  }
+}
+async function copyDirectDebitLink() {
+  if (!directDebitLink.value) return
+  try {
+    await navigator.clipboard.writeText(directDebitLink.value.url)
+    showToast(t('Direct debit link copied. Send it to the patient.', 'Enlace de domiciliación copiado. Envíaselo al paciente.'))
+  } catch {
+    showToast(t('Could not copy. Select the link and copy it by hand.', 'No se pudo copiar. Selecciona el enlace y cópialo a mano.'), 'error')
+  }
+}
+// Through the patient's own Communications email and the Inbox's WhatsApp
+// send, so the same guards apply: a minor's email is refused, and WhatsApp
+// free text only goes inside its 24-hour window (its error says so).
+async function sendDirectDebitLink(channel: 'email' | 'whatsapp') {
+  const link = directDebitLink.value
+  if (!link) return
+  ddLinkBusy.value = channel
+  try {
+    if (channel === 'email') {
+      await useStaffFetch(`/api/patients/${props.patientId}/send-email`, { method: 'POST', body: { subject: link.subject, body: link.text } })
+    } else {
+      await useStaffFetch('/api/whatsapp/inbox-send', { method: 'POST', body: { patientId: props.patientId, text: link.text } })
+    }
+    showToast(channel === 'email' ? t('Direct debit link sent by email', 'Enlace de domiciliación enviado por email') : t('Direct debit link sent by WhatsApp', 'Enlace de domiciliación enviado por WhatsApp'))
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? t('The link could not be sent. Copy it and send it another way.', 'No se pudo enviar el enlace. Cópialo y envíalo de otra forma.'), 'error', 10000)
+  } finally {
+    ddLinkBusy.value = ''
+  }
+}
 
 // AccountLedger's own transfer-credit action mutates account_credits
 // directly (it's not routed through any of this file's write functions),
@@ -1405,6 +1469,30 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     notRecorded(refundPaymentError)
     await loadAll()
     return
+  }
+
+  // Money GoCardless collected goes back the way it came, before the
+  // rectificativa below: that one is chain-signed and cannot be taken back,
+  // so it must not exist for a refund GoCardless refused. The route undoes
+  // the receipt and payment row above itself when GoCardless says no.
+  if (paymentId && method === 'direct_debit' && gocardlessPaymentIds.value.includes(paymentId)) {
+    try {
+      await useStaffFetch('/api/gocardless/refunds/create', { method: 'POST', body: { paymentId, refundPaymentId: refundPayment.id } })
+    } catch (err: any) {
+      // No answer at all (the connection dropped) leaves it unknown whether
+      // the route ran: what the row says now decides. Sent -> carry on.
+      // Still there unsent -> take it back here. Gone -> the route did.
+      const { data: row } = await supabase.from('payments').select('id, gocardless_refund_id').eq('id', refundPayment.id).maybeSingle()
+      if (!row?.gocardless_refund_id) {
+        if (row) {
+          await supabase.from('payments').delete().eq('id', refundPayment.id)
+          await supabase.from('invoices').delete().eq('id', refund.id)
+        }
+        showToast(err?.data?.statusMessage ?? t('GoCardless did not refund it, so nothing was recorded. Try again.', 'GoCardless no lo ha reembolsado, así que no se ha registrado nada. Inténtalo de nuevo.'), 'error', 10000)
+        await loadAll()
+        return
+      }
+    }
   }
 
   // The rectifying document. Without it the factura saying this money came in
@@ -2759,6 +2847,37 @@ const fieldId = useId()
               : t('No longer active: the patient would have to sign a new one.', 'Ya no está activa: el paciente tendría que firmar una nueva.') }}
           </p>
         </div>
+        <div v-if="canSendDirectDebitLink" class="mt-3 border-t border-line-divider pt-3" data-cy="direct-debit-link">
+          <template v-if="!mandates.length">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('No direct debit', 'Sin domiciliación') }}</p>
+          </template>
+          <p class="mt-0.5 text-[12px] text-ink-muted2" data-cy="direct-debit-link-status">
+            {{ pendingDdLink
+              ? t(`Sign-up link sent ${new Date(pendingDdLink.created_at).toLocaleDateString(uiLocaleTag(lang), { day: 'numeric', month: 'short' })}, not signed yet.`, `Enlace enviado el ${new Date(pendingDdLink.created_at).toLocaleDateString(uiLocaleTag(lang), { day: 'numeric', month: 'short' })}, aún sin firmar.`)
+              : t('Send the patient a link to set it up with their bank. Nothing to fill in here.', 'Envía al paciente un enlace para domiciliar el pago en su banco. Aquí no hay que rellenar nada.') }}
+          </p>
+          <div v-if="!directDebitLink" class="mt-2 flex flex-wrap gap-2">
+            <UiBtn variant="secondary" size="sm" :disabled="ddLinkBusy === 'create'" data-cy="direct-debit-link-open" @click="openDirectDebitLink(false)">
+              {{ ddLinkBusy === 'create' ? t('Creating…', 'Creando…') : pendingDdLink ? t('Show sign-up link', 'Ver enlace') : t('Direct debit link', 'Enlace de domiciliación') }}
+            </UiBtn>
+          </div>
+          <div v-else class="mt-2 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" data-cy="direct-debit-link-panel">
+            <label :for="`${fieldId}-ddLink`" class="block text-[11px] text-ink-muted">{{ t('Sign-up link (GoCardless)', 'Enlace de alta (GoCardless)') }}</label>
+            <input :id="`${fieldId}-ddLink`" :value="directDebitLink.url" readonly class="mt-0.5 w-full rounded-ctlSm border border-line-control bg-surface px-2 py-1 font-mono text-[12px]" data-cy="direct-debit-link-url" @focus="($event.target as HTMLInputElement).select()" />
+            <div class="mt-2 flex flex-wrap gap-2">
+              <UiBtn variant="secondary" size="sm" data-cy="direct-debit-link-copy" @click="copyDirectDebitLink">{{ t('Copy', 'Copiar') }}</UiBtn>
+              <UiBtn variant="secondary" size="sm" :disabled="!!ddLinkBusy" data-cy="direct-debit-link-email" @click="sendDirectDebitLink('email')">
+                {{ ddLinkBusy === 'email' ? t('Sending…', 'Enviando…') : t('Send by email', 'Enviar por email') }}
+              </UiBtn>
+              <UiBtn v-if="!contactBlocked" variant="secondary" size="sm" :disabled="!!ddLinkBusy" data-cy="direct-debit-link-whatsapp" @click="sendDirectDebitLink('whatsapp')">
+                {{ ddLinkBusy === 'whatsapp' ? t('Sending…', 'Enviando…') : t('Send by WhatsApp', 'Enviar por WhatsApp') }}
+              </UiBtn>
+              <UiBtn variant="ghost" size="sm" :disabled="!!ddLinkBusy" :title="t('Closes this link and makes a new one', 'Anula este enlace y crea uno nuevo')" data-cy="direct-debit-link-new" @click="openDirectDebitLink(true)">
+                {{ t('New link', 'Nuevo enlace') }}
+              </UiBtn>
+            </div>
+          </div>
+        </div>
         <PatientsInvoiceReminders :patient-id="patientId" :can-edit="can('patients_edit')" />
       </section>
     </div>
@@ -3287,7 +3406,7 @@ const fieldId = useId()
             <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="text-[11.5px] text-ink-muted2">
                 {{ gocardlessConnected
-                  ? t('No card or direct debit. Add a card, or pair the patient’s mandate in Settings › Import, to put this membership on autopay.', 'Sin tarjeta ni domiciliación. Añade una tarjeta, o empareja su domiciliación en Ajustes › Importar, para pasar esta membresía a pago automático.')
+                  ? t('No card or direct debit. Add a card, or send a direct debit link from How they pay, to put this membership on autopay.', 'Sin tarjeta ni domiciliación. Añade una tarjeta, o envía un enlace de domiciliación desde Cómo paga, para pasar esta membresía a pago automático.')
                   : t('No card on file. Add one to put this membership on autopay.', 'No hay tarjeta guardada. Añade una para pasar esta membresía a pago automático.') }}
               </span>
               <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
@@ -3398,6 +3517,7 @@ const fieldId = useId()
       :invoices="invoices"
       :line-item-descriptions="lineItemDescriptions"
       :payments="ledgerPayments"
+      :gocardless-payment-ids="gocardlessPaymentIds"
       :credits="ledgerCredits"
       :package-sessions="ledgerPackageSessions"
       :spendable-credit-cents="spendableCreditCents"

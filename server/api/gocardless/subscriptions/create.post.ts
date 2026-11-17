@@ -110,6 +110,11 @@ export default defineEventHandler(async (event) => {
           ...gocardlessInterval(membership.billing_interval, membership.billing_interval_count),
           ...(body.startDate ? { start_date: body.startDate } : {}),
           metadata: { quiroflow_membership: membership.id },
+          // Success+: a failed collection is retried on the day the payer's
+          // bank is likeliest to pay, instead of the clinic chasing it. Only
+          // acts where the clinic has Success+ on. The retry arrives as
+          // payments/resubmission_requested (gocardlessWebhookHandlers.ts).
+          retry_if_possible: true,
           links: { mandate: mandateId },
         },
       },

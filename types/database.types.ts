@@ -124,6 +124,73 @@ export type Database = {
           },
         ]
       }
+      gocardless_billing_requests: {
+        Row: {
+          account_id: string
+          authorisation_url: string | null
+          created_at: string
+          created_by_member: string | null
+          expires_at: string | null
+          gocardless_billing_request_id: string
+          gocardless_flow_id: string | null
+          gocardless_mandate_id: string | null
+          id: string
+          patient_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          authorisation_url?: string | null
+          created_at?: string
+          created_by_member?: string | null
+          expires_at?: string | null
+          gocardless_billing_request_id: string
+          gocardless_flow_id?: string | null
+          gocardless_mandate_id?: string | null
+          id?: string
+          patient_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          authorisation_url?: string | null
+          created_at?: string
+          created_by_member?: string | null
+          expires_at?: string | null
+          gocardless_billing_request_id?: string
+          gocardless_flow_id?: string | null
+          gocardless_mandate_id?: string | null
+          id?: string
+          patient_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gocardless_billing_requests_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gocardless_billing_requests_created_by_member_fkey"
+            columns: ["created_by_member"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gocardless_billing_requests_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gocardless_payment_events: {
         Row: {
           account_id: string
@@ -7820,6 +7887,7 @@ export type Database = {
           created_by: string | null
           external_reference: string | null
           gocardless_payment_id: string | null
+          gocardless_refund_id: string | null
           id: string
           invoice_id: string | null
           method: string
@@ -7835,6 +7903,7 @@ export type Database = {
           created_by?: string | null
           external_reference?: string | null
           gocardless_payment_id?: string | null
+          gocardless_refund_id?: string | null
           id?: string
           invoice_id?: string | null
           method?: string
@@ -7850,6 +7919,7 @@ export type Database = {
           created_by?: string | null
           external_reference?: string | null
           gocardless_payment_id?: string | null
+          gocardless_refund_id?: string | null
           id?: string
           invoice_id?: string | null
           method?: string

@@ -3905,7 +3905,6 @@
   "No card on file yet.": "Noch keine Karte hinterlegt.",
   "No card on file. Add one to put the rest on autopay.": "Keine Karte hinterlegt. Fügen Sie eine hinzu, um den Rest automatisch abzubuchen.",
   "No card on file. Add one to put this membership on autopay.": "Keine Karte hinterlegt. Fügen Sie eine hinzu, um diese Mitgliedschaft automatisch abzubuchen.",
-  "No card or direct debit. Add a card, or pair the patient’s mandate in Settings › Import, to put this membership on autopay.": "Keine Karte und keine Lastschrift. Fügen Sie eine Karte hinzu oder ordnen Sie das Mandat des Patienten unter Einstellungen › Import zu, um diese Mitgliedschaft automatisch abzurechnen.",
   "No card saved": "Keine Karte gespeichert",
   "No card was saved. Go back to the app to try again.": "Es wurde keine Karte gespeichert. Kehren Sie zur App zurück, um es erneut zu versuchen.",
   "No card was saved. You can close this window and try the link again if you'd like to add one.": "Es wurde keine Karte gespeichert. Sie können dieses Fenster schließen und den Link erneut öffnen, wenn Sie eine hinzufügen möchten.",
@@ -8506,7 +8505,27 @@
   "★ Suggested for their reason for visit.": "★ Empfohlen für den Behandlungsanlass.",
   "✓ Added": "✓ Hinzugefügt",
   "✓ Done today": "✓ Heute erledigt",
-  "✓ In library": "✓ In der Bibliothek"
+  "✓ In library": "✓ In der Bibliothek",
+  "Sends the money back to the patient's bank through GoCardless, then records the refund and its rectifying invoice here. If GoCardless refuses, nothing is recorded.": "Überweist das Geld über GoCardless an die Bank des Patienten zurück und erfasst danach hier die Erstattung und ihre Korrekturrechnung. Lehnt GoCardless ab, wird nichts erfasst.",
+  "The direct debit link could not be created. Try again.": "Der Lastschrift-Link konnte nicht erstellt werden. Bitte erneut versuchen.",
+  "Direct debit link copied. Send it to the patient.": "Lastschrift-Link kopiert. Senden Sie ihn dem Patienten.",
+  "Could not copy. Select the link and copy it by hand.": "Kopieren nicht möglich. Markieren Sie den Link und kopieren Sie ihn von Hand.",
+  "Direct debit link sent by email": "Lastschrift-Link per E-Mail gesendet",
+  "Direct debit link sent by WhatsApp": "Lastschrift-Link per WhatsApp gesendet",
+  "The link could not be sent. Copy it and send it another way.": "Der Link konnte nicht gesendet werden. Kopieren Sie ihn und senden Sie ihn auf anderem Weg.",
+  "GoCardless did not refund it, so nothing was recorded. Try again.": "GoCardless hat nicht erstattet, daher wurde nichts erfasst. Bitte erneut versuchen.",
+  "No direct debit": "Kein Lastschriftmandat",
+  "Send the patient a link to set it up with their bank. Nothing to fill in here.": "Senden Sie dem Patienten einen Link, um es bei seiner Bank einzurichten. Hier ist nichts auszufüllen.",
+  "Show sign-up link": "Link anzeigen",
+  "Direct debit link": "Lastschrift-Link",
+  "Sign-up link (GoCardless)": "Anmeldelink (GoCardless)",
+  "Send by WhatsApp": "Per WhatsApp senden",
+  "Closes this link and makes a new one": "Schließt diesen Link und erstellt einen neuen",
+  "No card or direct debit. Add a card, or send a direct debit link from How they pay, to put this membership on autopay.": "Keine Karte und kein Lastschriftmandat. Fügen Sie eine Karte hinzu oder senden Sie unter „Wie bezahlt“ einen Lastschrift-Link, um diese Mitgliedschaft automatisch abzurechnen.",
+  "Direct debit set up": "Lastschrift eingerichtet",
+  "Direct debit not set up": "Lastschrift nicht eingerichtet",
+  "Thanks -- your clinic can now collect by direct debit from your account. You can close this window now.": "Danke – Ihre Praxis kann jetzt per Lastschrift von Ihrem Konto abbuchen. Sie können dieses Fenster jetzt schließen.",
+  "Nothing was set up. You can close this window and open the link again whenever you like.": "Es wurde nichts eingerichtet. Sie können dieses Fenster schließen und den Link jederzeit erneut öffnen."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
@@ -9864,6 +9883,7 @@
   "{0}–{1} doesn’t fit": "{0}–{1} passt nicht",
   "{0}–{1} is free": "{0}–{1} ist frei",
   "“Has” includes up to {0} unused days carried over from last year.": "„Hat“ enthält bis zu {0} nicht genutzte, aus dem Vorjahr übertragene Tage.",
-  "“{0}” is now a type, with {1} patients": "„{0}“ ist jetzt ein Typ mit {1} Patienten"
+  "“{0}” is now a type, with {1} patients": "„{0}“ ist jetzt ein Typ mit {1} Patienten",
+  "Sign-up link sent {0}, not signed yet.": "Link am {0} gesendet, noch nicht unterschrieben."
  }
 }

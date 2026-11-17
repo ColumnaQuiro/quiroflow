@@ -31,6 +31,10 @@ export async function handleGoCardlessEvent(supabase: Admin, accountId: string, 
       await handleMandateEvent(supabase, request, accountId, event)
     } else if (event.resource_type === 'subscriptions' && event.links.subscription) {
       await handleSubscriptionEvent(supabase, request, accountId, event)
+    } else if (event.resource_type === 'billing_requests' && event.links.billing_request) {
+      await syncGoCardlessBillingRequest(supabase, request, accountId, event.links.billing_request)
+    } else if (event.resource_type === 'refunds' && event.links.refund) {
+      await handleRefundEvent(supabase, request, accountId, event)
     }
   } catch (err) {
     if (err instanceof GoCardlessError && err.tokenGone) {
@@ -148,9 +152,136 @@ async function handlePaymentEvent(supabase: Admin, request: GoCardlessRequest, a
     return
   }
 
+  // Success+ (or someone in GoCardless) is collecting a failed payment again.
+  // The failure booked above stops being the last word: the period is not
+  // "failed" while its money is on its way, and the schedule is collecting,
+  // not past due. If the retry fails too, its own failed event books that.
+  if (event.action === 'resubmission_requested') {
+    const { error } = await record(event.action)
+    if (error?.code === '23505') return
+    if (error) throw error
+
+    if (schedule.patient_membership_id) {
+      const { data: failures } = await supabase
+        .from('gocardless_payment_events')
+        .select('charge_date')
+        .eq('account_id', accountId)
+        .eq('gocardless_payment_id', payment.id)
+        .eq('action', 'failed')
+      const periods = [...new Set((failures ?? []).map((f) => f.charge_date).filter(Boolean))] as string[]
+      if (periods.length) {
+        await supabase
+          .from('membership_payments')
+          .delete()
+          .eq('account_id', accountId)
+          .eq('patient_membership_id', schedule.patient_membership_id)
+          .eq('status', 'failed')
+          .in('period_start', periods)
+      }
+    }
+    if (schedule.status === 'past_due') await supabase.from('payment_schedules').update({ status: 'active' }).eq('id', schedule.id)
+    return
+  }
+
   if (event.action === 'chargeback_cancelled') {
     await record(event.action)
   }
+}
+
+// ---------------------------------------------------------------------
+// New mandates: the sign-up link sent from a patient's Money tab
+// ---------------------------------------------------------------------
+
+/**
+ * Reads a Billing Request QuiroFlow created and brings its row up to date.
+ * Fulfilled, the mandate it produced is paired with the patient the link was
+ * sent to -- by the row, never by email -- so it shows on their Money tab as
+ * their direct debit with nobody pairing anything.
+ *
+ * Shared by the webhook (billing_requests events), the reconcile cron, and
+ * the Money tab, which asks when it opens on a patient with a link out: the
+ * patient is often back on the clinic's screen before the webhook arrives.
+ * Idempotent: a fulfilled row is left alone.
+ */
+export async function syncGoCardlessBillingRequest(supabase: Admin, request: GoCardlessRequest, accountId: string, billingRequestId: string): Promise<{ status: string; mandateId: string | null } | null> {
+  const { data: row } = await supabase
+    .from('gocardless_billing_requests')
+    .select('id, patient_id, status, expires_at, created_by_member, gocardless_mandate_id')
+    .eq('account_id', accountId)
+    .eq('gocardless_billing_request_id', billingRequestId)
+    .maybeSingle()
+  // Not one of ours: a billing request the clinic made in GoCardless itself,
+  // or another app's. The Import page lists its mandate like any other.
+  if (!row) return null
+  if (row.status === 'fulfilled') return { status: row.status, mandateId: row.gocardless_mandate_id }
+
+  const { billing_requests: br } = await request<{ billing_requests: GcBillingRequest }>('GET', `/billing_requests/${encodeURIComponent(billingRequestId)}`)
+  const now = new Date().toISOString()
+
+  if (br.status === 'fulfilled' && br.links.mandate_request_mandate) {
+    const { mandates: mandate } = await request<{ mandates: GcMandate }>('GET', `/mandates/${br.links.mandate_request_mandate}`)
+    let bank: GcCustomerBankAccount | null = null
+    try {
+      bank = (await request<{ customer_bank_accounts: GcCustomerBankAccount }>('GET', `/customer_bank_accounts/${mandate.links.customer_bank_account}`)).customer_bank_accounts
+    } catch (err) {
+      // The last digits are what the Money tab shows; the mandate collects
+      // without them. Not worth refusing the match over.
+      console.error('[gocardless] bank account not readable', mandate.id, (err as Error).message)
+    }
+    const { error } = await supabase.from('patient_gocardless_mandates').upsert(
+      {
+        account_id: accountId,
+        patient_id: row.patient_id,
+        gocardless_mandate_id: mandate.id,
+        gocardless_customer_id: mandate.links.customer,
+        status: mandate.status,
+        scheme: mandate.scheme,
+        bank_name: bank?.bank_name ?? null,
+        account_number_ending: bank?.account_number_ending ?? null,
+        origin: 'created_here',
+        matched_by: 'link',
+        matched_at: now,
+        matched_by_member: row.created_by_member,
+        updated_at: now,
+      },
+      { onConflict: 'account_id,gocardless_mandate_id' },
+    )
+    if (error) throw error
+    await supabase.from('gocardless_billing_requests').update({ status: 'fulfilled', gocardless_mandate_id: mandate.id, updated_at: now }).eq('id', row.id)
+    return { status: 'fulfilled', mandateId: mandate.id }
+  }
+
+  const closed = br.status === 'cancelled' || br.status === 'failed' ? br.status : row.expires_at && row.expires_at < now ? 'expired' : null
+  if (closed && closed !== row.status) {
+    await supabase.from('gocardless_billing_requests').update({ status: closed, updated_at: now }).eq('id', row.id)
+  }
+  return { status: closed ?? row.status, mandateId: null }
+}
+
+// ---------------------------------------------------------------------
+// Refunds sent back through GoCardless (/api/gocardless/refunds/create)
+// ---------------------------------------------------------------------
+
+async function handleRefundEvent(supabase: Admin, request: GoCardlessRequest, accountId: string, event: GcEvent) {
+  // Only the outcomes that need someone. "paid" is the ordinary end and the
+  // books already say the money went back.
+  if (event.action !== 'failed' && event.action !== 'funds_returned' && event.action !== 'bounced') return
+  const { refunds: refund } = await request<{ refunds: GcRefund }>('GET', `/refunds/${event.links.refund}`)
+  const { data: booked } = await supabase.from('payments').select('id, patient_id').eq('account_id', accountId).eq('gocardless_refund_id', refund.id).maybeSingle()
+  if (!booked?.patient_id) return
+  const amount = (refund.amount / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+  // A task per delivery would repeat itself on every retry of the same
+  // event, so record it once against the event id first.
+  const { error } = await supabase.from('gocardless_payment_events').insert({
+    account_id: accountId,
+    gocardless_event_id: event.id,
+    gocardless_payment_id: refund.links.payment,
+    action: `refund_${event.action}`,
+    amount_cents: -refund.amount,
+  })
+  if (error?.code === '23505') return
+  if (error) throw error
+  await tellTheDesk(supabase, accountId, booked.patient_id, `El reembolso por domiciliación (${amount}) no ha llegado al paciente: devuélveselo por otro medio`)
 }
 
 async function handleMandateEvent(supabase: Admin, request: GoCardlessRequest, accountId: string, event: GcEvent) {

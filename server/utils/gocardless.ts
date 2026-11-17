@@ -182,12 +182,49 @@ export interface GcPayment {
   links: { mandate: string; subscription?: string; creditor: string }
 }
 
+/**
+ * A Billing Request: how a NEW mandate is made. QuiroFlow creates one with a
+ * mandate_request, and the patient completes it on GoCardless's hosted page
+ * (a Billing Request Flow). Fulfilled, it links the mandate it produced.
+ */
+export interface GcBillingRequest {
+  id: string
+  // pending, ready_to_fulfil, fulfilling, fulfilled, cancelled, failed
+  status: string
+  created_at: string
+  metadata?: Record<string, string>
+  links: {
+    customer?: string
+    customer_bank_account?: string
+    mandate_request?: string
+    mandate_request_mandate?: string
+  }
+}
+
+export interface GcBillingRequestFlow {
+  id: string
+  authorisation_url: string
+  expires_at: string | null
+  links: { billing_request: string }
+}
+
+export interface GcRefund {
+  id: string
+  amount: number
+  currency: string
+  // created, pending_submission, submitted, paid, cancelled, bounced, funds_returned, failed
+  status: string
+  created_at: string
+  metadata?: Record<string, string>
+  links: { payment: string; mandate?: string }
+}
+
 export interface GcEvent {
   id: string
   created_at: string
   resource_type: string
   action: string
-  details?: { cause?: string; description?: string; will_attempt_retry?: boolean; origin?: string }
+  details?: { cause?: string; description?: string; will_attempt_retry?: boolean; origin?: string; reason_code?: string }
   links: Record<string, string | undefined>
 }
 

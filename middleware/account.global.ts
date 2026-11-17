@@ -49,7 +49,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/regalo/')) return
   // Stripe Checkout's return page for a patient paying from the app, and its
   // card page's return page for one saving a card.
-  if (to.path === '/payment-done' || to.path === '/card-saved') return
+  // GoCardless's direct-debit sign-up page returns to /direct-debit-done.
+  if (to.path === '/payment-done' || to.path === '/card-saved' || to.path === '/direct-debit-done') return
   // A waitlist claim link and the photo-upload QR, both token-gated. A token
   // is required, so /waitlist and /waitlist/ (the staff page) still go
   // through the checks below. Without these, a phone that happens to be

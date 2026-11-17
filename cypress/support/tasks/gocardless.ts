@@ -29,6 +29,15 @@ interface StubState {
   revoked: string[]
   created: Record<string, any>[]
   cancelled: string[]
+  /** New-mandate sign-up: the Billing Requests created, as GoCardless holds them. */
+  billingRequests: Record<string, any>[]
+  /** The bodies QuiroFlow POSTed, to assert on what it asked for. */
+  billingRequestBodies: Record<string, any>[]
+  flowBodies: Record<string, any>[]
+  refunds: Record<string, any>[]
+  refundBodies: Record<string, any>[]
+  /** Answer 403 to creating a refund, as GoCardless does until it enables refunds for a merchant. */
+  refundsForbidden: boolean
 }
 
 let server: Server | null = null
@@ -48,8 +57,19 @@ function blank(): StubState {
     revoked: [],
     created: [],
     cancelled: [],
+    billingRequests: [],
+    billingRequestBodies: [],
+    flowBodies: [],
+    refunds: [],
+    refundBodies: [],
+    refundsForbidden: false,
   }
 }
+
+// Unique across runs, as GoCardless's own ids are: several tables hold every
+// spec's ids side by side.
+let seq = 0
+const stubId = (prefix: string) => `${prefix}-${Date.now()}-${++seq}`
 
 async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'created' | 'cancelled'>> = {}) {
   await stopGoCardlessStub()
@@ -134,6 +154,44 @@ async function startGoCardlessStub(opts: Partial<Omit<StubState, 'revoked' | 'cr
       }
       if (path.startsWith('/subscriptions/')) return one('subscriptions', state.subscriptions, path.split('/')[2]!)
 
+      // New mandates: a Billing Request, and the hosted flow the patient signs on.
+      if (path === '/billing_requests' && req.method === 'POST') {
+        const body = JSON.parse(raw || '{}').billing_requests ?? {}
+        state.billingRequestBodies.push(body)
+        const billingRequest = { id: stubId('BRQ'), status: 'pending', created_at: new Date().toISOString(), metadata: body.metadata ?? {}, links: {} }
+        state.billingRequests.push(billingRequest)
+        return send(201, { billing_requests: billingRequest })
+      }
+      const brCancel = path.match(/^\/billing_requests\/([^/]+)\/actions\/cancel$/)
+      if (brCancel) {
+        const billingRequest = state.billingRequests.find((b) => b.id === brCancel[1])
+        if (!billingRequest) return send(404, { error: { message: 'not found' } })
+        billingRequest.status = 'cancelled'
+        return send(200, { billing_requests: billingRequest })
+      }
+      if (path.startsWith('/billing_requests/')) return one('billing_requests', state.billingRequests, path.split('/')[2]!)
+      if (path === '/billing_request_flows' && req.method === 'POST') {
+        const body = JSON.parse(raw || '{}').billing_request_flows ?? {}
+        state.flowBodies.push(body)
+        const id = stubId('BRF')
+        return send(201, {
+          billing_request_flows: { id, authorisation_url: `http://127.0.0.1:${GOCARDLESS_STUB_PORT}/flow/${id}`, expires_at: new Date(Date.now() + 7 * 86400_000).toISOString(), links: body.links },
+        })
+      }
+
+      if (path === '/refunds' && req.method === 'POST') {
+        if (state.refundsForbidden) return send(403, { error: { message: 'Forbidden request', type: 'invalid_api_usage', errors: [{ reason: 'forbidden' }] } })
+        const body = JSON.parse(raw || '{}').refunds ?? {}
+        state.refundBodies.push(body)
+        const refund = { id: stubId('RF'), status: 'created', currency: 'EUR', created_at: new Date().toISOString(), ...body }
+        state.refunds.push(refund)
+        // What GoCardless's payment then reports as refunded so far.
+        const payment = state.payments.find((p) => p.id === body.links?.payment)
+        if (payment) payment.amount_refunded = (payment.amount_refunded ?? 0) + (body.amount ?? 0)
+        return send(201, { refunds: refund })
+      }
+      if (path.startsWith('/refunds/')) return one('refunds', state.refunds, path.split('/')[2]!)
+
       return send(404, { error: { message: `stub has no route for ${req.method} ${path}` } })
     })
   })
@@ -156,7 +214,24 @@ async function updateGoCardlessStub(patch: Partial<StubState>) {
 }
 
 async function goCardlessStubState() {
-  return { revoked: state.revoked, created: state.created, cancelled: state.cancelled }
+  return {
+    revoked: state.revoked,
+    created: state.created,
+    cancelled: state.cancelled,
+    billingRequests: state.billingRequests,
+    billingRequestBodies: state.billingRequestBodies,
+    flowBodies: state.flowBodies,
+    refundBodies: state.refundBodies,
+  }
+}
+
+/** The patient signs: the newest Billing Request is fulfilled with this mandate. Returns its id. */
+async function fulfilGoCardlessBillingRequest(opts: { mandateId: string; customerId: string }) {
+  const billingRequest = state.billingRequests[state.billingRequests.length - 1]
+  if (!billingRequest) throw new Error('no billing request to fulfil')
+  billingRequest.status = 'fulfilled'
+  billingRequest.links = { customer: opts.customerId, mandate_request_mandate: opts.mandateId }
+  return billingRequest.id as string
 }
 
 /** The Webhook-Signature GoCardless would send for this body. */
@@ -170,4 +245,5 @@ export const gocardlessTasks = {
   'gc:update': updateGoCardlessStub,
   'gc:state': goCardlessStubState,
   'gc:sign': signGoCardlessWebhook,
+  'gc:fulfil': fulfilGoCardlessBillingRequest,
 }

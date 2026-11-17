@@ -37,6 +37,8 @@ const props = defineProps<{
   invoices: InvoiceRow[]
   lineItemDescriptions: Record<string, string[]>
   payments: PaymentRow[]
+  /** Payments collected through GoCardless: refunding one by direct debit sends the money back through it. */
+  gocardlessPaymentIds?: string[]
   credits: CreditRow[]
   packageSessions: PackageSessionRow[]
   spendableCreditCents: number
@@ -557,6 +559,10 @@ watch(refundModalInvoiceId, async (invoiceId) => {
   refundProducts.value = [...byProduct.entries()].filter(([, p]) => p.returnable > 0).map(([productId, p]) => ({ productId, name: p.name, returnable: p.returnable, units: p.returnable }))
 })
 
+// A direct-debit payment GoCardless collected, refunded "via" direct debit:
+// the money really goes back, through /api/gocardless/refunds/create.
+const refundThroughGoCardless = computed(() => Boolean(refundModalPaymentId.value && refundMethod.value === 'direct_debit' && props.gocardlessPaymentIds?.includes(refundModalPaymentId.value)))
+
 function closeRefundModal() {
   refundModalOpen.value = false
   refundModalInvoiceId.value = null
@@ -1038,7 +1044,10 @@ const fieldId = useId()
   <div v-if="refundModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="closeRefundModal">
     <div ref="refundPanel" role="dialog" aria-modal="true" :aria-labelledby="refundTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
       <p :id="refundTitleId" class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
-      <p class="mt-1 text-[12px] text-ink-faint">
+      <p v-if="refundThroughGoCardless" class="mt-1 text-[12px] text-ink-muted2" data-cy="refund-through-gocardless">
+        {{ t("Sends the money back to the patient's bank through GoCardless, then records the refund and its rectifying invoice here. If GoCardless refuses, nothing is recorded.", 'Devuelve el dinero al banco del paciente a través de GoCardless y después registra aquí el reembolso y su factura rectificativa. Si GoCardless lo rechaza, no se registra nada.') }}
+      </p>
+      <p v-else class="mt-1 text-[12px] text-ink-faint">
         {{
           refundModalPaymentId
             ? t(

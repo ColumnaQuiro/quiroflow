@@ -4,19 +4,17 @@
 // missing from the calendar afterwards. An unfinished copy now stops each step
 // until the read is finished, unless importing only what was read is chosen.
 //
-// The copy lives in this browser's IndexedDB (composables/useQuirocitas.ts),
-// so the spec writes one there rather than reading a real Quirocitas.
-function putCopy(win: Window, accountId: string, copy: Record<string, unknown>) {
-  return new Cypress.Promise<void>((resolve, reject) => {
-    const open = win.indexedDB.open('quiroflow-import', 1)
-    open.onupgradeneeded = () => open.result.createObjectStore('quirocitas')
-    open.onerror = () => reject(open.error)
-    open.onsuccess = () => {
-      const tx = open.result.transaction('quirocitas', 'readwrite')
-      tx.objectStore('quirocitas').put(copy, accountId)
-      tx.oncomplete = () => { open.result.close(); resolve() }
-      tx.onerror = () => reject(tx.error)
-    }
+// The copy lives on the server now (import_snapshots, one row per patient
+// record plus a 'meta' row), so the spec writes one there rather than reading
+// a real Quirocitas.
+function putCopy(accountId: string, copy: typeof unfinished) {
+  const { patients, ...meta } = copy
+  return cy.task('db:insertRows', {
+    table: 'import_snapshots',
+    rows: [
+      { account_id: accountId, source: 'quirocitas', key: 'meta', data: meta },
+      ...Object.entries(patients).map(([id, record]) => ({ account_id: accountId, source: 'quirocitas', key: `patient:${id}`, data: record })),
+    ],
   })
 }
 
@@ -45,10 +43,8 @@ const unfinished = {
 describe('Quirocitas import from an unfinished read', () => {
   it('stops each step until the read is finished, unless importing only what was read', () => {
     cy.seedStaffAccount().then((account) => {
+      putCopy(account.accountId, unfinished)
       cy.login(account.email, account.password)
-      cy.visit('/settings/import')
-      cy.get('[data-cy="import-settings"]').should('exist')
-      cy.window().then((win) => putCopy(win, account.accountId, unfinished))
 
       cy.visit('/settings/import?source=quirocitas&type=appointments')
       cy.get('[data-cy="qc-step-appointments"]').should('exist')

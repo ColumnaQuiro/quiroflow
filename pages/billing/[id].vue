@@ -174,6 +174,8 @@ async function recordPayment() {
       account_id: store.accountId!,
       patient_id: invoice.value!.patient_id,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to invoice ${invoice.value!.invoice_number}`,
       invoice_id: invoiceId,
       created_by: store.teamMember?.id ?? null,

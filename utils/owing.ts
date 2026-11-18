@@ -124,17 +124,59 @@ export function spendableCreditOf(f: { creditLedgerCents: number; balanceCents: 
   return Math.max(0, f.creditLedgerCents) + paidAheadCents
 }
 
+export interface BalanceCreditRow {
+  amount_cents: number
+  payment_id?: string | null
+  is_spend?: boolean | null
+  external_reference?: string | null
+}
+
+/**
+ * What the account_credits rows add to the BALANCE: credit granted without a
+ * payment, and nothing else.
+ *
+ *   balance = money in - charged + credit granted without a payment
+ *
+ * Spending credit moves nothing. Two kinds of row are left out:
+ *
+ *   * A row naming a payment (payment_id) restates it -- "Add credit" writes
+ *     the money as a payment and again as credit -- and the payment is already
+ *     in the money term (20260916160000).
+ *   * A spend (is_spend): the negative row beside a 'credit' payment. That
+ *     payment is not money (20260924095218), and the credit it spends was
+ *     counted once already, when it came in. Counted here as well, every spend
+ *     of ledger credit read as debt of the same size: paid 360, charged 360,
+ *     balance -165 (20261118100728_credit_spend_moves_no_money).
+ *
+ * Everything else counts: goodwill credit, the PracticeHub cutover and
+ * correction entries, and a transfer between patients, which really did move
+ * the credit from one to the other. The cutover entries count even if they
+ * name a payment, as patient_live_balances has it.
+ *
+ * The credit LEDGER (creditLedgerCents: what the patient can still direct) is
+ * a different figure and keeps every row, spends included.
+ */
+export function balanceCreditCentsOf(rows: BalanceCreditRow[]): number {
+  return rows.reduce((sum, c) => sum + (creditRowCountsInBalance(c) ? c.amount_cents : 0), 0)
+}
+
+/** One row of balanceCreditCentsOf: whether it moves the balance at all. */
+export function creditRowCountsInBalance(c: BalanceCreditRow): boolean {
+  if (c.external_reference?.startsWith('bono-cutover-')) return true
+  return !c.payment_id && !c.is_spend
+}
+
 /**
  * How much of a credit spend comes off the credit LEDGER -- the size of the
- * negative account_credits row to write beside the 'credit' payment. The rest
- * was money paid ahead (spendableCreditOf) and needs no row at all.
+ * negative account_credits row (is_spend) to write beside the 'credit'
+ * payment. The rest was money paid ahead (spendableCreditOf) and needs no row
+ * at all.
  *
- * Writing the row for the whole amount took the same euros off twice. A
- * 'credit' payment is never money (20260924095218), so spending 50 EUR paid
- * ahead on a 50 EUR visit reads 50 paid - 50 charged = 0 with no row -- and
- * -50 with one, against an account_credits balance that never had the +50 to
- * net it against. The same shape the backfill in 20260924095305 repaired by
- * hand for one patient.
+ * The balance no longer depends on this: a spend row stays out of it either
+ * way (balanceCreditCentsOf). The ledger does. A row for the whole amount
+ * would take the ledger below zero for money it never held, and
+ * spendableCreditOf, which reads the ledger, would then offer the paid-ahead
+ * money a second time.
  */
 export function ledgerDrawCents(spendCents: number, creditLedgerCents: number): number {
   return Math.max(0, Math.min(spendCents, creditLedgerCents))

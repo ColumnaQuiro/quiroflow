@@ -4,7 +4,7 @@
 // the mobile app, so the only signal was a red cloud build four days later.
 import { bonoOwedCents } from '../utils/bonoOwed'
 import { bonoDueCents, installmentPlanOf } from '../utils/bonoInstallments'
-import { outstandingCentsOf, spendableCreditOf } from '../utils/owing'
+import { balanceCreditCentsOf, outstandingCentsOf, spendableCreditOf } from '../utils/owing'
 
 // What patient_ledger (20261111192200) answers: the rows the six selects
 // below used to fetch one request each, and -- with p_detail -- the rows the
@@ -42,7 +42,7 @@ export interface LedgerBonoPaymentRow {
 export interface PatientLedger {
   invoices: { id: string; invoice_number: string; status: string; total_cents: number; created_at: string; is_refund: boolean; refunds_invoice_id: string | null; refunds_payment_id: string | null }[]
   payments: { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }[]
-  account_credits: { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string; external_reference: string | null }[]
+  account_credits: { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string; external_reference: string | null; is_spend?: boolean }[]
   active_memberships: ActiveMembership[]
   /** Each bono with every payment linked to it, whoever's record it sits on. */
   package_purchases: (LedgerPackageRow & { payments: LedgerBonoPaymentRow[] })[]
@@ -340,28 +340,20 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>, 
     state.creditLedgerCents.value = (credits ?? [])
       .filter((c) => !(c as { external_reference: string | null }).external_reference?.startsWith('bono-cutover-'))
       .reduce((sum, c) => sum + c.amount_cents, 0)
-    // The same credit rows again, minus the ones that only restate a payment.
+    // The same credit rows again, minus the ones that restate a payment (a
+    // top-up: the payment is already in paidCents) and the ones that spend
+    // credit (beside a 'credit' payment, which is not money either, so the
+    // spend moves nothing). The rule is utils/owing balanceCreditCentsOf, term
+    // for term what patient_live_balances counts; the cutover entries are
+    // filtered out here only because cutoverAdjustmentCents adds them on its
+    // own line below.
     //
-    // Adding credit writes both: a payment, because the money arrived and a
-    // factura has to say so, and a credit row, because it is still the
-    // patient's to direct somewhere. Two rows, one set of euros -- and a
-    // balance of paid - invoiced + credit counted them both, putting one
-    // patient 115 EUR ahead of themselves the moment the cash was counted.
-    //
-    // Only that one path sets payment_id. Everything else stays: the cutover
-    // entries, goodwill credits, credit added before the payment row existed,
-    // and the negative rows recording credit being spent -- those pair with a
-    // payment of method 'credit' moving the money somewhere else, so the two
-    // have to cancel here rather than both dropping out.
-    //
-    // creditLedgerCents above keeps every row, because what the patient can
-    // spend is a different question from what the clinic owes them.
-    const balanceCreditCents = (credits ?? [])
-      .filter((c) => {
-        const row = c as { external_reference: string | null; payment_id: string | null }
-        return !row.external_reference?.startsWith('bono-cutover-') && !row.payment_id
-      })
-      .reduce((sum, c) => sum + c.amount_cents, 0)
+    // creditLedgerCents above keeps every row, spends included, because what
+    // the patient can spend is a different question from what the clinic owes
+    // them.
+    const balanceCreditCents = balanceCreditCentsOf(
+      (credits ?? []).filter((c) => !c.external_reference?.startsWith('bono-cutover-')),
+    )
     // Positive = clinic owes the patient (credit), negative = patient owes the clinic --
     // matches the sign convention already used for patients.balance_cents elsewhere,
     // but computed live from invoices/payments rather than trusting that column, which

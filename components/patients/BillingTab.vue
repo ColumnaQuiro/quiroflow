@@ -424,6 +424,8 @@ async function applyCreditToInvoice() {
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to invoice ${invoice.invoice_number}`,
       invoice_id: invoice.id,
       created_by: store.teamMember?.id ?? null,
@@ -541,6 +543,8 @@ async function takePayment() {
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to invoice ${invoice.invoice_number}`,
       invoice_id: invoice.id,
       created_by: store.teamMember?.id ?? null,
@@ -767,6 +771,8 @@ async function recordSalePayment(description: string, amountCents: number, metho
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to ${description}`,
       invoice_id: invoice.id,
       created_by: store.teamMember?.id ?? null,
@@ -856,6 +862,8 @@ async function recordPackagePayment(
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to ${description}`,
       invoice_id: null,
       created_by: store.teamMember?.id ?? null,

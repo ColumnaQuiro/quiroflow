@@ -3412,8 +3412,10 @@ let metaGraphStubTemplateCreates: Record<string, unknown>[] = []
 let metaGraphStubUploads: { bytes: number; authorization: string; fileType: string | null }[] = []
 // Edits (POST /{template-id}), with the id they were addressed to as _id.
 let metaGraphStubTemplateEdits: Record<string, unknown>[] = []
+// Deletes (DELETE /{waba}/message_templates), as the hsm_id and name asked for.
+let metaGraphStubTemplateDeletes: { hsm_id: string | null; name: string | null }[] = []
 async function metaGraphStubTemplateCreatesOf() {
-  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads, edits: metaGraphStubTemplateEdits }
+  return { creates: metaGraphStubTemplateCreates, uploads: metaGraphStubUploads, edits: metaGraphStubTemplateEdits, deletes: metaGraphStubTemplateDeletes }
 }
 let metaGraphStub: import('node:http').Server | null = null
 
@@ -3524,6 +3526,14 @@ async function startMetaGraphStub(opts: {
         send(200, { h: `STUB-HANDLE-${metaGraphStubUploads.length}` })
       })
       return
+    }
+    // A delete: hsm_id + name takes that one language; the template then
+    // drops out of the list, as it does at Meta.
+    if (path.endsWith('/message_templates') && req.method === 'DELETE') {
+      const query = new URL(req.url ?? '', 'http://stub').searchParams
+      metaGraphStubTemplateDeletes.push({ hsm_id: query.get('hsm_id'), name: query.get('name') })
+      if (opts.templates) opts.templates = opts.templates.filter((t) => (t.id ?? `tpl-${t.name}-${t.language}`) !== query.get('hsm_id'))
+      return send(200, { success: true })
     }
     if (path.endsWith('/message_templates') && req.method === 'POST') {
       let raw = ''
@@ -3681,6 +3691,7 @@ async function stopMetaGraphStub() {
   metaGraphStubTemplateCreates = []
   metaGraphStubUploads = []
   metaGraphStubTemplateEdits = []
+  metaGraphStubTemplateDeletes = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }

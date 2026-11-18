@@ -49,7 +49,8 @@ const language = ref(start?.language ?? 'es')
 const category = ref<TemplateCategory>(start?.category ?? 'UTILITY')
 // Meta keeps an approved template's category: changing it is refused.
 const categoryLocked = computed(() => props.template?.status === 'APPROVED')
-const header = ref<TemplateHeaderKind>(start?.header ?? 'document')
+// A new one starts as text only: most messages are, and a file is one click away.
+const header = ref<TemplateHeaderKind>(start?.header ?? 'none')
 const file = ref<File | null>(null)
 const body = ref(start?.body ?? '')
 const examples = ref<string[]>(start?.examples ?? [])
@@ -155,10 +156,10 @@ useFocusTrap(panel, () => emit('close'))
 const titleId = `tpl-${Math.random().toString(36).slice(2, 9)}`
 const TEXTAREA = 'w-full min-w-0 resize-y rounded-ctl border border-line-control bg-surface px-2.5 py-2 text-[13px] font-normal leading-relaxed text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
+  { kind: 'none', en: 'Text only', es: 'Solo texto' },
   { kind: 'document', en: 'PDF', es: 'PDF' },
   { kind: 'image', en: 'Image', es: 'Imagen' },
   { kind: 'video', en: 'Video', es: 'Vídeo' },
-  { kind: 'none', en: 'Text only', es: 'Solo texto' },
 ]
 </script>
 

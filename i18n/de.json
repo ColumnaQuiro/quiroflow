@@ -9912,6 +9912,9 @@
   "Process · charge {0}": "Abschließen · {0} kassieren",
   "{0} left, {1} after this visit": "Noch {0}, danach {1}",
   "No bono, charge {0}": "Ohne Paket, {0} kassieren",
-  "Search a patient (GoCardless: {0})": "Patient suchen (GoCardless: {0})"
+  "Search a patient (GoCardless: {0})": "Patient suchen (GoCardless: {0})",
+  "Nothing will be written: {0} months of the cash ledger do not add up to the totals Quirocitas printed ({1}), so its columns were not read where they are.": "Es wird nichts geschrieben: {0} Monate des Kassenbuchs stimmen nicht mit den von Quirocitas gedruckten Summen überein ({1}), seine Spalten wurden also nicht dort gelesen, wo sie stehen.",
+  "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Es wird nichts geschrieben: {0} von {1} Besuchen im Kassenbuch passen zu keinem Termin in der Patientenakte, ihre Zahlungen kämen also ohne die Besuche, die sie bezahlt haben.",
+  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} Besuche im Kassenbuch passen zu keinem Termin in der Patientenakte: Ihre Zahlungen werden übernommen, ihre Belastungen nicht."
  }
 }

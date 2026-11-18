@@ -8,6 +8,7 @@ import {
   quirocitasBonoRows,
   quirocitasClinicalLogs,
   quirocitasFileRows,
+  quirocitasLedgerMismatches,
   quirocitasLedgerRows,
   quirocitasNamesChiropractors,
   quirocitasPatientRow,
@@ -69,6 +70,10 @@ export interface QuirocitasImportContext {
 }
 
 const CHUNK = 200
+// The share of the cash ledger's visits that may match no appointment before
+// the ledger is refused. A handful is a deleted visit or a typo'd name; more
+// is a page this reader does not understand.
+export const VISITLESS_LIMIT = 0.05
 
 async function inChunks<T>(items: T[], size: number, run: (chunk: T[]) => Promise<void>, progress: (n: number) => void, shouldStop: () => boolean) {
   let done = 0
@@ -623,7 +628,28 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     for (const c of ledger.charges) balance.set(c.patientRef, (balance.get(c.patientRef) ?? 0) - c.totalCents)
     const credit = [...balance.values()].filter((v) => v > 0)
     const owing = [...balance.values()].filter((v) => v < 0)
-    const mismatched = s.ledgerMonths.filter((m) => (['cash', 'card', 'transfer'] as const).some((k) => m.printed[k] !== null && Math.abs(m.printed[k]! - m.summed[k]) > 0.011))
+    // Two things stop the ledger being written at all, rather than written
+    // wrong. A month whose rows do not add up to what Quirocitas printed
+    // under it was read with its columns in the wrong place: one clinic's
+    // whole ledger came in with its cash as transfers and its card payments
+    // as debt, and the import only warned. And a ledger whose visits mostly
+    // cannot be found would bring in every payment without the visits they
+    // paid for, leaving each patient in credit by everything they ever paid
+    // (403,536.90 EUR across 1,046 patients, read that way).
+    const mismatched = quirocitasLedgerMismatches(s)
+    const monthList = (ms: { month: string }[]) => ms.slice(0, 6).map((m) => m.month).join(', ') + (ms.length > 6 ? '…' : '')
+    const visitRows = ledger.charges.length + ledger.visitless.length
+    const tooVisitless = visitRows > 0 && ledger.visitless.length / visitRows > VISITLESS_LIMIT
+    const blocked = [
+      ...(mismatched.length ? [t(
+        `Nothing will be written: ${nf.format(mismatched.length)} months of the cash ledger do not add up to the totals Quirocitas printed (${monthList(mismatched)}), so its columns were not read where they are.`,
+        `No se escribirá nada: ${nf.format(mismatched.length)} meses de la caja no suman lo que Quirocitas imprime (${monthList(mismatched)}), así que sus columnas no se han leído donde están.`,
+      )] : []),
+      ...(tooVisitless ? [t(
+        `Nothing will be written: ${nf.format(ledger.visitless.length)} of ${nf.format(visitRows)} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.`,
+        `No se escribirá nada: ${nf.format(ledger.visitless.length)} de ${nf.format(visitRows)} visitas de la caja no coinciden con ninguna cita de la ficha del paciente, así que sus pagos llegarían sin las visitas que pagaron.`,
+      )] : []),
+    ]
 
     return {
       stats: [
@@ -643,13 +669,18 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
           `Después, ${nf.format(credit.length)} pacientes tienen ${eur(credit.reduce((a, v) => a + v, 0))} pagados por adelantado (sobre todo sesiones de bono sin usar) y ${nf.format(owing.length)} muestran ${eur(-owing.reduce((a, v) => a + v, 0))} más cargado que pagado: en su mayoría familiares cuyas visitas salieron del bono de un pariente, que QuiroFlow suma al saldar una visita. Solo llegan pendientes los cargos que Quirocitas aún muestra como debidos; el resto queda pagado, así que no se reclama a nadie por ellos.`,
         ),
         t('Invoices Quirocitas issued for a bono sale come in as a note on the patient with all their details: QuiroFlow charges a bono by its visits, so an invoice for the sale itself would bill the patient twice.', 'Las facturas que Quirocitas emitió por la venta de un bono llegan como nota en el paciente con todos sus datos: QuiroFlow cobra el bono visita a visita, y una factura por la venta lo cobraría dos veces.'),
-        ...(mismatched.length ? [t(`${mismatched.length} months of the cash ledger do not add up to the totals Quirocitas printed (${mismatched.map((m) => m.month).join(', ')}). Read again before applying.`, `${mismatched.length} meses de la caja no suman lo que Quirocitas imprime (${mismatched.map((m) => m.month).join(', ')}). Vuelve a leer antes de aplicar.`)] : []),
+        ...blocked,
+        ...(!tooVisitless && ledger.visitless.length ? [t(
+          `${nf.format(ledger.visitless.length)} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.`,
+          `${nf.format(ledger.visitless.length)} visitas de la caja no coinciden con ninguna cita de la ficha del paciente: llegan sus pagos, no sus cargos.`,
+        )] : []),
         ...(chargesWaiting || paymentsWaiting ? [t(`${nf.format(chargesWaiting + paymentsWaiting)} entries wait for their patient or appointment: run Patients and Appointments first.`, `${nf.format(chargesWaiting + paymentsWaiting)} entradas esperan a su paciente o cita: ejecuta Pacientes y Citas antes.`)] : []),
         ...(bonosMissing ? [t(`${nf.format(bonosMissing)} bono payments will not be linked to their bono: run Bonos first.`, `${nf.format(bonosMissing)} pagos de bono no quedarán enlazados a su bono: ejecuta Bonos antes.`)] : []),
         ...(missingMethods.length ? [t(`This clinic has no payment method for ${missingMethods.map(methodName).join(', ')}: add it under Settings → Payments → Payment methods first.`, `Esta clínica no tiene método de pago para ${missingMethods.map(methodName).join(', ')}: añádelo antes en Ajustes → Pagos → Métodos de pago.`)] : []),
       ],
       total: charges.length + payments.length + invoiceNotes.length,
       async apply(progress, shouldStop) {
+        if (blocked.length) return { written: 0, errors: blocked }
         if (missingMethods.length) return { written: 0, errors: [t('Nothing was written: a payment method is missing (see above).', 'No se escribió nada: falta un método de pago (ver arriba).')] }
         const errors: string[] = []
         let written = 0

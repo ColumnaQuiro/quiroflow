@@ -7,7 +7,7 @@
 // bare number: PracticeHub's references are bare numbers under the same
 // unique index, and a clinic could hold both.
 import { wallClockToUtc } from './clinicClock'
-import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasLedgerRow, QuirocitasListPatient, QuirocitasPatient } from './quirocitasPages'
+import type { QuirocitasBonoType, QuirocitasCajaLayout, QuirocitasHistory, QuirocitasInvoice, QuirocitasLedgerRow, QuirocitasListPatient, QuirocitasPatient } from './quirocitasPages'
 
 export interface QuirocitasTechniques { left: { segment: string; technique: string }[]; right: { segment: string; technique: string }[] }
 
@@ -29,6 +29,16 @@ export interface QuirocitasLedgerMonth {
   /** What the page printed under the month, and what its rows add up to. */
   printed: { cash: number | null; card: number | null; transfer: number | null }
   summed: { cash: number; card: number; transfer: number }
+  /**
+   * Where its columns were read from (parseQuirocitasCajaMonth's layout), so a
+   * clinic whose page is laid out differently says how without anyone needing
+   * its login. The header and the row's inputs are kept on the newest month
+   * only. Absent on copies read before this was kept.
+   */
+  columns?: QuirocitasCajaLayout['columns']
+  fromTotals?: QuirocitasCajaLayout['fromTotals']
+  header?: string[]
+  inputs?: string[]
 }
 
 export interface QuirocitasSnapshot {
@@ -619,27 +629,67 @@ export function quirocitasLedgerRows(s: QuirocitasSnapshot, bonoOfSale: Map<Quir
     ].filter((l) => clean(l)).join('\n'),
   })
   const unplaced: QuirocitasLedgerRow[] = []
+  /** Rows worth something (a visit) that no visit could be found for: their charge is not raised. */
+  const visitless: QuirocitasLedgerRow[] = []
   const perCita = new Map<string, number>()
+  const perRow = new Map<string, number>()
+
+  // A cash page with no invoicing column carries no visit id on its rows (one
+  // clinic's: all 53,815 of them). The visit is then the one the patient's own
+  // record has on that day -- an attended one first -- each taken once.
+  const visitsOn = new Map<string, string[]>()
+  const attended = (status: string) => status === 'pasado' || status === 'presente'
+  for (const r of Object.values(s.patients)) {
+    const ordered = [...r.ficha.appointments].sort((a, b) => Number(attended(b.status)) - Number(attended(a.status)) || a.time.localeCompare(b.time))
+    for (const a of ordered) {
+      // Not yet, or never: a cancelled or moved visit was not what was paid for.
+      if (a.status === 'futuro' || STATUS[a.status] === 'cancelled') continue
+      const k = `${r.ficha.id}|${quirocitasDate(a.date)}`
+      visitsOn.set(k, [...(visitsOn.get(k) ?? []), a.id])
+    }
+  }
+  const takenCitas = new Set(s.ledger.map((r) => r.citaId).filter((c): c is string => !!c))
+  const visitOf = (row: QuirocitasLedgerRow, owner: string): string | null => {
+    if (row.citaId) return row.citaId
+    if ((row.value ?? 0) <= 0) return null
+    const free = (visitsOn.get(`${owner}|${quirocitasDate(row.date)}`) ?? []).find((c) => !takenCitas.has(c))
+    if (free) takenCitas.add(free)
+    return free ?? null
+  }
 
   for (const row of s.ledger) {
     const owner = owners.of(row)
     if (!owner) { unplaced.push(row); continue }
     const patientRef = qcPatientRef(owner)
-    const at = quirocitasInstant(row.date, row.citaId ? timeOfCita.get(row.citaId) ?? '12:00' : '12:00', timeZone)!
+    const citaId = visitOf(row, owner)
+    const at = quirocitasInstant(row.date, citaId ? timeOfCita.get(citaId) ?? '12:00' : '12:00', timeZone)!
     // A cita can sit on more than one row (a payment added later on the same
-    // day); each keeps its own key.
-    const key = row.citaId ? `${row.citaId}${(perCita.get(row.citaId) ?? 0) ? `-${perCita.get(row.citaId)}` : ''}` : `pb${row.bonoPaymentId}`
-    if (row.citaId) perCita.set(row.citaId, (perCita.get(row.citaId) ?? 0) + 1)
+    // day); each keeps its own key. A row with neither a visit nor a bono
+    // sale is keyed by what it says, so a re-read finds the same reference
+    // and a second row identical to it gets the next one. They all used to
+    // share "pbnull", and the whole ledger was refused as duplicates.
+    let key: string
+    if (citaId) {
+      key = `${citaId}${(perCita.get(citaId) ?? 0) ? `-${perCita.get(citaId)}` : ''}`
+      perCita.set(citaId, (perCita.get(citaId) ?? 0) + 1)
+    } else if (row.bonoPaymentId) key = `pb${row.bonoPaymentId}`
+    else {
+      const what = `r${(quirocitasDate(row.date) ?? row.date).replace(/-/g, '')}-${owner}-${fnv([row.name, row.note, row.cash, row.card, row.transfer, row.debt, row.value].join('|'))}`
+      const n = perRow.get(what) ?? 0
+      perRow.set(what, n + 1)
+      key = n ? `${what}-${n}` : what
+    }
 
     let chargeRef: string | null = null
-    if (row.citaId && (row.value ?? 0) > 0) {
-      const invoice = key === row.citaId ? invoiceByCita.get(row.citaId) ?? null : null
-      if (invoice) charged.add(row.citaId)
+    if ((row.value ?? 0) > 0 && !citaId) visitless.push(row)
+    if (citaId && (row.value ?? 0) > 0) {
+      const invoice = key === citaId ? invoiceByCita.get(citaId) ?? null : null
+      if (invoice) charged.add(citaId)
       chargeRef = `QC-inv-${key}`
       charges.push({
         ref: chargeRef,
         patientRef,
-        appointmentRef: `QC-${row.citaId}`,
+        appointmentRef: `QC-${citaId}`,
         number: invoice ? `QC-${invoice.number}/${invoice.year ?? row.date.slice(6)}` : `QC-V${key}`,
         totalCents: cents(row.value),
         status: (row.debt ?? 0) > 0 ? 'unpaid' : 'paid',
@@ -663,7 +713,15 @@ export function quirocitasLedgerRows(s: QuirocitasSnapshot, bonoOfSale: Map<Quir
     const owner = owners.byCita.get(citaId)
     if (owner) invoiceNotes.push(invoiceNote(`QC-factura-c${citaId}`, qcPatientRef(owner), inv))
   }
-  return { charges, payments, invoiceNotes, unplaced }
+  return { charges, payments, invoiceNotes, unplaced, visitless }
+}
+
+// A short, stable digest of a ledger row, for its reference when the page
+// gives it no id. FNV-1a: no crypto needed, only the same answer every read.
+function fnv(s: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return (h >>> 0).toString(36)
 }
 
 // --- files ----------------------------------------------------------------------------------

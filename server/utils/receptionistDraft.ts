@@ -4,6 +4,7 @@ import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/recept
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, reasonChoices } from '~/server/utils/receptionistSend'
 import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
+import { transcribeVoiceNotes } from '~/server/utils/voiceNoteTranscripts'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
@@ -136,16 +137,20 @@ export async function draftLeadReply(
 
   const { data: messages } = await supabase
     .from('whatsapp_messages')
-    .select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename')
+    .select('id, direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename, transcript')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(HISTORY_TURNS)
 
   const ordered = [...(messages ?? [])].reverse()
+  // Voice notes as what they said, where they can be transcribed; the rest
+  // still read as "[Voice note]". The service role writes the transcript, as
+  // it reads the images below.
+  await transcribeVoiceNotes(calendarClient, ordered, useRuntimeConfig().mistralApiKey)
   // As the model reads each one: reminders marked as the system's, a voice
   // note or a photo as what it is rather than dropped (historyLine).
-  const lineOf = (m: { direction: string; body_preview: string | null; sent_by_ai?: boolean | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null }) =>
-    historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename })
+  const lineOf = (m: { direction: string; body_preview: string | null; sent_by_ai?: boolean | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null; transcript?: string | null }) =>
+    historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename, transcript: m.transcript })
   const history = ordered
     .map((m: Parameters<typeof lineOf>[0]) => ({ role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const), content: lineOf(m) }))
     .filter((m: { content: string }) => m.content.length > 0)

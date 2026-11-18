@@ -59,6 +59,11 @@ const SCHEMA_MISMATCH_CODES = new Set([
 const REFUSAL_CODES = new Set([
   'P0001', // raise_exception: "Only an owner can…", "Two-factor authentication required", "not money"
   '23514', // check_violation
+  // A plan limit (enforce_practitioner_seats, enforce_clinic_location_cap):
+  // PostgREST answers 402. Every path that can meet it explains it -- join,
+  // Settings -> Team, Settings -> Clinics, reactivating a team member -- and
+  // reporting it made one invitee retrying /join an "escalating" Sentry issue.
+  'PT402',
 ])
 
 // Statuses the code handles itself, or that are not about the query.

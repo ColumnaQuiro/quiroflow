@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  practiceHubNoteVisit,
   planCarePlans,
   planPatientLogs,
   planStickyNotes,
@@ -37,6 +38,12 @@ function fakeSupabase(tables: Record<string, Row[]>, opts: { failReads?: Set<str
         rows().push(...added)
         return { data: q.single ? added[0] : added, error: null }
       }
+      if (q.op === 'delete') {
+        const keep = rows().filter((r) => !match(r))
+        const gone = rows().length - keep.length
+        tables[table] = keep
+        return { data: null, error: null, count: gone }
+      }
       if (q.op === 'update') {
         const hit = rows().filter(match)
         for (const r of hit) Object.assign(r, q.values)
@@ -53,6 +60,7 @@ function fakeSupabase(tables: Record<string, Row[]>, opts: { failReads?: Set<str
       order: () => b,
       insert: (v: unknown) => { q.op = 'insert'; q.values = v; return b },
       update: (v: unknown) => { q.op = 'update'; q.values = v; return b },
+      delete: () => { q.op = 'delete'; return b },
       eq: filter('eq'),
       is: filter('is'),
       like: filter('like'),
@@ -122,6 +130,15 @@ function clinic(): Record<string, Row[]> {
       { id: 'xc2', account_id: OTHER, patient_id: 'x3', external_reference: 'PH-careplan-401' },
       { id: 'xc3', account_id: OTHER, patient_id: 'x3', external_reference: 'PH-log-501' },
     ],
+    clinics: [{ id: 'c1', account_id: ACCOUNT, timezone: 'Europe/Madrid' }],
+    // Ana was seen on 1 Sep (note 301 was written then); Bruno has no visit
+    // on 2 Sep, so his note has nowhere to go but the history.
+    appointments: [
+      { id: 'a1', account_id: ACCOUNT, patient_id: 'p1', clinic_id: 'c1', starts_at: '2026-09-01T09:30:00Z', status: 'completed', external_reference: '9001', deleted_at: null },
+      { id: 'a2', account_id: ACCOUNT, patient_id: 'p2', clinic_id: 'c1', starts_at: '2026-08-20T09:30:00Z', status: 'completed', external_reference: '9002', deleted_at: null },
+      { id: 'xa', account_id: OTHER, patient_id: 'x3', clinic_id: 'cx', starts_at: '2026-09-03T09:30:00Z', status: 'completed', external_reference: '9003', deleted_at: null },
+    ],
+    visit_notes: [],
   }
 }
 
@@ -163,7 +180,6 @@ describe('the rules shared with the browser importers', () => {
 })
 
 describe.each<[string, PracticeHubStepPlanner, string, number]>([
-  ['Treatment notes', planTreatmentNotes, 'PH-clinicalnote-', 2],
   ['Care plans', planCarePlans, 'PH-careplan-', 1],
   ['Patient logs', planPatientLogs, 'PH-log-', 2],
 ])('the %s step on the server', (_name, planner, prefix, expected) => {
@@ -209,19 +225,93 @@ describe.each<[string, PracticeHubStepPlanner, string, number]>([
   })
 })
 
-describe('what each contact-history step writes', () => {
-  it('treatment notes: typed, dated when written, and reported per patient', async () => {
-    const tables = clinic()
-    const p = await planTreatmentNotes(ctxFor(tables), snapshot())
-    expect(p.rows[0]).toEqual({ date: '2026-09-01', patient: 'Ana Gil', type: 'soap', note: '[clinical_note/soap] S: Dolor lumbar\nP: Revisión 2 semanas' })
-    expect(p.warnings.some((w) => w.includes('1 notes are skipped'))).toBe(true)
-    await p.apply(noop, never)
-    expect(mine(tables, 'PH-clinicalnote-').map((r) => [r.external_reference, r.patient_id, r.note, r.created_at])).toEqual([
-      ['PH-clinicalnote-301', 'p1', '[clinical_note/soap] S: Dolor lumbar\nP: Revisión 2 semanas', '2026-09-01 10:00:00'],
-      ['PH-clinicalnote-302', 'p2', '[clinical_note/quick] (empty)', '2026-09-02 11:00:00'],
-    ])
+describe('which visit a treatment note goes on', () => {
+  const v = (id: string, startsAt: string, status = 'completed', day = startsAt.slice(0, 10), externalReference: string | null = null) =>
+    ({ id, patientId: 'p1', startsAt, status, day, externalReference })
+
+  it('the visit that day; none that day means none', () => {
+    const visits = [v('a', '2026-09-01T09:00:00Z'), v('b', '2026-09-08T09:00:00Z')]
+    expect(practiceHubNoteVisit({ createdAt: '2026-09-01T12:00:00Z', day: '2026-09-01', appointmentRef: null }, visits)?.id).toBe('a')
+    expect(practiceHubNoteVisit({ createdAt: '2026-09-02T12:00:00Z', day: '2026-09-02', appointmentRef: null }, visits)).toBeNull()
   })
 
+  it('of several that day: one attended over one cancelled, then the closest in time', () => {
+    const visits = [v('cancelled', '2026-09-01T10:00:00Z', 'cancelled'), v('morning', '2026-09-01T08:00:00Z'), v('evening', '2026-09-01T17:00:00Z')]
+    expect(practiceHubNoteVisit({ createdAt: '2026-09-01T10:05:00Z', day: '2026-09-01', appointmentRef: null }, visits)?.id).toBe('morning')
+    expect(practiceHubNoteVisit({ createdAt: '2026-09-01T16:00:00Z', day: '2026-09-01', appointmentRef: null }, visits)?.id).toBe('evening')
+  })
+
+  it('a note naming its appointment goes there, whatever the day', () => {
+    const visits = [v('named', '2026-09-03T09:00:00Z', 'completed', '2026-09-03', '777'), v('same-day', '2026-09-01T09:00:00Z')]
+    expect(practiceHubNoteVisit({ createdAt: '2026-09-01T09:30:00Z', day: '2026-09-01', appointmentRef: '777' }, visits)?.id).toBe('named')
+  })
+})
+
+describe('the Treatment notes step on the server', () => {
+  const onVisits = (tables: Record<string, Row[]>) => tables.visit_notes!.filter((r) => r.account_id === ACCOUNT)
+
+  it('puts a note on its visit, keeps one with no visit that day in the history, and skips empty ones', async () => {
+    const tables = clinic()
+    // Bruno's note 302 has content in this run, so it is not skipped as empty.
+    const snap = snapshot()
+    ;(snap.lists['/clinical_notes']![1] as { data: unknown }).data = { soap_data: [{ key: 'S', val: 'Cuello' }] }
+    const p = await planTreatmentNotes(ctxFor(tables), snap)
+    expect(p.total).toBe(2)
+    expect(await p.apply(noop, never)).toEqual({ written: 2, errors: [] })
+    expect(onVisits(tables).map((r) => [r.appointment_id, r.body, r.external_reference, r.created_at])).toEqual([
+      ['a1', 'S: Dolor lumbar\nP: Revisión 2 semanas', 'PH-clinicalnote-301', '2026-09-01T10:00:00.000Z'],
+    ])
+    expect(mine(tables, 'PH-clinicalnote-').map((r) => [r.patient_id, r.note])).toEqual([['p2', '[clinical_note/quick] S: Cuello']])
+    expect(p.warnings.some((w) => w.includes('1 notes are skipped'))).toBe(true)
+    expect(p.warnings.some((w) => w.includes('no visit of their patient'))).toBe(true)
+  })
+
+  it('an empty note is not written anywhere', async () => {
+    const tables = clinic()
+    const p = await planTreatmentNotes(ctxFor(tables), snapshot())
+    await p.apply(noop, never)
+    expect(p.stats.find((s) => s.label === 'Empty in PracticeHub')!.value).toBe('1')
+    expect(mine(tables, 'PH-clinicalnote-')).toHaveLength(0)
+  })
+
+  it('moves a note imported into the history onto its visit, and never twice', async () => {
+    const tables = clinic()
+    tables.contact_log!.push({ id: 'old1', account_id: ACCOUNT, patient_id: 'p1', action: 'other', note: '[clinical_note/soap] S: Dolor lumbar', external_reference: 'PH-clinicalnote-301' })
+    const p = await planTreatmentNotes(ctxFor(tables), snapshot())
+    expect(p.stats.find((s) => s.label === 'Moved from the history onto their visit')!.value).toBe('1')
+    await p.apply(noop, never)
+    expect(onVisits(tables).map((r) => r.external_reference)).toEqual(['PH-clinicalnote-301'])
+    expect(mine(tables, 'PH-clinicalnote-')).toHaveLength(0)
+    // The other clinic's copy of the same PracticeHub id is left alone.
+    expect(tables.contact_log!.some((r) => r.id === 'xc1')).toBe(true)
+    const again = await planTreatmentNotes(ctxFor(tables), snapshot())
+    expect(again.total).toBe(0)
+  })
+
+  it('a move cut off between its two writes is finished by the next plan', async () => {
+    const tables = clinic()
+    tables.visit_notes!.push({ id: 'vn', account_id: ACCOUNT, appointment_id: 'a1', body: 'S: Dolor lumbar', external_reference: 'PH-clinicalnote-301' })
+    tables.contact_log!.push({ id: 'old1', account_id: ACCOUNT, patient_id: 'p1', action: 'other', note: 'x', external_reference: 'PH-clinicalnote-301' })
+    const p = await planTreatmentNotes(ctxFor(tables), snapshot())
+    expect(p.total).toBe(1)
+    await p.apply(noop, never)
+    expect(mine(tables, 'PH-clinicalnote-')).toHaveLength(0)
+    expect(onVisits(tables)).toHaveLength(1)
+  })
+
+  it('stopped before writing, writes nothing', async () => {
+    const tables = clinic()
+    expect(await (await planTreatmentNotes(ctxFor(tables), snapshot())).apply(noop, () => true)).toEqual({ written: 0, errors: [] })
+    expect(onVisits(tables)).toHaveLength(0)
+  })
+
+  it('a failed read throws rather than planning everything again', async () => {
+    await expect(planTreatmentNotes(ctxFor(clinic(), new Set(['visit_notes'])), snapshot())).rejects.toThrow(/visit_notes/)
+    await expect(planTreatmentNotes(ctxFor(clinic(), new Set(['appointments'])), snapshot())).rejects.toThrow(/appointments/)
+  })
+})
+
+describe('what each contact-history step writes', () => {
   it('care plans: dated from their start', async () => {
     const tables = clinic()
     await (await planCarePlans(ctxFor(tables), snapshot())).apply(noop, never)

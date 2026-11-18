@@ -1,33 +1,17 @@
 <script setup lang="ts">
-import { practiceHubClinicalNoteText, practiceHubPreviewTruncate as truncate, type PracticeHubSoapItem as SoapItem } from '~/utils/practicehubImport/clinical'
+import type { ShallowRef } from 'vue'
+import { planTreatmentNotes } from '~/utils/practicehubImport/clinical'
+import type { PracticeHubPlan } from '~/utils/practicehubImport/types'
 
+// Treatment notes, one step at a time. It plans with exactly the code the
+// server's "Sync everything" runs (planTreatmentNotes): each note goes onto
+// the patient's visit the day it was written, and one imported earlier into
+// the contact history is moved there. This screen only reads PracticeHub
+// itself, shows the plan, and applies it.
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
-
-interface PHClinicalNote {
-  id: number
-  patient_id: number
-  state: string
-  type: string
-  data: { soap_data?: SoapItem[] } | null
-  created: string
-}
-
-interface NoteCandidate {
-  patientLabel: string
-  type: string
-  created: string
-  row: {
-    account_id: string
-    patient_id: string
-    action: string
-    note: string
-    external_reference: string
-    created_at: string
-  }
-}
 
 const stage = ref<'connect' | 'scanning' | 'preview' | 'importing' | 'done' | 'error'>('connect')
 useImportWriting(() => stage.value === 'importing')
@@ -36,114 +20,31 @@ const progress = ref({ done: 0, total: 0 })
 const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
-const candidates = ref<NoteCandidate[]>([])
-const skippedDuplicate = ref(0)
-const skippedUnmatched = ref(0)
-
+// shallowRef: the plan carries its own apply(), not state to make reactive.
+const plan: ShallowRef<PracticeHubPlan | null> = shallowRef(null)
 const importedCount = ref(0)
 const importErrors = ref<string[]>([])
-
-function formatDate(value: string): string {
-  const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
-}
-
-const previewColumns = computed(() => [
-  { key: 'date', label: t('Date', 'Fecha') },
-  { key: 'patient', label: t('Patient', 'Paciente') },
-  { key: 'type', label: t('Type in PracticeHub', 'Tipo en PracticeHub') },
-  { key: 'note', label: t('Note', 'Nota'), wrap: true },
-])
-
-const previewRows = computed(() =>
-  candidates.value.map((c) => ({
-    date: formatDate(c.created),
-    patient: c.patientLabel,
-    type: c.type,
-    note: truncate(c.row.note),
-  })),
-)
-
-const previewStats = computed(() => [
-  { label: t('Will import', 'Se importarán'), value: candidates.value.length, tone: 'good' as const },
-  { label: t('Already imported', 'Ya importadas'), value: skippedDuplicate.value },
-  { label: t('No matching patient', 'Sin paciente coincidente'), value: skippedUnmatched.value },
-])
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
   stage.value = 'scanning'
   runError.value = ''
-  candidates.value = []
-  skippedDuplicate.value = 0
-  skippedUnmatched.value = 0
+  plan.value = null
   importedCount.value = 0
   importErrors.value = []
   const api = usePracticeHubApi(conn)
 
   try {
     phase.value = t('Matching patients…', 'Emparejando pacientes…')
-    const phPatients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
-    const patientNumberById = new Map(phPatients.map((p) => [p.id, p.patient_number]))
-
-    const PAGE_SIZE = 1000
-    const ourPatientByRef = new Map<string, { id: string; label: string }>()
-    for (let page = 0; ; page++) {
-      const { data } = await supabase
-        .from('patients')
-        .select('id, external_reference, first_name, last_name')
-        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const p of data ?? [])
-        if (p.external_reference)
-          ourPatientByRef.set(p.external_reference, { id: p.id, label: `${p.first_name} ${p.last_name ?? ''}`.trim() })
-      if (!data || data.length < PAGE_SIZE) break
-    }
-
-    phase.value = t('Checking for already-imported notes…', 'Comprobando notas ya importadas…')
-    const existingRefs = new Set<string>()
-    for (let page = 0; ; page++) {
-      const { data } = await supabase
-        .from('contact_log')
-        .select('external_reference')
-        .not('external_reference', 'is', null)
-        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const c of data ?? []) if (c.external_reference) existingRefs.add(c.external_reference)
-      if (!data || data.length < PAGE_SIZE) break
-    }
-
+    const patients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
     phase.value = t('Fetching clinical notes…', 'Obteniendo notas clínicas…')
     progress.value = { done: 0, total: 0 }
-    const notes = await api.fetchAll<PHClinicalNote>('/clinical_notes', (done, total) => (progress.value = { done, total }))
-
-    const planned: NoteCandidate[] = []
-    for (const note of notes) {
-      const ref = `PH-clinicalnote-${note.id}`
-      if (existingRefs.has(ref)) {
-        skippedDuplicate.value++
-        continue
-      }
-      const patientNumber = patientNumberById.get(note.patient_id)
-      const patient = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
-      if (!patient) {
-        skippedUnmatched.value++
-        continue
-      }
-      planned.push({
-        patientLabel: patient.label,
-        type: note.type,
-        created: note.created,
-        row: {
-          account_id: store.accountId!,
-          patient_id: patient.id,
-          action: 'other',
-          note: `[clinical_note/${note.type}] ${practiceHubClinicalNoteText(note)}`,
-          external_reference: ref,
-          created_at: note.created,
-        },
-      })
-    }
-
-    candidates.value = planned
+    const notes = await api.fetchAll('/clinical_notes', (done, total) => (progress.value = { done, total }))
+    phase.value = t('Finding each note\'s visit…', 'Buscando la visita de cada nota…')
+    plan.value = await planTreatmentNotes(
+      { supabase: supabase as never, accountId: store.accountId!, clinicId: store.currentClinicId ?? null, defaultPhoneCountry: store.defaultPhoneCountry, t, files: null },
+      { readAt: new Date().toISOString(), baseUrl: conn.baseUrl, lists: { '/patients': patients, '/clinical_notes': notes } },
+    )
     stage.value = 'preview'
   } catch (err) {
     runError.value = importErrorText(err, t, { en: 'Could not read PracticeHub. Nothing was written; try again.', es: 'No se pudo leer PracticeHub. No se escribió nada; vuelve a intentarlo.' })
@@ -152,34 +53,24 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 }
 
 async function apply() {
+  const p = plan.value
+  if (!p) return
   stage.value = 'importing'
-  importedCount.value = 0
-  importErrors.value = []
-  progress.value = { done: 0, total: candidates.value.length }
-
+  progress.value = { done: 0, total: p.total }
   try {
-    const CHUNK_SIZE = 200
-    for (let i = 0; i < candidates.value.length; i += CHUNK_SIZE) {
-      const rows = candidates.value.slice(i, i + CHUNK_SIZE).map((c) => c.row)
-      const { error } = await supabase.from('contact_log').insert(rows)
-      if (error) importErrors.value.push(t(`Notes ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron las notas ${i + 1}-${i + rows.length}: ${error.message}`))
-      else importedCount.value += rows.length
-      progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }
-    }
+    const res = await p.apply((done) => (progress.value = { done, total: p.total }), () => false)
+    importedCount.value = res.written
+    importErrors.value = res.errors
   } catch (err) {
-    // Re-running is safe: notes already written are skipped as duplicates on
-    // the next scan, so surfacing the error beats a stuck "Importing…".
+    // Re-running is safe: a note already on its visit is skipped on the next
+    // scan, so surfacing the error beats a stuck "Importing…".
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
     return
   }
-
   stage.value = 'done'
   showToast(
-    t(
-      `Imported ${importedCount.value} treatment notes. Skipped ${skippedDuplicate.value} already imported and ${skippedUnmatched.value} with no matching patient.`,
-      `Se importaron ${importedCount.value} notas de tratamiento. Se omitieron ${skippedDuplicate.value} ya importadas y ${skippedUnmatched.value} sin paciente coincidente.`,
-    ),
+    t(`Saved ${importedCount.value} treatment notes.`, `Se guardaron ${importedCount.value} notas de tratamiento.`),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
 }
@@ -190,18 +81,16 @@ function retryRun() {
 
 function reset() {
   stage.value = 'connect'
-  candidates.value = []
+  plan.value = null
   importedCount.value = 0
-  skippedDuplicate.value = 0
-  skippedUnmatched.value = 0
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t("Brings the notes written at each visit across from PracticeHub's API into the patient's contact history here, dated when they were written.", 'Trae las notas escritas en cada visita desde la API de PracticeHub al historial de contacto del paciente, con la fecha en que se escribieron.'))
+const introLead = computed(() => t("Brings the notes written at each visit across from PracticeHub's API onto that visit here, dated when they were written. Notes imported earlier into the patient's history are moved onto their visit.", 'Trae las notas escritas en cada visita desde la API de PracticeHub a esa misma visita aquí, con la fecha en que se escribieron. Las notas importadas antes al historial del paciente se mueven a su visita.'))
 const introNotes = computed(() => [
-        { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('Each note is matched to its patient by their PracticeHub reference; a note whose patient is not here yet is skipped.', 'Cada nota se empareja con su paciente por su referencia de PracticeHub; una nota cuyo paciente aún no está aquí se omite.') },
-        { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every note it will add so you can check it first.', 'La vista previa muestra cada nota que añadirá para que la compruebes antes.') },
-        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes already imported are skipped.', 'Las notas ya importadas se omiten.') },
+  { title: t('Run Patients and Appointments first.', 'Ejecuta antes Pacientes y Citas.'), body: t('Each note is matched to its patient by their PracticeHub reference, and to the patient\'s visit on the day it was written. A note with no visit that day goes to the patient\'s history.', 'Cada nota se empareja con su paciente por su referencia de PracticeHub, y con la visita del paciente del día en que se escribió. Una nota sin visita ese día va al historial del paciente.') },
+  { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every note and where it goes, so you can check it first.', 'La vista previa muestra cada nota y adónde va, para que la compruebes antes.') },
+  { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes already on their visit are skipped.', 'Las notas que ya están en su visita se omiten.') },
 ])
 </script>
 
@@ -218,17 +107,21 @@ const introNotes = computed(() => [
       <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
     </div>
 
-    <ImportPreviewPanel
-      v-else-if="stage === 'preview'"
-      class="mt-4"
-      :stats="previewStats"
-      :columns="previewColumns"
-      :rows="previewRows"
-      :apply-label="t(`Import ${candidates.length} ${candidates.length === 1 ? 'note' : 'notes'}`, `Importar ${candidates.length} ${candidates.length === 1 ? 'nota' : 'notas'}`)"
-      :more-label="t('more notes', 'notas más')"
-      @apply="apply"
-      @cancel="reset"
-    />
+    <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
+      <ul v-if="plan?.warnings.length" class="space-y-1 rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text" data-cy="ph-notes-warnings">
+        <li v-for="(w, i) in plan.warnings" :key="i">{{ w }}</li>
+      </ul>
+      <ImportPreviewPanel
+        :stats="plan?.stats ?? []"
+        :columns="plan?.columns ?? []"
+        :rows="plan?.rows ?? []"
+        :apply-disabled="!plan?.total"
+        :apply-label="t('Save the notes', 'Guardar las notas')"
+        :more-label="t('more notes', 'notas más')"
+        @apply="apply"
+        @cancel="reset"
+      />
+    </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">

@@ -10135,6 +10135,7 @@ export type Database = {
           body: string
           created_at: string
           created_by: string | null
+          external_reference: string | null
           id: string
         }
         Insert: {
@@ -10143,6 +10144,7 @@ export type Database = {
           body: string
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
         }
         Update: {
@@ -10151,6 +10153,7 @@ export type Database = {
           body?: string
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
         }
         Relationships: [

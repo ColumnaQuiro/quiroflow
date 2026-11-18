@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import * as Sentry from '@sentry/capacitor'
 import * as SentryVue from '@sentry/vue'
 import type { RouteLocationNormalized } from 'vue-router'
+import type { ReportIssue } from '../../utils/reportIssue'
 
 // Crash and error reporting for the app, to the Sentry project quiroflow-app
 // (the web's is javascript-nuxt). Before this, an app that closed on someone
@@ -27,7 +28,10 @@ import type { RouteLocationNormalized } from 'vue-router'
 // which app version, platform and side of the app (patient or staff).
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig().public
-  if (!Capacitor.isNativePlatform() || !config.sentryDsn) return
+  // $reportIssue, for code shared with the web (utils/reportIssue.ts): to
+  // this project when Sentry runs, else to the console.
+  const toConsole: ReportIssue = (message, { tags }) => console.warn(`[issue] ${message}`, tags)
+  if (!Capacitor.isNativePlatform() || !config.sentryDsn) return { provide: { reportIssue: toConsole } }
   const user = useSupabaseUser()
 
   Sentry.init(
@@ -90,4 +94,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     if (visible && user.value && router.currentRoute.value.path === '/') setRole('patient')
   })
   Sentry.setTag('role', role)
+
+  const reportIssue: ReportIssue = (message, { tags, level = 'warning', fingerprint }) => {
+    Sentry.captureMessage(message, { level, tags, fingerprint })
+  }
+  return { provide: { reportIssue } }
 })

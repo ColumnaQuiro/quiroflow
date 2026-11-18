@@ -34,11 +34,15 @@ function personMask(img: { width: number; height: number }) {
   for (let y = 0; y < img.height; y++) for (let x = Math.round(img.width * 0.3); x < img.width * 0.7; x++) data[y * img.width + x] = 1
   return { width: img.width, height: img.height, data }
 }
-function visitCapture(patientId: string, found = true, mask = false) {
+/** An outline that takes the whole frame for the person: not believable, so not cut out. */
+function wholeFrameMask(img: { width: number; height: number }) {
+  return { width: img.width, height: img.height, data: new Float32Array(img.width * img.height).fill(1) }
+}
+function visitCapture(patientId: string, found = true, mask: boolean | 'whole-frame' = false) {
   cy.visit(`/patients/posture/${patientId}`, {
     onBeforeLoad: (win) => {
       ;(win as any).__postureDetect = () => (found ? landmarks() : null)
-      if (mask) (win as any).__postureMask = personMask
+      if (mask) (win as any).__postureMask = mask === 'whole-frame' ? wholeFrameMask : personMask
     },
   })
   cy.get('[data-cy=posture-capture][data-ready=true]', { timeout: 20000 })
@@ -81,8 +85,10 @@ describe('Posture assessment', () => {
         photo()
         cy.get('[data-cy=posture-found]', { timeout: 20000 }).should('have.attr', 'data-found', 'true')
         cy.get('[data-cy=posture-overlay] circle').should('have.length', 10)
-        // No outline from the model, so the photo stays as taken, with no choice offered.
+        // No outline from the model, so the photo stays as taken, with no
+        // choice offered -- and the screen says so rather than nothing.
         cy.get('[data-cy=posture-white]').should('not.exist')
+        cy.get('[data-cy=posture-no-cutout]').should('have.attr', 'data-reason', 'no-mask').and('contain', 'could not be removed on this device')
         // The right shoulder is lower: a positive tilt.
         cy.get('[data-cy=posture-live-shoulders]').invoke('text').should('match', /^\d+(,\d)? °$/)
         cy.get('[data-cy=posture-next]').click()
@@ -459,6 +465,22 @@ describe('Posture assessment', () => {
         corner().should((rgb) => expect(rgb[0]).to.be.lessThan(235))
         cy.get('[data-cy=posture-white]').check()
         corner().should((rgb) => rgb.forEach((v) => expect(v).to.be.greaterThan(248)))
+        cy.get('[data-cy=posture-no-cutout]').should('not.exist')
+      })
+    })
+  })
+
+  // It used to keep the background with nothing on screen to say why, so the
+  // practitioner could only guess what to change for the next photo.
+  it('says why the background stayed when the outline is not believable', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fondo', lastName: 'Lleno' }).then((patient) => {
+        cy.login(account.email, account.password)
+        visitCapture(patient.id, true, 'whole-frame')
+        photo()
+        cy.get('[data-cy=posture-found]', { timeout: 20000 }).should('have.attr', 'data-found', 'true')
+        cy.get('[data-cy=posture-white]').should('not.exist')
+        cy.get('[data-cy=posture-no-cutout]').should('have.attr', 'data-reason', 'too-large').and('contain', 'fills almost the whole photo')
       })
     })
   })

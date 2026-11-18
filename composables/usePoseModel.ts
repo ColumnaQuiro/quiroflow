@@ -28,8 +28,18 @@ interface Landmarker { detect: (image: HTMLImageElement | HTMLCanvasElement) => 
 
 /** Per pixel, row by row, how sure the model is that it is the person (0-1). Usually the photo's size, but not assumed to be. */
 export interface PersonMask { width: number; height: number; data: Float32Array }
-export interface PoseResult { landmarks: Landmark[] | null; mask: PersonMask | null }
+/**
+ * Why a result has no outline, when it has none: the model could not load,
+ * found nobody, ran but returned no mask, or the mask could not be read back
+ * off the GPU. The capture screen says so and reports it (Capture.vue).
+ */
+export type MaskMissing = 'model' | 'no-person' | 'no-mask' | 'mask-read'
+export interface PoseResult { landmarks: Landmark[] | null; mask: PersonMask | null; missing: MaskMissing | null; delegate: 'GPU' | 'CPU' | null }
 let loading: Promise<Landmarker> | null = null
+// Which one the model ended up on, for the report when an outline is missing:
+// a mask that cannot be read back is a GPU problem, and the iPad's WebView is
+// where it would show.
+let delegate: 'GPU' | 'CPU' | null = null
 
 async function load(): Promise<Landmarker> {
   const vision: any = await import(/* @vite-ignore */ `${BASE}/vision_bundle.mjs`)
@@ -39,8 +49,10 @@ async function load(): Promise<Landmarker> {
   let model: Landmarker
   try {
     model = await make('GPU')
+    delegate = 'GPU'
   } catch {
     model = await make('CPU')
+    delegate = 'CPU'
   }
   // The first run compiles the GPU shaders, about a second on a phone: done
   // here on a blank frame, so it is not paid on the patient's first photo.
@@ -73,27 +85,34 @@ export function usePoseModel() {
    */
   async function detect(image: HTMLImageElement | HTMLCanvasElement): Promise<PoseResult> {
     const w = window as unknown as { __postureDetect?: (img: unknown) => Landmark[] | null; __postureMask?: (img: unknown) => PersonMask | null }
-    if (w.__postureDetect) return { landmarks: w.__postureDetect(image), mask: w.__postureMask?.(image) ?? null }
+    if (w.__postureDetect) {
+      const landmarks = w.__postureDetect(image)
+      const mask = w.__postureMask?.(image) ?? null
+      return { landmarks, mask, missing: mask ? null : landmarks ? 'no-mask' : 'no-person', delegate: null }
+    }
     try {
       loading ??= load()
       const model = await loading
       const result = model.detect(image)
       const landmarks = result.landmarks?.[0] ?? null
       let mask: PersonMask | null = null
+      let missing: MaskMissing | null = landmarks ? null : 'no-person'
       const masks = result.segmentationMasks ?? []
       try {
         // Copied out: the model's own mask lives on the GPU and has to be closed.
         if (landmarks && masks[0]) mask = { width: masks[0].width, height: masks[0].height, data: masks[0].getAsFloat32Array().slice() }
+        else if (landmarks) missing = 'no-mask'
       } catch (e) {
+        missing = 'mask-read'
         console.error('[posture] person mask', e)
       } finally {
         for (const m of masks) m.close()
       }
-      return { landmarks, mask }
+      return { landmarks, mask, missing, delegate }
     } catch (e) {
       loading = null
       console.error('[posture] pose model', e)
-      return { landmarks: null, mask: null }
+      return { landmarks: null, mask: null, missing: 'model', delegate }
     }
   }
   return { detect, warm }

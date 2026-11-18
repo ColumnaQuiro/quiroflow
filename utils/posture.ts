@@ -196,6 +196,29 @@ export function postureGrid(width: number, height: number, plumbX: number): { xs
   return { xs, ys }
 }
 
+/**
+ * Whether the pose model's outline (one 0-1 value per pixel, row by row) is
+ * believable as one standing person, and so can put them on white
+ * (Capture.vue). Not when it covers almost nothing (the person is tiny, or
+ * the model is unsure) nor almost the whole frame (they fill the photo, or
+ * the outline swallowed the room): then the photo stays as taken, and the
+ * screen says which, so the next photo can be taken differently. `share` is
+ * the part of the frame counted as person, rounded to the percent.
+ */
+export type CutoutVerdict = 'ok' | 'too-small' | 'too-large' | 'bad-size'
+export const CUTOUT_MIN_SHARE = 0.02
+export const CUTOUT_MAX_SHARE = 0.9
+export function cutoutVerdict(mask: { width: number; height: number; data: ArrayLike<number> }): { verdict: CutoutVerdict; share: number | null } {
+  const n = mask.width * mask.height
+  if (!(n > 0) || mask.data.length < n) return { verdict: 'bad-size', share: null }
+  let person = 0
+  for (let i = 0; i < n; i++) if (mask.data[i]! > 0.5) person++
+  const share = Math.round((person / n) * 100) / 100
+  if (person < n * CUTOUT_MIN_SHARE) return { verdict: 'too-small', share }
+  if (person > n * CUTOUT_MAX_SHARE) return { verdict: 'too-large', share }
+  return { verdict: 'ok', share }
+}
+
 export interface StoredView { photo: string; width: number; height: number; points: Points; facing: 'right' | 'left' | null }
 export type StoredViews = Partial<Record<PostureView, StoredView>>
 

@@ -342,7 +342,11 @@ async function readSlice(
         partial.ledger.push(...m.rows)
         const sum = (k: 'cash' | 'card' | 'transfer') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
         // client.ledger throws on a month it could not name, so each has one.
-        partial.months.push({ month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') } })
+        partial.months.push({
+          month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') },
+          columns: m.layout.columns, fromTotals: m.layout.fromTotals,
+          ...(partial.months.length ? {} : { header: m.layout.header, inputs: m.layout.inputs }),
+        })
       }
       const last = months[months.length - 1]!.month!
       p.month = last

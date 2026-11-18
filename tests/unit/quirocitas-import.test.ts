@@ -12,6 +12,7 @@ import {
   quirocitasAppointmentRows,
   quirocitasBonoRows,
   quirocitasDate,
+  quirocitasLedgerMismatches,
   quirocitasLedgerRows,
   quirocitasNamesChiropractors,
   quirocitasPatientRow,
@@ -450,5 +451,122 @@ describe('quirocitas rows', () => {
     it('still calls an older copy unfinished, without a total it never recorded', () => {
       expect(quirocitasReadState(copy({}))).toEqual({ finished: false, read: 1, total: null })
     })
+  })
+})
+
+// A cash page laid out differently from the one the reader was written
+// against: one chiropractor, a DNI and a time column, no transfer or
+// invoicing column -- and so no visit or bono ids on its rows. Read by the
+// first clinic's positions, a real one like it came back with its cash as
+// "transfer" and its card payments as "debt", and not one payment imported.
+const SHIFTED_CAJA = `<form action="diario.php" method="post"><input type="hidden" name="tipo" value="caja">
+<b>Mes de Octubre de 2026</b>
+<table><tr><th></th><th>Fecha</th><th>Nombre</th><th>DNI</th><th>Observ.</th><th>N</th><th>B</th><th>Hora</th><th>Efectivo</th><th>Tarjeta</th><th>Deuda</th><th>Valor</th></tr>
+<tr><td>1</td><td>01-10-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td>Bono 12</td><td>N</td><td></td><td>10:00</td><td></td><td>450,00</td><td></td><td></td></tr>
+<tr><td>2</td><td>05-10-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td></td><td></td><td>B</td><td>15:45</td><td></td><td></td><td></td><td>37,50</td></tr>
+<tr><td>3</td><td>13-10-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td></td><td></td><td></td><td>11:00</td><td>20,00</td><td></td><td></td><td></td></tr>
+<tr><td>4</td><td>13-10-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td></td><td></td><td></td><td>11:30</td><td>20,00</td><td></td><td></td><td></td></tr>
+</table>
+<input id="caja-6" type="text" value="40,00" readonly><input id="totalmeto-6[2]" type="text" value="450,00" readonly><input id="valortotal-6" type="text" value="37,50" readonly>
+<input type="submit" name="previo" value="◄">
+</form>`
+
+describe('a cash page laid out differently', () => {
+  const zone = 'Europe/Madrid'
+  const monthOf = (m: ReturnType<typeof parseQuirocitasCajaMonth>) => {
+    const sum = (k: 'cash' | 'card' | 'transfer') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
+    return { month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') } }
+  }
+
+  it('reads the columns by their header, not by where another clinic had them', () => {
+    const m = parseQuirocitasCajaMonth(SHIFTED_CAJA)
+    expect(m.layout.columns).toMatchObject({ date: 1, name: 2, note: 4, isNew: 5, usedBono: 6, cash: 8, card: 9, debt: 10, value: 11 })
+    expect(m.layout.columns.transfer).toBeUndefined()
+    expect(m.layout.fromTotals).toEqual([])
+    expect(m.rows.map((r) => [r.date, r.note, r.cash, r.card, r.transfer, r.debt, r.value, r.usedBono, r.citaId])).toEqual([
+      ['01-10-2026', 'Bono 12', null, 450, null, null, null, false, null],
+      ['05-10-2026', '', null, null, null, null, 37.5, true, null],
+      ['13-10-2026', '', 20, null, null, null, null, false, null],
+      ['13-10-2026', '', 20, null, null, null, null, false, null],
+    ])
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [monthOf(m)] })).toEqual([])
+  })
+
+  it('keeps reading the original layout exactly as before', () => {
+    const m = parseQuirocitasCajaMonth(CAJA)
+    expect(m.layout.columns).toMatchObject({ date: 1, name: 2, note: 3, isNew: 4, usedBono: 5, cash: 6, card: 7, transfer: 8, debt: 9, value: 11 })
+    expect(m.layout.inputs).toEqual(['cita', 'factura', 'id', 'pagobono'])
+  })
+
+  it('finds a money column it cannot name by the total printed under it', () => {
+    const m = parseQuirocitasCajaMonth(SHIFTED_CAJA.replace('<th>Tarjeta</th>', '<th>Datáfono</th>').replace('<th>Valor</th>', '<th>Importe</th>'))
+    expect(m.layout.columns).toMatchObject({ card: 9, value: 11 })
+    expect(m.layout.fromTotals).toEqual(['card', 'value'])
+    expect(m.rows[0]).toMatchObject({ card: 450 })
+  })
+
+  it('lines a header cell spanning two columns up with both', () => {
+    const m = parseQuirocitasCajaMonth(SHIFTED_CAJA.replace('<th>N</th><th>B</th>', '<th colspan="2">N B</th>'))
+    expect(m.layout.columns).toMatchObject({ cash: 8, card: 9, value: 11 })
+  })
+
+  it('leaves a month that still does not add up flagged, so the import refuses it', () => {
+    const m = parseQuirocitasCajaMonth(SHIFTED_CAJA.replace('value="450,00"', 'value="999,00"'))
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [monthOf(m)] }).map((x) => x.month)).toEqual(['2026-10'])
+  })
+
+  describe('rows with no visit or bono id', () => {
+    const snapshot = (): QuirocitasSnapshot => ({
+      baseUrl: '', readAt: '', bonoTypes: parseQuirocitasBonoTypes(FICHA('101', 'x')),
+      patients: {
+        101: {
+          list: { id: '101', name: 'Laura Demo Prueba', phones: [] },
+          ficha: parseQuirocitasFicha(FICHA('101', 'Laura Demo Prueba'))!,
+          history: parseQuirocitasHistory(HISTORIAL),
+          invoices: [],
+          techniques: {},
+        },
+      },
+      failed: {},
+      ledger: parseQuirocitasCajaMonth(SHIFTED_CAJA).rows,
+      ledgerMonths: [],
+    })
+
+    it('charges a visit against the appointment the record has that day', () => {
+      const s = snapshot()
+      const { charges, visitless } = quirocitasLedgerRows(s, quirocitasBonoRows(s, zone).bonoOfSale, zone)
+      expect(visitless).toEqual([])
+      expect(charges).toEqual([expect.objectContaining({ ref: 'QC-inv-5001', appointmentRef: 'QC-5001', totalCents: 3750, status: 'paid' })])
+    })
+
+    it('gives every payment its own reference, the same one on every read', () => {
+      const s = snapshot()
+      const first = quirocitasLedgerRows(s, quirocitasBonoRows(s, zone).bonoOfSale, zone).payments
+      const again = quirocitasLedgerRows(snapshot(), quirocitasBonoRows(snapshot(), zone).bonoOfSale, zone).payments
+      expect(new Set(first.map((p) => p.ref)).size).toBe(first.length)
+      expect(again.map((p) => p.ref)).toEqual(first.map((p) => p.ref))
+      expect(first.map((p) => [p.method, p.amountCents, p.chargeRef, p.bonoRef])).toEqual([
+        ['card', 45000, null, 'QC-bono-900'],
+        ['cash', 2000, null, null],
+        ['cash', 2000, null, null],
+      ])
+      expect(first.every((p) => !p.ref.includes('null'))).toBe(true)
+    })
+
+    it('names a visit it cannot place rather than charging nothing quietly', () => {
+      const s = snapshot()
+      s.patients[101]!.ficha.appointments = []
+      const { charges, visitless } = quirocitasLedgerRows(s, quirocitasBonoRows(s, zone).bonoOfSale, zone)
+      expect(charges).toEqual([])
+      expect(visitless).toHaveLength(1)
+    })
+  })
+})
+
+describe('the original cash page with a label spelled differently', () => {
+  it('keeps that column where it always was', () => {
+    const m = parseQuirocitasCajaMonth(CAJA.replace('<th>Observ.</th>', '<th>Notas</th>'))
+    expect(m.layout.columns.note).toBe(3)
+    expect(m.rows[1]!.note).toBe('Bono 12')
   })
 })

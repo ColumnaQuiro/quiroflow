@@ -56,8 +56,13 @@ describe('Paying a visit from money paid ahead', () => {
           // \s, not a space: formatEur puts a no-break space before the euro
           // sign, and contain.text compares the raw text (utils/billing.ts).
           cy.get('@paymentForm').find('select').eq(0).find('option[value="credit"]').invoke('text').should('match', /50,00\s€ available/)
-          cy.get('@paymentForm').find('select').eq(0).select('credit')
-          cy.get('@paymentForm').find('input[type="number"]').eq(0).clear().type('50')
+          // And the form opens on it, for the whole amount: offered and never
+          // chosen is how reception still saw "100" to pay for a visit the
+          // patient had 100 on account for (utils/visitCharging
+          // openingPaymentRows). Nobody touches the form here.
+          cy.get('@paymentForm').find('select').eq(0).should('have.value', 'credit')
+          cy.get('@paymentForm').find('input[type="number"]').eq(0).should('have.value', '50.00')
+          cy.get('@paymentForm').find('input[type="number"]').should('have.length', 1)
           cy.get('@paymentForm').contains('button', 'Process').click()
           cy.contains('Balance due: 0,00 €').should('be.visible')
         })

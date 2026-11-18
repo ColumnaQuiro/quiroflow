@@ -8564,6 +8564,7 @@
   "Reading prices…": "A ler os preços…"
  },
  "p": {
+  "Amount exceeds available credit ({0}).": "O montante excede o crédito disponível ({0}).",
   " ({0} from last year)": " ({0} do ano passado)",
   " Habits pack sent {0} ({1}).": " Pacote de hábitos enviado {0} ({1}).",
   " If not, it goes to {0}.": " Caso contrário, passa para {0}.",

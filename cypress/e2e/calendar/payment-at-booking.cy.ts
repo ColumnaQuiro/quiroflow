@@ -136,6 +136,8 @@ describe('Collecting payment while booking', () => {
     openPanelFor(
       'Credito',
       ({ patientId }) => {
+        // Offered with what there is to spend, once the patient's credit has loaded.
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method] option[value=credit]').invoke('text').should('match', /100,00\s€/)
         cy.get('[data-cy=create-sheet] [data-cy=create-payment-method]').select('credit')
         cy.get('[data-cy=create-sheet] [data-cy=create-submit]').click()
         cy.get('[data-cy=create-sheet]').should('not.exist')
@@ -145,14 +147,90 @@ describe('Collecting payment while booking', () => {
           expect(money.invoices[0].status).to.eq('paid')
           expect(money.invoices[0].payments.map((p) => [p.method, p.amount_cents])).to.deep.equal([['credit', 4500]])
         })
-        cy.task<{ amount_cents: number; invoice_id: string | null }[]>('db:creditsFor', { patientId }).should((credits) => {
-          expect(credits.map((c) => c.amount_cents)).to.deep.equal([10000, -4500])
+        cy.task<{ amount_cents: number; invoice_id: string | null; is_spend: boolean }[]>('db:creditsFor', { patientId }).should((credits) => {
+          expect(credits.map((c) => [c.amount_cents, c.is_spend])).to.deep.equal([
+            [10000, false],
+            [-4500, true],
+          ])
           expect(credits[1].invoice_id, 'the spend names the receipt it paid').to.not.eq(null)
         })
         cy.task<unknown[]>('db:facturasFor', { patientId }).should('have.length', 0)
+        // 100 of goodwill credit, 45 charged and paid from it: 55 left,
+        // counted once. The spend row used to take the 45 off a second time.
+        cy.task<{ balance_cents: number; outstanding_cents: number }[]>('db:selectRows', {
+          table: 'patient_live_balances',
+          columns: 'balance_cents, outstanding_cents',
+          match: { patient_id: patientId },
+        }).should('deep.equal', [{ balance_cents: 5500, outstanding_cents: 0 }])
       },
       (accountId, patientId) => {
         cy.task('db:createAccountCredit', { accountId, patientId, amountCents: 10000 })
+      },
+    )
+  })
+
+  it('draws only what the ledger holds when the rest was paid ahead', () => {
+    openPanelFor(
+      'Adelanto',
+      ({ patientId }) => {
+        // 20 in the ledger and 30 paid ahead: 50 to spend on a 45 visit.
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method] option[value=credit]').invoke('text').should('match', /50,00\s€/)
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method]').select('credit')
+        cy.get('[data-cy=create-sheet] [data-cy=create-submit]').click()
+        cy.get('[data-cy=create-sheet]').should('not.exist')
+
+        // The ledger goes to zero, not below it: the other 25 had no row.
+        cy.task<{ amount_cents: number; is_spend: boolean }[]>('db:creditsFor', { patientId }).should((credits) => {
+          expect(credits.map((c) => [c.amount_cents, c.is_spend])).to.deep.equal([
+            [2000, false],
+            [-2000, true],
+          ])
+        })
+        // 30 paid + 20 granted - 45 charged.
+        cy.task<{ balance_cents: number; outstanding_cents: number }[]>('db:selectRows', {
+          table: 'patient_live_balances',
+          columns: 'balance_cents, outstanding_cents',
+          match: { patient_id: patientId },
+        }).should('deep.equal', [{ balance_cents: 500, outstanding_cents: 0 }])
+      },
+      (accountId, patientId) => {
+        cy.task('db:createAccountCredit', { accountId, patientId, amountCents: 2000 })
+        cy.task('db:createPayment', { accountId, patientId, amountCents: 3000, method: 'cash' })
+      },
+    )
+  })
+
+  it('offers no credit to a patient with none', () => {
+    openPanelFor(
+      'Sincredito',
+      () => {
+        // Their credit has been read, and there is none: no option at all.
+        cy.wait('@ledger')
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method] option').should('have.length', 2)
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method] option[value=credit]').should('not.exist')
+      },
+      () => {
+        cy.intercept('POST', '**/rest/v1/rpc/patient_ledger').as('ledger')
+      },
+    )
+  })
+
+  it('refuses more credit than the patient holds, before booking anything', () => {
+    openPanelFor(
+      'Poco',
+      ({ patientId }) => {
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method] option[value=credit]').invoke('text').should('match', /20,00\s€/)
+        cy.get('[data-cy=create-sheet] [data-cy=create-payment-method]').select('credit')
+        // 45 against 20.
+        cy.get('[data-cy=create-sheet] [data-cy=create-submit]').click()
+        cy.get('[data-cy=create-sheet]').should('be.visible').and('contain.text', 'Amount exceeds available credit')
+        cy.task<BookingMoney>('db:bookingMoneyFor', { patientId }).should((money) => {
+          expect(money.appointments, 'nothing booked').to.have.length(0)
+          expect(money.invoices).to.have.length(0)
+        })
+      },
+      (accountId, patientId) => {
+        cy.task('db:createAccountCredit', { accountId, patientId, amountCents: 2000 })
       },
     )
   })

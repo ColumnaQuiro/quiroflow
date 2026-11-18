@@ -1447,6 +1447,7 @@ export type Database = {
           external_reference: string | null
           id: string
           invoice_id: string | null
+          is_spend: boolean
           method: string | null
           patient_id: string
           payment_id: string | null
@@ -1460,6 +1461,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          is_spend?: boolean
           method?: string | null
           patient_id: string
           payment_id?: string | null
@@ -1473,6 +1475,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          is_spend?: boolean
           method?: string | null
           patient_id?: string
           payment_id?: string | null

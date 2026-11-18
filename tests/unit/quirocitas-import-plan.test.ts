@@ -372,3 +372,48 @@ describe('the Payments step', () => {
     expect(tbl.payments).toEqual([expect.objectContaining({ amount_cents: 4000, method: 'cash', external_reference: 'QC-pay-5001-cash', invoice_id: 'invoices-1' })])
   })
 })
+
+describe('the Bonos step, run again', () => {
+  // One bono on two records: bought by one, used by both.
+  const bono = { id: '900', name: 'Bono 12', remaining: 4, expires: '01-10-2027', owed: 0, paid: 450, status: 'presente' }
+  const withHolders = (): QuirocitasSnapshot => {
+    const s = snapshot()
+    s.patients[101]!.ficha.bonos = [bono]
+    s.patients[102] = {
+      ...structuredClone(s.patients[101]!),
+      list: { id: '102', name: 'Hugo Demo Prueba', phones: [] },
+      ficha: { ...structuredClone(s.patients[101]!.ficha), id: '102', name: 'Hugo Demo Prueba', appointments: [], bonos: [bono] },
+    }
+    return s
+  }
+  const tables = (): Record<string, Row[]> => ({
+    ...clinic([], []),
+    patients: [
+      { id: 'p1', account_id: ACCOUNT, external_reference: 'QC-101' },
+      { id: 'p2', account_id: ACCOUNT, external_reference: 'QC-102' },
+    ],
+    // Created on a pass that had read only the first record, so nobody was linked.
+    package_purchases: [{ id: 'bono-1', account_id: ACCOUNT, patient_id: 'p1', external_reference: 'QC-bono-900', sessions_used: 8, is_closed: false, owed_cents: 0 }],
+    package_purchase_shares: [],
+  })
+  const runBonos = async (tbl: Record<string, Row[]>) => {
+    const importer = quirocitasImporter({ supabase: fakeSupabase(tbl) as never, accountId: ACCOUNT, clinicId: 'clinic', t, fetchFile: async () => ({}), compressFile: async () => {} })
+    const plan = await importer.plan('bonos', withHolders())
+    return plan.apply(() => {}, () => false)
+  }
+
+  it('links a holder read on a later pass to the bono already here', async () => {
+    const tbl = tables()
+    const result = await runBonos(tbl)
+    expect(result.errors).toEqual([])
+    expect(tbl.package_purchase_shares).toEqual([expect.objectContaining({ package_purchase_id: 'bono-1', patient_id: 'p2' })])
+    expect(tbl.package_purchases).toHaveLength(1)
+  })
+
+  it('links them once, however many times it runs', async () => {
+    const tbl = tables()
+    await runBonos(tbl)
+    await runBonos(tbl)
+    expect(tbl.package_purchase_shares).toHaveLength(1)
+  })
+})

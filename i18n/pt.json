@@ -8564,7 +8564,8 @@
   "Reading prices…": "A ler os preços…",
   "The visit is not on this receipt.": "A consulta não está neste recibo.",
   "the visit": "a consulta",
-  "Could not add the visit.": "Não foi possível adicionar a consulta."
+  "Could not add the visit.": "Não foi possível adicionar a consulta.",
+  "Family links added": "Familiares associados"
  },
  "p": {
   "Amount exceeds available credit ({0}).": "O montante excede o crédito disponível ({0}).",

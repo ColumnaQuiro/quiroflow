@@ -181,3 +181,18 @@ export function creditRowCountsInBalance(c: BalanceCreditRow): boolean {
 export function ledgerDrawCents(spendCents: number, creditLedgerCents: number): number {
   return Math.max(0, Math.min(spendCents, creditLedgerCents))
 }
+
+// The one figure a patient row has room for, signed the way the balance is:
+// negative is what they owe, positive what they have in credit.
+//
+// Owing comes from the invoices (outstanding_cents), as everywhere else above;
+// credit comes from the balance. Reading both off the balance is what made the
+// patient list call a family bono's beneficiary a debtor. One patient sharing
+// a relative's Bono 30 read "237,36 € pendiente" in the list while her own
+// record said she owed nothing -- every visit was paid out of the family's
+// money, which sits on the relative's row, and the "Con deuda" filter already
+// left her out.
+export function owingPillCents(balanceCents: number, outstandingCents: number): number {
+  if (outstandingCents > 0) return -outstandingCents
+  return Math.max(0, balanceCents)
+}

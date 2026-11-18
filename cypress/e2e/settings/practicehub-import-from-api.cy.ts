@@ -189,4 +189,57 @@ describe('Importing from PracticeHub without exporting anything', () => {
       })
     })
   })
+
+  // PracticeHub keeps prices on its services, which only the 2.0 API lists,
+  // so the types step prices each type from the service of the same name --
+  // and only over a 0, never over a price the clinic set here.
+  it('brings each type’s price from the PracticeHub service of its name, without replacing one set here', () => {
+    const typeRoutes = {
+      '/appointment_types': [
+        { id: 1, name: 'Ajuste Precio', active: 1 },
+        { id: 2, name: 'Visita Propia', active: 1 },
+        { id: 3, name: 'Informe Nuevo', active: 1 },
+      ],
+      '/appointments': [],
+    }
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste Precio', defaultPriceCents: 0 })
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Visita Propia', defaultPriceCents: 10000 })
+      cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { routes: typeRoutes }).then(({ baseUrl }) => {
+        cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+        // As if a phk_ key were saved too, with PracticeHub 2.0 stubbed.
+        cy.intercept('GET', '/api/import/practicehub-connection', (req) => req.continue((res) => { res.body = { ...res.body, hasV3Key: true } }))
+        cy.intercept('POST', '/api/import/practicehub-v3', (req) => {
+          if (req.body.path !== '/billable_items') return req.reply({ statusCode: 404, body: { message: 'not stubbed' } })
+          req.reply({
+            data: [
+              { id: 11, type: 'service', description: 'Ajuste Precio', amount: '55.00', active: null },
+              { id: 12, type: 'service', description: 'Visita Propia', amount: '99.00', active: null },
+              { id: 13, type: 'service', description: 'Informe Nuevo ', amount: '60.00', active: true },
+            ],
+            links: { next: null },
+          })
+        })
+        cy.login(account.email, account.password)
+        cy.visit('/settings/import?source=practicehub&step=appointment_types&type=appointment_types')
+        cy.get('[data-cy=ph-use-saved-connection]').click()
+        cy.contains('tr', 'Ajuste Precio').should('contain.text', '55,00')
+        cy.contains('tr', 'Visita Propia').should('contain.text', '100,00').and('contain.text', 'kept')
+        cy.contains('tr', 'Informe Nuevo').should('contain.text', '60,00')
+        cy.contains('button', /^Create 1 type, fill in 1 price/).click()
+        cy.contains('a', /Review appointment types|Revisar tipos de cita/).should('exist')
+
+        cy.task<{ name: string; default_price_cents: number }[]>('db:selectRows', {
+          table: 'appointment_types',
+          columns: 'name, default_price_cents',
+          match: { account_id: account.accountId },
+        }).then((rows) => {
+          const price = Object.fromEntries(rows.map((r) => [r.name, r.default_price_cents]))
+          expect(price['Ajuste Precio']).to.eq(5500)
+          expect(price['Visita Propia']).to.eq(10000)
+          expect(price['Informe Nuevo']).to.eq(6000)
+        })
+      })
+    })
+  })
 })

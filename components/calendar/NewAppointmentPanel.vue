@@ -10,6 +10,7 @@ import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
+import { creditExceedsSpendable } from '~/utils/visitCharging'
 import { planVisitsToBook } from '~/utils/planRenewal'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
@@ -486,6 +487,28 @@ const paymentMethod = ref<'cash' | 'card' | 'credit'>('cash')
 watch([collectPayment, effectivePrice], ([on]) => {
   if (on) paymentAmount.value = (effectivePrice.value / 100).toFixed(2)
 })
+// "Credit on account" was offered to every patient, a new one included, and
+// raise_invoice() wrote the spend whatever they held. It is offered only when
+// the patient has something to spend -- the same figure the visit panel and
+// the Money tab cap a credit payment at (utils/owing spendableCreditOf): the
+// credit ledger plus money paid ahead.
+const creditPatientId = computed(() => (patientMode.value === 'existing' ? (selectedPatient.value?.id ?? '') : ''))
+const {
+  spendableCreditCents: bookingSpendableCreditCents,
+  loading: bookingCreditLoading,
+  refresh: refreshBookingCredit,
+} = usePatientFinancialSummary(creditPatientId, { manual: true })
+// Read fresh when the desk turns payment on, not from whatever another screen
+// cached for this patient earlier.
+watch([collectPayment, creditPatientId], ([on, id]) => {
+  if (on && id) refreshBookingCredit()
+})
+const canSpendCredit = computed(() => !!creditPatientId.value && !bookingCreditLoading.value && bookingSpendableCreditCents.value > 0)
+// Switching to a patient with nothing to spend takes the choice away with the
+// option, rather than leaving a hidden 'credit' selected.
+watch(canSpendCredit, (can) => {
+  if (!can && !bookingCreditLoading.value && paymentMethod.value === 'credit') paymentMethod.value = 'cash'
+})
 
 // -- Repeat: every date the booking lands on --------------------------------
 // Bounded rather than open-ended -- 8 occurrences covers a short repeat block
@@ -579,6 +602,18 @@ async function save() {
   error.value = ''
   pendingSeries.value = null
   if (!canBook.value) return
+  // Before anything is written: once the visit is booked, a refused payment
+  // can only be reported, not fixed from here.
+  if (collectPayment.value && paymentMethod.value === 'credit') {
+    const creditCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
+    if (!canSpendCredit.value || creditExceedsSpendable(creditCents, bookingSpendableCreditCents.value)) {
+      error.value = t(
+        `Amount exceeds available credit (${formatEur(bookingSpendableCreditCents.value)}).`,
+        `El importe supera el crédito disponible (${formatEur(bookingSpendableCreditCents.value)}).`,
+      )
+      return
+    }
+  }
   // Checked before anything is written. The number goes in as a second
   // statement after the patient row, so a bad one let through here would
   // leave a patient created and the desk unable to tell whether the number
@@ -1078,7 +1113,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
                 <select v-model="paymentMethod" data-cy="create-payment-method" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
                   <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
                   <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-                  <option value="credit">{{ t('Credit on account', 'Crédito en cuenta') }}</option>
+                  <option v-if="canSpendCredit" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(bookingSpendableCreditCents) }})</option>
                 </select>
               </label>
             </div>

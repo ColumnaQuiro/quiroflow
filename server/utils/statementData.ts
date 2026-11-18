@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { creditRowCountsInBalance } from '~/utils/owing'
 
 // PracticeHub's "Download/Send Statement" -- a PDF of the patient's whole
 // Account Ledger (same merge logic as components/patients/AccountLedger.vue,
@@ -39,7 +40,7 @@ export async function loadStatementDocumentData(supabase: SupabaseClient<Databas
     // By patient, not by their invoices: a statement that listed only payments
     // attached to an invoice would omit money on account and stop adding up.
     supabase.from('payments').select('id, amount_cents, method, paid_at').eq('patient_id', patientId),
-    supabase.from('account_credits').select('id, amount_cents, reason, created_at').eq('patient_id', patientId).order('created_at'),
+    supabase.from('account_credits').select('id, amount_cents, reason, created_at, payment_id, is_spend, external_reference').eq('patient_id', patientId).order('created_at'),
     supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text').eq('account_id', patient.account_id).order('created_at').limit(1).maybeSingle(),
   ])
 
@@ -53,10 +54,17 @@ export async function loadStatementDocumentData(supabase: SupabaseClient<Databas
       creditCents: 0,
     })
   }
-  ;(payments ?? []).forEach((p, i) => {
+  // The closing balance is the sum of these rows, so they follow the balance's
+  // own rule (patient_live_balances, utils/owing balanceCreditCentsOf): money
+  // in, less what was charged, plus credit granted without a payment. A
+  // 'credit' payment is not money, a credit row restating a payment is that
+  // payment again, and a spend row moves nothing -- listed, each one counted
+  // the same euros a second time, and a statement for a patient who had paid
+  // exactly what they were charged did not close at zero.
+  ;(payments ?? []).filter((p) => p.method !== 'credit').forEach((p, i) => {
     rows.push({ ref: `PAY-${i + 1}`, date: p.paid_at, description: `Payment — ${p.method}`, debitCents: 0, creditCents: p.amount_cents })
   })
-  ;(credits ?? []).forEach((c, i) => {
+  ;(credits ?? []).filter(creditRowCountsInBalance).forEach((c, i) => {
     rows.push({
       ref: `CR-${i + 1}`,
       date: c.created_at,

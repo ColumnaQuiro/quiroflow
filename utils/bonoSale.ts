@@ -112,6 +112,8 @@ export async function recordBonoPayment(supabase: any, deps: BonoSaleDeps, input
       account_id: input.accountId,
       patient_id: input.patientId,
       amount_cents: -fromLedgerCents,
+      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
+      is_spend: true,
       reason: `Applied to ${input.description}`,
       invoice_id: null,
       created_by: input.teamMemberId,

@@ -8567,6 +8567,7 @@
   "Could not add the visit.": "Der Termin konnte nicht hinzugefügt werden."
  },
  "p": {
+  "Amount exceeds available credit ({0}).": "Der Betrag übersteigt das verfügbare Guthaben ({0}).",
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
   " Habits pack sent {0} ({1}).": " Gewohnheitspaket gesendet {0} ({1}).",
   " If not, it goes to {0}.": " Andernfalls geht es an {0}.",

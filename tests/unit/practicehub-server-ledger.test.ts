@@ -117,7 +117,7 @@ function clinic(): Record<string, Row[]> {
 
 async function plan(tables: Record<string, Row[]>, settle = { pending: 0, calls: [] as { p_account_id: string; p_limit: number }[] }) {
   const supabase = fakeSupabase(tables, settle)
-  return planLedger({ supabase: supabase as never, accountId: ACCOUNT, clinicId: 'c1', defaultPhoneCountry: 'ES', t }, snapshot())
+  return planLedger({ supabase: supabase as never, accountId: ACCOUNT, clinicId: 'c1', defaultPhoneCountry: 'ES', t, files: null }, snapshot())
 }
 
 describe('the helpers the browser importer shares', () => {

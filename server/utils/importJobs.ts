@@ -15,7 +15,7 @@ import {
   saveQuirocitasMeta,
   saveQuirocitasRecords,
 } from '~/server/utils/quirocitasSnapshotStore'
-import { processStoredPatientFile } from '~/server/utils/patientFileProcessing'
+import { compressStoredFile } from '~/server/utils/patientFileProcessing'
 import { deliverEmail } from '~/server/utils/resend'
 import { quirocitasImporter, type QuirocitasStepKind } from '~/utils/quirocitasImport'
 import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasListPatient, QuirocitasPatient } from '~/utils/quirocitasPages'
@@ -135,7 +135,7 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
       if (job.source === 'practicehub') {
         outcome = step === 'read'
           ? await practiceHubReadSlice(admin, job, progress, deadline, beat, t)
-          : await practiceHubApplySlice(admin, job, step as PracticeHubStepKind, options, progress, beat, t,
+          : await practiceHubApplySlice(admin, job, step as PracticeHubStepKind, options, progress, deadline, beat, t,
             (plan, p) => writePlan(plan, step, p, deadline, beat, t))
       } else {
         const login = await quirocitasLogin(admin, job.account_id)
@@ -472,18 +472,6 @@ async function writePlan(
     p.errors.unshift(t('Stopped: this step made no progress in three tries.', 'Parado: este paso no avanzó en tres intentos.'))
   }
   return { progress: p, result: { step: kind, written: p.written, errors: p.errors, warnings: p.warnings ?? [] } }
-}
-
-/** What /api/patients/files/compress does for a file uploaded from a browser. */
-async function compressStoredFile(admin: Admin, accountId: string, fileId: string) {
-  const { data: file } = await admin
-    .from('patient_files')
-    .select('id, storage_path, file_type, size_bytes, compressed_at, thumb_path')
-    .eq('id', fileId)
-    .eq('account_id', accountId)
-    .maybeSingle()
-  if (!file?.storage_path || file.compressed_at) return
-  await processStoredPatientFile(admin, { ...file, storage_path: file.storage_path }, { write: true })
 }
 
 // --- starting the next slice ----------------------------------------------------------

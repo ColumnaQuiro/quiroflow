@@ -1,8 +1,12 @@
 import { planAppointments } from './appointments'
 import { planAppointmentTypes } from './appointmentTypes'
 import { planBonos } from './bonos'
+import { planCarePlans, planPatientLogs, planStickyNotes, planTreatmentNotes } from './clinical'
+import { planFileAttachments } from './files'
+import { planCustomFormResponses } from './forms'
 import { planLedger } from './ledger'
 import { planPatients } from './patients'
+import { planPracticeHubProfilePhotos } from './photos'
 import type { PracticeHubImportContext, PracticeHubPlan, PracticeHubSnapshot, PracticeHubStepKind, PracticeHubStepPlanner } from './types'
 
 export * from './types'
@@ -18,6 +22,13 @@ const PLANNERS: Record<PracticeHubStepKind, PracticeHubStepPlanner> = {
   appointment_types: planAppointmentTypes,
   ledger: planLedger,
   bonos: planBonos,
+  treatment_notes: planTreatmentNotes,
+  care_plans: planCarePlans,
+  patient_logs: planPatientLogs,
+  sticky_notes: planStickyNotes,
+  custom_form_responses: planCustomFormResponses,
+  profile_photos: planPracticeHubProfilePhotos,
+  file_attachments: planFileAttachments,
 }
 
 export function planPracticeHubStep(kind: PracticeHubStepKind, ctx: PracticeHubImportContext, snapshot: PracticeHubSnapshot): Promise<PracticeHubPlan> {

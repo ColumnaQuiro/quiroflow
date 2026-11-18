@@ -4,8 +4,9 @@ import type { Database } from '~/types/database.types'
 import { getAccountSecret } from '~/server/utils/accountSecrets'
 import { practiceHubClassicGet } from '~/server/utils/practicehubClassic'
 import { practicehubV3Get } from '~/server/utils/practicehubV3'
-import { finishPracticeHubRead, loadPracticeHubSnapshot, savePracticeHubPage } from '~/server/utils/practicehubSnapshotStore'
-import { planPracticeHubStep, PRACTICEHUB_LISTS, PRACTICEHUB_V3_LISTS, type PracticeHubStepKind } from '~/utils/practicehubImport'
+import { dropPracticeHubPass, finishPracticeHubRead, loadPracticeHubPassList, loadPracticeHubSnapshot, savePracticeHubPage } from '~/server/utils/practicehubSnapshotStore'
+import { practiceHubFileServices } from '~/server/utils/practicehubFiles'
+import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
 import type { ImportJob, ImportJobOptions } from '~/server/utils/importJobs'
 
@@ -82,6 +83,83 @@ async function readPage(conn: { baseUrl: string; apiKey: string; appDetails: str
   }
 }
 
+/** Where a walk over some lists stands: the whole read's, or a step's fresh link list. */
+type ReadState = Pick<ImportJobProgress, 'pass' | 'listIndex' | 'page' | 'pageCount' | 'cursor' | 'pagesRead' | 'records' | 'done'>
+
+/**
+ * Walks `paths` a page at a time into the copy under `state.pass`, saving each
+ * page as it arrives. Returns true once every list is read, false when the
+ * slice's time is up (the next slice carries on from `state`).
+ */
+async function readLists(
+  admin: Admin,
+  accountId: string,
+  conn: { baseUrl: string; apiKey: string; appDetails: string },
+  paths: readonly PracticeHubListPath[],
+  state: ReadState,
+  deadline: number,
+  onPage: () => void,
+): Promise<boolean> {
+  let v3: Awaited<ReturnType<typeof practiceHubV3Saved>> | undefined
+  while ((state.listIndex ?? 0) < paths.length) {
+    if (Date.now() >= deadline) return false
+    const path = paths[state.listIndex ?? 0]!
+    const page = state.page ?? 1
+
+    if (PRACTICEHUB_V3_LISTS.has(path)) {
+      // 2.0 walks by cursor and allows 120 requests a minute, so no spacing.
+      if (v3 === undefined) v3 = await practiceHubV3Saved(admin, accountId)
+      if (!v3) {
+        // No 2.0 key: the list stays out of the copy, and the step that
+        // wants it warns rather than planning from an empty one.
+        Object.assign(state, { listIndex: (state.listIndex ?? 0) + 1, page: 1, pageCount: undefined, cursor: undefined })
+        continue
+      }
+      const res = await practicehubV3Get<V3Page>(v3, path, { sort: 'created_at:asc', page_size: '100', cursor: state.cursor ?? '' })
+      const rows = res.data ?? []
+      await savePracticeHubPage(admin, accountId, state.pass!, path, page, rows)
+      if (page === 1) {
+        const total = Number(res.meta?.total ?? NaN)
+        state.pageCount = Number.isFinite(total) && total > 0 ? Math.ceil(total / 100) : undefined
+        state.records = (state.records ?? 0) + (Number.isFinite(total) ? total : rows.length)
+      }
+      state.done = (state.done ?? 0) + 1
+      const next = res.links?.next ? new URL(res.links.next).searchParams.get('cursor') : null
+      if (!next || !rows.length) {
+        state.pagesRead = { ...state.pagesRead, [path]: page }
+        Object.assign(state, { listIndex: (state.listIndex ?? 0) + 1, page: 1, pageCount: undefined, cursor: undefined })
+      } else {
+        Object.assign(state, { page: page + 1, cursor: next })
+      }
+      onPage()
+      continue
+    }
+
+    const res = await readPage(conn, path, page, deadline + PAGE_GRACE_MS)
+    if (!res) return false
+    const rows = res.data ?? []
+    await savePracticeHubPage(admin, accountId, state.pass!, path, page, rows)
+    if (page === 1) {
+      state.pageCount = rows.length ? Math.max(1, Math.ceil(Number(res.total_entries ?? rows.length) / rows.length)) : 1
+      state.records = (state.records ?? 0) + Number(res.total_entries ?? rows.length)
+    }
+    state.done = (state.done ?? 0) + 1
+    if (!rows.length || page >= (state.pageCount ?? 1)) {
+      state.pagesRead = { ...state.pagesRead, [path]: page }
+      Object.assign(state, { listIndex: (state.listIndex ?? 0) + 1, page: 1, pageCount: undefined })
+    } else {
+      state.page = page + 1
+    }
+    onPage()
+    await sleep(PAGE_GAP_MS)
+  }
+  return true
+}
+
+function noConnection(t: (en: string, es: string) => string) {
+  return Object.assign(new Error(t('No PracticeHub connection is saved. Set it up in Settings > Import > Connection.', 'No hay ninguna conexión con PracticeHub guardada. Configúrala en Ajustes > Importar > Conexión.')), { statusCode: 400 })
+}
+
 export async function practiceHubReadSlice(
   admin: Admin,
   job: ImportJob,
@@ -92,68 +170,22 @@ export async function practiceHubReadSlice(
 ): Promise<Outcome> {
   const accountId = job.account_id
   const conn = await practiceHubSavedConnection(admin, accountId)
-  if (!conn) throw Object.assign(new Error(t('No PracticeHub connection is saved. Set it up in Settings > Import > Connection.', 'No hay ninguna conexión con PracticeHub guardada. Configúrala en Ajustes > Importar > Conexión.')), { statusCode: 400 })
+  if (!conn) throw noConnection(t)
 
   const p: ImportJobProgress = { ...progress, phase: 'read', listCount: PRACTICEHUB_LISTS.length }
   if (!p.pass) Object.assign(p, { pass: randomUUID(), listIndex: 0, page: 1, pageCount: undefined, pagesRead: {}, records: 0, done: 0 })
-
-  let v3: Awaited<ReturnType<typeof practiceHubV3Saved>> | undefined
-  while ((p.listIndex ?? 0) < PRACTICEHUB_LISTS.length) {
-    if (Date.now() >= deadline) return { progress: p }
-    const path = PRACTICEHUB_LISTS[p.listIndex ?? 0]!
-    const page = p.page ?? 1
-
-    if (PRACTICEHUB_V3_LISTS.has(path)) {
-      // 2.0 walks by cursor and allows 120 requests a minute, so no spacing.
-      if (v3 === undefined) v3 = await practiceHubV3Saved(admin, accountId)
-      if (!v3) {
-        // No 2.0 key: the list stays out of the copy, and the step that
-        // wants it warns rather than planning from an empty one.
-        Object.assign(p, { listIndex: (p.listIndex ?? 0) + 1, page: 1, pageCount: undefined, cursor: undefined })
-        continue
-      }
-      const res = await practicehubV3Get<V3Page>(v3, path, { sort: 'created_at:asc', page_size: '100', cursor: p.cursor ?? '' })
-      const rows = res.data ?? []
-      await savePracticeHubPage(admin, accountId, p.pass!, path, page, rows)
-      if (page === 1) {
-        const total = Number(res.meta?.total ?? NaN)
-        p.pageCount = Number.isFinite(total) && total > 0 ? Math.ceil(total / 100) : undefined
-        p.records = (p.records ?? 0) + (Number.isFinite(total) ? total : rows.length)
-      }
-      p.done = (p.done ?? 0) + 1
-      const next = res.links?.next ? new URL(res.links.next).searchParams.get('cursor') : null
-      if (!next || !rows.length) {
-        p.pagesRead = { ...p.pagesRead, [path]: page }
-        Object.assign(p, { listIndex: (p.listIndex ?? 0) + 1, page: 1, pageCount: undefined, cursor: undefined })
-      } else {
-        Object.assign(p, { page: page + 1, cursor: next })
-      }
-      beat(p)
-      continue
-    }
-
-    const res = await readPage(conn, path, page, deadline + PAGE_GRACE_MS)
-    if (!res) return { progress: p }
-    const rows = res.data ?? []
-    await savePracticeHubPage(admin, accountId, p.pass!, path, page, rows)
-    if (page === 1) {
-      p.pageCount = rows.length ? Math.max(1, Math.ceil(Number(res.total_entries ?? rows.length) / rows.length)) : 1
-      p.records = (p.records ?? 0) + Number(res.total_entries ?? rows.length)
-    }
-    p.done = (p.done ?? 0) + 1
-    if (!rows.length || page >= (p.pageCount ?? 1)) {
-      p.pagesRead = { ...p.pagesRead, [path]: page }
-      Object.assign(p, { listIndex: (p.listIndex ?? 0) + 1, page: 1, pageCount: undefined })
-    } else {
-      p.page = page + 1
-    }
-    beat(p)
-    await sleep(PAGE_GAP_MS)
-  }
+  if (!(await readLists(admin, accountId, conn, PRACTICEHUB_LISTS, p, deadline, () => beat(p)))) return { progress: p }
 
   await finishPracticeHubRead(admin, accountId, { readAt: new Date().toISOString(), baseUrl: conn.baseUrl, pass: p.pass!, pages: p.pagesRead ?? {} })
   return { progress: p, result: { step: 'read', written: p.records ?? 0, errors: [], warnings: [] } }
 }
+
+/**
+ * A fresh link list read this long ago is read again before more is
+ * downloaded from it. PracticeHub's S3 links last about an hour; this keeps a
+ * slice from starting on links that will lapse part way through.
+ */
+const LINKS_MAX_AGE_MS = 30 * 60 * 1000
 
 export async function practiceHubApplySlice(
   admin: Admin,
@@ -161,9 +193,10 @@ export async function practiceHubApplySlice(
   kind: PracticeHubStepKind,
   options: ImportJobOptions,
   progress: ImportJobProgress,
+  deadline: number,
   beat: (live: ImportJobProgress) => void,
   t: (en: string, es: string) => string,
-  run: (plan: Awaited<ReturnType<typeof planPracticeHubStep>>, p: ImportJobProgress) => Promise<Outcome>,
+  run: (plan: PracticeHubPlan, p: ImportJobProgress) => Promise<Outcome>,
 ): Promise<Outcome> {
   const accountId = job.account_id
   const p: ImportJobProgress = { ...progress, phase: 'apply' }
@@ -171,6 +204,30 @@ export async function practiceHubApplySlice(
   if (!snapshot) {
     return { progress: p, result: { step: kind, written: 0, errors: [t('Nothing has been read from PracticeHub yet.', 'Aún no se ha leído nada de PracticeHub.')], warnings: [] } }
   }
+
+  // A step that downloads works from a list read fresh just now, not from the
+  // copy: see PRACTICEHUB_LINK_LISTS. A dry run downloads nothing, so it plans
+  // from the copy when the copy has the list at all.
+  const linkPath = PRACTICEHUB_LINK_LISTS[kind]
+  if (linkPath && !(options.dryRun && snapshot.lists[linkPath])) {
+    const links = p.links
+    const fresh = links?.readAt && Date.now() - Date.parse(links.readAt) < LINKS_MAX_AGE_MS
+    if (!fresh) {
+      if (!links || links.readAt) {
+        // Starting a read of the list, the first or after the links lapsed.
+        if (links?.pass) await dropPracticeHubPass(admin, accountId, links.pass)
+        p.links = { pass: `links-${randomUUID()}`, listIndex: 0, page: 1, pagesRead: {}, records: 0, done: 0 }
+      }
+      const conn = await practiceHubSavedConnection(admin, accountId)
+      if (!conn) throw noConnection(t)
+      const state = p.links!
+      const done = await readLists(admin, accountId, conn, [linkPath], state, deadline, () => beat({ ...p, phase: 'links' }))
+      if (!done) return { progress: { ...p, phase: 'links' } }
+      state.readAt = new Date().toISOString()
+    }
+    snapshot.lists[linkPath] = await loadPracticeHubPassList(admin, accountId, p.links!.pass!, linkPath)
+  }
+
   const { data: account } = await admin.from('accounts').select('default_phone_country').eq('id', accountId).maybeSingle()
   const plan = await planPracticeHubStep(kind, {
     supabase: admin,
@@ -178,6 +235,7 @@ export async function practiceHubApplySlice(
     clinicId: job.clinic_id,
     defaultPhoneCountry: account?.default_phone_country || 'ES',
     t,
+    files: options.dryRun ? null : practiceHubFileServices(admin, accountId),
   }, snapshot)
 
   if (options.dryRun) {
@@ -195,5 +253,38 @@ export async function practiceHubApplySlice(
       },
     }
   }
-  return run(plan, p)
+
+  // A download that met an expired link stops the step without finishing it:
+  // the next slice reads the list again and plans what is still missing.
+  let linksExpired = false
+  const outcome = await run({
+    ...plan,
+    apply: async (progressCb, shouldStop) => {
+      const res = await plan.apply(progressCb, () => linksExpired || shouldStop())
+      if (res.linksExpired) linksExpired = true
+      return res
+    },
+  }, p)
+  if (!linksExpired) return outcome
+  // Fresh links that lapse again before a single file is stored are not
+  // going to come right by reading the list once more (S3 answers 403 for
+  // more than expiry, and a slow clinic could lap its own links): after a few
+  // refreshes in a row with nothing written, the step stops and says so, and
+  // the next sync carries on from what is stored.
+  const wroteSomething = (outcome.progress.written ?? 0) > (progress.written ?? 0)
+  const refreshes = wroteSomething ? 0 : (progress.links?.refreshes ?? 0) + 1
+  if (refreshes >= MAX_EMPTY_LINK_REFRESHES) {
+    const p2 = outcome.progress
+    const errors = [t(
+      'Stopped: PracticeHub\'s download links kept expiring before anything could be stored. Run the sync again later; what is stored stays.',
+      'Parado: los enlaces de descarga de PracticeHub caducaban antes de poder guardar nada. Vuelve a sincronizar más tarde; lo guardado se queda.',
+    ), ...(p2.errors ?? [])]
+    return { progress: p2, result: { step: kind, written: p2.written ?? 0, errors, warnings: p2.warnings ?? [] } }
+  }
+  const again = { ...outcome.progress, stalls: 0 }
+  again.links = { ...again.links, readAt: undefined, refreshes }
+  return { progress: again }
 }
+
+/** Link refreshes in a row that may store nothing before a downloading step gives up. */
+const MAX_EMPTY_LINK_REFRESHES = 3

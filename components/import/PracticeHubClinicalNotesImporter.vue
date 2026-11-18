@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { practiceHubClinicalNoteText, practiceHubPreviewTruncate as truncate, type PracticeHubSoapItem as SoapItem } from '~/utils/practicehubImport/clinical'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 
-interface SoapItem { key?: string; val?: string; label?: string; value?: string }
 interface PHClinicalNote {
   id: number
   patient_id: number
@@ -42,29 +43,9 @@ const skippedUnmatched = ref(0)
 const importedCount = ref(0)
 const importErrors = ref<string[]>([])
 
-function stripHtml(value: string): string {
-  return value.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
-}
-
-function formatNote(note: PHClinicalNote): string {
-  const items = note.data?.soap_data ?? []
-  const lines = items
-    .map((item) => {
-      const label = item.key ?? item.label ?? ''
-      const value = stripHtml(item.val ?? item.value ?? '')
-      return value ? `${label}: ${value}` : ''
-    })
-    .filter(Boolean)
-  return lines.join('\n') || '(empty)'
-}
-
 function formatDate(value: string): string {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
-}
-
-function truncate(value: string): string {
-  return value.length > 90 ? `${value.slice(0, 90)}…` : value
 }
 
 const previewColumns = computed(() => [
@@ -155,7 +136,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           account_id: store.accountId!,
           patient_id: patient.id,
           action: 'other',
-          note: `[clinical_note/${note.type}] ${formatNote(note)}`,
+          note: `[clinical_note/${note.type}] ${practiceHubClinicalNoteText(note)}`,
           external_reference: ref,
           created_at: note.created,
         },

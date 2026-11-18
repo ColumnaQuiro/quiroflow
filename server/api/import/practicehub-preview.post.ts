@@ -35,6 +35,8 @@ export default defineEventHandler(async (event) => {
     clinicId,
     defaultPhoneCountry: account?.default_phone_country || 'ES',
     t: importJobT(body.lang),
+    // A preview never downloads anything.
+    files: null,
   }, snapshot)
   return {
     readAt: snapshot.readAt,

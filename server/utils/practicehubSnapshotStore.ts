@@ -102,6 +102,43 @@ export async function loadPracticeHubSnapshot(admin: Admin, accountId: string): 
   return { readAt: meta.readAt, baseUrl: meta.baseUrl, lists }
 }
 
+/**
+ * One list as a pass saved it, de-duplicated by id. A downloading step reads
+ * its link list fresh under a pass of its own (PRACTICEHUB_LINK_LISTS) and
+ * plans from that instead of the copy.
+ */
+export async function loadPracticeHubPassList(admin: Admin, accountId: string, pass: string, path: string): Promise<unknown[]> {
+  const byId = new Map<unknown, unknown>()
+  const withoutId: unknown[] = []
+  const prefix = `page:${pass}:${path}:`
+  for (let from = 0; ; from += 20) {
+    const { data, error } = await admin
+      .from('import_snapshots')
+      .select('data')
+      .eq('account_id', accountId)
+      .eq('source', SOURCE)
+      .like('key', `${prefix}%`)
+      .order('key')
+      .range(from, from + 19)
+    if (error) throw new Error(`import_snapshots: ${error.message}`)
+    for (const row of data ?? []) {
+      for (const record of (row.data as unknown[]) ?? []) {
+        const id = (record as { id?: unknown })?.id
+        if (id === undefined || id === null) withoutId.push(record)
+        else byId.set(id, record)
+      }
+    }
+    if (!data || data.length < 20) break
+  }
+  return [...byId.values(), ...withoutId]
+}
+
+/** Removes every page a pass saved (a step's fresh link list, once it is stale). */
+export async function dropPracticeHubPass(admin: Admin, accountId: string, pass: string) {
+  const { error } = await admin.from('import_snapshots').delete().eq('account_id', accountId).eq('source', SOURCE).like('key', `page:${pass}:%`)
+  if (error) throw new Error(`import_snapshots: ${error.message}`)
+}
+
 /** "Delete the copy": everything read from PracticeHub for this clinic. */
 export async function dropPracticeHubSnapshot(admin: Admin, accountId: string) {
   const { error } = await admin.from('import_snapshots').delete().eq('account_id', accountId).eq('source', SOURCE)

@@ -306,7 +306,7 @@ const packages = () => [
 ]
 
 describe('planBonos on the server', () => {
-  const ctx = (client: unknown) => ({ supabase: client as never, accountId: ACCOUNT, clinicId: null, defaultPhoneCountry: 'ES', t })
+  const ctx = (client: unknown) => ({ supabase: client as never, accountId: ACCOUNT, clinicId: null, defaultPhoneCountry: 'ES', t, files: null })
 
   it('reads only this account, writes account_id on every row, never lowers a counter, and settles last', async () => {
     const tables = database()

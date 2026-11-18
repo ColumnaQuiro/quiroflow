@@ -18,7 +18,10 @@ import type { Database } from '~/types/database.types'
 // not there to do it, and a read without it would plan one clinic's import
 // against another clinic's rows.
 
-export type PracticeHubStepKind = 'patients' | 'appointment_types' | 'appointments' | 'ledger' | 'bonos'
+export type PracticeHubStepKind =
+  | 'patients' | 'appointment_types' | 'appointments' | 'ledger' | 'bonos'
+  | 'treatment_notes' | 'care_plans' | 'patient_logs' | 'sticky_notes' | 'custom_form_responses'
+  | 'profile_photos' | 'file_attachments'
 
 // The order a full sync runs them in, which is the order they depend on each
 // other: every step finds its patient by patients.external_reference;
@@ -26,8 +29,14 @@ export type PracticeHubStepKind = 'patients' | 'appointment_types' | 'appointmen
 // runs after Appointments has written them; the ledger links invoices to
 // visits; and settle_imported_invoices pools family bonos through
 // package_purchase_shares, which Bonos writes -- so Bonos settles again after
-// it has written shares (see the Bonos planner).
-export const PRACTICEHUB_STEPS: PracticeHubStepKind[] = ['patients', 'appointments', 'appointment_types', 'ledger', 'bonos']
+// it has written shares (see the Bonos planner). The clinical steps only need
+// their patient. Photos and files go last: they download every byte, and the
+// rest is useful to the clinic sooner.
+export const PRACTICEHUB_STEPS: PracticeHubStepKind[] = [
+  'patients', 'appointments', 'appointment_types', 'ledger', 'bonos',
+  'treatment_notes', 'care_plans', 'patient_logs', 'sticky_notes', 'custom_form_responses',
+  'profile_photos', 'file_attachments',
+]
 
 // Every list a step plans from. The read walks them in this order, all from
 // the Classic API except PRACTICEHUB_V3_LISTS. /files is not here: its signed
@@ -44,8 +53,23 @@ export const PRACTICEHUB_LISTS = [
   '/invoices',
   '/payments',
   '/patient_packages',
+  '/clinical_notes',
+  '/care_plans',
+  '/patient_logs',
+  '/custom_form_responses',
 ] as const
-export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number]
+export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
+
+// Steps whose list carries pre-signed S3 download links, which expire well
+// within the hour: a copy read at the start of a long job is useless by the
+// time the step reaches it. So the job reads THIS list again, fresh, right
+// before the step -- and again whenever a download says its link has expired
+// (the step's apply returns linksExpired) or the fresh copy grows old. The
+// step then finds it in snapshot.lists like any other.
+export const PRACTICEHUB_LINK_LISTS: Partial<Record<PracticeHubStepKind, PracticeHubListPath>> = {
+  profile_photos: '/patients',
+  file_attachments: '/files',
+}
 
 // Read from PracticeHub 2.0's API (the phk_ key) instead: Classic has no
 // /billable_items, and only 2.0's carries the amounts appointment types are
@@ -81,7 +105,28 @@ export interface PracticeHubPlan {
    * `shouldStop` between chunks: when it says stop, return what was written
    * so far -- the next slice plans again and finds only what is left.
    */
-  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[] }>
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; linksExpired?: boolean }>
+}
+
+/** Thrown by ctx.files.fetch when PracticeHub's S3 refuses a link because it has expired (it answers 403). */
+export class PracticeHubLinkExpired extends Error {
+  constructor() { super('That file link has expired') }
+}
+
+/**
+ * What a step that copies bytes is handed by the server (null in a preview,
+ * which never downloads anything). The job's link handling is described at
+ * PRACTICEHUB_LINK_LISTS: a step that meets PracticeHubLinkExpired stops,
+ * returns `linksExpired: true` without counting those files as errors, and is
+ * run again with fresh links.
+ */
+export interface PracticeHubFileServices {
+  /** Downloads one pre-signed PracticeHub S3 link (https, *.amazonaws.com only). Throws PracticeHubLinkExpired on an expired link. */
+  fetch(url: string): Promise<{ bytes: Uint8Array; contentType: string | null }>
+  /** What /api/patients/files/compress does for a browser upload: re-encode and thumbnail a stored patient_files row (processStoredPatientFile). */
+  compressFile(fileId: string): Promise<unknown>
+  /** A profile photo made the size and format the browser importer stores (it shrinks on a canvas); null when the bytes are not an image. */
+  shrinkPhoto(bytes: Uint8Array): Promise<{ bytes: Uint8Array; contentType: string } | null>
 }
 
 export interface PracticeHubImportContext {
@@ -93,6 +138,8 @@ export interface PracticeHubImportContext {
   /** accounts.default_phone_country: the country for a number PracticeHub gives none for. */
   defaultPhoneCountry: string
   t: (en: string, es: string) => string
+  /** Downloads, compression and photo shrinking. Null in a preview or dry run: plan, never fetch. */
+  files: PracticeHubFileServices | null
 }
 
 export type PracticeHubStepPlanner = (ctx: PracticeHubImportContext, snapshot: PracticeHubSnapshot) => Promise<PracticeHubPlan>

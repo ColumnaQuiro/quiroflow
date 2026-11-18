@@ -198,7 +198,7 @@ describe('the server step', () => {
   })
 
   function setup(tables: Record<string, Row[]>, over: Partial<PracticeHubImportContext> = {}) {
-    const ctx = { supabase: fakeSupabase(tables) as never, accountId: ACCOUNT, clinicId: 'clinic-1', defaultPhoneCountry: 'PT', t, ...over } as PracticeHubImportContext
+    const ctx = { supabase: fakeSupabase(tables) as never, accountId: ACCOUNT, clinicId: 'clinic-1', defaultPhoneCountry: 'PT', t, files: null, ...over } as PracticeHubImportContext
     return ctx
   }
 

@@ -2,7 +2,6 @@ import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { formatEur } from '~/utils/billing'
 import { countryByCode } from '~/utils/countries'
 import { LANGUAGES } from '~/utils/languages'
-import { planProfilePhotos } from '~/utils/practicehubProfilePhotos'
 import { practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
@@ -512,11 +511,9 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
   const foreignNumbers = [...toImport, ...changed].reduce((total, row) => total + row.numbers.filter((n) => n.country_code !== defaultCountry).length, 0)
   const defaultCountryName = countryByCode(defaultCountry).name
 
-  // Profile photos stay with the browser screen: PracticeHub's links to them
-  // are signed and expire within the hour, so the copy a job read is no use
-  // for fetching them by the time a later slice gets here.
-  const photoSources = phPatients.filter((p) => p.profile_image)
-  const photosToBring = photoSources.length - planProfilePhotos(photoSources, existing).alreadyHere
+  // Profile photos are a step of their own (photos.ts), run later in the same
+  // sync from a fresh read of PracticeHub's links: the ones in this copy are
+  // signed and expire within the hour.
 
   const unmatched = diff.unmatchedPractitioners
   const warnings = [
@@ -528,10 +525,6 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
       'Tags are only in PracticeHub 2.0’s API, which this sync does not read, so new patients come in without them.',
       'Las etiquetas solo están en la API de PracticeHub 2.0, que esta sincronización no lee, así que los pacientes nuevos llegan sin ellas.',
     ),
-    ...(photosToBring > 0 ? [t(
-      `Profile photos are not copied by this sync (PracticeHub's links to them expire within the hour): ${nf.format(photosToBring)} patients have one to bring. The Patients import screen brings them.`,
-      `Esta sincronización no copia las fotos de perfil (los enlaces de PracticeHub caducan en una hora): ${nf.format(photosToBring)} pacientes tienen una por traer. La pantalla de importación de Pacientes las trae.`,
-    )] : []),
     // A patient with no clinic is invisible on the main Patients list once
     // its clinic filter applies, with no error anywhere.
     ...(!ctx.clinicId && toImport.length ? [t(

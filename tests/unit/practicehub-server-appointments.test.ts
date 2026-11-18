@@ -71,7 +71,7 @@ const t = (en: string) => en
 const madrid = (local: string) => new Date(`${local.replace(' ', 'T')}:00+02:00`).toISOString()
 
 function ctxFor(tables: Record<string, Row[]>, clinicId: string | null = CLINIC): PracticeHubImportContext {
-  return { supabase: fakeSupabase(tables) as never, accountId: ACCOUNT, clinicId, defaultPhoneCountry: 'ES', t }
+  return { supabase: fakeSupabase(tables) as never, accountId: ACCOUNT, clinicId, defaultPhoneCountry: 'ES', t, files: null }
 }
 
 const noop = () => {}

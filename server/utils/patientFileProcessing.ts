@@ -93,3 +93,20 @@ export async function processStoredPatientFile(supabase: SupabaseClient<Database
     undecodable: isImage && !made.decoded && !changed && !file.thumb_path,
   }
 }
+
+/**
+ * What /api/patients/files/compress does for a file uploaded from a browser,
+ * for a file an import job stored: the account's row, if it has bytes and has
+ * not been processed yet. Used by the Quirocitas and PracticeHub import jobs
+ * (server/utils/importJobs.ts, server/utils/practicehubFiles.ts).
+ */
+export async function compressStoredFile(admin: SupabaseClient<Database>, accountId: string, fileId: string) {
+  const { data: file } = await admin
+    .from('patient_files')
+    .select('id, storage_path, file_type, size_bytes, compressed_at, thumb_path')
+    .eq('id', fileId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!file?.storage_path || file.compressed_at) return
+  await processStoredPatientFile(admin, { ...file, storage_path: file.storage_path }, { write: true })
+}

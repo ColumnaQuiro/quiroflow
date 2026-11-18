@@ -19,6 +19,13 @@
 // resumable by construction: a file already carrying a storage_path is skipped,
 // so closing the tab and coming back loses only the batch in flight.
 import type { TablesInsert } from '~/types/database.types'
+import {
+  practiceHubFileName,
+  practiceHubFileStoragePath,
+  practiceHubFileTriage,
+  type PracticeHubFile as PHFile,
+  type PracticeHubFilePatient as PHPatient,
+} from '~/utils/practicehubImport/files'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -43,23 +50,6 @@ const BATCH_SIZE = 20
 // fixed storage path keeps a retry from leaving a second copy behind.
 const FILE_DEADLINE_MS = 3 * 60 * 1000
 
-interface PHFile {
-  id: number
-  size: number | null
-  file_name: string | null
-  entity_type: string | null
-  file_type: string | null
-  description: string | null
-  mime_type: string | null
-  patient_id: number | null
-  url: string | null
-  created: string | null
-}
-interface PHPatient {
-  id: number
-  patient_number: string | number | null
-}
-
 type Phase = 'idle' | 'listing' | 'ready' | 'working' | 'done'
 const phase = ref<Phase>('idle')
 useImportWriting(() => phase.value === 'working')
@@ -77,24 +67,14 @@ const error = ref('')
 const totalInPracticeHub = ref(0)
 const queue = ref<{ ph: PHFile; patientId: string }[]>([])
 const alreadyHere = ref(0)
-// Three different reasons, counted separately. They were one bucket called
-// "No patient match", which then reported 688 of 2,624 and told the clinic to
-// run the Patients import -- advice that was wrong, and unfalsifiable from the
-// screen: a file with no download URL landed in the same number as a file
-// whose patient was genuinely absent.
+// Why the rest are not brought, each reason counted on its own: see
+// PracticeHubFileTriage in utils/practicehubImport/files.ts, which the server
+// import shares. A deleted patient is the same distinction
+// PracticeHubReconciliation draws for invoices.
 const noPatientMatch = ref(0)
-// Files whose patient PracticeHub no longer lists at all. Its /patients
-// endpoint leaves deleted patients out while their files stay behind, so the
-// Patients import never saw them and running it again changes nothing -- the
-// same distinction PracticeHubReconciliation draws for invoices. These were
-// counted as "Patient not here", with advice to re-import, on a clinic where
-// every patient PracticeHub still has was already here.
 const patientDeletedInPh = ref(0)
 const noDownloadUrl = ref(0)
 const notPatientFiles = ref(0)
-// Which PracticeHub patients could not be found, so the clinic can go and look
-// at one instead of taking the number on faith. Capped -- this is a hint, not
-// a report.
 const unmatchedPhPatients = ref<number[]>([])
 
 // What the listing phase is reading, with fetchAll's own count. A clinic with
@@ -111,17 +91,6 @@ const failed = ref<string[]>([])
 const stopRequested = ref(false)
 
 const progressPct = computed(() => (queue.value.length === 0 ? 0 : Math.round((done.value / queue.value.length) * 100)))
-
-// Supabase Storage rejects object keys with certain non-ASCII characters
-// outright ("Invalid key"), and PracticeHub filenames are full of them --
-// accented Spanish and enye. Same rule as utils/storageFilename.ts.
-const ACCENTS: Record<string, string> = {
-  á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u', ñ: 'n',
-  Á: 'A', É: 'E', Í: 'I', Ó: 'O', Ú: 'U', Ü: 'U', Ñ: 'N',
-}
-function storageSafe(name: string): string {
-  return name.replace(/[áéíóúüñÁÉÍÓÚÜÑ]/g, (c) => ACCENTS[c] ?? c).replace(/[^a-zA-Z0-9._-]/g, '_')
-}
 
 // PostgREST returns at most max_rows per request -- 1,000 for this project
 // (supabase/config.toml) -- and does it SILENTLY: a truncated answer looks
@@ -189,13 +158,6 @@ async function buildList() {
     totalInPracticeHub.value = phFiles.length
     listingStep.value = 'here'
 
-    const phPatientIds = new Set(phPatients.map((p) => p.id))
-    const numberByPhId = new Map<number, string>()
-    for (const p of phPatients) {
-      const ref = String(p.patient_number ?? '').trim()
-      if (ref) numberByPhId.set(p.id, ref)
-    }
-
     const ourPatients = await readAll<{ id: string; external_reference: string }>((from, to) =>
       supabase
         .from('patients')
@@ -204,8 +166,6 @@ async function buildList() {
         .not('external_reference', 'is', null)
         .order('id').range(from, to),
     )
-    const idByNumber = new Map<string, string>()
-    for (const p of ourPatients) idByNumber.set(String(p.external_reference).trim(), p.id)
 
     // Files already carrying their bytes are skipped, which is what makes this
     // resumable -- and what lets it run again after a clinic adds more in
@@ -218,41 +178,14 @@ async function buildList() {
         .not('external_reference', 'is', null)
         .order('id').range(from, to),
     )
-    const storedRefs = new Set(
-      existing.filter((r) => r.storage_path).map((r) => String(r.external_reference)),
-    )
-
-    for (const f of phFiles) {
-      // PracticeHub attaches files to things other than patients; only a
-      // patient's belong on a patient record here.
-      if (f.entity_type && f.entity_type !== 'patient') {
-        notPatientFiles.value++
-        continue
-      }
-      if (storedRefs.has(String(f.id))) {
-        alreadyHere.value++
-        continue
-      }
-      const number = f.patient_id === null ? null : numberByPhId.get(f.patient_id)
-      const patientId = number ? idByNumber.get(number) : undefined
-      if (!patientId && f.patient_id !== null && !phPatientIds.has(f.patient_id)) {
-        patientDeletedInPh.value++
-        continue
-      }
-      if (!patientId) {
-        noPatientMatch.value++
-        if (f.patient_id !== null && unmatchedPhPatients.value.length < 12 && !unmatchedPhPatients.value.includes(f.patient_id)) {
-          unmatchedPhPatients.value.push(f.patient_id)
-        }
-        continue
-      }
-      // Nothing to do with the patient: PracticeHub gave us no link to fetch.
-      if (!f.url) {
-        noDownloadUrl.value++
-        continue
-      }
-      queue.value.push({ ph: f, patientId })
-    }
+    const triage = practiceHubFileTriage(phFiles, phPatients, ourPatients, existing)
+    queue.value = triage.queue
+    alreadyHere.value = triage.alreadyHere
+    noPatientMatch.value = triage.noPatientMatch
+    patientDeletedInPh.value = triage.patientDeletedInPh
+    noDownloadUrl.value = triage.noDownloadUrl
+    notPatientFiles.value = triage.notPatientFiles
+    unmatchedPhPatients.value = triage.unmatchedPhPatients
 
     phase.value = 'ready'
   } catch (err: any) {
@@ -269,7 +202,7 @@ function importWithDeadline(item: { ph: PHFile; patientId: string }) {
 }
 
 async function importOne(item: { ph: PHFile; patientId: string }, signal: AbortSignal) {
-  const fileName = item.ph.file_name?.trim() || `practicehub-${item.ph.id}`
+  const fileName = practiceHubFileName(item.ph)
 
   // The bytes come back through our own server: PracticeHub's S3 bucket sends
   // no CORS headers for this origin, so the browser cannot read the signed URL
@@ -284,13 +217,10 @@ async function importOne(item: { ph: PHFile; patientId: string }, signal: AbortS
   // the download stops here instead of writing anyway.
   signal.throwIfAborted()
 
-  // Keyed on PracticeHub's file id, not the clock. Date.now() alone collides
-  // when one patient has two files of the same name uploaded in the same
-  // millisecond -- which a batch of 20 makes reachable, and a patient with
-  // several IMG_0001.jpg makes likely. upload() refuses an existing key, so it
-  // would surface as a failed file rather than a lost one, but the id is
-  // already unique per file and costs nothing.
-  const storagePath = `${store.accountId}/${item.patientId}/${item.ph.id}-${storageSafe(fileName)}`
+  // Keyed on PracticeHub's file id, not the clock: see
+  // practiceHubFileStoragePath. A batch of 20, and a patient with several
+  // IMG_0001.jpg, made the clock-based key collide.
+  const storagePath = practiceHubFileStoragePath(store.accountId!, item.patientId, item.ph)
   const { error: uploadError } = await supabase.storage
     .from('patient-files')
     .upload(storagePath, blob, {

@@ -65,7 +65,7 @@ const sources = computed<Source[]>(() => [
         label: t('Set up', 'Configurar'),
         steps: [
           { key: 'general', label: t('Connection', 'Conexión'), hint: t('API key and clinic URL, saved once for every step.', 'Clave API y URL de la clínica, guardadas una vez para todos los pasos.') },
-          { key: 'full', label: t('Sync everything', 'Sincronizar todo'), hint: t('Reads PracticeHub and runs Patients, Appointments, Appointment types, Ledger and Bonos on the server. You can close the page.', 'Lee PracticeHub y hace Pacientes, Citas, Tipos de cita, Libro mayor y Bonos en el servidor. Puedes cerrar la página.') },
+          { key: 'full', label: t('Sync everything', 'Sincronizar todo'), hint: t('Reads PracticeHub and runs every step below on the server, except Signed forms. You can close the page.', 'Lee PracticeHub y hace en el servidor todos los pasos de abajo, salvo Formularios firmados. Puedes cerrar la página.') },
         ],
       },
       {

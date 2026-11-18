@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nationalIdAnswer, type DocField } from '~/utils/docFields'
+import type { DocField } from '~/utils/docFields'
+import { keepNewestNationalId } from '~/utils/practicehubImport/forms'
 import { practiceHubFormBlocks, practiceHubFormOptions } from '~/utils/practicehubFormFields'
 import type { Json } from '~/types/database.types'
 
@@ -241,11 +242,7 @@ async function apply() {
         importErrors.value.push(t(`Forms ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron los formularios ${i + 1}-${i + rows.length}: ${error.message}`))
       } else {
         importedCount.value += rows.length
-        for (const { candidate: c, blocks } of chunk) {
-          const value = nationalIdAnswer(blocks.find((b) => b.patientField === 'national_id' && nationalIdAnswer(b.value))?.value)
-          const known = dniByPatient.get(c.patientId)
-          if (value && (!known || c.response.created > known.at)) dniByPatient.set(c.patientId, { value, at: c.response.created })
-        }
+        for (const { candidate: c, blocks } of chunk) keepNewestNationalId(dniByPatient, c.patientId, blocks, c.response.created)
       }
 
       progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }

@@ -8,7 +8,7 @@ export type ImportJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancel
 
 export interface ImportJobProgress {
   /** Read: 'list' -> 'patients' -> 'ledger' (Quirocitas) or 'read' (PracticeHub). Import steps: 'apply'. */
-  phase?: 'list' | 'patients' | 'ledger' | 'read' | 'apply'
+  phase?: 'list' | 'patients' | 'ledger' | 'read' | 'links' | 'apply'
   done?: number
   total?: number
   /** Patients Quirocitas would not send, in this read. */
@@ -38,6 +38,24 @@ export interface ImportJobProgress {
   pagesRead?: Record<string, number>
   /** Records PracticeHub says it holds, summed over the lists read so far. */
   records?: number
+  /**
+   * A downloading step's fresh read of its link list (PRACTICEHUB_LINK_LISTS),
+   * kept apart from the step's own counts. `readAt` is unset while it reads,
+   * and again once a link has lapsed, which sends the step to read it anew.
+   */
+  links?: {
+    pass?: string
+    listIndex?: number
+    page?: number
+    pageCount?: number
+    cursor?: string
+    pagesRead?: Record<string, number>
+    records?: number
+    done?: number
+    readAt?: string
+    /** Refreshes in a row since a file was last stored (practicehubImportJob caps them). */
+    refreshes?: number
+  }
 }
 
 export interface ImportJobStepResult {
@@ -66,6 +84,13 @@ export function importJobStepLabel(step: string, t: T, source?: string): string 
     case 'patients': return t('Patients', 'Pacientes')
     case 'appointments': return t('Appointments', 'Citas')
     case 'appointment_types': return t('Appointment types', 'Tipos de cita')
+    case 'treatment_notes': return t('Treatment notes', 'Notas de tratamiento')
+    case 'care_plans': return t('Care plans', 'Planes de tratamiento')
+    case 'patient_logs': return t('Patient logs', 'Registros de pacientes')
+    case 'sticky_notes': return t('Sticky notes', 'Notas adhesivas')
+    case 'custom_form_responses': return t('Form responses', 'Respuestas de formularios')
+    case 'profile_photos': return t('Profile photos', 'Fotos de perfil')
+    case 'file_attachments': return t('Files', 'Archivos')
     case 'clinical': return t('Clinical history and calls', 'Historial clínico y llamadas')
     case 'files': return t('Files and photos', 'Archivos y fotos')
     case 'bonos': return 'Bonos'

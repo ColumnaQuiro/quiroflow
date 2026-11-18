@@ -35,6 +35,10 @@ function practiceHubListName(path: string | undefined): string {
     case '/invoices': return t('invoices', 'facturas')
     case '/payments': return t('payments', 'pagos')
     case '/patient_packages': return 'bonos'
+    case '/clinical_notes': return t('treatment notes', 'notas de tratamiento')
+    case '/care_plans': return t('care plans', 'planes de tratamiento')
+    case '/patient_logs': return t('patient logs', 'registros de pacientes')
+    case '/custom_form_responses': return t('form responses', 'respuestas de formularios')
     default: return path ?? ''
   }
 }
@@ -54,6 +58,7 @@ const now = computed(() => {
     return t('Reading the patient list…', 'Leyendo la lista de pacientes…')
   }
   const label = importJobStepLabel(current.value ?? '', t, source.value)
+  if (p.phase === 'links') return t(`${label}: getting fresh download links from PracticeHub…`, `${label}: pidiendo a PracticeHub enlaces de descarga nuevos…`)
   if ((props.job.options as { dryRun?: boolean } | null)?.dryRun) return t(`${label}: working out what would change…`, `${label}: calculando qué cambiaría…`)
   return p.total ? `${label}: ${t(`${nf.format(p.done ?? 0)} of ${nf.format(p.total)}`, `${nf.format(p.done ?? 0)} de ${nf.format(p.total)}`)}` : t(`${label}: comparing with what is already here…`, `${label}: comparando con lo que ya hay…`)
 })

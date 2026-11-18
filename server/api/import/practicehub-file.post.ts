@@ -1,3 +1,6 @@
+import { fetchPracticeHubFile, PracticeHubFileDownloadFailed, PracticeHubFileUrlRefused } from '~/server/utils/practicehubFiles'
+import { PracticeHubLinkExpired } from '~/utils/practicehubImport/types'
+
 // Fetches one PracticeHub file's bytes so the browser can store it.
 //
 // /api/files gives every attachment a pre-signed S3 URL, but that bucket sends
@@ -21,35 +24,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'url is required' })
   }
 
-  // An authenticated endpoint that fetches whatever URL it is handed is still
-  // a way to reach things only this server can see -- cloud metadata, anything
-  // on a private network. PracticeHub hands out S3 links, so that is all this
-  // will follow.
-  let target: URL
+  // The URL check and the download are fetchPracticeHubFile's
+  // (server/utils/practicehubFiles.ts), shared with the import job, which
+  // stores the files itself. This only turns its refusals into answers.
+  let file: { bytes: Uint8Array; contentType: string | null }
   try {
-    target = new URL(body.url)
-  } catch {
-    throw createError({ statusCode: 400, statusMessage: 'url is not a valid URL' })
-  }
-  const host = target.hostname.toLowerCase()
-  if (target.protocol !== 'https:' || !(host === 'amazonaws.com' || host.endsWith('.amazonaws.com'))) {
-    throw createError({ statusCode: 400, statusMessage: 'Only PracticeHub S3 file URLs can be fetched' })
-  }
-
-  const res = await fetch(target.toString(), { redirect: 'error' })
-  if (!res.ok) {
-    // A signed URL is short-lived -- the ones seen carry roughly a day. An
-    // expired batch is recoverable by re-listing the files, so say which it
-    // was rather than leaving the client to guess from a bare 502.
-    throw createError({
-      statusCode: res.status === 403 ? 410 : 502,
-      statusMessage:
-        res.status === 403
-          ? 'That file link has expired — list the files again to get fresh ones'
-          : `PracticeHub file download failed (HTTP ${res.status})`,
-    })
+    file = await fetchPracticeHubFile(body.url)
+  } catch (e) {
+    if (e instanceof PracticeHubFileUrlRefused) throw createError({ statusCode: 400, statusMessage: e.message })
+    // A signed URL is short-lived. An expired batch is recoverable by
+    // re-listing the files, so say which it was rather than leaving the
+    // client to guess from a bare 502. Every 403 says so, as it always has:
+    // the browser's answer to it is the same re-list either way.
+    if (e instanceof PracticeHubLinkExpired || (e instanceof PracticeHubFileDownloadFailed && e.status === 403)) {
+      throw createError({ statusCode: 410, statusMessage: 'That file link has expired — list the files again to get fresh ones' })
+    }
+    if (e instanceof PracticeHubFileDownloadFailed) throw createError({ statusCode: 502, statusMessage: e.message })
+    throw e
   }
 
-  setHeader(event, 'Content-Type', res.headers.get('content-type') ?? 'application/octet-stream')
-  return Buffer.from(await res.arrayBuffer())
+  setHeader(event, 'Content-Type', file.contentType ?? 'application/octet-stream')
+  return Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength)
 })

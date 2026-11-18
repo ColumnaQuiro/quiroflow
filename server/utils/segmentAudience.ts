@@ -209,13 +209,16 @@ export async function segmentAudience(
   }
 
   if (candidates.length && f.balance) {
-    const balances = await allRows<{ patient_id: string; balance_cents: number | null }>((from, to) =>
-      service.from('patient_live_balances').select('patient_id, balance_cents').eq('account_id', accountId).order('patient_id').range(from, to),
+    const balances = await allRows<{ patient_id: string; balance_cents: number | null; outstanding_cents: number | null }>((from, to) =>
+      service.from('patient_live_balances').select('patient_id, balance_cents, outstanding_cents').eq('account_id', accountId).order('patient_id').range(from, to),
     )
-    const byId = new Map(balances.map((b) => [b.patient_id, b.balance_cents ?? 0]))
+    const byId = new Map(balances.map((b) => [b.patient_id, b]))
+    // Owing from the invoices, credit from the balance (utils/owing.ts), as
+    // the patient list's own filter does: a family bono's beneficiary reads
+    // negative and owes nothing.
     candidates = candidates.filter((p) => {
-      const cents = byId.get(p.id) ?? 0
-      return f.balance === 'debit' ? cents < 0 : cents > 0
+      const b = byId.get(p.id)
+      return f.balance === 'debit' ? (b?.outstanding_cents ?? 0) > 0 : (b?.balance_cents ?? 0) > 0
     })
   }
 

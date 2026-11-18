@@ -230,7 +230,7 @@ async function loadPatients() {
         .in('patient_id', ids)
         .order('created_at')
         .then(dataOrThrow),
-      supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids).then(dataOrThrow),
+      supabase.from('patient_live_balances').select('patient_id, balance_cents, outstanding_cents').in('patient_id', ids).then(dataOrThrow),
     ]).catch((err: unknown) => {
       // Unknown, not empty: these cells would otherwise claim "No phone",
       // "Never" and 0,00 € for patients who have all three.
@@ -243,7 +243,9 @@ async function loadPatients() {
     if (token !== loadToken) return
 
     const balByPatient: Record<string, number> = {}
-    for (const b of balances ?? []) balByPatient[b.patient_id!] = b.balance_cents ?? 0
+    // Owing from the invoices, credit from the balance -- see utils/owing.ts
+    // owingPillCents. The balance alone called family-bono beneficiaries debtors.
+    for (const b of balances ?? []) balByPatient[b.patient_id!] = owingPillCents(b.balance_cents ?? 0, b.outstanding_cents ?? 0)
     balanceByPatient.value = balByPatient
 
     const nextByPatient: Record<string, string> = {}

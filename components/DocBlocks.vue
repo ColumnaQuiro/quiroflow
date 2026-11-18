@@ -196,6 +196,17 @@ function updateOtherText(index: number, text: string) {
 }
 
 const showAddMenu = ref(false)
+const addMenuEl = ref<HTMLElement | null>(null)
+
+// On a tablet the button often sits at the bottom of the screen, so the list
+// it opens starts below the fold; bring it into view rather than leave the
+// tap looking like it did nothing.
+async function toggleAddMenu() {
+  showAddMenu.value = !showAddMenu.value
+  if (!showAddMenu.value) return
+  await nextTick()
+  addMenuEl.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+}
 
 // Ties each visible <label> to the field under it (for/id), so a screen
 // reader announces the field by its name.
@@ -500,16 +511,22 @@ const fieldId = useId()
       </div>
     </div>
 
-    <div v-if="mode === 'build'" class="relative">
-      <button type="button" class="rounded-md border border-dashed border-line-control px-3 py-1.5 text-sm text-ink-muted hover:border-brand hover:text-brand-text" @click="showAddMenu = !showAddMenu">
+    <div v-if="mode === 'build'">
+      <button type="button" class="rounded-md border border-dashed border-line-control px-3 py-1.5 touch:py-2.5 text-sm text-ink-muted hover:border-brand hover:text-brand-text" :aria-expanded="showAddMenu" data-cy="doc-add-block" @click="toggleAddMenu">
         + {{ t('Add block', 'Añadir bloque') }}
       </button>
-      <div v-if="showAddMenu" class="absolute left-0 z-10 mt-1 w-40 rounded-md border border-line bg-surface py-1 shadow-lg">
+      <!-- In the flow, not `absolute`: this button is always the last thing in
+           the editor card, and that card is `overflow-hidden`, so a floating
+           menu opened under it was clipped down to its top edge -- clinics
+           could add the first block (the "no blocks yet" line below gave the
+           first item room) and nothing after it. Pushing the content down
+           can't be clipped by any container this component ends up in. -->
+      <div v-if="showAddMenu" ref="addMenuEl" class="mt-1 w-48 rounded-md border border-line bg-surface py-1 shadow-sm" data-cy="doc-add-block-menu">
         <button
           v-for="ft in FIELD_TYPES"
           :key="ft.type"
           type="button"
-          class="block w-full px-3 py-1.5 text-left text-sm text-ink-700 hover:bg-surface-subtle"
+          class="block w-full px-3 py-1.5 touch:py-2.5 text-left text-sm text-ink-700 hover:bg-surface-subtle"
           @click="addBlock(ft.type); showAddMenu = false"
         >
           {{ FIELD_TYPE_LABELS[ft.type] }}

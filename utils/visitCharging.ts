@@ -123,3 +123,24 @@ export function planInvoiceUnderBono(
 export function creditExceedsSpendable(creditCents: number, spendableCreditCents: number): boolean {
   return creditCents > 0 && creditCents > spendableCreditCents
 }
+
+/**
+ * The rows a visit's payment form opens with: the patient's spendable credit
+ * first, up to what is due, and anything it does not cover on the clinic's
+ * default method.
+ *
+ * Credit used to be offered and never chosen. The form opened at the full
+ * price on cash, "Credit on account" sat in the dropdown, and a patient with
+ * 100 EUR on account was shown 100 EUR to pay for a 100 EUR visit -- which is
+ * how reception reads it, and they asked why the money was not being used.
+ * Opening on credit says it before anyone has to look for it; changing the
+ * method is still one click.
+ */
+export function openingPaymentRows(dueCents: number, spendableCreditCents: number, defaultMethod: string): { method: string; cents: number }[] {
+  const fromCreditCents = Math.min(Math.max(0, spendableCreditCents), Math.max(0, dueCents))
+  if (fromCreditCents <= 0) return [{ method: defaultMethod, cents: dueCents }]
+  const restCents = dueCents - fromCreditCents
+  return restCents > 0
+    ? [{ method: 'credit', cents: fromCreditCents }, { method: defaultMethod, cents: restCents }]
+    : [{ method: 'credit', cents: fromCreditCents }]
+}

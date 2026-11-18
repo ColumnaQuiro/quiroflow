@@ -1,6 +1,6 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
 
@@ -78,7 +78,6 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
   const {
     rows: paymentRows,
-    reset: resetPaymentRows,
     addRow: addPaymentRow,
     removeRow: removePaymentRow,
     centsOf: paymentRowCents,
@@ -286,10 +285,26 @@ export function useVisitCharging(ctx: VisitChargingContext) {
       ])
       lineItems.value = lines ?? []
       payments.value = pays ?? []
-      resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
+      openPaymentRows()
     }
     loadingInvoice.value = false
   }
+
+  // The form as it opens on what is due: credit first when the patient has
+  // some (utils/visitCharging openingPaymentRows). Remembered, so the credit
+  // figure arriving after the invoice -- the summary loads on its own -- can
+  // redo it, but only while nobody has touched the form.
+  let openedRowsKey = ''
+  function openPaymentRows() {
+    paymentRows.value = openingPaymentRows(balanceDueCents.value, spendableCreditCents.value, defaultMethod.value).map((r) => ({
+      method: r.method,
+      amount: (r.cents / 100).toFixed(2),
+    }))
+    openedRowsKey = JSON.stringify(paymentRows.value)
+  }
+  watch(spendableCreditCents, () => {
+    if (openedRowsKey && JSON.stringify(paymentRows.value) === openedRowsKey) openPaymentRows()
+  })
 
   // Everything the billing panel needs before it can render. A read: nothing
   // here writes, whatever state the visit is in.
@@ -307,7 +322,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     const totalCents = lineItemsTotalCents(lineItems.value)
     await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
     invoice.value.total_cents = totalCents
-    resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
+    openPaymentRows()
   }
 
   // "Charge" on an unbilled visit: raise the invoice at the appointment type's

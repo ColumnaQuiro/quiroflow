@@ -13,7 +13,7 @@ export interface MatchablePatient {
   first_name: string
   last_name: string | null
   email: string | null
-  /** patients.phone_search: every contact number, national digits, space-separated. */
+  /** patients.phone_search: every contact number as its digits, space-separated (20261118122723). */
   phone_search: string | null
 }
 

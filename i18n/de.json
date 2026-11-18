@@ -8547,7 +8547,14 @@
   "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "GoCardless prüft dieses Konto, daher kann es noch nicht einziehen. Hier ist nichts zu tun; das aktualisiert sich von selbst.",
   "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Dieser Beleg wurde teilweise über GoCardless bezahlt, daher wird die Erstattung hier nur erfasst. Um das Geld über GoCardless zurückzuzahlen, erstatte die Lastschriftzahlung in ihrer eigenen Zeile.",
   "Date paid": "Zahlungsdatum",
-  "The payment date cannot be in the future.": "Das Zahlungsdatum darf nicht in der Zukunft liegen."
+  "The payment date cannot be in the future.": "Das Zahlungsdatum darf nicht in der Zukunft liegen.",
+  "Process · choose a bono": "Abschließen · Paket wählen",
+  "Sell a new bono": "Neues Paket verkaufen",
+  "This visit is its first session": "Dieser Besuch ist die erste Sitzung",
+  "No bonos set up": "Keine Pakete eingerichtet",
+  "The rest stays owed on the bono; collect it later from the patient record.": "Der Rest bleibt auf dem Paket offen; später in der Patientenakte kassieren.",
+  "Could not sell the bono": "Das Paket konnte nicht verkauft werden",
+  "The rest stays owed on the bono.": "Der Rest bleibt auf dem Paket offen."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
@@ -9920,6 +9927,8 @@
   "Search a patient (GoCardless: {0})": "Patient suchen (GoCardless: {0})",
   "Nothing will be written: {0} months of the cash ledger do not add up to the totals Quirocitas printed ({1}), so its columns were not read where they are.": "Es wird nichts geschrieben: {0} Monate des Kassenbuchs stimmen nicht mit den von Quirocitas gedruckten Summen überein ({1}), seine Spalten wurden also nicht dort gelesen, wo sie stehen.",
   "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Es wird nichts geschrieben: {0} von {1} Besuchen im Kassenbuch passen zu keinem Termin in der Patientenakte, ihre Zahlungen kämen also ohne die Besuche, die sie bezahlt haben.",
-  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} Besuche im Kassenbuch passen zu keinem Termin in der Patientenakte: Ihre Zahlungen werden übernommen, ihre Belastungen nicht."
+  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} Besuche im Kassenbuch passen zu keinem Termin in der Patientenakte: Ihre Zahlungen werden übernommen, ihre Belastungen nicht.",
+  "Process · sell {0}, use 1 session": "Abschließen · {0} verkaufen, 1 Sitzung nutzen",
+  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} wurde verkauft. {1} Zahlung im Abrechnungs-Tab des Patienten erfassen und dann hier eine Sitzung nutzen."
  }
 }

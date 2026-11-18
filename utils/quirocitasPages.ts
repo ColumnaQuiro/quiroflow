@@ -434,7 +434,21 @@ export function parseQuirocitasCajaMonth(html: string) {
   const body = all.slice(headerAt + 1).map((rowHtml) => ({ rowHtml, inputs: controls(rowHtml), cells: spannedCells(rowHtml) })).filter(({ cells }) => isQuirocitasDate(cells[dateAt]))
 
   const footer = (id: string) => amountComma(html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? html.match(new RegExp(`value="([^"]*)"[^>]*id="${id}"`))?.[1])
-  const totals = { cash: footer('caja-\\d+'), card: footer('totalmeto-\\d+\\[2\\]'), transfer: footer('totalmeto-\\d+\\[3\\]'), value: footer('valortotal-\\d+') }
+  // The footer totals each payment method by its slot: caja-N is cash, and
+  // totalmeto-N[2], [3] are the clinic's second and third methods, in the
+  // order their columns follow Efectivo. Which method a slot holds is the
+  // clinic's: card then transfer on the first clinic read, but transfer in
+  // slot 2 on a clinic that takes no card. Read as "slot 2 is card", that
+  // clinic's every month looked mismatched and its ledger was refused.
+  const slot = (n: number) => footer(`totalmeto-\\d+\\[${n}\\]`)
+  const methodsInOrder = (['card', 'transfer'] as const).filter((f) => columns[f] !== undefined).sort((a, b) => columns[a]! - columns[b]!)
+  const bySlot = Object.fromEntries(methodsInOrder.map((f, i) => [f, slot(i + 2)])) as Partial<Record<'card' | 'transfer', number | null>>
+  const totals = {
+    cash: footer('caja-\\d+'),
+    card: methodsInOrder.length ? bySlot.card ?? null : slot(2),
+    transfer: methodsInOrder.length ? bySlot.transfer ?? null : slot(3),
+    value: footer('valortotal-\\d+'),
+  }
 
   // A money column whose rows do not add up to its printed total is looked
   // for by that total among the columns nothing else has claimed. Only an

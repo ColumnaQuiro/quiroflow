@@ -50,6 +50,7 @@ const {
   loadInvoice,
   refresh: refreshMoney,
   chargeVisit,
+  visitMissing,
   usePackageSession,
   bonoTemplates,
   loadBonoTemplates,
@@ -91,8 +92,12 @@ watch(
 )
 
 // What the money option would collect: what is left on the receipt this visit
-// already has, or the type's price when nothing has been raised yet.
-const dueCents = computed(() => (invoice.value ? balanceDueCents.value : visitPriceCents.value))
+// already has, or the type's price when nothing has been raised yet. A receipt
+// missing the visit itself (raised while the type cost 0 €) gets the visit
+// added when this is pressed, so it is quoted with it.
+const dueCents = computed(() =>
+  invoice.value ? balanceDueCents.value + (visitMissing.value ? visitPriceCents.value : 0) : visitPriceCents.value,
+)
 const canTakeMoney = computed(() => can('payments_allocate') && dueCents.value > 0)
 
 // Offered once the visit can be charged and has not been: the same conditions
@@ -205,7 +210,7 @@ async function charge() {
   }
   // Raise the receipt if the visit has none, then pay what is due on it in
   // full by the method chosen: the tab's "Charge" and "Process", in one press.
-  if (!invoice.value) await chargeVisit()
+  if (!invoice.value || visitMissing.value) await chargeVisit()
   if (!invoice.value || balanceDueCents.value <= 0) return
   paymentRows.value = [{ method: method.value, amount: (balanceDueCents.value / 100).toFixed(2) }]
   await recordPayment()

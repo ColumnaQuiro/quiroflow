@@ -51,6 +51,8 @@ const {
   sendInvoiceEmail,
   init,
   chargeVisit,
+  visitMissing,
+  addVisitLine,
   addLineItem,
   removeLineItem,
   usePackageSession,
@@ -246,6 +248,20 @@ const fieldId = useId()
           </span>
         </li>
       </ul>
+
+      <!-- The receipt was raised while the visit's type cost 0 € (its price
+      set afterwards), so the visit itself is not on it at a price.
+      useVisitCharging addVisitLine -- without this nothing could charge it. -->
+      <div
+        v-if="can('billing_access') && visitMissing"
+        class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-ctl bg-warning-bg px-2.5 py-2"
+        data-cy="appt-add-visit-line"
+      >
+        <span class="text-[12.5px] text-warning-text">{{ t('The visit is not on this receipt.', 'La visita no está en este recibo.') }}</span>
+        <UiBtn variant="secondary" :disabled="savingPayment" @click="addVisitLine">
+          {{ savingPayment ? t('Working…', 'Procesando…') : `${t('Add', 'Añadir')} ${appointmentTypeName || t('the visit', 'la visita')} — ${formatEur(visitPriceCents)}` }}
+        </UiBtn>
+      </div>
 
       <select
         v-if="can('billing_access') && invoice.status !== 'paid'"

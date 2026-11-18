@@ -17,7 +17,7 @@ import { internalNotes } from '~/utils/receptionistGuard'
 import { standingClockTimes, AUTOMATED_MARK, COLLEAGUE_MARK } from '~/utils/receptionistHistory'
 import { chosenOfferedTime, chosenTimeNote } from '~/utils/receptionistFollowThrough'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
-import type { LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import type { LeadFormAnswer, LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { ALL_TYPES, BOOKED, CLINIC, CLINIC_DETAILS, KNOWLEDGE, NOW, PACKAGES, PRACTITIONERS, TIME_ZONE } from './fixtures'
 
 /** The model production uses (receptionistDraft.ts, patientReplyDraft.ts). */
@@ -48,6 +48,8 @@ export interface Scenario {
   conversation: Turn[]
   /** Leads: where they came from. */
   leadOrigin?: LeadOrigin
+  /** Leads: what they answered in the clinic's form. */
+  leadForm?: LeadFormAnswer[]
   /** Patients: their visits still booked, as "YYYY-MM-DD HH:MM" on the clinic's clock, with a type. */
   booked?: { at: string; type: SlotType }[]
   /** Patients: whether they have been before (visits completed). */
@@ -116,7 +118,7 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
   const bookedVisits = booked.map((b) => ({ startsAt: b.startsAt, typeName: b.type.name }))
 
   let system = scenario.kind === 'lead'
-    ? buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin: scenario.leadOrigin ?? null, searchTool: true, bookedVisits, draft: { personName: null }, knownDetails: { name: false, email: false, phone: true }, sendsItself: true, canBook: true, canWaitlist: true, minors, bringsSomeone, referral: audience === 'existing' ? undefined : { types: typesForReferral(ALL_TYPES) }, laterPrices, clinicDetails: CLINIC_DETAILS, team })
+    ? buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin: scenario.leadOrigin ?? null, leadForm: scenario.leadForm, searchTool: true, bookedVisits, draft: { personName: null }, knownDetails: { name: false, email: false, phone: true }, sendsItself: true, canBook: true, canWaitlist: true, minors, bringsSomeone, referral: audience === 'existing' ? undefined : { types: typesForReferral(ALL_TYPES) }, laterPrices, clinicDetails: CLINIC_DETAILS, team })
     : buildPatientReplyPrompt({ personaName: config.personaName, toneLine: 'Courteous and brief. Two or three sentences at most.', languages: config.languages, knowledge: config.knowledge, escalationRules: config.escalationRules, neverSays: config.neverSays, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays }, {
         facts: patientFacts(scenario, booked),
         offeredTypes: types,

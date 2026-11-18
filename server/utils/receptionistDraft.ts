@@ -9,7 +9,7 @@ import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERS
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
-import { cameFromAd } from '~/utils/receptionistLeadOrigin'
+import { cameFromAd, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { chosenOfferedTime, chosenTimeNote, isVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
@@ -217,6 +217,18 @@ export async function draftLeadReply(
   // What comes after a first visit, for "¿y luego cuánto?" -- from the types
   // and the clinic's bonos, not from a card kept in step by hand.
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
+  // What they wrote in the clinic's form, as their own words: a worsening
+  // symptom described only there is still an escalation (leadFormSection).
+  const { data: formEvent } = await supabase
+    .from('lead_events')
+    .select('body')
+    .eq('lead_id', leadId)
+    .eq('account_id', accountId)
+    .eq('kind', 'qualification')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const leadForm = leadFormAnswers(formEvent?.body ?? null)
   // Where the clinic is and when it sees patients, from its settings.
   const clinicDetails = await loadClinicDetails(supabase, accountId)
   // Who sees patients, by name: the prompt reads their gender from it, and a
@@ -335,7 +347,7 @@ export async function draftLeadReply(
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
+    system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

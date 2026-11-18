@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { linkInvoicesToAppointments, type LinkableAppointment, type LinkableInvoice } from '~/utils/importInvoiceLink'
+import { practiceHubCents as centsOf, practiceHubInvoiceNumber, practiceHubPaymentMethodKey } from '~/utils/practicehubImport/ledger'
 // Imports PracticeHub's ledger as PracticeHub actually keeps it: one invoice
 // per visit, one payment per payment, and no invented link between them.
 //
@@ -107,8 +108,6 @@ const introNotes = [
   },
 ]
 
-const centsOf = (value: string | null | undefined) => Math.round(parseFloat(value ?? '0') * 100)
-
 async function loadAllOurRows<T>(table: 'patients' | 'appointments' | 'invoices' | 'payments' | 'clinics', columns: string): Promise<T[]> {
   const PAGE = 1000
   const rows: T[] = []
@@ -136,14 +135,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   try {
     phase.value = t('Loading payment methods…', 'Cargando métodos de pago…')
     const methods = await api.fetchAll<PHPaymentMethod>('/payment_methods')
-    // payments.method only accepts card | cash | other, and PracticeHub's names
-    // are free text ("GoCardless - Direct Debit Payments").
-    const methodById = new Map(
-      methods.map((m) => {
-        const lower = m.name.toLowerCase()
-        return [String(m.id), lower.includes('cash') ? 'cash' : lower.includes('card') ? 'card' : 'other'] as const
-      }),
-    )
+    // See practiceHubPaymentMethodKey: payments.method takes card | cash | other.
+    const methodById = new Map(methods.map((m) => [String(m.id), practiceHubPaymentMethodKey(m.name)] as const))
 
     phase.value = t('Matching patients…', 'Emparejando pacientes…')
     const phPatients = await api.fetchAll<PHPatient>('/patients', (done, total) => (progress.value = { done, total }))
@@ -289,10 +282,9 @@ async function runImport() {
             account_id: store.accountId!,
             patient_id: c.patientId,
             appointment_id: c.appointmentId,
-            // Its own series, clear of both INV- and the PH- rows the old
-            // reconstruction left behind, so the two can sit side by side
-            // while the reconciliation is checked.
-            invoice_number: `PHI-${c.ref.replace('phinv-', '')}`,
+            // Its own series (PHI-), clear of INV- and the old PH- rows; see
+            // practiceHubInvoiceNumber.
+            invoice_number: practiceHubInvoiceNumber(c.ref),
             external_reference: c.ref,
             // Nothing is allocated yet; the pass below settles what the
             // patient's own payments cover.

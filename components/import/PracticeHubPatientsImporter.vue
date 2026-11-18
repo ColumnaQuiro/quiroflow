@@ -1,10 +1,25 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
-import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
 import { planProfilePhotos, practiceHubPhotoPath, sniffImageType, type PracticeHubPhotoSource } from '~/utils/practicehubProfilePhotos'
-import { practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import { practiceHubPatientNumberMap, practiceHubPatientRows, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import {
+  practiceHubBlank,
+  practiceHubLanguageLabel,
+  practiceHubNumberCountries,
+  practiceHubNumberCountryKey,
+  practiceHubOnlyNewNumbers,
+  practiceHubPatientFieldLabel,
+  practiceHubPatientsDiff,
+  practiceHubPractitionerMatcher,
+  practiceHubShownValue,
+  PRACTICEHUB_EXISTING_PATIENT_COLUMNS,
+  type PracticeHubContactNumber,
+  type PracticeHubExistingPatient,
+  type PracticeHubPatientToCreate,
+  type PracticeHubPatientToUpdate,
+} from '~/utils/practicehubImport/patients'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -12,16 +27,8 @@ const t = useT()
 const { showToast } = useToast()
 
 // The CSV export carries "Mobile" and "Home" as bare strings with no
-// country. PracticeHub itself knows better -- its /patients API returns each
-// number with an `iso2` -- and that is the only place the country exists, so
-// the import reads it from there and falls back to Spain only for numbers it
-// cannot find.
-//
-// Getting this wrong is not cosmetic. Every imported number was stored
-// against 'ES', so a US patient's "(303) 710-5245" rendered as
-// "+34 (303) 710-5245" and any WhatsApp sent to it would have gone to a
-// Spanish number instead. On the first live migration that was 90 numbers
-// across 16 countries.
+// country; PracticeHub's /patients API gives each number's. Why that matters
+// is at practiceHubNumberCountries (utils/practicehubImport/patients.ts).
 const connection = usePracticeHubConnection()
 const numberCountries = ref(new Map<string, string>())
 const countryLookupState = ref<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
@@ -43,22 +50,8 @@ const photoProgress = ref<{ done: number; total: number } | null>(null)
 const photosImported = ref(0)
 const photosNotImages = ref(0)
 
-function countryKey(patientNumber: string, number: string) {
-  return `${patientNumber.trim()}|${number.trim()}`
-}
-
 function readNumberCountries(patients: PHApiPatient[]) {
-  const map = new Map<string, string>()
-  for (const p of patients) {
-    const ref = String(p.patient_number ?? '').trim()
-    if (!ref) continue
-    for (const n of p.numbers ?? []) {
-      const num = (n?.number ?? '').trim()
-      const iso = (n?.iso2 ?? '').trim().toUpperCase()
-      if (num && iso) map.set(countryKey(ref, num), iso)
-    }
-  }
-  numberCountries.value = map
+  numberCountries.value = practiceHubNumberCountries(patients)
   patientNumberFor.value = practiceHubPatientNumberMap(patients)
   photoSources.value = patients.filter((p) => p.profile_image).map((p) => ({ id: p.id, patient_number: p.patient_number, profile_image: p.profile_image }))
   countryLookupState.value = 'ready'
@@ -145,67 +138,17 @@ const foreignNumberCount = computed(() =>
 )
 
 function countryFor(patientNumber: string, number: string): string {
-  return numberCountries.value.get(countryKey(patientNumber, number)) ?? defaultCountry.value
+  return numberCountries.value.get(practiceHubNumberCountryKey(patientNumber, number)) ?? defaultCountry.value
 }
 
 type CsvRow = Record<string, string>
-type ContactNumber = { country_code: string; number: string; is_whatsapp: boolean }
+type ContactNumber = PracticeHubContactNumber
+type MappedPatient = PracticeHubPatientToCreate
+type ExistingPatient = PracticeHubExistingPatient
+type MappedUpdate = PracticeHubPatientToUpdate
 
-interface MappedPatient {
-  patient: TablesInsert<'patients'>
-  numbers: ContactNumber[]
-  sourceRow: number
-}
-
-// Fields PracticeHub owns for the duration of the migration -- on a
-// re-import matching an existing patient, these get overwritten
-// unconditionally (confirmed with the clinic: PracticeHub stays the source
-// of truth right up to cutover, even though several of these are also
-// editable from the patient's own QuiroFlow screen).
-// `created_at` is deliberately not in this list -- it's handled separately
-// in buildPatientUpdate using the *unfallen-back* parsed value, since
-// `patient.created_at` always has a value (defaulting to "now" for rows
-// with no CSV "Created" date, to satisfy the NOT NULL column on insert)
-// and treating that default as a real change would flag every row missing
-// a Created date as "created_at will change to right now" on every re-run.
-const OVERWRITE_FIELDS = [
-  'first_name',
-  'last_name',
-  'email',
-  'date_of_birth',
-  'referral_source',
-  'preferred_language',
-  'marketing_channels',
-  'default_practitioner_id',
-  'balance_cents',
-] as const
-
-interface ExistingPatient {
-  id: string
-  external_reference: string | null
-  email: string | null
-  first_name: string
-  last_name: string | null
-  date_of_birth: string | null
-  referral_source: string | null
-  preferred_language: string
-  marketing_channels: string[] | null
-  default_practitioner_id: string | null
-  created_at: string
-  balance_cents: number
-  photo_storage_path: string | null
-}
-
-interface FieldDiff { field: string; from: string; to: string }
-
-interface MappedUpdate {
-  id: string
-  label: string
-  updates: TablesUpdate<'patients'>
-  diff: FieldDiff[]
-  numbers: ContactNumber[]
-  sourceRow: number
-}
+// Which fields PracticeHub overwrites, and why created_at is not one of them:
+// PRACTICEHUB_PATIENT_OVERWRITE_FIELDS in utils/practicehubImport/patients.ts.
 
 const stage = ref<'pick' | 'preview' | 'importing' | 'done' | 'error'>('pick')
 useImportWriting(() => stage.value === 'importing')
@@ -258,142 +201,25 @@ onMounted(async () => {
 })
 
 function matchPractitioner(name: string): string | null {
-  const clean = name.trim().toLowerCase()
-  if (!clean) return null
-  const match = teamMembers.value.find((m) => m.full_name.trim().toLowerCase() === clean)
-  return match?.id ?? null
+  return practiceHubPractitionerMatcher(teamMembers.value)(name)
 }
 
-function parseBalanceCents(value: string): number {
-  const n = parseFloat(value)
-  if (!Number.isFinite(n)) return 0
-  // PracticeHub's export has this inverted relative to our convention:
-  // a positive "Account Balance" there means the patient owes money (DR),
-  // negative means they're in credit (CR). We store positive = credit,
-  // negative = owed (verified against live PracticeHub data for several
-  // real patients), so flip the sign on the way in.
-  return -Math.round(n * 100)
-}
-
-function parseLanguage(value: string): string {
-  const code = value.trim().toLowerCase()
-  return LANGUAGES.some((l) => l.code === code) ? code : 'es'
-}
-
-// Without this, every migrated patient's created_at defaults to the moment
-// of import (now()) instead of when they actually joined the practice --
-// tenure-based reports and "new patient" filters are wrong for the entire
-// migrated patient base. The export calls the column "Patient Created" and
-// this read "Created", so that is exactly what happened: all 1,529 of
-// Columnaquiro's imported patients carry an import day as their join date.
-// PracticeHub writes it in UTC with no zone.
-function parseCreatedAt(row: CsvRow): string | undefined {
-  return practiceHubUtc(row['Patient Created'] || row['Created']) || undefined
-}
-
-function buildNotes(row: CsvRow): string | null {
-  const parts = [row['Note'], row['Chief Complaint']].map((s) => s?.trim()).filter(Boolean)
-  return parts.length > 0 ? parts.join('\n\n---\n\n') : null
-}
-
+// The rules for each field -- the balance's sign, the join date, the
+// language, which fields PracticeHub overwrites and that a blank never
+// erases -- live in utils/practicehubImport/patients.ts, shared with the
+// server sync.
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return t('(blank)', '(vacío)')
-  if (Array.isArray(value)) return value.length ? value.join(', ') : t('(blank)', '(vacío)')
-  return String(value)
+  return practiceHubBlank(value, t)
 }
 
-// The preview of changes to existing patients names each field the way the
-// patient record does, not by its database column ("default_practitioner_id"),
-// and shows the value a person would recognise: the practitioner's name, not
-// their id; euros, not cents; the language, not its code.
 function fieldLabel(field: string): string {
-  switch (field) {
-    case 'first_name': return t('First name', 'Nombre')
-    case 'last_name': return t('Last name', 'Apellidos')
-    case 'email': return t('Email', 'Correo electrónico')
-    case 'date_of_birth': return t('Date of birth', 'Fecha de nacimiento')
-    case 'referral_source': return t('Referral source', 'Fuente de referencia')
-    case 'preferred_language': return t('Language', 'Idioma')
-    case 'marketing_channels': return t('Marketing consent', 'Consentimiento de marketing')
-    case 'default_practitioner_id': return t('Usual practitioner', 'Profesional habitual')
-    case 'balance_cents': return t('Balance', 'Saldo')
-    case 'created_at': return t('Patient since', 'Paciente desde')
-    case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
-    case 'phone': return t('Phone', 'Teléfono')
-    default: return field
-  }
+  return practiceHubPatientFieldLabel(field, t)
 }
 
-function languageLabel(code: string | null | undefined): string {
-  return LANGUAGES.find((l) => l.code === code)?.label ?? code ?? ''
-}
+const languageLabel = practiceHubLanguageLabel
 
 function shownValue(field: string, value: unknown): string {
-  if (value === null || value === undefined || value === '') return formatValue(value)
-  if (field === 'default_practitioner_id') return teamMembers.value.find((m) => m.id === value)?.full_name ?? formatValue(value)
-  if (field === 'balance_cents' && typeof value === 'number') return formatEur(value)
-  if (field === 'preferred_language' && typeof value === 'string') return languageLabel(value)
-  if (field === 'created_at' && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toLocaleDateString('es-ES')
-  return formatValue(value)
-}
-
-function valuesDiffer(a: unknown, b: unknown): boolean {
-  if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort())
-  return a !== b
-}
-
-// Builds the update payload for a patient that already exists in QuiroFlow
-// (matched by external_reference or email). Only overwrites a field when the
-// incoming CSV value is actually present -- a blank cell in this export
-// should never erase a value the patient already has.
-function buildPatientUpdate(
-  existing: ExistingPatient,
-  incoming: TablesInsert<'patients'>,
-  externalRef: string,
-  fileRef: string,
-  realCreatedAt: string | undefined,
-) {
-  const updates: TablesUpdate<'patients'> = {}
-  const diff: FieldDiff[] = []
-
-  for (const field of OVERWRITE_FIELDS) {
-    const value = incoming[field]
-    if (value === null || value === undefined) continue
-    if (typeof value === 'string' && value === '') continue
-    if (Array.isArray(value) && value.length === 0) continue
-    const existingValue = existing[field]
-    if (valuesDiffer(value, existingValue)) {
-      ;(updates as Record<string, unknown>)[field] = value
-      diff.push({ field, from: shownValue(field, existingValue), to: shownValue(field, value) })
-    }
-  }
-
-  // Compared as instants: Postgres hands back "…+00:00" and the parsed value
-  // is "…Z", so a string comparison flagged every patient on every re-run.
-  if (realCreatedAt && new Date(realCreatedAt).getTime() !== new Date(existing.created_at).getTime()) {
-    updates.created_at = realCreatedAt
-    diff.push({ field: 'created_at', from: shownValue('created_at', existing.created_at), to: shownValue('created_at', realCreatedAt) })
-  }
-
-  // A patient matched by email only (e.g. created directly in QuiroFlow)
-  // won't have this set yet -- backfill it so future re-syncs match by ref.
-  // One stored under their custom reference gets their patient number, so
-  // the later steps find them.
-  const misreferenced = existing.external_reference === fileRef && fileRef !== externalRef
-  if (externalRef && (!existing.external_reference || misreferenced)) {
-    updates.external_reference = externalRef
-    diff.push({ field: 'external_reference', from: formatValue(existing.external_reference), to: externalRef })
-  }
-
-  return { updates, diff }
-}
-
-function buildMarketingChannels(row: CsvRow): string[] {
-  const channels: string[] = []
-  if (row['SMS Marketing'] === '1') channels.push('sms')
-  if (row['Email Marketing'] === '1') channels.push('email')
-  if (row['Other Marketing'] === '1') channels.push('other')
-  return channels
+  return practiceHubShownValue(field, value, t, (id) => teamMembers.value.find((m) => m.id === id)?.full_name)
 }
 
 const rawRows = ref<CsvRow[]>([])
@@ -430,141 +256,46 @@ async function computeDiff() {
   const rows = rawRows.value
   totalRows.value = rows.length
 
-  const byRef = new Map<string, ExistingPatient>()
-  const byEmail = new Map<string, ExistingPatient>()
+  const existingPatients: ExistingPatient[] = []
   const PAGE_SIZE = 1000
   for (let page = 0; ; page++) {
     const { data: existing } = await supabase
       .from('patients')
-      .select(
-        'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path',
-      )
+      .select(PRACTICEHUB_EXISTING_PATIENT_COLUMNS)
       .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    for (const p of existing ?? []) {
-      const row = p as ExistingPatient
-      if (row.external_reference) byRef.set(row.external_reference, row)
-      if (row.email) byEmail.set(row.email.toLowerCase(), row)
-    }
+    existingPatients.push(...((existing ?? []) as ExistingPatient[]))
     if (!existing || existing.length < PAGE_SIZE) break
   }
-  photosToBring.value = photoSources.value.length - planProfilePhotos(photoSources.value, [...byRef.values()]).alreadyHere
+  photosToBring.value = photoSources.value.length - planProfilePhotos(photoSources.value, existingPatients).alreadyHere
 
-  skippedDuplicate.value = 0
-  skippedDeleted.value = 0
-  skippedNoName.value = 0
-  const mapped: MappedPatient[] = []
-  const updates: MappedUpdate[] = []
-  const matchedIds: string[] = []
-  const unmatched = new Map<string, number>()
-
-  rows.forEach((row, index) => {
-    if ((row['Deleted'] || '').trim().toUpperCase() === 'TRUE') {
-      skippedDeleted.value++
-      return
-    }
-
-    const firstName = row['First Name']?.trim() || row['Last Name']?.trim() || ''
-    if (!firstName) {
-      skippedNoName.value++
-      return
-    }
-
-    const email = row['Email Address']?.trim() || ''
-    const fileRef = row['Patient Number']?.trim() || ''
-    const externalRef = patientNumberFor.value.get(fileRef) ?? fileRef
-    // Also by the reference as the file gave it: a patient imported earlier
-    // under their custom reference is the same patient, not a new one.
-    const existing = (externalRef && byRef.get(externalRef)) || (fileRef && byRef.get(fileRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
-
-    const numbers: ContactNumber[] = []
-    const mobile = row['Mobile']?.trim()
-    const home = row['Home']?.trim()
-    if (mobile) numbers.push({ country_code: countryFor(externalRef, mobile), number: mobile, is_whatsapp: false })
-    if (home) numbers.push({ country_code: countryFor(externalRef, home), number: home, is_whatsapp: false })
-    for (const other of (row['Other Numbers'] ?? '').split('\n').map((n) => n.trim()).filter(Boolean)) {
-      numbers.push({ country_code: countryFor(externalRef, other), number: other, is_whatsapp: false })
-    }
-
-    const practitionerName = row['Default Practitioner']?.trim() || ''
-    if (practitionerName && !matchPractitioner(practitionerName)) {
-      unmatched.set(practitionerName, (unmatched.get(practitionerName) ?? 0) + 1)
-    }
-
-    const realCreatedAt = parseCreatedAt(row)
-    const patient: TablesInsert<'patients'> = {
-      account_id: store.accountId!,
-      clinic_id: targetClinicId.value || null,
-      first_name: firstName,
-      last_name: row['First Name']?.trim() ? row['Last Name']?.trim() || null : null,
-      email: email || null,
-      date_of_birth: row['Date of Birth']?.trim() || null,
-      // Explicit fallback rather than an `undefined` value -- a bulk
-      // insert's request body doesn't reliably strip an `undefined`-valued
-      // key the way a single-object insert would, and a NULL landing on
-      // this NOT NULL column fails the whole batch's insert. Only used for
-      // new rows -- buildPatientUpdate uses `realCreatedAt` directly so this
-      // fallback never gets treated as a real change on an update.
-      created_at: realCreatedAt ?? new Date().toISOString(),
-      balance_cents: parseBalanceCents(row['Account Balance'] || '0'),
-      tags: (row['Tags'] ?? '').split(',').map((tag) => tag.trim()).filter(Boolean),
-      referral_source: row['Referral Source']?.trim() || null,
-      preferred_language: parseLanguage(row['Preferred Language'] || ''),
-      notes: buildNotes(row),
-      external_reference: externalRef || null,
-      marketing_channels: buildMarketingChannels(row),
-      default_practitioner_id: matchPractitioner(row['Default Practitioner'] || ''),
-    }
-
-    if (!existing) {
-      mapped.push({ sourceRow: index + 2, patient, numbers })
-      return
-    }
-
-    matchedIds.push(existing.id)
-    const { updates: fieldUpdates, diff } = buildPatientUpdate(existing, patient, externalRef, fileRef, realCreatedAt)
-    // Kept even with no field changes while it carries numbers: one of them
-    // may be new, which is only known once they are compared below.
-    if (Object.keys(fieldUpdates).length === 0 && numbers.length === 0) {
-      skippedDuplicate.value++
-      return
-    }
-    updates.push({
-      id: existing.id,
-      label: `${patient.first_name} ${patient.last_name ?? ''}`.trim(),
-      updates: fieldUpdates,
-      diff,
-      numbers,
-      sourceRow: index + 2,
-    })
+  const diff = practiceHubPatientsDiff(rows, existingPatients, {
+    accountId: store.accountId!,
+    clinicId: targetClinicId.value || null,
+    externalRefFor: (fileRef) => patientNumberFor.value.get(fileRef) ?? fileRef,
+    countryFor,
+    practitionerFor: matchPractitioner,
+    show: shownValue,
+    blank: formatValue,
   })
+  skippedDeleted.value = diff.skippedDeleted
+  skippedNoName.value = diff.skippedNoName
 
-  // Contact numbers are additive-only on an update -- never touch a number
-  // the patient already has, only add ones this row carries that aren't
-  // already on file (normalized so formatting differences don't cause dupes).
-  if (matchedIds.length > 0) {
-    const existingNumbersByPatient = new Map<string, Set<string>>()
-    const ID_CHUNK = 200
-    for (let i = 0; i < matchedIds.length; i += ID_CHUNK) {
-      const idChunk = matchedIds.slice(i, i + ID_CHUNK)
-      const { data } = await supabase.from('patient_contact_numbers').select('patient_id, number').in('patient_id', idChunk)
-      for (const n of data ?? []) {
-        const set = existingNumbersByPatient.get(n.patient_id) ?? new Set<string>()
-        set.add(n.number.replace(/\D/g, ''))
-        existingNumbersByPatient.set(n.patient_id, set)
-      }
-    }
-    for (const u of updates) {
-      const existingSet = existingNumbersByPatient.get(u.id) ?? new Set<string>()
-      u.numbers = u.numbers.filter((n) => !existingSet.has(n.number.replace(/\D/g, '')))
-      for (const n of u.numbers) u.diff.push({ field: 'phone', from: t('(new)', '(nuevo)'), to: n.number })
-    }
+  // Contact numbers are additive-only on an update: only the ones not
+  // already on file are kept (practiceHubOnlyNewNumbers).
+  const matchedIds = diff.toUpdate.map((u) => u.id)
+  const numbersHere: { patient_id: string; number: string }[] = []
+  const ID_CHUNK = 200
+  for (let i = 0; i < matchedIds.length; i += ID_CHUNK) {
+    const idChunk = matchedIds.slice(i, i + ID_CHUNK)
+    const { data } = await supabase.from('patient_contact_numbers').select('patient_id, number').in('patient_id', idChunk)
+    numbersHere.push(...(data ?? []))
   }
-  const changed = updates.filter((u) => Object.keys(u.updates).length > 0 || u.numbers.length > 0)
-  skippedDuplicate.value += updates.length - changed.length
+  const { changed, unchanged } = practiceHubOnlyNewNumbers(diff.toUpdate, numbersHere, t)
+  skippedDuplicate.value = diff.skippedDuplicate + unchanged
 
-  toImport.value = mapped
+  toImport.value = diff.toImport
   toUpdate.value = changed
-  unmatchedPractitioners.value = [...unmatched].map(([name, patients]) => ({ name, patients })).sort((a, b) => b.patients - a.patients)
+  unmatchedPractitioners.value = diff.unmatchedPractitioners
 }
 
 function onDrop(e: DragEvent) {

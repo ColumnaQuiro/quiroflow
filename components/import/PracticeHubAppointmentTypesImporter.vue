@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
 import { formatEur } from '~/utils/billing'
+import { hexColor, isWorthBringing, STAGE_BY_NAME } from '~/utils/practicehubImport/appointmentTypes'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -10,18 +11,9 @@ const { showToast } = useToast()
 interface PHAppointmentType { id: number; name: string; active?: number | boolean | null; duration?: number | null; color?: string | null }
 interface PHAppointment { id: number; appointment_type_id: number | null }
 
-// Best-effort mapping from PracticeHub's own type names to the Statistics
-// report's funnel stages -- only the unambiguous ones. Routine adjustment
-// visits and anything else stay unstaged; staff can tag those manually
-// under Settings > Appointment Types same as always.
-const STAGE_BY_NAME: Record<string, string> = {
-  'primera visita': 'first_visit',
-  'oferta primera visita': 'first_visit_offer',
-  'informe quiropractico': 'report',
-  'revisión quiropractica': 'revision',
-  'revision quiropractica': 'revision',
-  'mantenimiento quiropractico': 'maintenance',
-}
+// STAGE_BY_NAME (which type names get a funnel stage), isWorthBringing (which
+// retired types are left behind) and hexColor live in
+// utils/practicehubImport/appointmentTypes.ts, shared with the server-side sync.
 
 interface TypeCandidate {
   phTypeId: number
@@ -41,19 +33,6 @@ interface TypeCandidate {
   color: string | null
   /** Retired in PracticeHub but still on old visits: created archived, never offered. */
   archived: boolean
-}
-
-// PracticeHub keeps retired types, often a near-duplicate of a live one
-// ("Primera Visita" beside "Primera visita"). One that is retired AND was
-// never used is not brought across: on Columnaquiro that was five of fourteen,
-// and a new clinic's type list started out with them.
-function isWorthBringing(phType: PHAppointmentType, used: number) {
-  return used > 0 || !(phType.active === 0 || phType.active === false)
-}
-
-function hexColor(value: string | null | undefined): string | null {
-  const hex = (value ?? '').trim().replace(/^#/, '')
-  return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null
 }
 
 const stage = ref<'connect' | 'scanning' | 'preview' | 'importing' | 'done' | 'error'>('connect')

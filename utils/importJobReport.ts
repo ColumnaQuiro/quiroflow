@@ -1,13 +1,14 @@
 // What an import job (import_jobs) says about itself: its progress while it
 // runs, what each step did, and the email sent when it ends. Shared by the
 // server that runs it (server/utils/importJobs.ts) and the screens that watch
-// it (components/import/QuirocitasJob.vue).
+// it (components/import/QuirocitasJob.vue). Both sources run through it:
+// Quirocitas and PracticeHub (see import_jobs.source).
 
 export type ImportJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
 export interface ImportJobProgress {
-  /** Read: 'list' -> 'patients' -> 'ledger'. Import steps: 'apply'. */
-  phase?: 'list' | 'patients' | 'ledger' | 'apply'
+  /** Read: 'list' -> 'patients' -> 'ledger' (Quirocitas) or 'read' (PracticeHub). Import steps: 'apply'. */
+  phase?: 'list' | 'patients' | 'ledger' | 'read' | 'apply'
   done?: number
   total?: number
   /** Patients Quirocitas would not send, in this read. */
@@ -23,6 +24,20 @@ export interface ImportJobProgress {
   stalls?: number
   failures?: number
   lastError?: string
+  // --- reading PracticeHub, page by page (server/utils/practicehubImportJob.ts)
+  /** The read's own id: its pages only become the copy once it finishes. */
+  pass?: string
+  /** Which of PRACTICEHUB_LISTS the read is on, and the next page of it. */
+  listIndex?: number
+  listCount?: number
+  page?: number
+  pageCount?: number
+  /** PracticeHub 2.0 lists are walked by cursor, not page number. */
+  cursor?: string
+  /** Pages saved per list so far in this pass. */
+  pagesRead?: Record<string, number>
+  /** Records PracticeHub says it holds, summed over the lists read so far. */
+  records?: number
 }
 
 export interface ImportJobStepResult {
@@ -30,15 +45,27 @@ export interface ImportJobStepResult {
   written: number
   errors: string[]
   warnings: string[]
+  /** A dry run (options.dryRun): nothing was written, and these say what would have been. */
+  dryRun?: boolean
+  stats?: { label: string; value: number | string }[]
+  /** Units of work Apply would have done. */
+  wouldWrite?: number
+}
+
+export type ImportSource = 'quirocitas' | 'practicehub'
+
+export function importSourceName(source: string | undefined): string {
+  return source === 'practicehub' ? 'PracticeHub' : 'Quirocitas'
 }
 
 type T = (en: string, es: string) => string
 
-export function importJobStepLabel(step: string, t: T): string {
+export function importJobStepLabel(step: string, t: T, source?: string): string {
   switch (step) {
-    case 'read': return t('Read Quirocitas', 'Leer Quirocitas')
+    case 'read': return source === 'practicehub' ? t('Read PracticeHub', 'Leer PracticeHub') : t('Read Quirocitas', 'Leer Quirocitas')
     case 'patients': return t('Patients', 'Pacientes')
     case 'appointments': return t('Appointments', 'Citas')
+    case 'appointment_types': return t('Appointment types', 'Tipos de cita')
     case 'clinical': return t('Clinical history and calls', 'Historial clínico y llamadas')
     case 'files': return t('Files and photos', 'Archivos y fotos')
     case 'bonos': return 'Bonos'
@@ -55,6 +82,7 @@ export function importJobPercent(job: { status: string; steps: string[]; step_in
   let within = 0
   if (p.phase === 'patients' && p.total) within = (p.done ?? 0) / p.total * 0.9
   else if (p.phase === 'ledger') within = 0.95
+  else if (p.phase === 'read' && p.listCount) within = Math.min(0.99, ((p.listIndex ?? 0) + (p.pageCount ? ((p.page ?? 1) - 1) / p.pageCount : 0)) / p.listCount)
   else if (p.phase === 'apply' && p.total) within = Math.min(1, (p.done ?? 0) / p.total)
   return Math.max(1, Math.min(99, Math.round(((job.step_index + within) / steps) * 100)))
 }
@@ -67,6 +95,7 @@ function escapeHtml(s: string): string {
 export function importJobEmail(input: {
   t: T
   lang: string
+  source?: string
   clinicName: string
   status: 'done' | 'failed'
   steps: string[]
@@ -75,35 +104,48 @@ export function importJobEmail(input: {
   url: string
 }): { subject: string; html: string } {
   const { t } = input
+  const from = importSourceName(input.source)
   const nf = new Intl.NumberFormat('es-ES')
   const problems = input.results.reduce((a, r) => a + r.errors.length, 0)
+  const dryRun = input.results.some((r) => r.dryRun)
   const subject = input.status === 'failed'
-    ? t('The Quirocitas import stopped', 'La importación de Quirocitas se ha detenido')
-    : problems
-      ? t('The Quirocitas import has finished, with some problems', 'La importación de Quirocitas ha terminado, con algunos problemas')
-      : t('The Quirocitas import has finished', 'La importación de Quirocitas ha terminado')
+    ? t(`The ${from} import stopped`, `La importación de ${from} se ha detenido`)
+    : dryRun
+      ? t(`The ${from} preview has finished`, `La vista previa de ${from} ha terminado`)
+      : problems
+        ? t(`The ${from} import has finished, with some problems`, `La importación de ${from} ha terminado, con algunos problemas`)
+        : t(`The ${from} import has finished`, `La importación de ${from} ha terminado`)
 
   const lead = input.status === 'failed'
     ? t(
         `The import into ${input.clinicName || 'QuiroFlow'} stopped before the end. What was imported until then stays; starting it again carries on from there.`,
         `La importación a ${input.clinicName || 'QuiroFlow'} se ha detenido antes de terminar. Lo importado hasta entonces se queda; al volver a empezarla, sigue desde ahí.`,
       )
-    : t(
-        `Everything from Quirocitas is now in ${input.clinicName || 'QuiroFlow'}.`,
-        `Ya está en ${input.clinicName || 'QuiroFlow'} todo lo de Quirocitas.`,
-      )
+    : dryRun
+      ? t(
+          `Nothing was written to ${input.clinicName || 'QuiroFlow'}: this was a preview of what an import from ${from} would change.`,
+          `No se ha escrito nada en ${input.clinicName || 'QuiroFlow'}: era una vista previa de lo que cambiaría una importación de ${from}.`,
+        )
+      : t(
+          `Everything from ${from} is now in ${input.clinicName || 'QuiroFlow'}.`,
+          `Ya está en ${input.clinicName || 'QuiroFlow'} todo lo de ${from}.`,
+        )
 
   const rows = input.steps.map((step) => {
     const r = input.results.find((x) => x.step === step)
     const what = !r
       ? t('Not run', 'Sin hacer')
       : step === 'read'
-        ? t(`${nf.format(r.written)} patients read`, `${nf.format(r.written)} pacientes leídos`)
-        : t(`${nf.format(r.written)} saved`, `${nf.format(r.written)} guardados`)
-    return `<tr><td style="padding:4px 16px 4px 0">${escapeHtml(importJobStepLabel(step, t))}</td><td style="padding:4px 0;color:${r ? '#111' : '#888'}">${escapeHtml(what)}</td></tr>`
+        ? input.source === 'practicehub'
+          ? t(`${nf.format(r.written)} records read`, `${nf.format(r.written)} registros leídos`)
+          : t(`${nf.format(r.written)} patients read`, `${nf.format(r.written)} pacientes leídos`)
+        : r.dryRun
+          ? t(`${nf.format(r.wouldWrite ?? 0)} to write`, `${nf.format(r.wouldWrite ?? 0)} por escribir`)
+          : t(`${nf.format(r.written)} saved`, `${nf.format(r.written)} guardados`)
+    return `<tr><td style="padding:4px 16px 4px 0">${escapeHtml(importJobStepLabel(step, t, input.source))}</td><td style="padding:4px 0;color:${r ? '#111' : '#888'}">${escapeHtml(what)}</td></tr>`
   })
 
-  const notes = input.results.flatMap((r) => [...r.errors, ...r.warnings].slice(0, 5).map((n) => `<li style="margin:0 0 6px">${escapeHtml(importJobStepLabel(r.step, t))}: ${escapeHtml(n)}</li>`))
+  const notes = input.results.flatMap((r) => [...r.errors, ...r.warnings].slice(0, 5).map((n) => `<li style="margin:0 0 6px">${escapeHtml(importJobStepLabel(r.step, t, input.source))}: ${escapeHtml(n)}</li>`))
 
   const html = [
     '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">',

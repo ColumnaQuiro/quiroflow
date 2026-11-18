@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { ImportJobRow } from '~/composables/useQuirocitas'
+import type { ImportJobRow } from '~/composables/useImportJob'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
+import { PRACTICEHUB_LISTS } from '~/utils/practicehubImport/types'
 
 // An import job running on the server, or the last one that ran: one bar
 // across every step it does, where the current step stands, and what each
 // finished step wrote. The tab can be closed at any point -- the job carries
-// on, and whoever started it gets an email when it ends.
+// on, and whoever started it gets an email when it ends. Both sources use it:
+// Quirocitas and PracticeHub (job.source).
 const props = defineProps<{ job: ImportJobRow }>()
 const emit = defineEmits<{ cancel: [] }>()
 
@@ -18,16 +20,41 @@ const progress = computed(() => (props.job.progress ?? {}) as ImportJobProgress)
 const results = computed(() => (props.job.results ?? []) as unknown as ImportJobStepResult[])
 const current = computed(() => props.job.steps[props.job.step_index])
 const percent = computed(() => importJobPercent(props.job))
+const source = computed(() => props.job.source)
+
+// What PracticeHub calls each list the read walks, in the clinic's words.
+function practiceHubListName(path: string | undefined): string {
+  switch (path) {
+    case '/practitioners': return t('practitioners', 'profesionales')
+    case '/referral_sources': return t('referral sources', 'orígenes')
+    case '/appointment_types': return t('appointment types', 'tipos de cita')
+    case '/billable_items': return t('prices', 'precios')
+    case '/payment_methods': return t('payment methods', 'formas de pago')
+    case '/patients': return t('patients', 'pacientes')
+    case '/appointments': return t('appointments', 'citas')
+    case '/invoices': return t('invoices', 'facturas')
+    case '/payments': return t('payments', 'pagos')
+    case '/patient_packages': return 'bonos'
+    default: return path ?? ''
+  }
+}
 
 const now = computed(() => {
   const p = progress.value
   if (props.job.status === 'queued') return t('Starting…', 'Empezando…')
+  if (current.value === 'read' && source.value === 'practicehub') {
+    const list = practiceHubListName(PRACTICEHUB_LISTS[p.listIndex ?? 0])
+    return p.pageCount
+      ? t(`Reading PracticeHub: ${list}, page ${nf.format(p.page ?? 1)} of ${nf.format(p.pageCount)}`, `Leyendo PracticeHub: ${list}, página ${nf.format(p.page ?? 1)} de ${nf.format(p.pageCount)}`)
+      : t(`Reading PracticeHub: ${list}…`, `Leyendo PracticeHub: ${list}…`)
+  }
   if (current.value === 'read') {
     if (p.phase === 'patients' && p.total) return t(`Reading patients: ${nf.format(p.done ?? 0)} of ${nf.format(p.total)}`, `Leyendo pacientes: ${nf.format(p.done ?? 0)} de ${nf.format(p.total)}`) + (p.failed ? t(` · ${p.failed} could not be read`, ` · ${p.failed} sin leer`) : '')
     if (p.phase === 'ledger') return p.month ? t(`Reading the cash ledger: back to ${p.month}`, `Leyendo la caja: hasta ${p.month}`) : t('Reading the cash ledger…', 'Leyendo la caja…')
     return t('Reading the patient list…', 'Leyendo la lista de pacientes…')
   }
-  const label = importJobStepLabel(current.value ?? '', t)
+  const label = importJobStepLabel(current.value ?? '', t, source.value)
+  if ((props.job.options as { dryRun?: boolean } | null)?.dryRun) return t(`${label}: working out what would change…`, `${label}: calculando qué cambiaría…`)
   return p.total ? `${label}: ${t(`${nf.format(p.done ?? 0)} of ${nf.format(p.total)}`, `${nf.format(p.done ?? 0)} de ${nf.format(p.total)}`)}` : t(`${label}: comparing with what is already here…`, `${label}: comparando con lo que ya hay…`)
 })
 
@@ -38,6 +65,12 @@ const ended = computed(() => {
   if (j.status === 'cancelled') return t(`Stopped ${when}. What was imported until then stays; starting again carries on from there.`, `Parado el ${when}. Lo importado hasta entonces se queda; al volver a empezar sigue desde ahí.`)
   return t(`Stopped with an error ${when}. What was imported until then stays; starting again carries on from there.`, `Se detuvo por un error el ${when}. Lo importado hasta entonces se queda; al volver a empezar sigue desde ahí.`)
 })
+
+function resultLine(step: string, r: ImportJobStepResult): string {
+  if (step === 'read') return source.value === 'practicehub' ? t(`${nf.format(r.written)} records`, `${nf.format(r.written)} registros`) : t(`${nf.format(r.written)} patients`, `${nf.format(r.written)} pacientes`)
+  if (r.dryRun) return t(`preview: ${nf.format(r.wouldWrite ?? 0)} to write, nothing written`, `vista previa: ${nf.format(r.wouldWrite ?? 0)} por escribir, nada escrito`)
+  return t(`${nf.format(r.written)} saved`, `${nf.format(r.written)} guardados`)
+}
 
 async function cancel() {
   stopping.value = true
@@ -68,9 +101,12 @@ watch(() => props.job.id, () => { stopping.value = false })
       <li v-for="(step, i) in job.steps" :key="step" class="flex items-start gap-2">
         <span class="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full" :class="i < job.step_index ? 'bg-success-text' : i === job.step_index && active ? 'bg-brand' : 'bg-line-control'" />
         <div class="min-w-0">
-          <span :class="i <= job.step_index ? 'text-ink-900' : 'text-ink-muted2'">{{ importJobStepLabel(step, t) }}</span>
+          <span :class="i <= job.step_index ? 'text-ink-900' : 'text-ink-muted2'">{{ importJobStepLabel(step, t, source) }}</span>
           <template v-for="r in results.filter((x) => x.step === step)" :key="r.step">
-            <span class="text-ink-muted2"> · {{ step === 'read' ? t(`${nf.format(r.written)} patients`, `${nf.format(r.written)} pacientes`) : t(`${nf.format(r.written)} saved`, `${nf.format(r.written)} guardados`) }}</span>
+            <span class="text-ink-muted2"> · {{ resultLine(step, r) }}</span>
+            <ul v-if="r.dryRun && r.stats?.length" class="mt-1 space-y-0.5 text-[12.5px] text-ink-600" data-cy="import-job-dry-run-stats">
+              <li v-for="(st, k) in r.stats" :key="k">{{ st.label }}: {{ typeof st.value === 'number' ? nf.format(st.value) : st.value }}</li>
+            </ul>
             <details v-if="r.errors.length || r.warnings.length" class="mt-1">
               <summary class="cursor-pointer text-[12.5px]" :class="r.errors.length ? 'text-warning-text' : 'text-ink-muted2'">
                 {{ r.errors.length === 1 ? t('1 problem', '1 problema') : r.errors.length ? t(`${r.errors.length} problems`, `${r.errors.length} problemas`) : t('Notes', 'Notas') }}

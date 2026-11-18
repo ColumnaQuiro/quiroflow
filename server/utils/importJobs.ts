@@ -22,6 +22,8 @@ import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, Quirocit
 import { QUIROCITAS_COPY_VERSION, quirocitasDate, quirocitasReadQueue, type QuirocitasRecord, type QuirocitasTechniques } from '~/utils/quirocitasRows'
 import { importJobEmail, type ImportJobProgress, type ImportJobStepResult } from '~/utils/importJobReport'
 import { uiCatalogTranslate } from '~/utils/uiCatalog'
+import { practiceHubApplySlice, practiceHubReadSlice } from '~/server/utils/practicehubImportJob'
+import type { PracticeHubStepKind } from '~/utils/practicehubImport'
 
 // Runs an import job (import_jobs) one slice at a time.
 //
@@ -43,7 +45,13 @@ import { uiCatalogTranslate } from '~/utils/uiCatalog'
 type Admin = SupabaseClient<Database>
 export type ImportJob = Tables<'import_jobs'>
 
-export interface ImportJobOptions { lang?: string; quietUpcoming?: boolean; fromScratch?: boolean }
+export interface ImportJobOptions {
+  lang?: string
+  quietUpcoming?: boolean
+  fromScratch?: boolean
+  /** PracticeHub: plan every step and write nothing; each result says what would have been written. */
+  dryRun?: boolean
+}
 
 /** Time a slice spends working. A function is cut off at 60 s; a file download or a 200-row insert in flight finishes after this. */
 const SLICE_MS = 35_000
@@ -123,12 +131,20 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
       status = 'cancelled'
     } else {
       const step = job.steps[stepIndex]!
-      const login = await quirocitasLogin(admin, job.account_id)
-      if (!login) throw new QuirocitasError('The Quirocitas connection is not saved any more.', 400)
-      const client = quirocitasClientFor(admin, job.account_id, login)
-      const outcome = step === 'read'
-        ? await readSlice(admin, job, client, login.baseUrl, options, progress, deadline, beat, t)
-        : await applySlice(admin, job, client, step as QuirocitasStepKind, options, progress, deadline, beat, t)
+      let outcome: Outcome
+      if (job.source === 'practicehub') {
+        outcome = step === 'read'
+          ? await practiceHubReadSlice(admin, job, progress, deadline, beat, t)
+          : await practiceHubApplySlice(admin, job, step as PracticeHubStepKind, options, progress, beat, t,
+            (plan, p) => writePlan(plan, step, p, deadline, beat, t))
+      } else {
+        const login = await quirocitasLogin(admin, job.account_id)
+        if (!login) throw new QuirocitasError('The Quirocitas connection is not saved any more.', 400)
+        const client = quirocitasClientFor(admin, job.account_id, login)
+        outcome = step === 'read'
+          ? await readSlice(admin, job, client, login.baseUrl, options, progress, deadline, beat, t)
+          : await applySlice(admin, job, client, step as QuirocitasStepKind, options, progress, deadline, beat, t)
+      }
       progress = { ...outcome.progress, failures: 0 }
       if (outcome.result) {
         results.push(outcome.result)
@@ -141,8 +157,12 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
     threw = true
     const failures = (progress.failures ?? 0) + 1
     progress = { ...progress, failures, lastError: errText(e) }
-    // Quirocitas refusing the login will not fix itself by trying again.
-    const permanent = e instanceof QuirocitasError && e.statusCode >= 400 && e.statusCode < 500
+    // Quirocitas refusing the login, or PracticeHub refusing the key or the
+    // address, will not fix itself by trying again. A rate limit will.
+    const httpStatus = (e as { statusCode?: unknown })?.statusCode
+    const permanent = e instanceof QuirocitasError
+      ? e.statusCode >= 400 && e.statusCode < 500
+      : job.source === 'practicehub' && typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429
     if (permanent || failures >= MAX_FAILURES) {
       status = 'failed'
       error = errText(e)
@@ -404,6 +424,26 @@ async function applySlice(
     compressFile: (fileId) => compressStoredFile(admin, accountId, fileId),
   })
   const plan = await importer.plan(kind, snapshot, { quietUpcoming: options.quietUpcoming ?? true })
+  return writePlan(plan, kind, p, deadline, beat, t)
+}
+
+/** What both sources' plans have in common: QuirocitasPlan and PracticeHubPlan. */
+interface WritablePlan {
+  total: number
+  warnings: string[]
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[] }>
+}
+
+/** Writes as much of a step's plan as this slice has time for, carrying its counts on from earlier slices. Shared by both sources. */
+async function writePlan(
+  plan: WritablePlan,
+  kind: string,
+  progress: ImportJobProgress,
+  deadline: number,
+  beat: (live: ImportJobProgress) => void,
+  t: (en: string, es: string) => string,
+): Promise<Outcome> {
+  const p = progress
   // The first slice of a step sets what the bar counts to; later slices plan
   // only what is left, so the total is not taken from them.
   if (p.total === undefined) { p.total = plan.total; p.warnings = plan.warnings }
@@ -487,12 +527,13 @@ export async function notifyImportJobFinished(admin: Admin, jobId: string) {
   const mail = importJobEmail({
     t: importJobT(options.lang),
     lang: options.lang ?? 'es',
+    source: job.source,
     clinicName: account?.name ?? '',
     status: job.status as 'done' | 'failed',
     steps: job.steps,
     results: (job.results ?? []) as unknown as ImportJobStepResult[],
     error: job.error,
-    url: 'https://app.quiroflow.com/settings/import?source=quirocitas&type=full',
+    url: `https://app.quiroflow.com/settings/import?source=${job.source}&type=full`,
   })
   await deliverEmail({ to, ...mail })
 }

@@ -37,6 +37,7 @@ const connection = usePracticeHubConnection()
 const quirocitas = useQuirocitasConnection()
 const { copy: quirocitasCopy } = useQuirocitasCopy()
 const { job: quirocitasJob } = useQuirocitasJob()
+const { job: practiceHubJob } = useImportJob('practicehub')
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
@@ -62,7 +63,10 @@ const sources = computed<Source[]>(() => [
       {
         key: 'setup',
         label: t('Set up', 'Configurar'),
-        steps: [{ key: 'general', label: t('Connection', 'Conexión'), hint: t('API key and clinic URL, saved once for every step.', 'Clave API y URL de la clínica, guardadas una vez para todos los pasos.') }],
+        steps: [
+          { key: 'general', label: t('Connection', 'Conexión'), hint: t('API key and clinic URL, saved once for every step.', 'Clave API y URL de la clínica, guardadas una vez para todos los pasos.') },
+          { key: 'full', label: t('Sync everything', 'Sincronizar todo'), hint: t('Reads PracticeHub and runs Patients, Appointments, Appointment types, Ledger and Bonos on the server. You can close the page.', 'Lee PracticeHub y hace Pacientes, Citas, Tipos de cita, Libro mayor y Bonos en el servidor. Puedes cerrar la página.') },
+        ],
       },
       {
         key: 'records',
@@ -279,13 +283,19 @@ onBeforeUnmount(stopLiveCount)
 // counts follow its job instead: a few seconds apart while it writes, and
 // once more when it ends.
 let lastJobCount = 0
-watch(() => quirocitasJob.value && [quirocitasJob.value.status, quirocitasJob.value.step_index, JSON.stringify(quirocitasJob.value.progress)].join('|'), () => {
-  if (sourceKey.value !== 'quirocitas') return
-  const active = importJobActive(quirocitasJob.value)
+watch(() => {
+  const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
+  return j && [j.status, j.step_index, JSON.stringify(j.progress)].join('|')
+}, () => {
+  if (sourceKey.value !== 'quirocitas' && sourceKey.value !== 'practicehub') return
+  const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
+  // A preview writes nothing, so there is nothing to count again.
+  if ((j?.options as { dryRun?: boolean } | null)?.dryRun) return
+  const active = importJobActive(j)
   if (active && Date.now() - lastJobCount < 6000) return
   lastJobCount = Date.now()
   loadCounts({ quiet: true })
-  if (!active) loadQuirocitasCopy()
+  if (!active && sourceKey.value === 'quirocitas') loadQuirocitasCopy()
 })
 
 onMounted(() => {
@@ -305,8 +315,9 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
     return saved ? { text: t('Saved', 'Guardada'), done: true } : { text: t('Not set up yet', 'Aún sin configurar'), done: false }
   }
   if (step.key === 'full') {
-    const j = quirocitasJob.value
+    const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
     if (j && importJobActive(j)) return { text: t(`Running · ${importJobPercent(j)}%`, `En marcha · ${importJobPercent(j)}%`), done: false }
+    if ((j?.options as { dryRun?: boolean } | null)?.dryRun) return j?.status === 'done' ? { text: t('Previewed', 'Vista previa hecha'), done: false } : null
     if (j?.status === 'done' && j.steps.length > 1) return { text: t(`Done ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`, `Hecho el ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`), done: true }
     return null
   }
@@ -431,6 +442,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
               <h2 class="text-[16px] font-bold text-ink-900">{{ activeStep.label }}</h2>
               <template v-if="sourceKey === 'practicehub'">
                 <ImportPracticeHubGeneralSettings v-if="activeStep.key === 'general'" />
+                <ImportPracticeHubFullSync v-else-if="activeStep.key === 'full'" />
                 <ImportPracticeHubReconciliation v-else-if="activeStep.key === 'reconciliation'" />
                 <ImportPracticeHubPatientCheck v-else-if="activeStep.key === 'patient_check'" />
                 <ImportPracticeHubPatientsImporter v-else-if="activeStep.key === 'patients'" />

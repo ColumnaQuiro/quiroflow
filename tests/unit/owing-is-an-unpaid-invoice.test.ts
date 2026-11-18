@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outstandingCentsOf, type OwingInvoice, type OwingPayment } from '../../utils/owing'
+import { outstandingCentsOf, owingPillCents, type OwingInvoice, type OwingPayment } from '../../utils/owing'
 
 // What the front desk is told a patient owes.
 //
@@ -128,5 +128,23 @@ describe('What a patient owes', () => {
     // what matters is that it is the CARD money doing it.
     expect(outstandingCentsOf(invoices, payments)).toBe(0)
     expect(outstandingCentsOf(invoices, [{ invoice_id: null, amount_cents: 4400, method: 'credit' }])).toBe(4400)
+  })
+})
+
+describe('The patient list pill', () => {
+  it('shows no debt for a family bono beneficiary whose visits are all paid', () => {
+    // Her balance is -237,36 (eight visits drawn on a relative's Bono 30, the
+    // money on the relative's row) and nothing is outstanding.
+    expect(owingPillCents(-23736, 0)).toBe(0)
+  })
+
+  it('shows what is outstanding as debt, whatever the balance says', () => {
+    expect(owingPillCents(-5000, 5000)).toBe(-5000)
+    // Credit elsewhere does not hide an unpaid invoice from the list.
+    expect(owingPillCents(12000, 4400)).toBe(-4400)
+  })
+
+  it('shows a positive balance as credit', () => {
+    expect(owingPillCents(63000, 0)).toBe(63000)
   })
 })

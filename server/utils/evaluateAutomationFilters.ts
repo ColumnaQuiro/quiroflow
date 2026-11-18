@@ -26,9 +26,9 @@ export interface AutomationFilters {
   // (e.g. "1x10|No contactar") rather than a clean tag taxonomy an exact
   // multi-select could work against.
   tag_contains?: string
-  // Mirrors recalls.vue's "Any balance / Owing / In credit" filter -- 'debit'
-  // means the patient owes money (balance_cents < 0), 'credit' means they're
-  // in credit (balance_cents > 0).
+  // "Any balance / Owing / In credit" -- 'debit' means the patient has an
+  // unpaid invoice (outstanding_cents > 0, see utils/owing.ts), 'credit' that
+  // they're in credit (balance_cents > 0).
   //
   // Read from patient_live_balances, the same view recalls.vue filters on, not
   // from patients.balance_cents. That column is written once at PracticeHub
@@ -166,9 +166,13 @@ export async function ruleFiltersMatch(
   }
 
   if (filters.balance) {
-    const { data: live } = await supabase.from('patient_live_balances').select('balance_cents').eq('patient_id', patientId).maybeSingle()
+    // 'debit' asks the invoices, not the balance (utils/owing.ts): a family
+    // bono's beneficiary has a negative balance and owes nothing, because the
+    // money that paid their visits sits on the relative's row. Chasing them
+    // for it is the one thing this filter must not do.
+    const { data: live } = await supabase.from('patient_live_balances').select('balance_cents, outstanding_cents').eq('patient_id', patientId).maybeSingle()
     const balanceCents = live?.balance_cents ?? 0
-    if (filters.balance === 'debit' && !(balanceCents < 0)) return false
+    if (filters.balance === 'debit' && !((live?.outstanding_cents ?? 0) > 0)) return false
     if (filters.balance === 'credit' && !(balanceCents > 0)) return false
   }
 

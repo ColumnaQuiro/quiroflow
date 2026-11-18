@@ -1,5 +1,4 @@
-import type { ShallowRef } from 'vue'
-import type { Tables } from '~/types/database.types'
+import type { ImportJobControls } from '~/composables/useImportJob'
 
 // The Quirocitas importer's shared state: the saved connection, what the copy
 // read from Quirocitas holds, and the import job running for this clinic.
@@ -25,13 +24,9 @@ export interface QuirocitasCopy {
   counts: { patients: number; appointments: number; notes: number; segments: number; bonos: number; invoices: number; files: number } | null
 }
 
-export type ImportJobRow = Tables<'import_jobs'>
-
 const connection = ref<QuirocitasConnection | null>(null)
 const copy = ref<QuirocitasCopy | null>(null)
 const copyLoaded = ref(false)
-// shallowRef: a row with Json columns sends UnwrapRef into its recursive type.
-const job = shallowRef<ImportJobRow | null>(null)
 
 export function useQuirocitasConnection() {
   return connection
@@ -76,75 +71,16 @@ export async function quirocitasCall<T>(body: Record<string, unknown>): Promise<
 }
 
 // --- the import job ------------------------------------------------------------------
-
-export const importJobActive = (j: ImportJobRow | null) => j?.status === 'queued' || j?.status === 'running'
-
-let timer: ReturnType<typeof setInterval> | null = null
-let watchers = 0
+// The job itself (ImportJobRow, importJobActive, start/watch/stop) is in
+// useImportJob, which PracticeHub shares.
 
 /**
- * The newest Quirocitas import job for this clinic, kept up to date while any
- * screen watches it. When one finishes, the copy's counts are read again, so
- * the step list shows what it did.
+ * The newest Quirocitas import job for this clinic (useImportJob). When one
+ * finishes, the copy's counts are read again, so the step list shows what it
+ * did.
  */
-export interface QuirocitasJobControls {
-  job: ShallowRef<ImportJobRow | null>
-  refresh(): Promise<void>
-  start(steps: string[], options?: { quietUpcoming?: boolean; fromScratch?: boolean }): Promise<ImportJobRow | null>
-  cancel(): Promise<void>
-}
+export type QuirocitasJobControls = ImportJobControls
 
 export function useQuirocitasJob(): QuirocitasJobControls {
-  const supabase = useSupabaseClient()
-  const store = useAccountStore()
-  const { preference } = useLang()
-
-  async function refresh() {
-    if (!store.accountId) return
-    const before = job.value
-    const { data } = await supabase
-      .from('import_jobs')
-      .select('*')
-      .eq('account_id', store.accountId)
-      .eq('source', 'quirocitas')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const fresh = (data ?? null) as ImportJobRow | null
-    job.value = fresh
-    if (before && importJobActive(before) && fresh && !importJobActive(fresh)) {
-      await loadQuirocitasCopy({ counts: true })
-    }
-  }
-
-  function poll() {
-    if (timer) return
-    timer = setInterval(() => { if (importJobActive(job.value)) refresh().catch(() => {}) }, 3000)
-  }
-
-  onMounted(() => {
-    watchers++
-    refresh().catch(() => {})
-    poll()
-  })
-  onBeforeUnmount(() => {
-    if (--watchers <= 0 && timer) { clearInterval(timer); timer = null }
-  })
-
-  async function start(steps: string[], options: { quietUpcoming?: boolean; fromScratch?: boolean } = {}) {
-    job.value = await useStaffFetch<ImportJobRow>('/api/import/jobs', {
-      method: 'POST',
-      body: { source: 'quirocitas', steps, clinicId: store.currentClinicId ?? null, options: { ...options, lang: preference.value } },
-    })
-    poll()
-    return job.value
-  }
-
-  async function cancel() {
-    if (!job.value) return
-    await useStaffFetch(`/api/import/jobs/${job.value.id}/cancel`, { method: 'POST' })
-    await refresh()
-  }
-
-  return { job, refresh, start, cancel }
+  return useImportJob('quirocitas', () => loadQuirocitasCopy({ counts: true }))
 }

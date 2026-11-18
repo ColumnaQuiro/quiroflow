@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { practiceHubCarePlanSummary as formatPlan } from '~/utils/practicehubImport/clinical'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -42,10 +44,6 @@ const skippedUnmatched = ref(0)
 
 const importedCount = ref(0)
 const importErrors = ref<string[]>([])
-
-function formatPlan(plan: PHCarePlan): string {
-  return `${plan.visits} visit(s), every ${plan.interval}, for ${plan.duration} occurrence(s) (${plan.frequency_type}) starting ${plan.start_date}. ${plan.active ? 'Active.' : 'Inactive.'}`
-}
 
 const previewColumns = computed(() => [
   { key: 'start', label: t('Starts', 'Empieza') },

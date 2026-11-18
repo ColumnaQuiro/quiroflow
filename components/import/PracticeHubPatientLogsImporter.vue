@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { practiceHubLogNote, practiceHubLogTypeLabel, practiceHubPreviewTruncate as truncate } from '~/utils/practicehubImport/clinical'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -42,19 +44,9 @@ const skippedUnmatched = ref(0)
 const importedCount = ref(0)
 const importErrors = ref<string[]>([])
 
-function stripHtml(value: string | null): string | null {
-  if (!value) return null
-  const text = value.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim()
-  return text || null
-}
-
 function formatDate(value: string): string {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
-}
-
-function truncate(value: string): string {
-  return value.length > 90 ? `${value.slice(0, 90)}…` : value
 }
 
 const previewColumns = computed(() => [
@@ -137,13 +129,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         skippedUnmatched.value++
         continue
       }
-      // contact_log.action is a fixed enum for staff outreach actions
-      // (sent_whatsapp, called_no_answer, ...) and doesn't have a slot for
-      // PracticeHub's log types (note, appt, sms, ...) -- everything
-      // imported here lands as 'other', with the original type kept as a
-      // prefix on the note text instead so it isn't lost.
-      const typeLabel = log.sub_type ? `${log.type}/${log.sub_type}` : log.type
-      const body = stripHtml(log.data)
+      // Lands as 'other', with PracticeHub's type kept as a prefix on the
+      // note (see practiceHubLogNote).
+      const typeLabel = practiceHubLogTypeLabel(log)
       planned.push({
         patientLabel: patient.label,
         typeLabel,
@@ -152,7 +140,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           account_id: store.accountId!,
           patient_id: patient.id,
           action: 'other',
-          note: `[${typeLabel}] ${body ?? ''}`.trim(),
+          note: practiceHubLogNote(log),
           external_reference: ref,
           created_at: log.created,
         },

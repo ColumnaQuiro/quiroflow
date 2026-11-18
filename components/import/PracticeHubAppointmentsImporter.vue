@@ -4,6 +4,13 @@ import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { matchIncomingAppointments, type HeldReason, type IncomingAppointment } from '~/utils/importAppointmentMatch'
 import { quiroflowKeeps, type KeptReason } from '~/utils/importAppointmentGuard'
 import { practiceHubAppointmentRows, practiceHubPatientNumberMap, practiceHubWallClock, type PHApiAppointment, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import {
+  APPOINTMENT_DATE_FIELDS as DATE_FIELDS,
+  appointmentFieldUpdate,
+  practiceHubAppointmentStatus as mapStatus,
+  type AppointmentOverwritable,
+  type FieldDiff,
+} from '~/utils/practicehubImport/appointments'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -18,19 +25,9 @@ interface MappedAppointment {
   sourceRow: number
 }
 
-// A re-import matching an existing appointment overwrites these from
-// PracticeHub -- unless QuiroFlow has acted on the visit (moved it, or
-// recorded what happened at it), in which case QuiroFlow's version stands and
-// the row is listed as kept (utils/importAppointmentGuard.ts). Deliberately never
-// touched: `rescheduled` (keeps a detected time change silent -- no
-// reschedule automation fires for a bulk historical sync), `note`,
-// `external_reference`, `created_at`, `room_id`, and all QuiroFlow-native
-// confirmation/reminder/check-in/flow timestamps. The one exception to
-// `external_reference` is a visit adopted by a re-created PracticeHub
-// appointment (utils/importAppointmentMatch.ts): it takes the new id, so the
-// next run and the ledger import find it by id.
-const OVERWRITE_FIELDS = ['starts_at', 'ends_at', 'status', 'practitioner_id', 'practitioner_name', 'appointment_type_id'] as const
-type AppointmentOverwritable = Pick<TablesInsert<'appointments'>, (typeof OVERWRITE_FIELDS)[number]>
+// Which fields a re-import overwrites on a visit already here, and why the
+// rest are never touched, is in utils/practicehubImport/appointments.ts
+// (PRACTICEHUB_APPOINTMENT_OVERWRITE_FIELDS), shared with the server-side sync.
 
 interface ExistingAppointment {
   id: string
@@ -46,8 +43,6 @@ interface ExistingAppointment {
   practitioner_name: string | null
   appointment_type_id: string | null
 }
-
-interface FieldDiff { field: string; from: string; to: string }
 
 interface MappedUpdate {
   id: string
@@ -88,32 +83,10 @@ function shownValue(field: string, value: unknown): string {
   return formatValue(value)
 }
 
-const DATE_FIELDS = new Set(['starts_at', 'ends_at'])
-
-// starts_at/ends_at come back from Supabase as Postgres's own timestamptz
-// serialization (e.g. "2023-11-06T15:00:00+00:00"), while the freshly-parsed
-// CSV value here is JS's toISOString() format (e.g.
-// "2023-11-06T15:00:00.000Z") -- same instant, different string, so a plain
-// `!==` flagged every single appointment as changed regardless of whether
-// its time actually moved.
-function valuesDiffer(field: string, value: unknown, existingValue: unknown): boolean {
-  if (DATE_FIELDS.has(field)) return new Date(value as string).getTime() !== new Date(existingValue as string).getTime()
-  return value !== existingValue
-}
-
+// Comparing dates as instants, and never clearing a value PracticeHub leaves
+// blank: utils/practicehubImport/appointments.ts.
 function buildAppointmentUpdate(existing: ExistingAppointment, incoming: AppointmentOverwritable) {
-  const updates: TablesUpdate<'appointments'> = {}
-  const diff: FieldDiff[] = []
-  for (const field of OVERWRITE_FIELDS) {
-    const value = incoming[field]
-    if (value === null || value === undefined || value === '') continue
-    const existingValue = existing[field]
-    if (valuesDiffer(field, value, existingValue)) {
-      ;(updates as Record<string, unknown>)[field] = value
-      diff.push({ field, from: shownValue(field, existingValue), to: shownValue(field, value) })
-    }
-  }
-  return { updates, diff }
+  return appointmentFieldUpdate(existing, incoming, shownValue)
 }
 
 const stage = ref<'pick' | 'mapping' | 'preview' | 'importing' | 'done' | 'error'>('pick')
@@ -215,19 +188,6 @@ const importing = ref(false)
 const importedCount = ref(0)
 const updatedCount = ref(0)
 const importErrors = ref<string[]>([])
-
-function mapStatus(raw: string): string {
-  switch (raw.trim().toLowerCase()) {
-    case 'processed':
-      return 'completed'
-    case 'cancelled':
-      return 'cancelled'
-    case 'missed':
-      return 'no_show'
-    default:
-      return 'booked' // pending, arrived
-  }
-}
 
 async function handleFile(file: File) {
   fileError.value = ''

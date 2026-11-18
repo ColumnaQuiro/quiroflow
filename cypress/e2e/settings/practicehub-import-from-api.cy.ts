@@ -169,6 +169,9 @@ describe('Importing from PracticeHub without exporting anything', () => {
         cy.visit('/settings/import?source=practicehub&type=general')
         cy.get('[data-cy=ph-check]').click()
         cy.get('[data-cy=ph-check-error]').should('contain.text', 'PracticeHub refused the API key')
+        // After Connection comes Sync everything, then the steps one by one.
+        cy.get('[data-cy=import-next-step]').click()
+        cy.get('[data-cy=import-panel] h2').should('have.text', 'Sync everything')
         cy.get('[data-cy=import-next-step]').click()
         cy.get('[data-cy=ph-patients-from-api]').click()
         cy.contains('PracticeHub refused the API key').should('be.visible')

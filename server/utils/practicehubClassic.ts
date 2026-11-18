@@ -12,12 +12,16 @@ export async function practiceHubClassicGet<T>(
   conn: { baseUrl: string; apiKey: string; appDetails: string },
   path: string,
   query: Record<string, string> = {},
+  // A server-side import job reads inside a function's time limit, and one
+  // request PracticeHub never answers must not use up the whole slice.
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   const url = new URL(`${conn.baseUrl.replace(/\/$/, '')}/api${path}`)
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value)
   try {
     return await $fetch<T>(url.toString(), {
       headers: { 'x-practicehub-key': conn.apiKey, 'x-app-details': conn.appDetails },
+      ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
     })
   } catch (err: any) {
     const status: number | undefined = err?.response?.status

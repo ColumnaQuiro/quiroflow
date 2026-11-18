@@ -120,7 +120,7 @@ describe('Which credit rows count in the balance', () => {
 describe('Every screen that spends credit marks the row as a spend', () => {
   // A spend row written without is_spend is counted in the balance again --
   // the bug the flag fixes, one forgotten line away from coming back.
-  const files = ['components/patients/BillingTab.vue', 'composables/useVisitCharging.ts', 'pages/billing/[id].vue']
+  const files = ['components/patients/BillingTab.vue', 'composables/useVisitCharging.ts', 'pages/billing/[id].vue', 'utils/bonoSale.ts']
   for (const file of files) {
     it(file, () => {
       const source = readFileSync(resolve(__dirname, '../..', file), 'utf8')

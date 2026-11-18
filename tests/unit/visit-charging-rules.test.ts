@@ -5,6 +5,7 @@ import {
   creditExceedsSpendable,
   isVisitUpcoming,
   lineItemsTotalCents,
+  openingPaymentRows,
   planInvoiceUnderBono,
   practiceHubChargedAtPurchase,
 } from '../../utils/visitCharging'
@@ -139,5 +140,30 @@ describe('Spending credit on a visit', () => {
 
   it('never blocks a payment that spends no credit, whatever the figure reads', () => {
     expect(creditExceedsSpendable(0, -1200)).toBe(false)
+  })
+})
+
+describe('The payment form a visit opens with', () => {
+  it('opens on the default method when there is no credit', () => {
+    expect(openingPaymentRows(10000, 0, 'card')).toEqual([{ method: 'card', cents: 10000 }])
+  })
+
+  it('opens on credit when it covers the visit', () => {
+    expect(openingPaymentRows(10000, 10000, 'card')).toEqual([{ method: 'credit', cents: 10000 }])
+  })
+
+  it('never offers more credit than is due', () => {
+    expect(openingPaymentRows(4400, 10000, 'card')).toEqual([{ method: 'credit', cents: 4400 }])
+  })
+
+  it('splits when credit covers part of it, the rest on the default method', () => {
+    expect(openingPaymentRows(10000, 5000, 'card')).toEqual([
+      { method: 'credit', cents: 5000 },
+      { method: 'card', cents: 5000 },
+    ])
+  })
+
+  it('leaves a fully paid visit alone', () => {
+    expect(openingPaymentRows(0, 5000, 'cash')).toEqual([{ method: 'cash', cents: 0 }])
   })
 })

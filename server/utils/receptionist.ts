@@ -4,7 +4,7 @@ import type { Database } from '~/types/database.types'
 import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, repeatChangeSection, changesWithoutComing, REPEAT_CHANGE_WINDOW_DAYS, type DiaryChange, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
-import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { leadFormSection, leadOriginSection, type LeadFormAnswer, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { readInstallmentOptions } from '~/utils/bonoInstallments'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -870,6 +870,8 @@ export function buildSystemPrompt(
     audience?: ReceptionistAudience
     calendar: ReceptionistCalendar
     leadOrigin?: LeadOrigin | null
+    /** What they answered in the clinic's lead form (leadFormSection). */
+    leadForm?: LeadFormAnswer[]
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
     /** book_appointment is on this request -- only ever with sendsItself. */
@@ -979,6 +981,7 @@ export function buildSystemPrompt(
   const conversation = [
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
+    leadFormSection(opts.leadForm ?? []),
     opts.audience ? audienceSection(opts.audience) : '',
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a

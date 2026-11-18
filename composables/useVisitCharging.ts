@@ -1,8 +1,9 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
+import { recordBonoSale } from '../utils/bonoSale'
 
 // Charging one visit: raising its invoice, adding and removing lines, drawing
 // it from a bono, and taking payment for it -- with the factura, the credit
@@ -43,6 +44,15 @@ export interface VisitInvoice { id: string; invoice_number: string; status: stri
 export interface VisitLineItem { id: string; description: string; quantity: number; price_cents: number; service_id: string | null }
 export interface VisitPaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 export interface VisitServiceOption { id: string; name: string; price_cents: number }
+export interface VisitBonoTemplate { id: string; name: string; session_count: number; price_cents: number; installment_options: unknown }
+export interface VisitBonoSale {
+  packageId: string
+  /** 1 is at once; N one of the bono's split options. */
+  installments: number
+  /** Paid now; the rest stays owed on the bono. */
+  amountCents: number
+  method: string
+}
 export interface VisitBonoOption { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }
 
 export function useVisitCharging(ctx: VisitChargingContext) {
@@ -78,7 +88,6 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
   const {
     rows: paymentRows,
-    reset: resetPaymentRows,
     addRow: addPaymentRow,
     removeRow: removePaymentRow,
     centsOf: paymentRowCents,
@@ -286,10 +295,26 @@ export function useVisitCharging(ctx: VisitChargingContext) {
       ])
       lineItems.value = lines ?? []
       payments.value = pays ?? []
-      resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
+      openPaymentRows()
     }
     loadingInvoice.value = false
   }
+
+  // The form as it opens on what is due: credit first when the patient has
+  // some (utils/visitCharging openingPaymentRows). Remembered, so the credit
+  // figure arriving after the invoice -- the summary loads on its own -- can
+  // redo it, but only while nobody has touched the form.
+  let openedRowsKey = ''
+  function openPaymentRows() {
+    paymentRows.value = openingPaymentRows(balanceDueCents.value, spendableCreditCents.value, defaultMethod.value).map((r) => ({
+      method: r.method,
+      amount: (r.cents / 100).toFixed(2),
+    }))
+    openedRowsKey = JSON.stringify(paymentRows.value)
+  }
+  watch(spendableCreditCents, () => {
+    if (openedRowsKey && JSON.stringify(paymentRows.value) === openedRowsKey) openPaymentRows()
+  })
 
   // Everything the billing panel needs before it can render. A read: nothing
   // here writes, whatever state the visit is in.
@@ -307,7 +332,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     const totalCents = lineItemsTotalCents(lineItems.value)
     await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
     invoice.value.total_cents = totalCents
-    resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
+    openPaymentRows()
   }
 
   // "Charge" on an unbilled visit: raise the invoice at the appointment type's
@@ -514,6 +539,77 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     }
   }
 
+  // The clinic's bonos, for selling one at the checkout. Loaded on demand:
+  // most visits are paid by a bono the patient already holds, or in money.
+  const bonoTemplates = ref<VisitBonoTemplate[]>([])
+  async function loadBonoTemplates() {
+    const { data } = await supabase.from('packages').select('id, name, session_count, price_cents, installment_options').order('name')
+    bonoTemplates.value = (data ?? []) as VisitBonoTemplate[]
+  }
+  /** Selling a bono needs what the patient record's sale needs, plus taking money. */
+  const canSellBono = computed(() => (ctx.can('packages_edit') || ctx.can('billing_config')) && ctx.can('payments_allocate'))
+
+  // A patient who has just decided to buy a bono, at the end of the visit
+  // that convinced them: the visit is its first session. Reception used to
+  // leave the appointment, sell the bono on the patient's record, and come
+  // back to draw the session -- three screens for one decision.
+  //
+  // The sale is utils/bonoSale, the same function the record sells through;
+  // the session is usePackageSession, exactly as if the bono had been bought
+  // the day before. In that order, and with the patient's balance read again
+  // between them: the session's charge is marked paid when the balance covers
+  // it, and the balance only covers it once the money just taken is in it.
+  /** Returns the bono sold, or null when nothing was. */
+  async function sellBonoForVisit(sale: VisitBonoSale): Promise<string | null> {
+    error.value = ''
+    // Visit taken care of from elsewhere since this screen opened (the other
+    // front end, a second tab): selling now would sell a bono for a visit that
+    // will not draw on it.
+    const { data: existingSession } = await supabase.from('package_sessions').select('id').eq('appointment_id', appointmentId()).maybeSingle()
+    if (existingSession || invoice.value?.status === 'paid') {
+      error.value = t('This visit has already been billed.', 'Esta visita ya ha sido facturada.')
+      await loadInvoice()
+      return null
+    }
+    saving.value = true
+    const { purchase, error: saleError } = await recordBonoSale(
+      supabase,
+      { issueFactura, t },
+      {
+        accountId: accountId(),
+        patientId: patientId(),
+        teamMemberId: toValue(ctx.teamMemberId) ?? null,
+        packageId: sale.packageId,
+        installments: sale.installments,
+        amountCents: sale.amountCents,
+        method: sale.method,
+        spendableCreditCents: spendableCreditCents.value,
+        creditLedgerCents: creditLedgerCents.value,
+      },
+    )
+    saving.value = false
+    await refreshSummary()
+    if (!purchase) {
+      error.value = saleError ?? t('Could not sell the bono.', 'No se ha podido vender el bono.')
+      return null
+    }
+    // Sold, but the money was refused. The session is NOT taken: charged now
+    // it would sit unpaid against a balance the payment never reached, and
+    // the visit would read as settled by a bono nobody has paid for. The bono
+    // is on the list now, so taking the session is one press once the money
+    // is sorted -- and selling again would sell it twice.
+    if (saleError) {
+      const why = /[.!?]$/.test(saleError) ? saleError : `${saleError}.`
+      error.value = t(
+        `${purchase.package_name} was sold. ${why} Record the payment on the patient's Billing tab, then use a session here.`,
+        `${purchase.package_name} se ha vendido. ${why} Registra el pago en la ficha del paciente y después usa una sesión aquí.`,
+      )
+      return purchase.id
+    }
+    await usePackageSession(purchase)
+    return purchase.id
+  }
+
   async function recordPayment() {
     if (!invoice.value) return
     error.value = ''
@@ -666,6 +762,10 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     addLineItem,
     removeLineItem,
     usePackageSession,
+    bonoTemplates,
+    loadBonoTemplates,
+    canSellBono,
+    sellBonoForVisit,
     recordPayment,
     afterThirdPartyChange,
   }

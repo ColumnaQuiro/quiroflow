@@ -2,6 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
+import { recordBonoPayment, recordBonoSale } from '~/utils/bonoSale'
 import { bonoDueCents, installmentBeingPaid, installmentPlanOf, installmentsDue, readInstallmentOptions } from '~/utils/bonoInstallments'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
@@ -805,74 +806,27 @@ async function recordPackagePayment(
     amountCents: number,
     method: string,
     description: string,
-    bono?: { priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null },
+    bono: { priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null },
     /** Set only for money taken on an earlier day; see utils/paymentDate. */
     paidAt?: string,
   ): Promise<string | null> {
   if (!packagePurchaseId) return null
-  // Attached to the bono, not to an invoice. Selling a bono used to raise an
-  // invoice for its full price and hang the payments off that -- which
-  // charged the patient twice, because every visit drawn from the bono raises
-  // its own charge as well. One patient was invoiced 528 for the bono and
-  // 44 for the visit they took from it; run the bono out and that is 1,056
-  // charged for 528 of sessions.
-  //
-  // The 518 bonos migrated from PracticeHub never had a sale invoice -- phase
-  // 5 removed them -- and they have been correct all along: the money sits on
-  // the account and each visit's charge draws it down. This makes a bono sold
-  // here behave the same way, so there is one model rather than two.
-  const { data: payment, error: paymentError } = await supabase
-    .from('payments')
-    .insert({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      invoice_id: null,
-      package_purchase_id: packagePurchaseId,
-      amount_cents: amountCents,
-      method,
-      purpose: 'bono',
-      ...(paidAt ? { paid_at: paidAt } : {}),
-    })
-    .select('id')
-    .single()
-  // No payment, nothing else: the credit row below restates this payment, and
-  // written alone it takes credit off the patient for a bono nothing was paid
-  // towards.
-  if (paymentError || !payment) return paymentRefusedMessage(paymentError)
-
-  // A bono's factura says how much of it this money bought -- "264,00 € de
-  // 528,00 € (6 de 12 sesiones)" -- because that is what the patient is
-  // actually purchasing when they pay an instalment. Not issued for a credit
-  // payment: that money was documented when it was paid in.
-  if (method !== 'credit' && bono) {
-    await issueFactura({
-      accountId: store.accountId!,
-      patientId: props.patientId,
-      paymentId: payment.id,
-      amountCents,
-      purpose: 'bono',
-      bono: { packageName: description, priceCents: bono.priceCents, sessionsTotal: bono.sessionsTotal, installment: bono.installment },
-    })
-  }
-  // Only the part drawn from the ledger gets a row: the rest was paid ahead
-  // and has no row to take it off -- see utils/owing ledgerDrawCents.
-  const fromLedgerCents = method === 'credit' ? ledgerDrawCents(amountCents, creditLedgerCents.value) : 0
-  if (fromLedgerCents > 0) {
-    const { error: creditRowError } = await supabase.from('account_credits').insert({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      amount_cents: -fromLedgerCents,
-      // A spend: in the credit ledger, never in the balance (utils/owing balanceCreditCentsOf).
-      is_spend: true,
-      reason: `Applied to ${description}`,
-      invoice_id: null,
-      created_by: store.teamMember?.id ?? null,
-    })
-    if (creditRowError) {
-      return t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
-    }
-  }
-  return null
+  // Attached to the bono, not to an invoice -- see utils/bonoSale for why, and
+  // for the factura and credit row that go with it. The 518 bonos migrated
+  // from PracticeHub never had a sale invoice and have been correct all along:
+  // the money sits on the account and each visit's charge draws it down.
+  return recordBonoPayment(supabase, { issueFactura, t }, {
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    teamMemberId: store.teamMember?.id ?? null,
+    packagePurchaseId,
+    amountCents,
+    method,
+    description,
+    bono,
+    creditLedgerCents: creditLedgerCents.value,
+    paidAt,
+  })
 }
 
 // One request for the whole tab -- the ledger, the bonos, the memberships and
@@ -1889,73 +1843,38 @@ const statusTone: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> =
 }
 
 async function sellPackage() {
-  // Read again at the sale, not from the list loaded earlier: a price another
-  // member changed in Settings since then would otherwise be sold at the old
-  // one.
-  const cached = packageTemplates.value.find((p) => p.id === sellPackageId.value)
-  if (!cached) return
-  const { data: fresh } = await supabase.from('packages').select('id, name, session_count, price_cents, installment_options').eq('id', cached.id).maybeSingle()
-  const tpl = fresh ?? cached
-  // The option is read off the same fresh row: sold at the price it has now,
-  // or not at all if someone has just removed it.
-  let option: { installments: number; installmentCents: number } | null = null
-  if (sellInstallments.value > 1) {
-    option = readInstallmentOptions(tpl.installment_options).find((o) => o.installments === sellInstallments.value) ?? null
-    if (!option) {
-      showToast(t('That way of paying is no longer offered for this bono. Choose again.', 'Esa forma de pago ya no está disponible para este bono. Elige de nuevo.'), 'error', 10000)
-      useBillingTemplates().invalidate()
-      await ensureBillingTemplatesLoaded()
-      return
-    }
-  }
-  const priceCents = option ? option.installments * option.installmentCents : tpl.price_cents
-  const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
-  // Against what is actually spendable, and against the amount being paid
-  // now rather than the package's price -- part-paying a EUR 528 bono with
-  // EUR 50 of credit is a normal sale, with the rest taken later or put on
-  // autopay.
-  if (sellMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
-    creditError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
+  if (!sellPackageId.value) return
+  sellingPackage.value = true
+  // utils/bonoSale: the price is read again at the sale, there is no invoice
+  // for it, and the payment carries its factura and any credit drawn down.
+  // The visit checkout sells through the same function.
+  const { purchase, error, optionGone } = await recordBonoSale(supabase, { issueFactura, t }, {
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    teamMemberId: store.teamMember?.id ?? null,
+    packageId: sellPackageId.value,
+    installments: sellInstallments.value,
+    amountCents: Math.round((parseFloat(sellAmountPaid.value) || 0) * 100),
+    method: sellMethod.value,
+    spendableCreditCents: spendableCreditCents.value,
+    creditLedgerCents: creditLedgerCents.value,
+  })
+  sellingPackage.value = false
+  if (optionGone) {
+    showToast(error!, 'error', 10000)
+    useBillingTemplates().invalidate()
+    await ensureBillingTemplatesLoaded()
     return
   }
-  sellingPackage.value = true
-  // No invoice for the sale. What the bono costs is recorded as owed_cents on
-  // the purchase, and every payment against it comes off that -- see
-  // packageOwedCents. Raising an invoice here as well as charging each visit
-  // billed the same sessions twice.
-  const { data: purchase } = await supabase
-    .from('package_purchases')
-    .insert({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      package_id: tpl.id,
-      package_name: tpl.name,
-      sessions_total: tpl.session_count,
-      price_cents: priceCents,
-      installments: option?.installments ?? null,
-      installment_cents: option?.installmentCents ?? null,
-      invoice_id: null,
-      owed_cents: priceCents,
-      created_by: store.teamMember?.id ?? null,
-    })
-    .select('id')
-    .single()
-  // Amount paid can be less than the package's full price -- the rest is
-  // expected via the existing "Set up autopay" Stripe schedule below.
-  let paymentProblem: string | null = null
-  if (purchase && amountCents > 0) {
-    paymentProblem = await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, {
-      priceCents,
-      sessionsTotal: tpl.session_count,
-      installment: option ? installmentBeingPaid({ installments: option.installments, installmentCents: option.installmentCents }, 0, amountCents) : null,
-    })
+  if (!purchase) {
+    creditError.value = error ?? ''
+    return
   }
-  sellingPackage.value = false
   // The bono is sold either way -- what it costs is owed on it -- but nothing
   // was paid towards it, and reception has to know before the patient leaves.
-  if (paymentProblem) {
-    creditError.value = paymentProblem
-    showToast(paymentProblem, 'error', 10000)
+  if (error) {
+    creditError.value = error
+    showToast(error, 'error', 10000)
   }
   sellPackageId.value = ''
   sellInstallments.value = 1

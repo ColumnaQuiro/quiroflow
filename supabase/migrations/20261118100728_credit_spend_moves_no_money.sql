@@ -43,7 +43,8 @@ comment on column public.account_credits.is_spend is
   'This negative row is credit being spent: the ledger side of a payment of method ''credit''. It reduces what the patient can still spend but never the balance, because the credit payment beside it moves no money and the credit it spends was counted once already, when it came in (as a payment, or as a goodwill row). Transfers between patients are not spends.';
 
 -- Every row that is one today. "Applied to ..." is the reason every spending
--- path writes (BillingTab, useVisitCharging, pages/billing/[id], raise_invoice)
+-- path writes (BillingTab, utils/bonoSale, useVisitCharging, pages/billing/[id],
+-- raise_invoice)
 -- and nothing else does. On production on 18 Nov 2026 that was seven rows on
 -- four patients, all seven beside a credit payment except the two whose
 -- receipts were replaced by PracticeHub's, described above.

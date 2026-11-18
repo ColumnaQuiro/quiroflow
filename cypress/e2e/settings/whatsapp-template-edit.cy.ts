@@ -51,6 +51,7 @@ describe('Editing a WhatsApp template', () => {
       cy.get('[data-cy="whatsapp-template-create"]').should('not.be.disabled').click()
       cy.get('[data-cy="template-dialog"]').within(() => {
         cy.get('[data-cy="template-title"]').type('Guía lumbar')
+        cy.get('[data-cy="template-header-document"]').click()
         cy.get('[data-cy="template-file"]').selectFile(guide)
         cy.get('[data-cy="template-body"]').type('Hola ')
         cy.get('[data-cy="template-add-variable"]').click()

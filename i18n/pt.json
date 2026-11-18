@@ -1645,6 +1645,7 @@
   "Could not create the invite.": "Não foi possível criar o convite.",
   "Could not create the reply.": "Não foi possível criar a resposta.",
   "Could not delete it.": "Não foi possível eliminar.",
+  "Could not delete the template.": "Não foi possível eliminar o modelo.",
   "Could not discard that draft.": "Não foi possível descartar esse rascunho.",
   "Could not disconnect Google. Try again.": "Não foi possível desligar o Google. Tente novamente.",
   "Could not disconnect.": "Não foi possível desligar.",
@@ -3142,12 +3143,14 @@
   "It includes ___ (history, posture tests, the first adjustment...).": "Inclui ___ (historial, testes posturais, o primeiro ajuste...).",
   "It is a marketing message": "É uma mensagem de marketing",
   "It is a patient's birthday": "É o aniversário de um paciente",
+  "It is deleted at Meta, in this language only, and cannot be recovered. Meta may not let the same name be used for a new template for up to 30 days.": "É eliminado na Meta, só neste idioma, e não pode ser recuperado. A Meta pode não deixar usar o mesmo nome num modelo novo durante até 30 dias.",
   "It is in use by patients or charges. Retire it instead.": "Está a ser usada por pacientes ou cobranças. Em vez disso, retire-a.",
   "It is marketing: of them,": "É de marketing: destes,",
   "It is not part of the free trial. Upgrade to add it on its own, or with Growth, and it starts answering WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.": "Não faz parte do período de teste gratuito. Mude de plano para a adicionar sozinha, ou com o Growth, e começa a responder no WhatsApp, Instagram, Messenger e no chat do seu site em nome da sua clínica, marcando diretamente na sua agenda.",
   "It is paused, so nobody can enter it. Switch it on to launch it for a patient.": "Está em pausa, por isso ninguém pode entrar. Ative-a para a iniciar para um paciente.",
   "It is removed from the record. Copies already printed or sent are not affected.": "É removida da ficha. As cópias já impressas ou enviadas não são afetadas.",
   "It is removed from this patient for everyone, and cannot be recovered.": "É removido deste paciente para todos e não pode ser recuperado.",
+  "It is still being sent from here. Choose another template there first:": "Ainda é enviado a partir daqui. Escolha primeiro outro modelo aí:",
   "It is stored for this clinic only and is never shown again. Use a Quirocitas user that can see every patient.": "É guardada só para esta clínica e nunca volta a ser mostrada. Use um utilizador do Quirocitas que veja todos os pacientes.",
   "It is the only place that tells you whether the copy is actually complete, in both directions: missing here, or here but gone from PracticeHub.": "É o único sítio que lhe diz se a cópia está realmente completa, nos dois sentidos: o que falta aqui, ou o que está aqui mas já não existe no PracticeHub.",
   "It is too late to cancel this one online. Call or message the clinic.": "Já é tarde para cancelar esta marcação online. Ligue ou envie uma mensagem à clínica.",
@@ -8544,7 +8547,14 @@
   "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "O GoCardless está a rever esta conta, por isso ainda não pode cobrar. Não há nada a fazer aqui; isto atualiza-se sozinho.",
   "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Este recibo foi pago em parte através da GoCardless, por isso isto apenas regista o reembolso. Para devolver o dinheiro através da GoCardless, reembolse a partir da linha do próprio pagamento por débito direto.",
   "Date paid": "Data do pagamento",
-  "The payment date cannot be in the future.": "A data do pagamento não pode ser posterior a hoje."
+  "The payment date cannot be in the future.": "A data do pagamento não pode ser posterior a hoje.",
+  "Process · choose a bono": "Processar · escolha um pack",
+  "Sell a new bono": "Vender um pack novo",
+  "This visit is its first session": "Esta visita é a primeira sessão",
+  "No bonos set up": "Não há packs configurados",
+  "The rest stays owed on the bono; collect it later from the patient record.": "O restante fica em dívida no pack; cobre-o depois na ficha do paciente.",
+  "Could not sell the bono": "Não foi possível vender o pack",
+  "The rest stays owed on the bono.": "O restante fica em dívida no pack."
  },
  "p": {
   "Amount exceeds available credit ({0}).": "O montante excede o crédito disponível ({0}).",
@@ -8562,6 +8572,7 @@
   "\"{0}\" already exists. Choose another name, for example \"{1} (afternoons)\".": "\"{0}\" já existe. Escolha outro nome, por exemplo \"{1} (tardes)\".",
   "\"{0}\" already exists. Choose another name.": "\"{0}\" já existe. Escolha outro nome.",
   "\"{0}\" removed": "“{0}” removida",
+  "\"{0}\" was deleted at Meta.": "«{0}» foi eliminado na Meta.",
   "\"{0}\" was sent to Meta for review. It appears in the list above once approved, usually within minutes.": "«{0}» foi enviado à Meta para revisão. Aparece na lista acima quando for aprovado, normalmente em poucos minutos.",
   "\"{0}\" was sent to Meta. Once it is approved you can choose it here and in your automations.": "«{0}» foi enviado à Meta. Quando for aprovado poderá escolhê-lo aqui e nas suas automatizações.",
   "# Others on this same phone\nThese patients have the same mobile number on their record as the person writing, so their confirmations and reminders reach this phone too:\n{0}": "# Outros com este mesmo telefone\nEstes pacientes têm na ficha o mesmo número de telemóvel que a pessoa que escreve, por isso as confirmações e os lembretes deles também chegam a este telefone:\n{0}",
@@ -8768,6 +8779,7 @@
   "Delete {0}?": "Eliminar {0}?",
   "Delete «{0}»?": "Eliminar «{0}»?",
   "Delete “{0}”": "Eliminar “{0}”",
+  "Delete “{0}” ({1})?": "Eliminar «{0}» ({1})?",
   "Delete “{0}”?": "Eliminar “{0}”?",
   "Delivered {0}": "Entregue {0}",
   "Didn't come on {0}": "Faltou a {0}",
@@ -9916,6 +9928,8 @@
   "Search a patient (GoCardless: {0})": "Pesquisar um paciente (GoCardless: {0})",
   "Nothing will be written: {0} months of the cash ledger do not add up to the totals Quirocitas printed ({1}), so its columns were not read where they are.": "Nada será escrito: {0} meses do registo de caixa não batem certo com os totais que o Quirocitas imprimiu ({1}), por isso as suas colunas não foram lidas onde estão.",
   "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Nada será escrito: {0} de {1} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente, por isso os seus pagamentos chegariam sem as visitas que pagaram.",
-  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente: chegam os seus pagamentos, não os seus encargos."
+  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente: chegam os seus pagamentos, não os seus encargos.",
+  "Process · sell {0}, use 1 session": "Processar · vender {0} e usar 1 sessão",
+  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} foi vendido. {1} Registe o pagamento no separador de faturação do paciente e depois use uma sessão aqui."
  }
 }

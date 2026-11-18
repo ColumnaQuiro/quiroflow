@@ -570,3 +570,48 @@ describe('the original cash page with a label spelled differently', () => {
     expect(m.rows[1]!.note).toBe('Bono 12')
   })
 })
+
+// The second clinic's real cash header, as its read recorded it: no card
+// column, and its transfers totalled in the footer's slot 2 -- the slot the
+// first clinic uses for card.
+const NO_CARD_CAJA = `<form action="diario.php" method="post"><input type="hidden" name="tipo" value="caja">
+<b>Mes de Noviembre de 2026</b>
+<table><tr><th></th><th>Fecha</th><th>Nombre</th><th>NIF</th><th>Observ.</th><th>N</th><th>I</th><th>B</th><th>Efectivo</th><th>Transferencia</th><th>Deuda</th><th>Valor</th></tr>
+<tr><td>1</td><td>03-11-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td></td><td></td><td></td><td></td><td>40,00</td><td></td><td></td><td>40,00</td></tr>
+<tr><td>2</td><td>06-11-2026</td><td>Laura Demo Prueba</td><td>12345678Z</td><td>Bono 12</td><td></td><td></td><td></td><td></td><td>450,00</td><td></td><td></td></tr>
+</table>
+<input id="caja-6" type="text" value="40,00" readonly><input id="totalmeto-6[2]" type="text" value="450,00" readonly><input id="valortotal-6" type="text" value="40,00" readonly>
+</form>`
+
+describe('a clinic whose second payment method is transfer, not card', () => {
+  const month = (m: ReturnType<typeof parseQuirocitasCajaMonth>) => {
+    const sum = (k: 'cash' | 'card' | 'transfer') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
+    return { month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') } }
+  }
+
+  it('reads footer slot 2 as the method whose column follows Efectivo', () => {
+    const m = parseQuirocitasCajaMonth(NO_CARD_CAJA)
+    expect(m.layout.columns).toMatchObject({ cash: 8, transfer: 9, debt: 10, value: 11, usedBono: 7 })
+    expect(m.layout.columns.card).toBeUndefined()
+    expect(m.totals).toEqual({ cash: 40, card: null, transfer: 450, value: 40 })
+    expect(m.rows[1]).toMatchObject({ transfer: 450, card: null, note: 'Bono 12' })
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [month(m)] })).toEqual([])
+  })
+
+  it('still reads the first clinic\'s slots as card then transfer', () => {
+    expect(parseQuirocitasCajaMonth(CAJA).totals).toEqual({ cash: 40, card: 1000, transfer: 0, value: 40 })
+  })
+
+  it('accepts a copy saved before, with its transfer total filed under card', () => {
+    // Exactly how that clinic's first corrected read stored November.
+    const saved = { month: '2026-11', rows: 148, printed: { cash: 3062, card: 1450, transfer: null }, summed: { cash: 3062, card: 0, transfer: 1450 } }
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [saved] })).toEqual([])
+  })
+
+  it('still flags money the page printed that no column holds, or the other way round', () => {
+    const missing = { month: '2026-11', rows: 1, printed: { cash: 40, card: 450, transfer: null }, summed: { cash: 40, card: 0, transfer: 0 } }
+    const extra = { month: '2026-10', rows: 1, printed: { cash: 40, card: 0, transfer: null }, summed: { cash: 40, card: 0, transfer: 450 } }
+    const cashOff = { month: '2026-09', rows: 1, printed: { cash: 40, card: null, transfer: null }, summed: { cash: 0, card: 0, transfer: 0 } }
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [missing, extra, cashOff] }).map((m) => m.month)).toEqual(['2026-11', '2026-10', '2026-09'])
+  })
+})

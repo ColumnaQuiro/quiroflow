@@ -742,6 +742,22 @@ export function quirocitasFileRows(r: QuirocitasRecord): QuirocitasFileRow[] {
 }
 
 /** Months whose rows do not add up to what Quirocitas printed under them. */
+//
+// Cash is checked against cash. The other methods are checked as a set: the
+// page totals them by slot (its second and third payment method), and copies
+// read before the slots were matched to the header's columns stored slot 2
+// as "card" whatever it was -- one clinic's transfers, every month. What
+// matters is that every euro the page printed was read into some column; the
+// header, not the footer, says which method that column is.
 export function quirocitasLedgerMismatches(s: Pick<QuirocitasSnapshot, 'ledgerMonths'>) {
-  return s.ledgerMonths.filter((m) => (['cash', 'card', 'transfer'] as const).some((k) => m.printed[k] !== null && Math.abs(m.printed[k]! - m.summed[k]) > 0.011))
+  const off = (a: number, b: number) => Math.abs(a - b) > 0.011
+  const nonZero = (xs: (number | null)[]) => xs.filter((x): x is number => x !== null && Math.abs(x) > 0.011).sort((a, b) => a - b)
+  return s.ledgerMonths.filter((m) => {
+    if (m.printed.cash !== null && off(m.printed.cash, m.summed.cash)) return true
+    // A page that prints no method totals at all has nothing to check them by.
+    if (m.printed.card === null && m.printed.transfer === null) return false
+    const printed = nonZero([m.printed.card, m.printed.transfer])
+    const summed = nonZero([m.summed.card, m.summed.transfer])
+    return printed.length !== summed.length || printed.some((p, i) => off(p, summed[i]!))
+  })
 }

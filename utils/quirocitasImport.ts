@@ -535,10 +535,24 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const zone = await clinicZone()
     const patients = await patientIds()
     const { rows } = quirocitasBonoRows(s, zone)
-    const existing = await readAll<{ id: string; external_reference: string; sessions_used: number; is_closed: boolean; owed_cents: number | null }>('package_purchases', 'id, external_reference, sessions_used, is_closed, owed_cents', 'QC-bono-')
+    const existing = await readAll<{ id: string; external_reference: string; patient_id: string; sessions_used: number; is_closed: boolean; owed_cents: number | null }>('package_purchases', 'id, external_reference, patient_id, sessions_used, is_closed, owed_cents', 'QC-bono-')
     const byRef = new Map(existing.map((p) => [p.external_reference, p]))
     const ready = rows.filter((b) => patients.has(b.ownerRef))
     const inserts = ready.filter((b) => !byRef.has(b.ref))
+    // Everyone whose record lists a bono that is already here, and is neither
+    // its owner nor linked to it yet. Holders used to be linked only when the
+    // bono was created, so a holder whose record was read on a later pass --
+    // one clinic's first read stopped part way -- was never linked: 106 links
+    // missing, and the money paid for a family's bono sat on one member while
+    // the others' sessions read as owed (20,494 EUR across 58 patients).
+    const linked = new Set((await readAll<{ package_purchase_id: string; patient_id: string }>('package_purchase_shares', 'package_purchase_id, patient_id')).map((s) => `${s.package_purchase_id}|${s.patient_id}`))
+    const missingLinks = ready.filter((b) => byRef.has(b.ref)).flatMap((b) => {
+      const here = byRef.get(b.ref)!
+      return [b.ownerRef, ...b.sharedWithRefs]
+        .map((r) => patients.get(r))
+        .filter((pid): pid is string => !!pid && pid !== here.patient_id && !linked.has(`${here.id}|${pid}`))
+        .map((pid) => ({ account_id: accountId, package_purchase_id: here.id, patient_id: pid }))
+    }).filter((link, i, all) => all.findIndex((x) => x.package_purchase_id === link.package_purchase_id && x.patient_id === link.patient_id) === i)
     // A session used here is not undone by a re-run: the count only rises. So
     // a bono Quirocitas still has open, and whose last sessions were used
     // here, stays closed.
@@ -551,6 +565,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         { label: t('Updated', 'Actualizados'), value: nf.format(updates.length), tone: 'good' },
         { label: t('Still running', 'En curso'), value: nf.format(inserts.filter((b) => !b.isClosed).length) },
         { label: t('Shared with family', 'Compartidos'), value: nf.format(inserts.filter((b) => b.sharedWithRefs.length).length) },
+        ...(missingLinks.length ? [{ label: t('Family links added', 'Familiares enlazados'), value: nf.format(missingLinks.length), tone: 'good' as const }] : []),
       ],
       columns: [{ key: 'bono', label: 'Bono' }, { key: 'sessions', label: t('Sessions', 'Sesiones') }, { key: 'price', label: t('Price', 'Precio') }, { key: 'bought', label: t('Bought', 'Comprado') }, { key: 'state', label: t('State', 'Estado') }],
       rows: inserts.map((b) => ({ bono: b.name, sessions: `${b.sessionsUsed}/${b.sessionsTotal}`, price: eur(b.priceCents) + (b.owedCents ? ` (${t('owes', 'debe')} ${eur(b.owedCents)})` : ''), bought: b.purchasedAt.slice(0, 10) + (b.dateFromLedger ? '' : ' *'), state: (b.isClosed ? t('Closed', 'Cerrado') : t('Running', 'En curso')) + (b.sharedWithRefs.length ? ` · ${t('shared', 'compartido')} ×${b.sharedWithRefs.length}` : '') })),
@@ -558,7 +573,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         ...(rows.length > ready.length ? [t(`${nf.format(rows.length - ready.length)} bonos belong to patients not imported yet: run Patients first.`, `${nf.format(rows.length - ready.length)} bonos son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
         ...(inserts.some((b) => !b.dateFromLedger) ? [t('* No sale for this bono in the cash ledger: its purchase date is worked back from when it expires.', '* No hay venta de este bono en la caja: su fecha de compra se calcula desde su caducidad.')] : []),
       ],
-      total: inserts.length + updates.length,
+      total: inserts.length + updates.length + missingLinks.length,
       async apply(progress, shouldStop) {
         const errors: string[] = []
         let written = 0
@@ -580,6 +595,10 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
           if (error) errors.push(error.message); else written++
           progress(++done)
         })
+        await inChunks(missingLinks, CHUNK, async (chunk) => {
+          const { error } = await supabase.from('package_purchase_shares').insert(chunk)
+          if (error) errors.push(error.message); else written += chunk.length
+        }, (n) => progress(inserts.length + updates.length + n), shouldStop)
         return { written, errors }
       },
     }

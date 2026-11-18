@@ -26,6 +26,9 @@ function writeGuide(title: string, file: ReturnType<typeof pdf>) {
   cy.get('[data-cy="whatsapp-template-create"]').should('not.be.disabled').click()
   cy.get('[data-cy="template-dialog"]').within(() => {
     cy.get('[data-cy="template-title"]').type(title)
+    // A new template starts as text only.
+    cy.get('[data-cy="template-header-none"]').should('have.attr', 'aria-checked', 'true')
+    cy.get('[data-cy="template-header-document"]').click()
     cy.get('[data-cy="template-file"]').selectFile(file)
     cy.get('[data-cy="template-body"]').type('Hola ')
     cy.get('[data-cy="template-add-variable"]').click()
@@ -48,6 +51,7 @@ describe('Creating a WhatsApp template with a PDF', () => {
 
       // Problems show on the first attempt, not while typing.
       cy.get('[data-cy="whatsapp-template-create"]').should('not.be.disabled').click()
+      cy.get('[data-cy="template-header-document"]').click()
       cy.get('[data-cy="template-submit"]').click()
       cy.get('[data-cy="template-problems"]').should('contain', 'Give the template a name').and('contain', 'Attach the PDF')
       cy.get('[data-cy="template-dialog"]').find('button[aria-label="Close"]').click()

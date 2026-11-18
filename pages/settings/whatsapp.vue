@@ -69,6 +69,7 @@ const justCreated = ref('')
 function templateCreated(created: { name: string }) {
   creatingTemplate.value = false
   justEdited.value = ''
+  justDeleted.value = ''
   justCreated.value = created.name
   loadTemplates()
 }
@@ -78,10 +79,45 @@ const justEdited = ref('')
 function templateEdited(edited: EditedTemplateResult) {
   editingTemplate.value = null
   justCreated.value = ''
+  justDeleted.value = ''
   justEdited.value = edited.name
   loadTemplates()
 }
 const editBlocker = (tpl: Template) => templateEditBlocker(tpl)
+
+// Deleting one, at Meta, after a confirmation. The server refuses while
+// something still sends it, and names what; that list shows in the dialog.
+const deletingTemplate = ref<Template | null>(null)
+const deleteBusy = ref(false)
+const deleteError = ref('')
+const deleteUses = ref<{ en: string; es: string }[]>([])
+const justDeleted = ref('')
+function askDelete(tpl: Template) {
+  deleteError.value = ''
+  deleteUses.value = []
+  deletingTemplate.value = tpl
+}
+async function confirmDelete() {
+  const tpl = deletingTemplate.value
+  if (!tpl?.id || deleteBusy.value) return
+  deleteBusy.value = true
+  deleteError.value = ''
+  deleteUses.value = []
+  try {
+    await useStaffFetch(`/api/whatsapp/templates/${encodeURIComponent(tpl.id)}`, { method: 'DELETE' })
+    deletingTemplate.value = null
+    justCreated.value = ''
+    justEdited.value = ''
+    justDeleted.value = tpl.name
+    loadTemplates()
+  } catch (err: any) {
+    const uses = err?.data?.data?.uses
+    if (Array.isArray(uses) && uses.length) deleteUses.value = uses
+    else deleteError.value = withServerDetail(t('Could not delete the template.', 'No se pudo eliminar la plantilla.'), err, t('Detail:', 'Detalle:'))
+  } finally {
+    deleteBusy.value = false
+  }
+}
 function reviewLabel(status: string | undefined) {
   if (status === 'REJECTED') return t('Rejected', 'Rechazada')
   if (status === 'PAUSED') return t('Paused by Meta', 'Pausada por Meta')
@@ -337,8 +373,14 @@ async function save() {
                   <button v-if="!editBlocker(tpl)" type="button" class="text-[12.5px] font-semibold text-brand hover:underline" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">
                     {{ t('Edit', 'Editar') }}
                   </button>
+                  <button v-if="tpl.id" type="button" class="text-[12.5px] font-semibold text-danger-text hover:underline" :data-template-delete="tpl.name" data-cy="whatsapp-template-delete" @click="askDelete(tpl)">
+                    {{ t('Delete', 'Eliminar') }}
+                  </button>
                 </div>
               </div>
+              <p v-if="justDeleted" class="border-t border-line-row bg-success-bg px-[18px] py-2.5 text-[13px] text-success-text" data-cy="whatsapp-template-deleted">
+                {{ t(`"${justDeleted}" was deleted at Meta.`, `«${justDeleted}» se ha eliminado en Meta.`) }}
+              </p>
               <p v-if="justEdited" class="border-t border-line-row bg-success-bg px-[18px] py-2.5 text-[13px] text-success-text" data-cy="whatsapp-template-edited">
                 {{ t(`The change to "${justEdited}" was sent to Meta. It reviews it again, usually within minutes.`, `El cambio en «${justEdited}» se ha enviado a Meta. La vuelve a revisar, normalmente en unos minutos.`) }}
               </p>
@@ -357,12 +399,35 @@ async function save() {
                       <span class="line-clamp-2 text-[12.5px] leading-snug text-ink-500">“{{ tpl.bodyText }}”</span>
                       <span v-if="editBlocker(tpl)" class="text-[12px] text-ink-muted" data-cy="whatsapp-template-edit-blocked">{{ t(editBlocker(tpl)!.en, editBlocker(tpl)!.es) }}</span>
                     </div>
-                    <UiBtn v-if="!editBlocker(tpl)" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">{{ t('Edit', 'Editar') }}</UiBtn>
+                    <div class="flex shrink-0 gap-2">
+                      <UiBtn v-if="!editBlocker(tpl)" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">{{ t('Edit', 'Editar') }}</UiBtn>
+                      <UiBtn v-if="tpl.id" class="!text-danger-text" :data-template-delete="tpl.name" data-cy="whatsapp-template-delete" @click="askDelete(tpl)">{{ t('Delete', 'Eliminar') }}</UiBtn>
+                    </div>
                   </li>
                 </ul>
               </details>
               <SettingsWhatsAppTemplateDialog v-if="creatingTemplate" @close="creatingTemplate = false" @created="templateCreated" />
               <SettingsWhatsAppTemplateDialog v-if="editingTemplate" :template="editingTemplate" @close="editingTemplate = null" @edited="templateEdited" />
+              <UiConfirmDialog
+                v-if="deletingTemplate"
+                tone="danger"
+                :title="t(`Delete “${deletingTemplate.name}” (${deletingTemplate.language})?`, `¿Eliminar «${deletingTemplate.name}» (${deletingTemplate.language})?`)"
+                :confirm-label="deleteBusy ? t('Deleting…', 'Eliminando…') : t('Delete template', 'Eliminar plantilla')"
+                :cancel-label="t('Cancel', 'Cancelar')"
+                :busy="deleteBusy"
+                :disabled="deleteUses.length > 0"
+                @confirm="confirmDelete"
+                @cancel="deletingTemplate = null"
+              >
+                <p class="text-[14px] leading-snug text-ink-700">
+                  {{ t('It is deleted at Meta, in this language only, and cannot be recovered. Meta may not let the same name be used for a new template for up to 30 days.', 'Se elimina en Meta, solo en este idioma, y no se puede recuperar. Meta puede no dejar usar el mismo nombre en una plantilla nueva durante hasta 30 días.') }}
+                </p>
+                <div v-if="deleteUses.length" class="flex flex-col gap-1 rounded-ctl bg-warning-bg px-3 py-2.5 text-[13px] text-warning-text" data-cy="whatsapp-template-delete-in-use">
+                  <strong>{{ t('It is still being sent from here. Choose another template there first:', 'Todavía se envía desde aquí. Elige otra plantilla ahí primero:') }}</strong>
+                  <span v-for="u in deleteUses" :key="u.en">· {{ t(u.en, u.es) }}</span>
+                </div>
+                <p v-if="deleteError" class="text-[13px] font-semibold text-danger-text" data-cy="whatsapp-template-delete-error">{{ deleteError }}</p>
+              </UiConfirmDialog>
 
               <div v-for="u in USES" :key="u.key" :data-template-use="u.key" class="grid grid-cols-1 items-start gap-2 border-t border-line-row px-[18px] py-3 md:grid-cols-[1fr_1.15fr] md:gap-4">
                 <div class="flex flex-col gap-0.5">

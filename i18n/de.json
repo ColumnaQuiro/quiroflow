@@ -8544,7 +8544,10 @@
   "GoCardless is reviewing this account, so it cannot collect yet. Nothing to do here; this updates by itself.": "GoCardless prüft dieses Konto, daher kann es noch nicht einziehen. Hier ist nichts zu tun; das aktualisiert sich von selbst.",
   "This receipt was paid partly through GoCardless, so this only records the refund. To send the money back through GoCardless, refund the direct-debit payment's own row.": "Dieser Beleg wurde teilweise über GoCardless bezahlt, daher wird die Erstattung hier nur erfasst. Um das Geld über GoCardless zurückzuzahlen, erstatte die Lastschriftzahlung in ihrer eigenen Zeile.",
   "Date paid": "Zahlungsdatum",
-  "The payment date cannot be in the future.": "Das Zahlungsdatum darf nicht in der Zukunft liegen."
+  "The payment date cannot be in the future.": "Das Zahlungsdatum darf nicht in der Zukunft liegen.",
+  "The visit is not on this receipt.": "Der Termin steht nicht auf diesem Beleg.",
+  "the visit": "den Termin",
+  "Could not add the visit.": "Der Termin konnte nicht hinzugefügt werden."
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",

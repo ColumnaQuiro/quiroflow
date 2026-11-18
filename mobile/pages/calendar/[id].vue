@@ -343,6 +343,8 @@ const {
   init: initCharging,
   loadInvoice,
   chargeVisit,
+  visitMissing,
+  addVisitLine,
   usePackageSession,
   recordPayment,
 } = useVisitCharging({
@@ -421,7 +423,12 @@ function bonoRateLabel(p: { price_cents: number; sessions_total: number; charged
 const chargingReady = ref(false)
 const processing = ref(false)
 const checkoutMethod = ref('cash')
-const dueCents = computed(() => (invoice.value ? balanceDueCents.value : (visitPriceCents.value ?? 0)))
+// A receipt missing the visit itself (raised while its type cost 0 €) gets the
+// visit added when Process is pressed -- useVisitCharging chargeVisit -- so it
+// is quoted with it.
+const dueCents = computed(() =>
+  invoice.value ? balanceDueCents.value + (visitMissing.value ? (visitPriceCents.value ?? 0) : 0) : (visitPriceCents.value ?? 0),
+)
 const canTakeMoney = computed(() => can('payments_allocate') && dueCents.value > 0)
 const checkoutOffered = computed(
   () =>
@@ -468,7 +475,7 @@ async function processCheckout() {
       await usePackageSession(checkoutPackage.value)
       return
     }
-    if (!invoice.value) await chargeVisit()
+    if (!invoice.value || visitMissing.value) await chargeVisit()
     if (!invoice.value || balanceDueCents.value <= 0) return
     paymentRows.value = [{ method: checkoutMethod.value, amount: (balanceDueCents.value / 100).toFixed(2) }]
     await recordPayment()
@@ -1218,6 +1225,14 @@ watch(
             <p class="mt-1 text-[13px] text-ink-muted2">
               {{ t('Total', 'Total') }} {{ euros(invoice.total_cents) }} · {{ t('Paid', 'Pagado') }} {{ euros(paidCents) }}<span v-if="balanceDueCents > 0"> · {{ t('Due', 'Pendiente') }} {{ euros(balanceDueCents) }}</span>
             </p>
+            <!-- Raised while the visit's type cost 0 €: the visit is not on it at a
+            price, and nothing else here could put it back. -->
+            <div v-if="can('billing_access') && visitMissing" class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-ctl bg-warning-bg px-3 py-2" data-cy="visit-add-visit-line">
+              <span class="text-[13px] text-warning-text">{{ t('The visit is not on this receipt.', 'La visita no está en este recibo.') }}</span>
+              <button type="button" class="min-h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] font-semibold text-brand-text" :disabled="saving" @click="addVisitLine">
+                {{ saving ? t('Working…', 'Procesando…') : `${t('Add', 'Añadir')} ${appointment?.appointment_types?.name || t('the visit', 'la visita')} — ${euros(visitPriceCents ?? 0)}` }}
+              </button>
+            </div>
 
             <div v-if="can('payments_allocate') && invoice.status !== 'void' && balanceDueCents > 0" class="mt-3 space-y-2">
               <div v-for="(row, i) in paymentRows" :key="i" class="flex gap-2">

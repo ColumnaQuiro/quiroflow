@@ -1,6 +1,6 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows, visitLineMissing } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
 
@@ -268,6 +268,10 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     return newInvoice
   }
 
+  // A third party pays (part of) this visit: the patient's line holds their
+  // copago, 0 € when the insurer covers it all. See visitLineMissing.
+  const chargedToThirdParty = ref(false)
+
   async function loadInvoice() {
     loadingInvoice.value = true
     error.value = ''
@@ -278,13 +282,19 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     invoice.value = inv
     lineItems.value = []
     payments.value = []
+    chargedToThirdParty.value = false
     if (inv) {
-      const [{ data: lines }, { data: pays }] = await Promise.all([
+      const [{ data: lines }, { data: pays }, { count: tpCharges, error: tpError }] = await Promise.all([
         supabase.from('invoice_line_items').select('id, description, quantity, price_cents, service_id').eq('invoice_id', inv.id),
         supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', inv.id).order('paid_at', { ascending: false }),
+        supabase.from('third_party_charges').select('id', { count: 'exact', head: true }).eq('invoice_id', inv.id).eq('status', 'pending'),
       ])
       lineItems.value = lines ?? []
       payments.value = pays ?? []
+      // A failed read counts as charged: offering the full price on a visit an
+      // insurer covers is the mistake to avoid, and the add-the-visit control
+      // missing for one load is not.
+      chargedToThirdParty.value = !!tpError || (tpCharges ?? 0) > 0
       openPaymentRows()
     }
     loadingInvoice.value = false
@@ -328,13 +338,71 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   // "Charge" on an unbilled visit: raise the invoice at the appointment type's
   // price, which is exactly what opening billing used to do by itself. The
   // difference is that a person now says so.
+  //
+  // On a receipt that exists but is missing the visit (visitMissing below), it
+  // puts the visit on at today's price instead -- the receipt raised while the
+  // type still cost 0 €, which no other control could repair.
   async function chargeVisit() {
-    if (invoice.value || saving.value) return
+    if (saving.value) return
+    if (invoice.value) {
+      if (visitMissing.value) await addVisitLine()
+      return
+    }
     saving.value = true
     error.value = ''
     const inv = await ensureInvoice()
     saving.value = false
     if (inv) await loadInvoice()
+  }
+
+  // The open receipt has no priced line for the visit itself: see
+  // utils/visitCharging visitLineMissing for how one ends up that way.
+  const visitMissing = computed(() =>
+    visitLineMissing({
+      invoiceStatus: invoice.value?.status,
+      coveredByBono: !!packageCoverage.value,
+      chargedToThirdParty: chargedToThirdParty.value,
+      visitPriceCents: visitPriceCents.value,
+      lines: lineItems.value,
+    }),
+  )
+
+  // Puts the visit on its receipt at the type's current price, replacing a
+  // visit line left at 0 € by a price set after the receipt was raised.
+  async function addVisitLine() {
+    if (!invoice.value || !visitMissing.value || saving.value || !ctx.can('billing_access')) return
+    saving.value = true
+    error.value = ''
+    const invoiceId = invoice.value.id
+    const stale = lineItems.value.filter((l) => l.service_id == null && l.price_cents === 0)
+    if (stale.length > 0) {
+      const { error: deleteError } = await supabase.from('invoice_line_items').delete().in('id', stale.map((l) => l.id))
+      if (deleteError) {
+        error.value = deleteError.message
+        saving.value = false
+        return
+      }
+      lineItems.value = lineItems.value.filter((l) => !stale.includes(l))
+    }
+    const { data, error: insertError } = await supabase
+      .from('invoice_line_items')
+      .insert({
+        account_id: accountId(),
+        invoice_id: invoiceId,
+        description: toValue(ctx.appointmentTypeName) ?? 'Appointment',
+        quantity: 1,
+        price_cents: visitPriceCents.value,
+      })
+      .select('id, description, quantity, price_cents, service_id')
+      .single()
+    if (insertError || !data) {
+      error.value = insertError?.message ?? t('Could not add the visit.', 'No se ha podido añadir la visita.')
+      saving.value = false
+      return
+    }
+    lineItems.value.push(data)
+    await recalcInvoiceTotal()
+    saving.value = false
   }
 
   async function addLineItem() {
@@ -676,6 +744,8 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     init,
     loadInvoice,
     chargeVisit,
+    visitMissing,
+    addVisitLine,
     addLineItem,
     removeLineItem,
     usePackageSession,

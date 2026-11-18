@@ -70,6 +70,38 @@ export function lineItemsTotalCents(lines: { price_cents: number; quantity: numb
 }
 
 /**
+ * Whether an open receipt is missing the visit itself, so the visit's price
+ * can be put (back) on it.
+ *
+ * A receipt takes the appointment type's price once, when it is raised, and
+ * never looks again. Raise it while the type still costs 0 € -- a new clinic
+ * charging its first visits before filling in prices -- and it stays at 0 €
+ * after the price is set. If its 0 € line is then removed, nothing on the
+ * screen brings the visit back: "Charge" only shows while there is no receipt,
+ * and the add-a-line picker lists services and products, not appointment
+ * types. The patient could not be charged at all.
+ *
+ * The visit's own line is the one with no service_id. A line priced at
+ * 0 € does not count as the visit being on the receipt: that is the stale
+ * line this exists to replace. A visit drawn from a bono is billed at the bono
+ * rate instead, and a paid or void receipt is closed, so neither is offered.
+ * Nor is a visit charged to a third party: charge_visit_to_third_party leaves
+ * the patient's line at their copago, which is 0 € when the insurer pays it
+ * all -- a correct 0, not a stale one.
+ */
+export function visitLineMissing(input: {
+  invoiceStatus: string | null | undefined
+  coveredByBono: boolean
+  chargedToThirdParty: boolean
+  visitPriceCents: number
+  lines: { price_cents: number; service_id: string | null }[]
+}): boolean {
+  if (!input.invoiceStatus || input.invoiceStatus === 'paid' || input.invoiceStatus === 'void') return false
+  if (input.coveredByBono || input.chargedToThirdParty || input.visitPriceCents <= 0) return false
+  return !input.lines.some((l) => l.service_id == null && l.price_cents > 0)
+}
+
+/**
  * Whether a visit has not happened yet, so there is nothing to bill.
  *
  * A patient who has checked in is being seen, whatever the clock says about

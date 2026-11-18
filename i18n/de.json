@@ -8564,7 +8564,8 @@
   "Reading prices…": "Preise werden gelesen…",
   "The visit is not on this receipt.": "Der Termin steht nicht auf diesem Beleg.",
   "the visit": "den Termin",
-  "Could not add the visit.": "Der Termin konnte nicht hinzugefügt werden."
+  "Could not add the visit.": "Der Termin konnte nicht hinzugefügt werden.",
+  "Family links added": "Verknüpfte Familienmitglieder"
  },
  "p": {
   "Amount exceeds available credit ({0}).": "Der Betrag übersteigt das verfügbare Guthaben ({0}).",

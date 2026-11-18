@@ -333,3 +333,42 @@ describe('a clinic imported before its chiropractor was matched', () => {
     expect(Date.now() - started).toBeLessThan(8000)
   }, 30_000)
 })
+
+describe('the Payments step', () => {
+  // A visit paid in cash on a page whose rows carry no visit id.
+  const paidVisit = { month: '2026-10', date: '05-10-2026', name: 'Laura Demo Prueba', note: '', isNew: false, usedBono: false, cash: 40, card: null, transfer: null, debt: null, value: 40, citaId: null, bonoPaymentId: null }
+  const withLedger = (summedCash: number): QuirocitasSnapshot => ({
+    ...snapshot(),
+    ledger: [paidVisit],
+    ledgerMonths: [{ month: '2026-10', rows: 1, printed: { cash: 40, card: 0, transfer: null }, summed: { cash: summedCash, card: 0, transfer: 0 } }],
+  })
+  const tables = (): Record<string, Row[]> => ({
+    ...clinic([], [{ id: 'a1', external_reference: 'QC-5001', starts_at: '2026-10-05T13:45:00Z', ends_at: '2026-10-05T14:00:00Z', status: 'completed' }]),
+    payment_methods: ['cash', 'card', 'transfer'].map((key) => ({ account_id: ACCOUNT, key })),
+  })
+  const runLedger = async (tbl: Record<string, Row[]>, s: QuirocitasSnapshot) => {
+    const importer = quirocitasImporter({ supabase: fakeSupabase(tbl) as never, accountId: ACCOUNT, clinicId: 'clinic', t, fetchFile: async () => ({}), compressFile: async () => {} })
+    const plan = await importer.plan('ledger', s)
+    return { plan, result: await plan.apply(() => {}, () => false) }
+  }
+
+  it('writes nothing from a cash ledger whose months do not add up to what Quirocitas printed', async () => {
+    // Read with its columns in the wrong place, one clinic's ledger was
+    // planned in full and only warned about.
+    const tbl = tables()
+    const { plan, result } = await runLedger(tbl, withLedger(0))
+    expect(plan.warnings.join(' ')).toContain('Nothing will be written')
+    expect(result.written).toBe(0)
+    expect(result.errors[0]).toContain('do not add up')
+    expect(tbl.payments ?? []).toEqual([])
+    expect(tbl.invoices ?? []).toEqual([])
+  })
+
+  it('writes the visit and its payment once the month adds up, finding the visit by its day', async () => {
+    const tbl = tables()
+    const { result } = await runLedger(tbl, withLedger(40))
+    expect(result.errors).toEqual([])
+    expect(tbl.invoices).toEqual([expect.objectContaining({ appointment_id: 'a1', total_cents: 4000, status: 'paid', external_reference: 'QC-inv-5001' })])
+    expect(tbl.payments).toEqual([expect.objectContaining({ amount_cents: 4000, method: 'cash', external_reference: 'QC-pay-5001-cash', invoice_id: 'invoices-1' })])
+  })
+})

@@ -9912,6 +9912,9 @@
   "Process · charge {0}": "Processar · cobrar {0}",
   "{0} left, {1} after this visit": "Restam {0}, ficará com {1}",
   "No bono, charge {0}": "Sem pack, cobrar {0}",
-  "Search a patient (GoCardless: {0})": "Pesquisar um paciente (GoCardless: {0})"
+  "Search a patient (GoCardless: {0})": "Pesquisar um paciente (GoCardless: {0})",
+  "Nothing will be written: {0} months of the cash ledger do not add up to the totals Quirocitas printed ({1}), so its columns were not read where they are.": "Nada será escrito: {0} meses do registo de caixa não batem certo com os totais que o Quirocitas imprimiu ({1}), por isso as suas colunas não foram lidas onde estão.",
+  "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Nada será escrito: {0} de {1} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente, por isso os seus pagamentos chegariam sem as visitas que pagaram.",
+  "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente: chegam os seus pagamentos, não os seus encargos."
  }
 }

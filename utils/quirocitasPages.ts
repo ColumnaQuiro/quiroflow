@@ -55,7 +55,8 @@ const str = (c: Control | undefined) => (c && typeof c === 'object' ? c.value : 
 const label = (c: Control | undefined) => (c && typeof c === 'object' ? c.label : '')
 
 interface Row { class?: string; cells: string[]; inputs: Record<string, Control>; html: string }
-interface Table { header: string[]; rows: Row[] }
+/** `html` is every row's markup, the header row's included, in order. */
+interface Table { header: string[]; rows: Row[]; html: string[] }
 
 // Innermost tables, as header + rows of cell text, each row keeping its
 // controls (where the ids are) and its markup.
@@ -68,7 +69,7 @@ function tables(html: string): Table[] {
       inputs: controls(r[2]!),
       html: r[2]!,
     })).filter((r) => r.cells.length)
-    if (rows.length >= 2) out.push({ header: rows[0]!.cells, rows: rows.slice(1) })
+    if (rows.length >= 2) out.push({ header: rows[0]!.cells, rows: rows.slice(1), html: rows.map((r) => r.html) })
   }
   return out
 }
@@ -339,21 +340,141 @@ export function parseQuirocitasInvoice(html: string): QuirocitasInvoice {
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const amountComma = (s: string | undefined) => { const t = (s ?? '').replace(/\./g, '').replace(',', '.').trim(); return t && Number.isFinite(Number(t)) ? Number(t) : null }
 
-/** One month of the cash ledger, with the totals the page prints under it. */
+/** Which cell of a cash-ledger row holds what, and how that was decided. */
+export interface QuirocitasCajaLayout {
+  /** The header row as the page labels it, one entry per column (a colspan repeats its label). */
+  header: string[]
+  columns: Partial<Record<CajaField, number>>
+  /** Money columns the header did not place where their printed total says they are, found by that total instead. */
+  fromTotals: CajaField[]
+  /** Names of the inputs a row carries (digits dropped): where the visit and bono-sale ids come from. */
+  inputs: string[]
+}
+
+type CajaField = 'date' | 'name' | 'note' | 'isNew' | 'usedBono' | 'cash' | 'card' | 'transfer' | 'debt' | 'value'
+
+// What each column is called, matched on the label lower-cased without
+// accents or punctuation.
+const CAJA_LABELS: [CajaField, RegExp][] = [
+  ['date', /^fecha$/],
+  ['name', /^(nombre|paciente)$/],
+  ['note', /^observ/],
+  ['isNew', /^n$/],
+  ['usedBono', /^b$/],
+  ['cash', /^efectivo$/],
+  ['card', /^tarjeta$/],
+  ['transfer', /^transf/],
+  ['debt', /^(deuda|debe)$/],
+  ['value', /^valor$/],
+]
+// Where the columns sat on the first clinic read (multi-chiropractor, with an
+// invoicing column), for a page whose header names none of them.
+const CAJA_POSITIONS: Record<CajaField, number> = { date: 1, name: 2, note: 3, isNew: 4, usedBono: 5, cash: 6, card: 7, transfer: 8, debt: 9, value: 11 }
+const MONEY_FIELDS = ['cash', 'card', 'transfer', 'value'] as const
+const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const isQuirocitasDate = (s: string | undefined) => /^\d{2}-\d{2}-\d{4}$/.test(s ?? '')
+
+// A row's cells, each repeated as many times as it spans, so a header cell
+// with colspan="2" still lines up with the two cells under it.
+function spannedCells(rowHtml: string): string[] {
+  const out: string[] = []
+  for (const c of rowHtml.matchAll(/<t[dh]\b([^>]*)>([\s\S]*?)(?=<t[dh]\b|<\/tr>|$)/gi)) {
+    const span = Math.max(1, Math.min(20, Number(attrs(`<td ${c[1]}>`).colspan) || 1))
+    for (let i = 0; i < span; i++) out.push(text(c[2]!))
+  }
+  return out
+}
+
+/**
+ * One month of the cash ledger, with the totals the page prints under it.
+ *
+ * Columns are found by their header, not by position. Quirocitas is one PHP
+ * app but not one page: a clinic with one chiropractor and no invoicing
+ * column has its cash two cells to the right of a multi-chiropractor
+ * clinic's. Read by the other clinic's positions, every row of that ledger
+ * came back with its cash as "transfer", its card payments as "debt" and no
+ * visit or bono id at all. Every payment then carried the same reference, the
+ * import refused them all, and every bono session was charged as if the bono
+ * had never been paid.
+ *
+ * The totals the page prints under the month are the check. A money column
+ * whose sum is not its printed total is looked for among the other columns
+ * by that total. If that finds nothing the month does not add up, and the
+ * import refuses to write any of it (quirocitasLedgerMismatches).
+ */
 export function parseQuirocitasCajaMonth(html: string) {
   const m = html.match(/Mes de (\w+) de (\d{4})/i)
   const idx = m ? MONTHS.indexOf(m[1]!.toLowerCase()) : -1
   const month = m && idx >= 0 ? `${m[2]}-${String(idx + 1).padStart(2, '0')}` : null
   const table = tables(html).find((t) => t.header.includes('Efectivo') || t.rows.some((r) => r.cells.includes('Efectivo')))
-  const rows: QuirocitasLedgerRow[] = (table?.rows ?? []).filter((r) => /^\d{2}-\d{2}-\d{4}$/.test(r.cells[1] ?? '')).map((r) => {
-    const id = (p: string) => { const v = str(Object.entries(r.inputs).find(([k]) => k.replace(/\d+$/, '') === p)?.[1]); return v && v !== '0' && v !== '-1' ? v : null }
+  // Every row of the table, header included, as markup: the header is the
+  // row naming the cash column -- the first on every page seen so far, but
+  // found rather than assumed.
+  const all = table?.html ?? []
+  const headerAt = Math.max(0, all.findIndex((r) => spannedCells(r).includes('Efectivo')))
+  const header = all.length ? spannedCells(all[headerAt]!) : []
+
+  const columns: Partial<Record<CajaField, number>> = {}
+  for (const [field, label] of CAJA_LABELS) {
+    const at = header.findIndex((h) => label.test(fold(h)))
+    if (at >= 0) columns[field] = at
+  }
+  // A page with the original layout (its cash where the first clinic's was)
+  // keeps the original position for any label spelled differently, so a
+  // renamed "Observaciones" cannot quietly cost it its bono sales. A page
+  // naming nothing at all is read entirely by those positions, as before.
+  const original = !Object.keys(columns).length || columns.cash === CAJA_POSITIONS.cash
+  if (original) {
+    const claimed = new Set(Object.values(columns))
+    for (const [field, at] of Object.entries(CAJA_POSITIONS) as [CajaField, number][]) {
+      if (columns[field] === undefined && !claimed.has(at)) columns[field] = at
+    }
+  }
+  const dateAt = columns.date ?? CAJA_POSITIONS.date
+  const body = all.slice(headerAt + 1).map((rowHtml) => ({ rowHtml, inputs: controls(rowHtml), cells: spannedCells(rowHtml) })).filter(({ cells }) => isQuirocitasDate(cells[dateAt]))
+
+  const footer = (id: string) => amountComma(html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? html.match(new RegExp(`value="([^"]*)"[^>]*id="${id}"`))?.[1])
+  const totals = { cash: footer('caja-\\d+'), card: footer('totalmeto-\\d+\\[2\\]'), transfer: footer('totalmeto-\\d+\\[3\\]'), value: footer('valortotal-\\d+') }
+
+  // A money column whose rows do not add up to its printed total is looked
+  // for by that total among the columns nothing else has claimed. Only an
+  // unambiguous match is taken; anything else leaves the month mismatched.
+  const width = Math.max(header.length, ...body.map(({ cells }) => cells.length))
+  const sumOf = (col: number | undefined) => col === undefined ? 0 : Math.round(body.reduce((a, { cells }) => a + (amountComma(cells[col]) ?? 0), 0) * 100) / 100
+  const fromTotals: CajaField[] = []
+  for (const field of MONEY_FIELDS) {
+    const printed = totals[field]
+    if (!printed || Math.abs(sumOf(columns[field]) - printed) <= 0.011) continue
+    const claimed = new Set(Object.entries(columns).filter(([f]) => f !== field).map(([, c]) => c))
+    // Only columns of amounts ("40,00"): the row numbers down the left could
+    // add up to a total too.
+    const holdsAmounts = (c: number) => body.some(({ cells }) => /^-?[\d.]+,\d{2}$/.test(cells[c] ?? ''))
+    const candidates = [...Array(width).keys()].filter((c) => !claimed.has(c) && holdsAmounts(c) && Math.abs(sumOf(c) - printed) <= 0.011)
+    if (candidates.length === 1) { columns[field] = candidates[0]; fromTotals.push(field) }
+  }
+
+  const cell = (cells: string[], field: CajaField) => columns[field] === undefined ? undefined : cells[columns[field]!]
+  const rows: QuirocitasLedgerRow[] = body.map(({ rowHtml, inputs, cells }) => {
+    // The visit or bono sale a row is about: a hidden input in the invoicing
+    // cell where the page has one, else a link carrying the id.
+    const id = (...names: string[]) => {
+      const fromInput = str(Object.entries(inputs).find(([k]) => names.includes(k.replace(/\d+$/, '').toLowerCase()))?.[1])
+      const fromLink = names.map((n) => rowHtml.match(new RegExp(`[?&]${n}=(\\d+)`, 'i'))?.[1]).find(Boolean)
+      const v = fromInput || fromLink
+      return v && v !== '0' && v !== '-1' ? v : null
+    }
     return {
-      month: month ?? '', date: r.cells[1]!, name: r.cells[2] ?? '', note: r.cells[3] ?? '', isNew: !!r.cells[4], usedBono: r.cells[5] === 'B',
-      cash: amountComma(r.cells[6]), card: amountComma(r.cells[7]), transfer: amountComma(r.cells[8]), debt: amountComma(r.cells[9]), value: amountComma(r.cells[11]),
-      citaId: id('cita'), bonoPaymentId: id('pagobono'),
+      month: month ?? '', date: cell(cells, 'date')!, name: cell(cells, 'name') ?? '', note: cell(cells, 'note') ?? '', isNew: !!cell(cells, 'isNew'), usedBono: cell(cells, 'usedBono') === 'B',
+      cash: amountComma(cell(cells, 'cash')), card: amountComma(cell(cells, 'card')), transfer: amountComma(cell(cells, 'transfer')), debt: amountComma(cell(cells, 'debt')), value: amountComma(cell(cells, 'value')),
+      citaId: id('cita', 'idcita'), bonoPaymentId: id('pagobono', 'idpagobono'),
     }
   })
-  const footer = (id: string) => amountComma(html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? html.match(new RegExp(`value="([^"]*)"[^>]*id="${id}"`))?.[1])
+  const layout: QuirocitasCajaLayout = {
+    header,
+    columns,
+    fromTotals,
+    inputs: [...new Set(body.flatMap(({ inputs }) => Object.keys(inputs).map((k) => k.replace(/\d+$/, ''))))].sort(),
+  }
   // The chiropractor filter is only there when the clinic has more than one.
   // Without it the page is everyone's already; demanding "-- Todos --" of a
   // page that has no such choice is what stopped a single-chiropractor
@@ -362,7 +483,8 @@ export function parseQuirocitasCajaMonth(html: string) {
   return {
     month,
     rows,
-    totals: { cash: footer('caja-\\d+'), card: footer('totalmeto-\\d+\\[2\\]'), transfer: footer('totalmeto-\\d+\\[3\\]'), value: footer('valortotal-\\d+') },
+    layout,
+    totals,
     hasChiroFilter: chiroFilter !== undefined,
     everyChiro: chiroFilter === undefined || str(chiroFilter) === '-1',
     /** Who the page is filtered to, for saying so when it is not everyone. */

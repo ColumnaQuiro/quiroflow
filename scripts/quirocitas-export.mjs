@@ -482,13 +482,23 @@ function parseCajaMonth(html) {
   const m = html.match(/Mes de (\w+) de (\d{4})/i)
   const month = m ? `${m[2]}-${String(MONTHS.indexOf(m[1].toLowerCase()) + 1).padStart(2, '0')}` : null
   const table = tables(html).find((t) => t.rows.some((r) => r.cells.includes('Efectivo')) || t.header.includes('Efectivo'))
-  const rows = (table?.rows ?? []).filter((r) => /^\d{2}-\d{2}-\d{4}$/.test(r.cells[1] ?? '')).map((r) => {
+  // By header, as utils/quirocitasPages.ts reads it: a clinic with one
+  // chiropractor and no invoicing column has its cash two cells to the right.
+  // A label the page does not use keeps the original position.
+  const fold = (s) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const header = table?.header ?? []
+  const col = (label, fallback) => { const at = header.findIndex((h) => label.test(fold(h))); return at >= 0 ? at : fallback }
+  const c = {
+    date: col(/^fecha$/, 1), name: col(/^(nombre|paciente)$/, 2), note: col(/^observ/, 3), isNew: col(/^n$/, 4), usedBono: col(/^b$/, 5),
+    cash: col(/^efectivo$/, 6), card: col(/^tarjeta$/, 7), transfer: col(/^transf/, 8), debt: col(/^(deuda|debe)$/, 9), value: col(/^valor$/, 11),
+  }
+  const rows = (table?.rows ?? []).filter((r) => /^\d{2}-\d{2}-\d{4}$/.test(r.cells[c.date] ?? '')).map((r) => {
     const id = (p) => { const v = Object.entries(r.inputs).find(([k]) => k.replace(/\d+$/, '') === p)?.[1]; return v && v !== '0' && v !== '-1' ? String(v) : null }
     return {
-      date: r.cells[1], name: r.cells[2], note: r.cells[3], isNew: !!r.cells[4], usedBono: r.cells[5] === 'B',
-      cash: amount(r.cells[6]), card: amount(r.cells[7]), transfer: amount(r.cells[8]), debt: amount(r.cells[9]),
+      date: r.cells[c.date], name: r.cells[c.name], note: r.cells[c.note], isNew: !!r.cells[c.isNew], usedBono: r.cells[c.usedBono] === 'B',
+      cash: amount(r.cells[c.cash]), card: amount(r.cells[c.card]), transfer: amount(r.cells[c.transfer]), debt: amount(r.cells[c.debt]),
       invoiced: Object.entries(r.inputs).some(([k, v]) => k.startsWith('factura') && v === true),
-      value: amount(r.cells[11]),
+      value: amount(r.cells[c.value]),
       rowId: id('id'), citaId: id('cita'), bonoPaymentId: id('pagobono'),
     }
   })

@@ -310,3 +310,74 @@ async function moveAutomationSteps(
     await supabase.from('automation_actions').update({ config: header ? { ...rest, header } : rest }).eq('id', step.id)
   }
 }
+
+/** The settings columns that each name a template QuiroFlow sends by itself, with what the clinic calls them. */
+const SETTINGS_USES = [
+  { name: 'whatsapp_confirmation_template_name', language: 'whatsapp_confirmation_template_language', en: 'Appointment confirmation', es: 'Confirmación de cita' },
+  { name: 'whatsapp_reminder_template_name', language: 'whatsapp_reminder_template_language', en: 'Appointment reminder', es: 'Recordatorio de cita' },
+  { name: 'whatsapp_recall_template_name', language: 'whatsapp_recall_template_language', en: 'Recall', es: 'Revisión' },
+  { name: 'online_booking_notify_whatsapp_template_name', language: 'online_booking_notify_whatsapp_template_language', en: 'New booking alert', es: 'Aviso de reserva' },
+  { name: 'new_lead_notify_whatsapp_template_name', language: 'new_lead_notify_whatsapp_template_language', en: 'New lead alert', es: 'Aviso de lead' },
+] as const
+
+export interface TemplateUse {
+  en: string
+  es: string
+}
+
+/**
+ * Everything that would stop sending if this template went: the messages
+ * chosen in Settings > WhatsApp and every automation step on it. Meta answers
+ * a send on a deleted template with an error, so deleting one still in use
+ * turns confirmations or a drip off with nothing on screen to say so.
+ */
+export async function whatsAppTemplateUses(supabase: any, accountId: string, template: { name: string; language: string }): Promise<TemplateUse[]> {
+  const uses: TemplateUse[] = []
+  const { data: account } = await supabase
+    .from('accounts')
+    .select(SETTINGS_USES.flatMap((u) => [u.name, u.language]).join(', '))
+    .eq('id', accountId)
+    .maybeSingle()
+  for (const u of SETTINGS_USES) {
+    if (account?.[u.name] === template.name && (account?.[u.language] || 'es') === template.language) {
+      uses.push({ en: `Settings > WhatsApp: ${u.en}`, es: `Ajustes > WhatsApp: ${u.es}` })
+    }
+  }
+  const { data: steps } = await supabase
+    .from('automation_actions')
+    .select('config, automation_rules(name)')
+    .eq('account_id', accountId)
+    .eq('action_type', 'whatsapp_template')
+    .eq('config->>template_name', template.name)
+  const rules = new Set<string>()
+  for (const step of steps ?? []) {
+    if ((step.config?.template_language || 'es') !== template.language) continue
+    rules.add(step.automation_rules?.name || '—')
+  }
+  for (const rule of rules) uses.push({ en: `Automation "${rule}"`, es: `Automatización «${rule}»` })
+  return uses
+}
+
+/**
+ * Deletes one template -- this name in this language -- from the account's
+ * WhatsApp Business Account. `existing` is the template as Meta lists it now,
+ * read by the caller from the account's own Business Account, so the id
+ * cannot name another clinic's template.
+ *
+ * hsm_id together with the name deletes only that language; the name alone
+ * would take every language of it.
+ */
+export async function deleteWhatsAppTemplate(supabase: any, accountId: string, existing: WhatsAppTemplateSummary): Promise<void> {
+  if (!existing.id) throw new TemplateCreateError('Meta did not give this template an id, so it cannot be deleted from here. Delete it in WhatsApp Manager.', 409)
+  const { graph, token, wabaId } = await connection(supabase, accountId)
+  try {
+    await $fetch(`${graph}/${wabaId}/message_templates`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+      query: { hsm_id: existing.id, name: existing.name },
+    })
+  } catch (err: any) {
+    const detail = metaMessage(err)
+    throw new TemplateCreateError(detail ? `Meta refused to delete it: ${detail}` : 'Could not reach WhatsApp to delete the template.', 502)
+  }
+}

@@ -23,7 +23,15 @@ const email = ref('')
 const fullName = ref(props.prefillName ?? '')
 const practitionerRole = props.roles.find((r) => r.name === 'Practitioner') ?? props.roles.find((r) => r.name !== 'Owner') ?? props.roles[0]
 const roleId = ref(practitionerRole?.id ?? '')
-const isPractitioner = ref(true)
+// Ticked by default only while there is a seat to put them in. A practice
+// with none left used to get it ticked anyway, under a warning that was easy
+// to read past: the invite went out, and the colleague who opened it was
+// refused (PT402) every time they tried -- a clinic re-sent one to its
+// assistant three times in an afternoon before anyone found out why. An
+// imported name stays ticked: it is a practitioner's calendar being handed
+// over, and the warning below says what to do about the seat.
+const outOfSeats = props.seatsLeft !== null && props.seatsLeft <= 0
+const isPractitioner = ref(!outOfSeats || !!props.linkPractitionerName)
 const clinicIds = ref<string[]>(store.clinics.map((c) => c.id))
 const creating = ref(false)
 const error = ref('')
@@ -32,7 +40,9 @@ const result = ref<{ link: string; email: string | null; sent: 'yes' | 'no' | 'f
 const noSeat = computed(() => isPractitioner.value && props.seatsLeft !== null && props.seatsLeft <= 0)
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const emailBad = computed(() => !!email.value.trim() && !EMAIL.test(email.value.trim()))
-const canCreate = computed(() => !creating.value && !emailBad.value && !!roleId.value && (!!email.value.trim() || !!fullName.value.trim()) && clinicIds.value.length > 0)
+// An invite that cannot be accepted is not created. Whoever opens it would
+// only be told no, and the owner would not hear about it at all.
+const canCreate = computed(() => !creating.value && !noSeat.value && !emailBad.value && !!roleId.value && (!!email.value.trim() || !!fullName.value.trim()) && clinicIds.value.length > 0)
 
 function toggleClinic(id: string) {
   clinicIds.value = clinicIds.value.includes(id) ? clinicIds.value.filter((c) => c !== id) : [...clinicIds.value, id]
@@ -139,7 +149,7 @@ function roleLabel(name: string) {
         </span>
       </label>
       <p v-if="noSeat" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] text-warning-text" data-cy="invite-no-seat">
-        {{ t('No practitioner seats left. They would be refused when accepting. Untick "Will see patients", or', 'No quedan plazas de profesional: al aceptar se le rechazaría. Desmarca «Atenderá pacientes», o') }}
+        {{ t('No practitioner seats left, so they could not accept. Untick "Will see patients" (assistants and admin staff are free), or', 'No quedan plazas de profesional, así que no podría aceptar. Desmarca «Atenderá pacientes» (asistentes y administración son gratis), o') }}
         <NuxtLink to="/subscription" class="font-bold underline">{{ t('add a seat', 'añade una plaza') }}</NuxtLink>.
       </p>
       <div v-if="store.clinics.length > 1" class="flex flex-col gap-2">

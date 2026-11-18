@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureGrid, postureHeadline, pxPerCm, type Points } from '../../utils/posture'
+import { cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureGrid, postureHeadline, pxPerCm, type Points } from '../../utils/posture'
 
 // A 170 cm patient photographed so that ear-to-ankle is 1591.2 px: exactly
 // 10 px per cm, so every number below can be checked by hand.
@@ -116,5 +116,21 @@ describe('postureGrid', () => {
   })
   it('draws nothing for a photo with no height', () => {
     expect(postureGrid(900, 0, 10)).toEqual({ xs: [], ys: [] })
+  })
+})
+
+describe('cutoutVerdict', () => {
+  /** A 10x10 outline with the first `person` pixels sure they are the person. */
+  const mask = (person: number) => ({ width: 10, height: 10, data: Float32Array.from({ length: 100 }, (_, i) => (i < person ? 0.9 : 0.1)) })
+  it('cuts out a person who takes up part of the frame', () => {
+    expect(cutoutVerdict(mask(30))).toEqual({ verdict: 'ok', share: 0.3 })
+  })
+  it('keeps the photo, and says why, when the outline is next to nothing or nearly everything', () => {
+    expect(cutoutVerdict(mask(1))).toEqual({ verdict: 'too-small', share: 0.01 })
+    expect(cutoutVerdict(mask(95))).toEqual({ verdict: 'too-large', share: 0.95 })
+  })
+  it('refuses an outline smaller than its own size says', () => {
+    expect(cutoutVerdict({ width: 10, height: 10, data: new Float32Array(50) })).toEqual({ verdict: 'bad-size', share: null })
+    expect(cutoutVerdict({ width: 0, height: 0, data: new Float32Array(0) })).toEqual({ verdict: 'bad-size', share: null })
   })
 })

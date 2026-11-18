@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { PersonMask } from '../../composables/usePoseModel'
-import { measureAll, measureView, defaultPoints, pointsFromLandmarks, POSTURE_VIEWS, VIEW_LABELS, type FrontMetrics, type Points, type PostureView, type SideMetrics, type StoredViews } from '../../utils/posture'
+import type { MaskMissing, PersonMask } from '../../composables/usePoseModel'
+import type { ReportIssue } from '../../utils/reportIssue'
+import { cutoutVerdict, measureAll, measureView, defaultPoints, pointsFromLandmarks, POSTURE_VIEWS, VIEW_LABELS, type FrontMetrics, type Points, type PostureView, type SideMetrics, type StoredViews } from '../../utils/posture'
 
 // A new posture assessment for one patient (posture_assessments): a photo per
 // view -- front, right side, back, and the left side if wanted -- the points
@@ -20,6 +21,7 @@ const emit = defineEmits<{ saved: [] }>()
 const t = useT()
 const supabase = useSupabaseClient()
 const { detect, warm } = usePoseModel()
+const reportIssue = (useNuxtApp() as unknown as { $reportIssue?: ReportIssue }).$reportIssue
 const patientId = props.patientId
 
 const height = ref<number | ''>('')
@@ -38,7 +40,11 @@ onMounted(async () => {
 // on white. White is what is shown and saved unless the practitioner turns it
 // off for that photo (the outline missed a hand, say).
 interface Version { url: string; blob: Blob }
-interface Shot { original: Version; cutout: Version | null; white: boolean; width: number; height: number; points: Points; facing: 'right' | 'left' | null; found: boolean }
+// Why a photo has no white version, when it has none -- said under the photo
+// so the next one can be taken differently, and reported (noCutout), since
+// it used to fail with nothing on screen and nothing anywhere else.
+type NoCutout = MaskMissing | 'too-small' | 'too-large' | 'bad-size' | 'failed'
+interface Shot { original: Version; cutout: Version | null; noCutout: NoCutout | null; white: boolean; width: number; height: number; points: Points; facing: 'right' | 'left' | null; found: boolean }
 const shown = (s: Shot): Version => (s.white && s.cutout ? s.cutout : s.original)
 const shots = reactive<Partial<Record<PostureView, Shot>>>({})
 const step = ref<PostureView | 'result'>('front')
@@ -71,26 +77,22 @@ async function shrink(file: File): Promise<{ blob: Blob; width: number; height: 
 // a lower resolution than the photo), so it is tightened a little -- below
 // LOW is background, above HIGH is the person, a ramp between -- and then
 // scaled up smoothly, which leaves an edge a pixel or two wide rather than a
-// staircase. Null when the outline is not believable as one standing person
-// (almost nothing, or almost the whole frame): the photo stays as taken.
+// staircase. Only once cutoutVerdict (utils/posture.ts) believes the outline
+// is one standing person.
 const LOW = 0.35
 const HIGH = 0.65
-function cutOut(photo: HTMLCanvasElement, mask: PersonMask): HTMLCanvasElement | null {
+function cutOut(photo: HTMLCanvasElement, mask: PersonMask): HTMLCanvasElement {
   const n = mask.width * mask.height
-  if (!n || mask.data.length < n) return null
   const alpha = document.createElement('canvas')
   alpha.width = mask.width
   alpha.height = mask.height
   const actx = alpha.getContext('2d')!
   const img = actx.createImageData(mask.width, mask.height)
-  let person = 0
   for (let i = 0; i < n; i++) {
     const v = mask.data[i]!
-    if (v > 0.5) person++
     const t = Math.min(1, Math.max(0, (v - LOW) / (HIGH - LOW)))
     img.data[i * 4 + 3] = Math.round(t * t * (3 - 2 * t) * 255)
   }
-  if (person < n * 0.02 || person > n * 0.9) return null
   actx.putImageData(img, 0, 0)
   const out = document.createElement('canvas')
   out.width = photo.width
@@ -123,14 +125,38 @@ async function onPhoto(e: Event) {
   error.value = ''
   try {
     const { blob, width, height: h, canvas } = await shrink(file)
-    const { landmarks, mask } = await detect(canvas)
+    const { landmarks, mask, missing, delegate } = await detect(canvas)
     const placed = landmarks ? pointsFromLandmarks(view, landmarks, width, h) : defaultPoints(view, width, h)
-    const white = mask ? cutOut(canvas, mask) : null
-    const cutBlob = white ? await jpeg(white) : null
+    let noCutout: NoCutout | null = missing
+    let share: number | null = null
+    let cutBlob: Blob | null = null
+    if (mask) {
+      const verdict = cutoutVerdict(mask)
+      share = verdict.share
+      if (verdict.verdict !== 'ok') noCutout = verdict.verdict
+      else {
+        try {
+          cutBlob = await jpeg(cutOut(canvas, mask))
+        } catch (e) {
+          console.error('[posture] cut out', e)
+          noCutout = 'failed'
+        }
+      }
+    }
+    if (noCutout) {
+      reportIssue?.(`Posture photo kept with its background: ${noCutout}`, {
+        // A photo the person filled, or stood far from, is the photo; the
+        // rest is the device or the model, which is what this is here to find.
+        level: noCutout === 'too-small' || noCutout === 'too-large' || noCutout === 'no-person' ? 'info' : 'warning',
+        tags: { posture_cutout: noCutout, posture_view: view, pose_delegate: delegate ?? 'none', mask_size: mask ? `${mask.width}x${mask.height}` : 'none', person_share: share === null ? 'none' : String(share) },
+        fingerprint: ['posture-cutout', noCutout],
+      })
+    }
     forget(shots[view])
     shots[view] = {
       original: { url: URL.createObjectURL(blob), blob },
       cutout: cutBlob ? { url: URL.createObjectURL(cutBlob), blob: cutBlob } : null,
+      noCutout: cutBlob ? null : noCutout,
       white: !!cutBlob,
       width,
       height: h,
@@ -143,6 +169,13 @@ async function onPhoto(e: Event) {
   } finally {
     busy.value = false
   }
+}
+
+// No-person is already said by the line above the points.
+function noCutoutText(reason: NoCutout): string {
+  if (reason === 'too-small') return t('The background could not be removed: the person is too small in the photo. Step closer, keeping head to feet in.', 'No se ha podido quitar el fondo: la persona sale muy pequeña. Acércate un poco, sin cortar cabeza ni pies.')
+  if (reason === 'too-large') return t('The background could not be removed: the person fills almost the whole photo. Step back so some wall shows around them.', 'No se ha podido quitar el fondo: la persona ocupa casi toda la foto. Aléjate un poco para que se vea pared alrededor.')
+  return t('The background could not be removed on this device, so the photo stays as taken. The points and measurements are not affected.', 'No se ha podido quitar el fondo en este dispositivo, así que la foto queda como se hizo. Los puntos y las medidas no cambian.')
 }
 
 const current = computed(() => (step.value === 'result' ? null : shots[step.value] ?? null))
@@ -248,6 +281,9 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
               <input v-model="current.white" type="checkbox" class="size-4 accent-brand" data-cy="posture-white" />
               {{ t('White background', 'Fondo blanco') }}
             </label>
+            <p v-else-if="current.noCutout && current.noCutout !== 'no-person'" class="mt-2 text-center text-[12.5px] text-ink-muted" data-cy="posture-no-cutout" :data-reason="current.noCutout">
+              {{ noCutoutText(current.noCutout) }}
+            </p>
           </div>
           <aside class="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-4" data-cy="posture-live">
             <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ VIEW_LABELS[step] }} · {{ t('live', 'al momento') }}</p>

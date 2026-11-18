@@ -92,6 +92,22 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
     expect(okCalls(r, 'book_appointment')).toEqual([])
   })
 
+  // 17 Nov 2026: the worsening migraines were only in the ad form, and two
+  // replies about the price never passed them to the chiropractor.
+  evalCase('hands a worsening symptom from the ad form to the chiropractor', {
+    kind: 'lead',
+    leadOrigin: { channel: 'facebook', source: 'Meta Ads', externalSource: 'facebook', campaign: null, ad: null },
+    leadForm: [{ question: '¿Cuál sería el motivo de tu visita?', answer: 'Sufro de migraña cada vez más intensas y frecuentes. Y además estoy con mucho dolor cervical y lumbar desde que amanezco y empeora durante el día.' }],
+    conversation: [
+      { from: 'system', text: 'Hola! Te saludo del centro. Reservar no tiene coste ni pide tarjeta, y la primera visita tiene ahora una oferta de 50 €.' },
+      { from: 'them', text: 'Hola, para poder evaluar si podría hacer un tratamiento con ustedes necesito saber el precio de las sesiones. ¿Seguirá siendo de 50 € o cambia?' },
+    ],
+  }, (r) => {
+    expect(called(r, 'hand_over_to_colleague').length).toBeGreaterThan(0)
+    expect(okCalls(r, 'book_appointment')).toEqual([])
+    expect(r.text).toMatch(/\d+\s?€/)
+  })
+
   evalCase('hands a complaint about the treatment to the chiropractor', {
     kind: 'patient',
     returning: true,

@@ -63,6 +63,8 @@ describe('classifySupabaseFailure', () => {
     expect(classify(400, { code: 'P0001', message: 'Two-factor authentication required' }, 'POST', rpc), 'a rule stated by the database').to.eq(null)
     expect(classify(400, { code: 'P0001', message: 'Only an owner can change fees' }, 'PATCH')).to.eq(null)
     expect(classify(400, { code: '23514', message: 'Account credit and write-offs are not money' }, 'POST'), 'a check constraint').to.eq(null)
+    expect(classify(402, { code: 'PT402', message: 'Your plan covers 1 practitioner(s) and all of them are in use.' }, 'POST', 'https://x.supabase.co/rest/v1/rpc/accept_invite'), 'a plan limit').to.eq(null)
+    expect(classify(402, { code: 'PT402', message: 'Your plan covers 1 clinic location(s).' }, 'POST', 'https://x.supabase.co/rest/v1/clinic_locations')).to.eq(null)
   })
 
   it('only looks at the REST API', () => {
@@ -161,6 +163,7 @@ describe('isRefusedWrite', () => {
     expect(isRefusedWrite({ url: `${rest}/payments`, method: 'POST', status: 403, body: { code: '42501' } })).to.eq(true)
     expect(isRefusedWrite({ url: `${rest}/accounts?id=eq.1`, method: 'PATCH', status: 400, body: { code: 'P0001' } })).to.eq(true)
     expect(isRefusedWrite({ url: `${rest}/invoices?id=eq.1`, method: 'DELETE', status: 400, body: { code: '23514' } })).to.eq(true)
+    expect(isRefusedWrite({ url: `${rest}/clinic_locations`, method: 'POST', status: 402, body: { code: 'PT402' } }), 'a plan limit').to.eq(true)
   })
   it('is not a read, a function call, a conflict or a success', () => {
     expect(isRefusedWrite({ url: `${rest}/payments?select=id`, method: 'GET', status: 403, body: { code: '42501' } })).to.eq(false)

@@ -8554,7 +8554,14 @@
   "No bonos set up": "Não há packs configurados",
   "The rest stays owed on the bono; collect it later from the patient record.": "O restante fica em dívida no pack; cobre-o depois na ficha do paciente.",
   "Could not sell the bono": "Não foi possível vender o pack",
-  "The rest stays owed on the bono.": "O restante fica em dívida no pack."
+  "The rest stays owed on the bono.": "O restante fica em dívida no pack.",
+  "A price set here is never replaced.": "Um preço definido aqui nunca é substituído.",
+  "Brings PracticeHub’s appointment types across, with their length, colour and price, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.": "Traz os tipos de marcação do PracticeHub, com a duração, a cor e o preço, e associa cada consulta já existente aqui ao tipo que o PracticeHub indica. Execute-o antes de Marcações, para que os tipos coincidam pelo nome.",
+  "PracticeHub 2.0 did not answer for the prices, so none are brought across this time. Run this step again later; it fills in every price still at 0.": "O PracticeHub 2.0 não respondeu ao pedido dos preços, por isso desta vez não são trazidos. Execute este passo novamente mais tarde; preencherá todos os preços que continuem a 0.",
+  "PracticeHub keeps prices on its services, so each type takes the price of the service with the same name, and only where its price here is still 0. A type with no service of its name keeps its price.": "O PracticeHub guarda os preços nos seus serviços, por isso cada tipo recebe o preço do serviço com o mesmo nome, e só se aqui o preço ainda for 0. Um tipo sem serviço com o seu nome mantém o seu preço.",
+  "Prices are not brought across: PracticeHub only gives them through its 2.0 API. Add the phk_ key under Connection and run this step again; it fills in every price still at 0.": "Os preços não são trazidos: o PracticeHub só os fornece pela sua API 2.0. Adicione a chave phk_ em Ligação e execute este passo novamente; preencherá todos os preços que continuem a 0.",
+  "Prices to fill in": "Preços a preencher",
+  "Reading prices…": "A ler os preços…"
  },
  "p": {
   " ({0} from last year)": " ({0} do ano passado)",
@@ -9929,6 +9936,10 @@
   "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Nada será escrito: {0} de {1} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente, por isso os seus pagamentos chegariam sem as visitas que pagaram.",
   "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} visitas do registo de caixa não correspondem a nenhuma consulta na ficha do paciente: chegam os seus pagamentos, não os seus encargos.",
   "Process · sell {0}, use 1 session": "Processar · vender {0} e usar 1 sessão",
-  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} foi vendido. {1} Registe o pagamento no separador de faturação do paciente e depois use uma sessão aqui."
+  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} foi vendido. {1} Registe o pagamento no separador de faturação do paciente e depois use uma sessão aqui.",
+  "Create {0} {1}, fill in {2} {3} and relink {4} {5}": "Criar {0} {1|type=tipo|types=tipos}, preencher {2} {3|price=preço|prices=preços} e reassociar {4} {5|appointment=marcação|appointments=marcações}",
+  "Created {0} new appointment {1}, filled in {2} {3}, updated {4} appointments. Skipped {5} with no type in PracticeHub.": "Foram criados {0} {1|type=tipo de marcação novo|types=tipos de marcação novos}, preenchidos {2} {3|price=preço|prices=preços} e atualizadas {4} marcações. Ignoradas {5} sem tipo no PracticeHub.",
+  "The price of \"{0}\" was not saved: {1}": "O preço de \"{0}\" não foi guardado: {1}",
+  "{0} (kept)": "{0} (mantém-se)"
  }
 }

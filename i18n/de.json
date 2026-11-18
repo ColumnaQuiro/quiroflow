@@ -8554,7 +8554,14 @@
   "No bonos set up": "Keine Pakete eingerichtet",
   "The rest stays owed on the bono; collect it later from the patient record.": "Der Rest bleibt auf dem Paket offen; später in der Patientenakte kassieren.",
   "Could not sell the bono": "Das Paket konnte nicht verkauft werden",
-  "The rest stays owed on the bono.": "Der Rest bleibt auf dem Paket offen."
+  "The rest stays owed on the bono.": "Der Rest bleibt auf dem Paket offen.",
+  "A price set here is never replaced.": "Ein hier festgelegter Preis wird nie ersetzt.",
+  "Brings PracticeHub’s appointment types across, with their length, colour and price, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.": "Übernimmt die Terminarten aus PracticeHub mit Dauer, Farbe und Preis und ordnet jede hier bereits vorhandene Behandlung der Art zu, die PracticeHub angibt. Führen Sie dies vor Termine aus, damit die Arten über den Namen zugeordnet werden.",
+  "PracticeHub 2.0 did not answer for the prices, so none are brought across this time. Run this step again later; it fills in every price still at 0.": "PracticeHub 2.0 hat auf die Preisabfrage nicht geantwortet, daher werden diesmal keine übernommen. Führen Sie diesen Schritt später erneut aus; er ergänzt jeden Preis, der noch 0 ist.",
+  "PracticeHub keeps prices on its services, so each type takes the price of the service with the same name, and only where its price here is still 0. A type with no service of its name keeps its price.": "PracticeHub führt Preise bei seinen Leistungen. Jede Terminart übernimmt daher den Preis der gleichnamigen Leistung, und nur, wenn ihr Preis hier noch 0 ist. Eine Terminart ohne gleichnamige Leistung behält ihren Preis.",
+  "Prices are not brought across: PracticeHub only gives them through its 2.0 API. Add the phk_ key under Connection and run this step again; it fills in every price still at 0.": "Preise werden nicht übernommen: PracticeHub liefert sie nur über seine 2.0-API. Fügen Sie unter Verbindung den phk_-Schlüssel hinzu und führen Sie diesen Schritt erneut aus; er ergänzt jeden Preis, der noch 0 ist.",
+  "Prices to fill in": "Zu ergänzende Preise",
+  "Reading prices…": "Preise werden gelesen…"
  },
  "p": {
   " ({0} from last year)": " ({0} aus dem Vorjahr)",
@@ -9929,6 +9936,10 @@
   "Nothing will be written: {0} of {1} visits in the cash ledger match no appointment in the patient's record, so their payments would come in without the visits they paid for.": "Es wird nichts geschrieben: {0} von {1} Besuchen im Kassenbuch passen zu keinem Termin in der Patientenakte, ihre Zahlungen kämen also ohne die Besuche, die sie bezahlt haben.",
   "{0} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.": "{0} Besuche im Kassenbuch passen zu keinem Termin in der Patientenakte: Ihre Zahlungen werden übernommen, ihre Belastungen nicht.",
   "Process · sell {0}, use 1 session": "Abschließen · {0} verkaufen, 1 Sitzung nutzen",
-  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} wurde verkauft. {1} Zahlung im Abrechnungs-Tab des Patienten erfassen und dann hier eine Sitzung nutzen."
+  "{0} was sold. {1} Record the payment on the patient's Billing tab, then use a session here.": "{0} wurde verkauft. {1} Zahlung im Abrechnungs-Tab des Patienten erfassen und dann hier eine Sitzung nutzen.",
+  "Create {0} {1}, fill in {2} {3} and relink {4} {5}": "{0} {1|type=Terminart|types=Terminarten} erstellen, {2} {3|price=Preis|prices=Preise} ergänzen und {4} {5|appointment=Termin|appointments=Termine} neu verknüpfen",
+  "Created {0} new appointment {1}, filled in {2} {3}, updated {4} appointments. Skipped {5} with no type in PracticeHub.": "{0} {1|type=neue Terminart|types=neue Terminarten} erstellt, {2} {3|price=Preis|prices=Preise} ergänzt, {4} Termine aktualisiert. {5} ohne Terminart in PracticeHub übersprungen.",
+  "The price of \"{0}\" was not saved: {1}": "Der Preis von „{0}“ wurde nicht gespeichert: {1}",
+  "{0} (kept)": "{0} (bleibt)"
  }
 }

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
+import { formatEur } from '~/utils/billing'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -25,6 +28,10 @@ interface TypeCandidate {
   name: string
   /** Set when a type of the same name is already here; null means it gets created. */
   ourTypeId: string | null
+  /** The type's price here; null when it gets created. */
+  ourPriceCents: number | null
+  /** What the import writes as the type's price: PracticeHub's, and only over a 0. */
+  priceToWrite: number | null
   funnelStage: string | null
   /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
@@ -58,20 +65,35 @@ const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | n
 
 const candidates = ref<TypeCandidate[]>([])
 const skippedNoMatch = ref(0)
+// Prices come from PracticeHub 2.0's API, the only one that has them
+// (utils/practicehubTypePrices.ts). Set when they could not be read, so the
+// preview can say why the types come across without one.
+const pricesUnavailable = ref<'no_v3_key' | 'read_failed' | null>(null)
 
 const typesCreated = ref(0)
+const pricesSet = ref(0)
 const appointmentsUpdated = ref(0)
 const importErrors = ref<string[]>([])
 
 const newTypeCount = computed(() => new Set(candidates.value.filter((c) => !c.ourTypeId).map((c) => c.name.trim().toLowerCase())).size)
+// Types already here that take PracticeHub's price. Two PracticeHub types of
+// one name are one type here, so it is counted once.
+const pricesToFill = computed(() => new Set(candidates.value.filter((c) => c.ourTypeId && c.priceToWrite !== null).map((c) => c.ourTypeId)).size)
 const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => sum + c.appointmentRefs.length, 0))
 
 const previewColumns = computed(() => [
   { key: 'name', label: t('Appointment type', 'Tipo de cita') },
   { key: 'status', label: t('Status', 'Estado') },
+  { key: 'price', label: t('Price', 'Precio') },
   { key: 'funnelStage', label: t('Stage', 'Etapa') },
   { key: 'appointments', label: t('Appointments', 'Citas') },
 ])
+
+function priceLabel(c: TypeCandidate): string {
+  if (c.priceToWrite !== null) return formatEur(c.priceToWrite)
+  if (c.ourPriceCents) return t(`${formatEur(c.ourPriceCents)} (kept)`, `${formatEur(c.ourPriceCents)} (se mantiene)`)
+  return '—'
+}
 
 function stageLabel(stage: string | null): string {
   const known = TYPE_STAGES.find((s) => s.value === stage)
@@ -84,6 +106,7 @@ const previewRows = computed(() =>
     .map((c) => ({
       name: c.name,
       status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará'),
+      price: priceLabel(c),
       // The stage's name as Settings › Appointment types shows it, not its key.
       funnelStage: stageLabel(c.funnelStage),
       appointments: String(c.inPracticeHub),
@@ -92,6 +115,7 @@ const previewRows = computed(() =>
 
 const previewStats = computed(() => [
   { label: t('New types', 'Tipos nuevos'), value: newTypeCount.value, tone: 'good' as const },
+  { label: t('Prices to fill in', 'Precios a completar'), value: pricesToFill.value, tone: 'good' as const },
   { label: t('Appointments to relink', 'Citas a revincular'), value: appointmentsToRelink.value, tone: 'good' as const },
   { label: t('Types already here', 'Tipos ya existentes'), value: candidates.value.length - newTypeCount.value },
   { label: t('No type in PracticeHub', 'Sin tipo en PracticeHub'), value: skippedNoMatch.value },
@@ -103,7 +127,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   runError.value = ''
   candidates.value = []
   skippedNoMatch.value = 0
+  pricesUnavailable.value = null
   typesCreated.value = 0
+  pricesSet.value = 0
   appointmentsUpdated.value = 0
   importErrors.value = []
   const api = usePracticeHubApi(conn)
@@ -112,9 +138,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phase.value = t('Fetching appointment types…', 'Obteniendo tipos de cita…')
     const phTypes = await api.fetchAll<PHAppointmentType>('/appointment_types')
 
+    phase.value = t('Reading prices…', 'Leyendo precios…')
+    const services = await loadPracticeHubServices()
+
     phase.value = t('Matching to existing types…', 'Emparejando con los tipos existentes…')
-    const { data: existing } = await supabase.from('appointment_types').select('id, name')
-    const existingByName = new Map((existing ?? []).map((row) => [row.name.trim().toLowerCase(), row.id]))
+    const { data: existing, error: existingError } = await supabase.from('appointment_types').select('id, name, default_price_cents')
+    // Read wrong, every type here would look new and be created a second time.
+    if (existingError) throw existingError
+    const existingByName = new Map((existing ?? []).map((row) => [row.name.trim().toLowerCase(), row]))
 
     // Only the visits already here can be re-pointed. Counting PracticeHub's
     // own told a clinic with no appointments yet that 8,695 would be relinked.
@@ -152,10 +183,15 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       .map((phType) => {
         const key = phType.name.trim().toLowerCase()
         const refs = refsByPhTypeId.get(phType.id) ?? []
+        const ours = existingByName.get(key)
+        const ourPriceCents = ours ? ours.default_price_cents : null
+        const phPrice = services ? practiceHubTypePrice(phType.name, services) : null
         return {
           phTypeId: phType.id,
           name: phType.name,
-          ourTypeId: existingByName.get(key) ?? null,
+          ourTypeId: ours?.id ?? null,
+          ourPriceCents,
+          priceToWrite: practiceHubPriceToWrite(ourPriceCents, phPrice?.priceCents),
           funnelStage: STAGE_BY_NAME[key] ?? null,
           appointmentRefs: refs.filter((ref) => refsHere.has(ref)),
           inPracticeHub: refs.length,
@@ -171,9 +207,27 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   }
 }
 
+// PracticeHub's services with their prices. Null when there is no 2.0 key or
+// the read failed: the types still come across, without a price, and a later
+// run with the key fills in the ones still at 0.
+async function loadPracticeHubServices(): Promise<PracticeHubBillableItem[] | null> {
+  const saved = await useStaffFetch<{ hasV3Key?: boolean }>('/api/import/practicehub-connection').catch(() => null)
+  if (!saved?.hasV3Key) {
+    pricesUnavailable.value = 'no_v3_key'
+    return null
+  }
+  try {
+    return await usePracticeHubV3().fetchAll<PracticeHubBillableItem>('/billable_items')
+  } catch {
+    pricesUnavailable.value = 'read_failed'
+    return null
+  }
+}
+
 async function apply() {
   stage.value = 'importing'
   typesCreated.value = 0
+  pricesSet.value = 0
   appointmentsUpdated.value = 0
   importErrors.value = []
   progress.value = { done: 0, total: appointmentsToRelink.value }
@@ -189,6 +243,18 @@ async function apply() {
       const known = c.ourTypeId ?? createdByName.get(key)
       if (known) {
         ourTypeIdByPhTypeId.set(c.phTypeId, known)
+        if (c.ourTypeId && c.priceToWrite !== null) {
+          // Only over a 0, checked again as it is written: a price the clinic
+          // set between the preview and now is theirs, and stays.
+          const { data: priced, error } = await supabase
+            .from('appointment_types')
+            .update({ default_price_cents: c.priceToWrite })
+            .eq('id', c.ourTypeId)
+            .eq('default_price_cents', 0)
+            .select('id')
+          if (error) importErrors.value.push(t(`The price of "${c.name}" was not saved: ${error.message}`, `No se guardó el precio de "${c.name}": ${error.message}`))
+          else if (priced?.length) pricesSet.value++
+        }
         continue
       }
       const { data: created, error } = await supabase
@@ -202,6 +268,7 @@ async function apply() {
           name: c.name,
           stage: c.funnelStage,
           online_booking_enabled: false,
+          ...(c.priceToWrite !== null ? { default_price_cents: c.priceToWrite } : {}),
           ...(c.durationMinutes ? { duration_minutes: c.durationMinutes } : {}),
           ...(c.color ? { color: c.color } : {}),
           ...(c.archived ? { archived_at: new Date().toISOString() } : {}),
@@ -248,8 +315,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Created ${typesCreated.value} new appointment ${typesCreated.value === 1 ? 'type' : 'types'}, updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
-      `Se crearon ${typesCreated.value} ${typesCreated.value === 1 ? 'tipo de cita nuevo' : 'tipos de cita nuevos'}, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
+      `Created ${typesCreated.value} new appointment ${typesCreated.value === 1 ? 'type' : 'types'}, filled in ${pricesSet.value} ${pricesSet.value === 1 ? 'price' : 'prices'}, updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
+      `Se crearon ${typesCreated.value} ${typesCreated.value === 1 ? 'tipo de cita nuevo' : 'tipos de cita nuevos'}, se ${pricesSet.value === 1 ? 'completó 1 precio' : `completaron ${pricesSet.value} precios`}, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
@@ -263,15 +330,18 @@ function reset() {
   stage.value = 'connect'
   candidates.value = []
   typesCreated.value = 0
+  pricesSet.value = 0
   appointmentsUpdated.value = 0
   skippedNoMatch.value = 0
+  pricesUnavailable.value = null
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t('Brings PracticeHub’s appointment types across, with their length and colour, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.', 'Trae los tipos de cita de PracticeHub, con su duración y color, y asocia cada visita que ya esté aquí al tipo que dice PracticeHub. Ejecútalo antes de Citas, para que sus tipos coincidan por nombre.'))
+const introLead = computed(() => t('Brings PracticeHub’s appointment types across, with their length, colour and price, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.', 'Trae los tipos de cita de PracticeHub, con su duración, color y precio, y asocia cada visita que ya esté aquí al tipo que dice PracticeHub. Ejecútalo antes de Citas, para que sus tipos coincidan por nombre.'))
 const introNotes = computed(() => [
         { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every type it will create and how many visits it will relink, so you can check them first.', 'La vista previa muestra cada tipo que creará y cuántas visitas revinculará, para que lo compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Types are matched by name, so none is created twice. Every visit is set to PracticeHub’s type again, which changes nothing for one already on it.', 'Los tipos se emparejan por nombre, así que ninguno se crea dos veces. Cada visita vuelve a tomar el tipo de PracticeHub, lo que no cambia nada si ya lo tenía.') },
+        { title: t('A price set here is never replaced.', 'Un precio puesto aquí nunca se sustituye.'), body: t('PracticeHub keeps prices on its services, so each type takes the price of the service with the same name, and only where its price here is still 0. A type with no service of its name keeps its price.', 'PracticeHub guarda los precios en sus servicios, así que cada tipo toma el precio del servicio con el mismo nombre, y solo si aquí sigue a 0. Un tipo sin servicio con su nombre conserva su precio.') },
 ])
 </script>
 
@@ -297,8 +367,8 @@ const introNotes = computed(() => [
       :sample-limit="20"
       :apply-label="
         t(
-          `Create ${newTypeCount} ${newTypeCount === 1 ? 'type' : 'types'} and relink ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'appointment' : 'appointments'}`,
-          `Crear ${newTypeCount} ${newTypeCount === 1 ? 'tipo' : 'tipos'} y revincular ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'cita' : 'citas'}`,
+          `Create ${newTypeCount} ${newTypeCount === 1 ? 'type' : 'types'}, fill in ${pricesToFill} ${pricesToFill === 1 ? 'price' : 'prices'} and relink ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'appointment' : 'appointments'}`,
+          `Crear ${newTypeCount} ${newTypeCount === 1 ? 'tipo' : 'tipos'}, completar ${pricesToFill} ${pricesToFill === 1 ? 'precio' : 'precios'} y revincular ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'cita' : 'citas'}`,
         )
       "
       :more-label="t('more types', 'tipos más')"
@@ -306,6 +376,19 @@ const introNotes = computed(() => [
       @cancel="reset"
     >
       <template #note>
+        <p v-if="pricesUnavailable" class="mb-2 text-xs text-ink-600">
+          {{
+            pricesUnavailable === 'no_v3_key'
+              ? t(
+                  'Prices are not brought across: PracticeHub only gives them through its 2.0 API. Add the phk_ key under Connection and run this step again; it fills in every price still at 0.',
+                  'Los precios no se traen: PracticeHub solo los da por su API 2.0. Añade la clave phk_ en Conexión y vuelve a ejecutar este paso; completará los precios que sigan a 0.',
+                )
+              : t(
+                  'PracticeHub 2.0 did not answer for the prices, so none are brought across this time. Run this step again later; it fills in every price still at 0.',
+                  'PracticeHub 2.0 no respondió al pedir los precios, así que esta vez no se traen. Vuelve a ejecutar este paso más tarde; completará los precios que sigan a 0.',
+                )
+          }}
+        </p>
         <p class="text-xs text-ink-faint">
           {{
             t(

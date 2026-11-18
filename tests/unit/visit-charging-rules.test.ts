@@ -8,6 +8,7 @@ import {
   openingPaymentRows,
   planInvoiceUnderBono,
   practiceHubChargedAtPurchase,
+  visitLineMissing,
 } from '../../utils/visitCharging'
 
 // The decisions behind charging one visit, shared by the calendar's Billing
@@ -165,5 +166,35 @@ describe('The payment form a visit opens with', () => {
 
   it('leaves a fully paid visit alone', () => {
     expect(openingPaymentRows(0, 5000, 'cash')).toEqual([{ method: 'cash', cents: 0 }])
+  })
+})
+
+describe('visitLineMissing', () => {
+  const open = { invoiceStatus: 'unpaid', coveredByBono: false, chargedToThirdParty: false, visitPriceCents: 6500 }
+
+  it('offers the visit on a receipt left with no lines, raised while the type cost 0 €', () => {
+    expect(visitLineMissing({ ...open, lines: [] })).toBe(true)
+  })
+
+  it('offers it when the visit line is still at the 0 € it was raised with', () => {
+    expect(visitLineMissing({ ...open, lines: [{ price_cents: 0, service_id: null }] })).toBe(true)
+  })
+
+  it('a service on the receipt is not the visit', () => {
+    expect(visitLineMissing({ ...open, lines: [{ price_cents: 1500, service_id: 'svc' }] })).toBe(true)
+  })
+
+  it('does not offer it when the visit is already on at a price', () => {
+    expect(visitLineMissing({ ...open, lines: [{ price_cents: 6500, service_id: null }] })).toBe(false)
+  })
+
+  it('does not offer it on a closed receipt, a bono visit or a type with no price', () => {
+    expect(visitLineMissing({ ...open, invoiceStatus: 'paid', lines: [] })).toBe(false)
+    expect(visitLineMissing({ ...open, invoiceStatus: 'void', lines: [] })).toBe(false)
+    expect(visitLineMissing({ ...open, invoiceStatus: null, lines: [] })).toBe(false)
+    expect(visitLineMissing({ ...open, coveredByBono: true, lines: [] })).toBe(false)
+    // An insurer paying the whole visit leaves the patient's line at 0 € on purpose.
+    expect(visitLineMissing({ ...open, chargedToThirdParty: true, lines: [{ price_cents: 0, service_id: null }] })).toBe(false)
+    expect(visitLineMissing({ ...open, visitPriceCents: 0, lines: [] })).toBe(false)
   })
 })

@@ -8561,7 +8561,10 @@
   "PracticeHub keeps prices on its services, so each type takes the price of the service with the same name, and only where its price here is still 0. A type with no service of its name keeps its price.": "O PracticeHub guarda os preços nos seus serviços, por isso cada tipo recebe o preço do serviço com o mesmo nome, e só se aqui o preço ainda for 0. Um tipo sem serviço com o seu nome mantém o seu preço.",
   "Prices are not brought across: PracticeHub only gives them through its 2.0 API. Add the phk_ key under Connection and run this step again; it fills in every price still at 0.": "Os preços não são trazidos: o PracticeHub só os fornece pela sua API 2.0. Adicione a chave phk_ em Ligação e execute este passo novamente; preencherá todos os preços que continuem a 0.",
   "Prices to fill in": "Preços a preencher",
-  "Reading prices…": "A ler os preços…"
+  "Reading prices…": "A ler os preços…",
+  "The visit is not on this receipt.": "A consulta não está neste recibo.",
+  "the visit": "a consulta",
+  "Could not add the visit.": "Não foi possível adicionar a consulta."
  },
  "p": {
   "Amount exceeds available credit ({0}).": "O montante excede o crédito disponível ({0}).",

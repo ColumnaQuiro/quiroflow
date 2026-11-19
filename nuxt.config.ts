@@ -380,6 +380,11 @@ export default defineNuxtConfig({
     // skips straight to "message the QuiroFlow team" rather than failing,
     // so a missing key degrades the feature instead of breaking it.
     anthropicApiKey: '',
+    // Transcribes WhatsApp voice notes so the AI receptionist can answer
+    // them (server/utils/voiceNoteTranscripts.ts; Mistral's Voxtral, EU).
+    // Optional -- if unset, a voice note reads to it as "[Voice note]", as
+    // it always did. NUXT_MISTRAL_API_KEY.
+    mistralApiKey: '',
     // Where the assistant reads the help articles from. Overridable mostly
     // so a deploy preview can point at a preview of the help centre.
     helpCorpusUrl: 'https://learn.quiroflow.com/corpus.json',

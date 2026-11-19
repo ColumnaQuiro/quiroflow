@@ -102,6 +102,10 @@ const clinicId = ref('')
 const appointmentTypeId = ref('')
 const teamMemberId = ref('')
 
+// The week per location of whoever works at more than one clinic
+// (get_practitioner_location_hours). Empty for everybody else.
+const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
@@ -110,7 +114,19 @@ const availablePractitioners = computed(() => (info.value?.team_members ?? []).f
 // appointment it is the appointment's own, which may not be listed for new
 // bookings -- then their hours are unknown here and the clinic's stand in;
 // reschedule_patient_appointment checks the real ones.
-const slotPractitioner = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
+//
+// Their hours are the ones they work at the clinic chosen
+// (practitionerHoursAt): somebody at two locations can have a week for each,
+// and the time they are down to be at the other one is not offered here.
+// Without it the app listed a time assert_booking_slot_open then refused.
+const slotPractitioner = computed(() => {
+  const member = info.value?.team_members.find((m) => m.id === teamMemberId.value)
+  if (!member) return null
+  return {
+    ...member,
+    business_hours: practitionerHoursAt(clinicId.value, clinic.value?.business_hours, member.business_hours, locationHours.value.filter((l) => l.team_member_id === member.id)),
+  }
+})
 // Every time here is the clinic's, as on the web page. Slots used to be built
 // with setHours, in the PHONE's zone, so a patient whose phone was set to
 // another zone was offered the clinic's hours shifted by the difference.
@@ -163,6 +179,7 @@ onMounted(async () => {
     return
   }
   info.value = parsed
+  await loadLocationHours(parsed)
 
   if (rescheduleId.value) {
     await startReschedule(parsed)
@@ -175,6 +192,17 @@ onMounted(async () => {
   if (forClinic.length === 1 || bypassPractitioner.value) teamMemberId.value = forClinic[0]?.id ?? ''
   phase.value = 'select'
 })
+
+// Asked only when somebody works at more than one location -- nobody else can
+// have a week per location, and this is one more round trip. If it fails (or
+// the database predates 20261119124321) the app offers their one week as
+// before, and assert_booking_slot_open still refuses a time they are not there.
+async function loadLocationHours(parsed: BookingInfo) {
+  const shared = parsed.team_members.filter((m) => m.clinic_ids.length > 1).map((m) => m.id)
+  if (!shared.length) return
+  const { data } = await supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never)
+  locationHours.value = (data as unknown as typeof locationHours.value | null) ?? []
+}
 
 function onClinicChange() {
   teamMemberId.value = availablePractitioners.value.length === 1 || bypassPractitioner.value ? (availablePractitioners.value[0]?.id ?? '') : ''

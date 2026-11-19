@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BusinessHours } from '../../utils/businessHours'
+import { wholeWeek, type BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf, nextDate } from '../../utils/clinicClock'
 import { workdaySummary, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, isOpenEndedAbsence, shiftForDay, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
@@ -59,7 +59,7 @@ async function load() {
   const y = year.value
   const unopenedBefore = new Date(now.value.getTime() - STAFF_DOCUMENT_UNOPENED_DAYS * 86_400_000).toISOString()
   const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left, docs, carried] = await Promise.all([
-    supabase.from('team_members').select('id, full_name, role, is_practitioner, color, business_hours').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
+    supabase.from('team_members').select('id, full_name, role, is_practitioner, color, business_hours, team_member_clinics(business_hours)').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').eq('account_id', props.accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').eq('account_id', props.accountId).gte('day', monthStart.value).lte('day', today.value),
     supabase.from('time_clock_exemptions').select('team_member_id').eq('account_id', props.accountId),
@@ -76,8 +76,12 @@ async function load() {
   carry.value = carried
   const failed = [ms, abs, es].find((r) => r.error)
   error.value = failed?.error ? t("Couldn't load the team.", 'No se ha podido cargar el equipo.') : ''
-  members.value = (ms.data as Member[] | null) ?? []
   clinicHours.value = (clinic.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null
+  // Their whole week, a second location's evenings included (wholeWeek).
+  members.value = ((ms.data as unknown as (Member & { team_member_clinics: { business_hours: BusinessHours | null }[] | null })[] | null) ?? []).map(({ team_member_clinics, ...m }) => ({
+    ...m,
+    business_hours: wholeWeek(m.is_practitioner ? clinicHours.value : null, m.business_hours, team_member_clinics),
+  }))
   overrides.value = new Map(((sd.data as { team_member_id: string; day: string; ranges: ShiftRanges }[] | null) ?? []).map((d) => [`${d.team_member_id}|${d.day}`, d.ranges]))
   exempt.value = new Set(((ex.data as { team_member_id: string }[] | null) ?? []).map((e) => e.team_member_id))
   entries.value = (es.data as (WorkEntry & { team_member_id: string })[] | null) ?? []

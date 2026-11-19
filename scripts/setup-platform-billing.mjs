@@ -73,7 +73,7 @@ const CATALOGUE = [
     planId: 'clinic',
     name: 'QuiroFlow Clinic',
     description:
-      'Unlimited practitioners and sites. Everything in Practice plus the Growth add-on included, multi-site, API access and webhooks, assisted migration and priority support.',
+      '6 practitioners and 2 sites included; extra practitioners €19/mo, extra sites €29/mo. Everything in Practice plus the Growth add-on included, multi-site, API access and webhooks, assisted migration and priority support.',
     monthly: 14900,
     annual: 13400,
   },
@@ -109,6 +109,18 @@ const CATALOGUE = [
     // less than that. The earlier 25-against-29 EUR annual price did exactly that.
     monthly: 1900,
     annual: 1900,
+  },
+  {
+    // The id the live product was created with (19 Nov 2026), so a run
+    // against the live account reuses it instead of making a second one.
+    id: 'extra-clinic',
+    planId: null,
+    name: 'QuiroFlow extra location',
+    description: 'One additional clinic location beyond those included in the plan.',
+    // The same 29 EUR either way, for the reason the seat above is:
+    // `plans.extra_clinic_price_cents` is one column shown for both intervals.
+    monthly: 2900,
+    annual: 2900,
   },
 ]
 
@@ -165,6 +177,7 @@ for (const entry of CATALOGUE) {
 
 const byId = Object.fromEntries(results.map((r) => [r.entry.id, r]))
 const extra = byId['extra-professional']
+const extraClinic = byId['extra-clinic']
 
 console.log('\n--- SQL to point the plans table at these prices ---\n')
 for (const planId of ['starter', 'pro', 'clinic']) {
@@ -178,6 +191,13 @@ for (const planId of ['starter', 'pro', 'clinic']) {
       `where id = '${planId}';\n`,
   )
 }
+// Only Clinic sells locations beyond its own.
+console.log(
+  `update plans set\n` +
+    `  stripe_extra_clinic_monthly_price_id = '${extraClinic.monthly.price.id}',\n` +
+    `  stripe_extra_clinic_annual_price_id = '${extraClinic.annual.price.id}'\n` +
+    `where id = 'clinic';\n`,
+)
 
 const growth = byId['prod_VGYO3CyN90xQFT']
 console.log('--- SQL to point the addons table at these prices ---\n')

@@ -8069,7 +8069,10 @@ export type Database = {
         Row: {
           annual_price_cents: number
           created_at: string
+          extra_clinic_price_cents: number | null
           extra_professional_price_cents: number | null
+          stripe_extra_clinic_annual_price_id: string | null
+          stripe_extra_clinic_monthly_price_id: string | null
           id: string
           included_clinics: number | null
           included_professionals: number | null
@@ -8086,7 +8089,10 @@ export type Database = {
         Insert: {
           annual_price_cents: number
           created_at?: string
+          extra_clinic_price_cents?: number | null
           extra_professional_price_cents?: number | null
+          stripe_extra_clinic_annual_price_id?: string | null
+          stripe_extra_clinic_monthly_price_id?: string | null
           id: string
           included_clinics?: number | null
           included_professionals?: number | null
@@ -8103,7 +8109,10 @@ export type Database = {
         Update: {
           annual_price_cents?: number
           created_at?: string
+          extra_clinic_price_cents?: number | null
           extra_professional_price_cents?: number | null
+          stripe_extra_clinic_annual_price_id?: string | null
+          stripe_extra_clinic_monthly_price_id?: string | null
           id?: string
           included_clinics?: number | null
           included_professionals?: number | null
@@ -9505,6 +9514,7 @@ export type Database = {
           billing_interval: string
           comped: boolean
           created_at: string
+          extra_clinics: number
           extra_professionals: number
           growth_addon: boolean
           verifactu_locations: number
@@ -9524,6 +9534,7 @@ export type Database = {
           billing_interval?: string
           comped?: boolean
           created_at?: string
+          extra_clinics?: number
           extra_professionals?: number
           growth_addon?: boolean
           verifactu_locations?: number
@@ -9543,6 +9554,7 @@ export type Database = {
           billing_interval?: string
           comped?: boolean
           created_at?: string
+          extra_clinics?: number
           extra_professionals?: number
           growth_addon?: boolean
           verifactu_locations?: number
@@ -9682,14 +9694,17 @@ export type Database = {
       }
       team_member_clinics: {
         Row: {
+          business_hours: Json | null
           clinic_id: string
           team_member_id: string
         }
         Insert: {
+          business_hours?: Json | null
           clinic_id: string
           team_member_id: string
         }
         Update: {
+          business_hours?: Json | null
           clinic_id?: string
           team_member_id?: string
         }

@@ -7,7 +7,8 @@ import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, g
 import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { transcribeVoiceNotes } from '~/server/utils/voiceNoteTranscripts'
-import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
+import { historyLine, standingClockTimes, withDayMarks } from '~/utils/receptionistHistory'
+import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
@@ -111,14 +112,18 @@ export async function draftPatientReply(
     .slice(-HISTORY_TURNS)
   // The model's messages must alternate; consecutive messages from one side
   // (three WhatsApps in a row) are one turn.
-  const history: { role: 'user' | 'assistant'; content: string }[] = []
-  for (const m of turns) {
-    const role = m.direction === 'inbound' ? 'user' as const : 'assistant' as const
-    const last = history[history.length - 1]
-    if (last && last.role === role) last.content += `\n${m.body}`
-    else history.push({ role, content: m.body })
+  const asHistory = (lines: { direction: string; content: string }[]) => {
+    const merged: { role: 'user' | 'assistant'; content: string }[] = []
+    for (const m of lines) {
+      const role = m.direction === 'inbound' ? 'user' as const : 'assistant' as const
+      const last = merged[merged.length - 1]
+      if (last && last.role === role) last.content += `\n${m.content}`
+      else merged.push({ role, content: m.content })
+    }
+    while (merged.length && merged[0]!.role !== 'user') merged.shift()
+    return merged
   }
-  while (history.length && history[0]!.role !== 'user') history.shift()
+  const history = asHistory(turns.map((m) => ({ direction: m.direction, content: m.body })))
   // The newest thing they said, which a stored draft answers: the tick writes
   // another only once they have said something after it.
   const newestInboundAt = [...turns].reverse().find((m) => m.direction === 'inbound')?.created_at ?? null
@@ -389,7 +394,7 @@ export async function draftPatientReply(
   // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
   const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ours.automated ? ours.body : ''
   const chosen = offer ? chosenOfferedTime(offer, turns.slice(lastOutbound + 1).filter((m) => m.direction === 'inbound').map((m) => m.body).join(' ')) : null
-  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book))}` } : prompt)
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined)}` } : prompt)
 
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
@@ -399,7 +404,9 @@ export async function draftPatientReply(
     model: MODEL,
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),
-    messages: withImages(history, images),
+    // With the day each message was sent (withDayMarks): "mañana jueves" in
+    // yesterday's offer is today, not a week from now.
+    messages: withImages(asHistory(withDayMarks(turns.map((m) => ({ direction: m.direction, content: m.body, at: m.created_at })), calendar.timeZone)), images),
     findFreeTimes,
     handOver: sends,
     book,

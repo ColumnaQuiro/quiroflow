@@ -271,7 +271,9 @@ async function load(quiet = false) {
       .order('starts_at'),
     supabase.from('availability_blocks').select('id, starts_at, ends_at, practitioner_id, room_id, note').eq('clinic_id', clinicId).lt('starts_at', to).gt('ends_at', from),
     needStatic ? supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
-    needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId) : none,
+    // Every location's links, not only this clinic's: the week somebody works
+    // at their OTHER location is what takes that time out of this one.
+    needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id, business_hours') : none,
     needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
     // Group classes on in the range, drawn as one tile each (shownAppointments).
     supabase.from('class_sessions').select('id, starts_at, ends_at, practitioner_id, room_id, appointment_type_id, capacity, appointment_types(name, color)').eq('clinic_id', clinicId).is('cancelled_at', null).lt('starts_at', to).gt('ends_at', from),
@@ -288,10 +290,17 @@ async function load(quiet = false) {
   classSessions.value = (cs.data as unknown as ClassSession[] | null) ?? []
   blocks.value = (bl.data as Block[] | null) ?? []
   if (needStatic) {
-    const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
+    const allLinks = (links.data as { team_member_id: string; clinic_id: string; business_hours: BusinessHours | null }[] | null) ?? []
+    const linked = new Set(allLinks.filter((l) => l.clinic_id === clinicId).map((l) => l.team_member_id))
     const everyone = (pr.data as Practitioner[] | null) ?? []
-    practitioners.value = linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone
-    clinicHours.value = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+    const hours = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+    // Each with the hours they work at the clinic on screen (practitionerHoursAt),
+    // as the web calendar: the day's reach reads business_hours off this list.
+    practitioners.value = (linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone).map((p) => ({
+      ...p,
+      business_hours: practitionerHoursAt(clinicId, hours, p.business_hours, allLinks.filter((l) => l.team_member_id === p.id)),
+    }))
+    clinicHours.value = hours
     staticFor = clinicId
   }
   loading.value = false

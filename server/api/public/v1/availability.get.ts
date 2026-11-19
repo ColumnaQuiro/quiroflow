@@ -1,4 +1,4 @@
-import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
 import { wallClockToUtc } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
@@ -90,6 +90,14 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
     )
   }
 
+  // The week each of them works at each location, for those who have one per
+  // location: somebody here two evenings a week is offered those evenings,
+  // not the whole week they work elsewhere (practitionerHoursAt).
+  const { data: locationRows } = (practitioners ?? []).length
+    ? await supabase.from('team_member_clinics').select('team_member_id, clinic_id, business_hours').in('team_member_id', (practitioners ?? []).map((p) => p.id))
+    : { data: [] }
+  const locationHours = (locationRows ?? []) as unknown as { team_member_id: string; clinic_id: string; business_hours: BusinessHours | null }[]
+
   const rangeStart = new Date(`${from}T00:00:00Z`)
   // Wide enough to cover the whole last day in any timezone, so a slot late
   // on the final day isn't missed because the window closed at 00:00 UTC.
@@ -160,7 +168,8 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
 
     for (const practitioner of practitioners ?? []) {
       const duration = overrideDuration.get(practitioner.id) ?? (appointmentType.duration_minutes as number)
-      const windows = practitionerWindowsForDay(clinicWindows, practitioner.business_hours as BusinessHours | null, dayKey)
+      const hoursHere = practitionerHoursAt(clinicId, clinicHours, practitioner.business_hours as BusinessHours | null, locationHours.filter((l) => l.team_member_id === practitioner.id))
+      const windows = practitionerWindowsForDay(clinicWindows, hoursHere, dayKey)
       const busy = [...(busyByPractitioner.get(practitioner.id) ?? []), ...clinicWideBlocks]
 
       for (const [openAt, closeAt] of windows) {

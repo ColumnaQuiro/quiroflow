@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerHoursAt, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { practitionerBadgeLabels, shortPatientName } from '~/utils/appointmentBlock'
@@ -94,7 +94,7 @@ const WEEK_ROW_PX = 22
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null; class_capacity?: number | null }
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
-interface TeamMemberClinic { team_member_id: string; clinic_id: string }
+interface TeamMemberClinic { team_member_id: string; clinic_id: string; business_hours?: BusinessHours | null }
 
 interface AvailabilityBlock { id: string; room_id: string | null; practitioner_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
@@ -236,7 +236,7 @@ const visitTypes = computed(() => activeAppointmentTypes.value.filter((x) => x.c
 function typesForPanel(currentTypeId: string | null | undefined) {
   return appointmentTypes.value.filter((x) => !x.archived_at || x.id === currentTypeId)
 }
-const teamMembers = ref<TeamMember[]>([])
+const loadedTeamMembers = ref<TeamMember[]>([])
 const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
@@ -480,11 +480,24 @@ async function loadReferenceData() {
     rooms: Room[]
   }
   appointmentTypes.value = orderTypes(ref.appointment_types ?? [])
-  teamMembers.value = ref.team_members ?? []
+  loadedTeamMembers.value = ref.team_members ?? []
   overrides.value = ref.overrides ?? []
   teamMemberClinics.value = ref.team_member_clinics ?? []
   if (token === roomsToken) rooms.value = ref.rooms ?? []
 }
+
+// Each practitioner with the hours they work at the clinic on screen
+// (practitionerHoursAt): somebody at two locations can have a week for each,
+// and the time they are down to be at the other one is not theirs here. The
+// grid's hatching, the panels' out-of-hours warnings and the month's
+// occupancy all read business_hours off this list, so they follow.
+const teamMembers = computed<TeamMember[]>(() => {
+  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
+  return loadedTeamMembers.value.map((m) => {
+    const locations = teamMemberClinics.value.filter((tc) => tc.team_member_id === m.id).map((tc) => ({ clinic_id: tc.clinic_id, business_hours: tc.business_hours ?? null }))
+    return { ...m, business_hours: practitionerHoursAt(store.currentClinicId, clinicHours, m.business_hours, locations) }
+  })
+})
 
 const clinicTeamMembers = computed(() =>
   teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),

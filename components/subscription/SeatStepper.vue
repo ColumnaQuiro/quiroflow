@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const props = defineProps<{ min?: number; max?: number }>()
+// The labels default to a seat's; the same stepper counts extra locations.
+const props = defineProps<{ min?: number; max?: number; decreaseLabel?: string; increaseLabel?: string }>()
 const model = defineModel<number>({ required: true })
 
 const t = useT()
@@ -16,7 +17,7 @@ function step(delta: number) {
   <div class="flex items-center gap-0.5 rounded-ctl border border-line-control p-[3px]">
     <button
       type="button"
-      :aria-label="t('Remove a seat', 'Quitar una plaza')"
+      :aria-label="decreaseLabel ?? t('Remove a seat', 'Quitar una plaza')"
       :disabled="model <= lower"
       class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
       @click="step(-1)"
@@ -28,7 +29,7 @@ function step(delta: number) {
     <span class="w-[34px] text-center font-mono text-[15px] font-semibold text-ink-900" aria-live="polite">{{ model }}</span>
     <button
       type="button"
-      :aria-label="t('Add a seat', 'Añadir una plaza')"
+      :aria-label="increaseLabel ?? t('Add a seat', 'Añadir una plaza')"
       :disabled="model >= upper"
       class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
       @click="step(1)"

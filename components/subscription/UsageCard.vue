@@ -15,6 +15,10 @@ const props = defineProps<{
   storageAllowanceGb: number | null
   clinicCount: number
   clinicAllowance: number | null
+  /** What one more location costs on this plan; null when it does not sell them. */
+  extraClinicPriceCents?: number | null
+  /** The plan's own locations, for the trial's "once you subscribe" line. */
+  planClinics?: number | null
   clinicNames: string[]
   comped: boolean
   // A free trial with no card on it yet: the whole team and every location
@@ -31,6 +35,7 @@ const t = useT()
 const seatPercent = computed(() => meterPercent(props.practitionerCount, props.seatAllowance))
 const storagePercent = computed(() => meterPercent(props.storageGb, props.storageAllowanceGb))
 const seatsFree = computed(() => (props.seatAllowance === null ? null : props.seatAllowance - props.practitionerCount))
+const clinicsFree = computed(() => (props.clinicAllowance === null ? null : props.clinicAllowance - props.clinicCount))
 </script>
 
 <template>
@@ -101,8 +106,22 @@ const seatsFree = computed(() => (props.seatAllowance === null ? null : props.se
           <span v-if="clinicNames.length === 1" class="font-normal text-ink-muted"> — {{ clinicNames[0] }}</span>
         </p>
         <p class="mt-2 text-[12px] leading-[1.5] text-ink-muted">
-          <template v-if="openTrial">{{ t('Add as many as you like during your free trial.', 'Añade tantas como quieras durante la prueba gratuita.') }}</template>
+          <template v-if="openTrial">
+            {{ t('Add as many as you like during your free trial.', 'Añade tantas como quieras durante la prueba gratuita.') }}
+            <template v-if="planName && planClinics !== null && planClinics !== undefined && clinicCount > planClinics">
+              {{ t(
+                `${planName} covers ${planClinics} once you subscribe.`,
+                `${planName} incluye ${planClinics} al suscribirte.`,
+              ) }}
+            </template>
+          </template>
           <template v-else-if="clinicAllowance === null">{{ t('Add as many clinics as you need.', 'Añade tantas clínicas como necesites.') }}</template>
+          <template v-else-if="extraClinicPriceCents && clinicsFree !== null && clinicsFree > 0">
+            {{ t(`${clinicsFree} free — another is`, `${clinicsFree} libre(s) — otra cuesta`) }} {{ formatEur(extraClinicPriceCents) }}{{ t('/mo + IVA.', '/mes + IVA.') }}
+          </template>
+          <template v-else-if="extraClinicPriceCents">
+            {{ t('Every clinic is in use — another is', 'Todas las clínicas están en uso — otra cuesta') }} {{ formatEur(extraClinicPriceCents) }}{{ t('/mo + IVA.', '/mes + IVA.') }}
+          </template>
           <template v-else>{{ t('A second clinic needs the Clinic plan.', 'Una segunda clínica requiere el plan Clinic.') }}</template>
         </p>
       </div>

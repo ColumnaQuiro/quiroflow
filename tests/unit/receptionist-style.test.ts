@@ -41,7 +41,7 @@ describe('House style, checked after the model writes', () => {
   })
 
   it('mends emojis, openers and surnames by itself, and sends the rest back for rewording', () => {
-    expect(FIXED_IN_CODE).toEqual(['emoji', 'opener', 'surname'])
+    expect(FIXED_IN_CODE).toEqual(['emoji', 'opener', 'surname', 'affection'])
     expect(fixStyle('¡Perfecto! tu cita queda con Marta Soler 🙏', team)).toBe('Tu cita queda con Marta')
     expect(fixStyle('¡Hola, Ana! Te espero el martes.', team)).toBe('Hola, Ana. Te espero el martes.')
     expect(fixStyle('Claro, te la cambio.', team)).toBe('Te la cambio.')
@@ -111,5 +111,40 @@ describe('A reply that did something', () => {
     expect(replyActed([{ name: 'find_free_times', ok: true }])).toBe(false)
     expect(replyActed([{ name: 'book_appointment', ok: false }])).toBe(false)
     expect(replyActed([{ name: 'cancel_appointment', ok: true }])).toBe(true)
+  })
+})
+
+// "¡Un beso!" back to a patient who signs off with one (19 Nov 2026).
+describe('A kiss or a hug is not how a receptionist signs off', () => {
+  it('is found', () => {
+    expect(styleProblems('Cita confirmada: jueves 26 de noviembre a las 15:00 con Marta. ¡Un beso!', team)).toEqual(['affection'])
+    expect(styleProblems('Hasta el jueves, un abrazo fuerte.', team)).toEqual(['affection'])
+    expect(styleProblems('Hasta el jueves. Un saludo.', team)).toEqual([])
+    expect(FIXED_IN_CODE).toContain('affection')
+  })
+
+  it('is taken off, as a sentence or hung on the end of one', () => {
+    expect(fixStyle('Cita confirmada: jueves 26 de noviembre a las 15:00 con Marta. ¡Un beso!', team)).toBe('Cita confirmada: jueves 26 de noviembre a las 15:00 con Marta.')
+    expect(fixStyle('Tu cita es hoy a las 15:00. Un beso.', team)).toBe('Tu cita es hoy a las 15:00.')
+    expect(fixStyle('Hasta el jueves, un abrazo fuerte.', team)).toBe('Hasta el jueves.')
+    expect(fixStyle('Te espero mañana.\nBesos', team)).toBe('Te espero mañana.')
+  })
+
+  it('never empties a reply that was only that', () => {
+    expect(fixStyle('Un abrazo.', team)).toBe('Un abrazo.')
+  })
+
+  it('leaves words that only look like one', () => {
+    expect(styleProblems('Te atiende Marta en la calle Abrazos Rotos 3.', team)).toEqual(['affection'])
+    expect(styleProblems('El embarazo no es problema para el ajuste.', team)).toEqual([])
+  })
+
+  it('goes for pet names too, only where they are one', () => {
+    expect(styleProblems('Gracias, guapa. Te espero el jueves.', team)).toEqual(['affection'])
+    expect(fixStyle('Gracias, guapa. Te espero el jueves.', team)).toBe('Gracias. Te espero el jueves.')
+    expect(fixStyle('Cariño, tu cita es el jueves a las 10:00.', team)).toBe('Tu cita es el jueves a las 10:00.')
+    expect(fixStyle('Hasta el jueves, cielo.', team)).toBe('Hasta el jueves.')
+    expect(styleProblems('El ajuste no afecta al corazón, y lo hacemos con cariño.', team)).toEqual([])
+    expect(styleProblems('Tu cita es con Marta, el rey de la casa no hace falta que venga.', team)).toEqual([])
   })
 })

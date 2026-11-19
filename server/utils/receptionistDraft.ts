@@ -6,7 +6,8 @@ import { followUpChannel, scheduleNudgeAfterOffer } from '~/server/utils/recepti
 import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, offerTimesTool, stopEarlierTimeOffersTool, waitlistTool, writeBackTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { transcribeVoiceNotes } from '~/server/utils/voiceNoteTranscripts'
-import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
+import { historyLine, standingClockTimes, withDayMarks } from '~/utils/receptionistHistory'
+import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
@@ -152,9 +153,10 @@ export async function draftLeadReply(
   // note or a photo as what it is rather than dropped (historyLine).
   const lineOf = (m: { direction: string; body_preview: string | null; sent_by_ai?: boolean | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null; transcript?: string | null }) =>
     historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename, transcript: m.transcript })
-  const history = ordered
-    .map((m: Parameters<typeof lineOf>[0]) => ({ role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const), content: lineOf(m) }))
+  const dated = ordered
+    .map((m: Parameters<typeof lineOf>[0] & { created_at: string }) => ({ role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const), content: lineOf(m), at: m.created_at }))
     .filter((m: { content: string }) => m.content.length > 0)
+  const history = dated.map(({ role, content }: { role: 'user' | 'assistant'; content: string }) => ({ role, content }))
 
   // Nothing to answer. Better than drafting a greeting nobody asked for and
   // presenting it as a reply to something.
@@ -349,7 +351,7 @@ export async function draftLeadReply(
   // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
   const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ourLast?.automated ? ours.body_preview ?? '' : ''
   const chosen = offer ? chosenOfferedTime(offer, ordered.slice(lastOutbound + 1).filter((m: { direction: string }) => m.direction === 'inbound').map((m: { body_preview: string | null }) => m.body_preview ?? '').join(' ')) : null
-  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book))}` } : prompt)
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined)}` } : prompt)
 
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
@@ -359,7 +361,9 @@ export async function draftLeadReply(
     model: MODEL,
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
-    messages: withImages(history, images),
+    // With the day each message was sent (withDayMarks): "mañana jueves" in
+    // yesterday's offer is today, not a week from now.
+    messages: withImages(withDayMarks(dated, calendar.timeZone).map(({ role, content }: { role: 'user' | 'assistant'; content: string }) => ({ role, content })), images),
     findFreeTimes,
     handOver: sends,
     book,

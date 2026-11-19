@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeHours, hoursProblems, dayRangesText, copyMondayToWeekdays } from '../../utils/clinicHours'
+import { fullWeek, normalizeHours, hoursProblems, dayRangesText, copyMondayToWeekdays } from '../../utils/clinicHours'
 import { utcOffsetLabel, zoneFromId, searchZones, FREQUENT_ZONES } from '../../utils/timeZones'
 
 // Settings -> Clinics edits clinics.business_hours in place. The calendar,
@@ -15,6 +15,16 @@ describe('A clinic\'s opening hours in the editor', () => {
 
   it('treats a stored null as all days closed rather than crashing', () => {
     expect(normalizeHours(null).wed).toEqual([])
+  })
+
+  // Typing 15 over 16:00 passes through 01:00. If the editor's week were
+  // sorted, that range would jump ahead of the morning mid-keystroke and the
+  // 5 would be typed into the wrong range.
+  it('shows the editor every day without moving a range that is being typed', () => {
+    const out = fullWeek({ mon: [['09:00', '13:00'], ['01:00', '20:00']] })
+    expect(Object.keys(out)).toEqual(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+    expect(out.mon).toEqual([['09:00', '13:00'], ['01:00', '20:00']])
+    expect(fullWeek(null).wed).toEqual([])
   })
 
   it('refuses a range that ends before it starts, and ranges that overlap', () => {

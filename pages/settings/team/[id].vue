@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
-import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
+import { fullWeek, hoursProblems, normalizeHours } from '~/utils/clinicHours'
 import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
 import { formatEur } from '~/utils/billing'
 import { absenceKindLabel } from '~/utils/staffShifts'
@@ -199,7 +199,7 @@ const locationHoursChanges = computed(() => {
 const dirty = computed(() => Object.keys(changes.value).length > 0 || clinicChanges.value.added.length > 0 || clinicChanges.value.removed.length > 0 || locationHoursChanges.value.length > 0)
 // The editor always works on a full week; form.business_hours only becomes
 // one when it emits a change.
-const editorHours = computed(() => normalizeHours(form.value?.business_hours))
+const editorHours = computed(() => fullWeek(form.value?.business_hours))
 const problems = computed(() => (form.value ? hoursProblems(editorHours.value) : {}))
 const nameMissing = computed(() => !!form.value && !form.value.full_name.trim())
 // Active clinics only. A practitioner linked only to a clinic since archived
@@ -596,7 +596,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                     </div>
                     <SettingsClinicHoursEditor
                       v-if="locationHoursSet(c.id) || locationOpen[c.id]"
-                      :model-value="normalizeHours(form.clinic_hours[c.id])"
+                      :model-value="fullWeek(form.clinic_hours[c.id])"
                       :problems="locationProblems[c.id] ?? {}"
                       :empty-note="t('No days set yet: until one is, their usual hours apply here.', 'Aún sin días: hasta que marques alguno, aquí vale su horario habitual.')"
                       @update:model-value="setLocationHours(c.id, $event)"

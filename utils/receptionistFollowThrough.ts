@@ -44,6 +44,21 @@ export const HANDED_OVER_REPLY = 'Se lo paso a mi compañera y te contesta en cu
 /** Why a reply that could not be written went to a person, for the handover note. */
 export const REFUSED_REASON = 'La recepcionista no ha podido responder a su último mensaje. Le he dicho que mi compañera le contestará.'
 
+/**
+ * Whether the reason given to hand_over_to_colleague says nothing: empty, one
+ * word, or a filler. The reason is the whole of what a colleague is told --
+ * the Inbox banner, the note, the push and the task -- and on 19 Nov 2026 a
+ * handover went out with the reason "placeholder".
+ */
+export function handoverReasonSaysNothing(reason: string): boolean {
+  const words = reason.split(/\s+/).filter((word) => /\p{L}{2,}/u.test(word))
+  if (words.length < 2) return true
+  return /^(?:no\s+reason(?:\s+given)?|sin\s+motivo|to\s+be\s+(?:defined|determined|filled(?:\s+in)?)|lorem\s+ipsum.*|(?:the\s+|el\s+)?(?:reason|motivo)(?:\s+(?:here|aqu[ií]))?)[\s.!…]*$/iu.test(reason.trim())
+}
+
+/** The handover note when the receptionist gave no usable reason. */
+export const UNEXPLAINED_HANDOVER_REASON = 'No ha dicho por qué: lee su último mensaje y contéstale.'
+
 // "mi compañera ... confirmará / revisará / añadirá / te escribe", "se lo paso
 // a mi compañera", and the same in English and French.
 const COLLEAGUE = String.raw`(?:mi|mis|nuestra|nuestras)\s+compa[nñ]er[oa]s?|el\s+equipo|recepci[oó]n|my\s+colleagues?|the\s+team|ma\s+coll[eè]gue|mon\s+coll[eè]gue|l['’][eé]quipe`

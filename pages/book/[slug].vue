@@ -2,7 +2,7 @@
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
 import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel } from '~/utils/bookingSlots'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { BOOKING_LANGUAGES, bookingLanguageFromAcceptLanguage, bookingLanguageFromList, bookingLanguageOfTag, type BookingLanguage } from '~/utils/bookingLanguage'
@@ -185,11 +185,24 @@ const appointmentType = computed(() => info.value?.appointment_types.find((t) =>
 const summaryDescription = computed(() =>
   (info.value?.appointment_types.length ?? 0) > 1 && !typeLockedByQuery.value ? null : (appointmentType.value?.online_description ?? null),
 )
-const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
+// The week each practitioner works at a location, for those who have one
+// per location (get_practitioner_location_hours). Empty for everybody else.
+const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+// Everybody on the page, with the hours they work at the clinic chosen
+// (practitionerHoursAt). Somebody at the clinic all week and at a second
+// location two evenings was offered at that second location all week: their
+// one week was read wherever they were being booked.
+const membersHere = computed<BookingTeamMember[]>(() =>
+  (info.value?.team_members ?? []).map((m) => ({
+    ...m,
+    business_hours: practitionerHoursAt(clinicId.value, clinic.value?.business_hours, m.business_hours, locationHours.value.filter((l) => l.team_member_id === m.id)),
+  })),
+)
+const teamMember = computed(() => membersHere.value.find((m) => m.id === teamMemberId.value) ?? null)
 // At the clinic chosen, and doing the type chosen when only some do it.
 const availablePractitioners = computed(() => {
   const only = appointmentType.value?.practitioner_ids ?? []
-  return (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value) && (only.length === 0 || only.includes(m.id)))
+  return membersHere.value.filter((m) => m.clinic_ids.includes(clinicId.value) && (only.length === 0 || only.includes(m.id)))
 })
 const anyPractitionerMode = computed(() => teamMemberId.value === ANY_PRACTITIONER)
 // Every time on this page is the clinic's. Slots used to be built with
@@ -826,7 +839,7 @@ function confirmSlot() {
 // The practitioner the summary names: the one chosen, or, for "any
 // practitioner", whoever the chosen time belongs to.
 const summaryMember = computed(() =>
-  teamMember.value ?? (anyPractitionerMode.value && selectedSlot.value ? (info.value?.team_members.find((m) => m.id === pickedMemberId.value) ?? null) : null),
+  teamMember.value ?? (anyPractitionerMode.value && selectedSlot.value ? (membersHere.value.find((m) => m.id === pickedMemberId.value) ?? null) : null),
 )
 
 // --- patient details ---
@@ -1084,7 +1097,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1117,7 +1130,17 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
   if (infoResult.error) return infoResult.error.message === 'Not found' ? { status: 'not_found' } : { status: 'failed' }
   const parsed = infoResult.data as unknown as BookingInfo | null
   if (!parsed || parsed.clinics.length === 0) return { status: 'not_found' }
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold }
+  // Asked only when somebody works at more than one location -- nobody else
+  // can have a week per location, and this is one more round trip. If it
+  // fails the page offers their one week as before, and
+  // assert_booking_slot_open still refuses a time they are not there.
+  let perLocation: typeof locationHours.value = []
+  const shared = parsed.team_members.filter((m) => m.clinic_ids.length > 1).map((m) => m.id)
+  if (shared.length) {
+    const { data } = await supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never)
+    perLocation = (data as unknown as typeof locationHours.value | null) ?? []
+  }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation }
 })
 
 if (import.meta.server) {
@@ -1140,6 +1163,7 @@ function applyBooking(payload: BookingPayload | null) {
   }
   const parsed = payload.info
   info.value = parsed
+  locationHours.value = payload.locationHours ?? []
   // The embedding site's language, now that the clinic's settings say
   // whether to follow it. Here so that the server's HTML is in it already.
   if (!queryLang && siteLang && parsed.account.online_booking_hide_language_picker) lang.value = siteLang

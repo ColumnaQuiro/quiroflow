@@ -198,6 +198,34 @@ describe('Settings > Team', () => {
     })
   })
 
+  // A paying Solo clinic whose one seat is the owner's. "Will see patients"
+  // used to start ticked anyway, under a warning, and the invite it created
+  // could only ever be refused -- a clinic sent its assistant three of them.
+  it('with no practitioner seat left, starts unticked and will not create an invite nobody could accept', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setSubscriptionStatus(account.accountId, 'active')
+      cy.login(account.email, account.password)
+      cy.intercept('POST', '/api/invites/send', { statusCode: 200, body: { sent: true } }).as('sendInvite')
+      openTeam()
+      cy.get('[data-cy=team-seats]').should('contain', '1 of 1')
+
+      cy.get('[data-cy=team-invite]').click()
+      cy.get('[data-cy=invite-email]').type(`assistant-${Date.now()}@example.test`)
+      cy.get('[data-cy=invite-practitioner]').should('not.be.checked')
+      cy.get('[data-cy=invite-no-seat]').should('not.exist')
+      cy.get('[data-cy=confirm-dialog-confirm]').should('not.be.disabled')
+
+      cy.get('[data-cy=invite-practitioner]').check()
+      cy.get('[data-cy=invite-no-seat]').should('be.visible')
+      cy.get('[data-cy=confirm-dialog-confirm]').should('be.disabled')
+
+      cy.get('[data-cy=invite-practitioner]').uncheck()
+      confirm()
+      cy.wait('@sendInvite')
+      cy.task<any>('db:latestInvite', { accountId: account.accountId }).its('is_practitioner').should('eq', false)
+    })
+  })
+
   it('invites an imported name as a practitioner, carrying the name to link', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<any>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Imp', lastName: 'Orted' }).then((patient) => {

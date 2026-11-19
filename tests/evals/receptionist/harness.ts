@@ -14,7 +14,7 @@ import { buildPatientReplyPrompt, type PatientReplyFacts } from '~/utils/patient
 import { availabilityLists, receptionistSlotGroups, type ReceptionistAvailability, type SlotType } from '~/utils/receptionistSlots'
 import { findTypeByName, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring, typesForReferral, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
-import { standingClockTimes, AUTOMATED_MARK, COLLEAGUE_MARK } from '~/utils/receptionistHistory'
+import { standingClockTimes, dayMark, AUTOMATED_MARK, COLLEAGUE_MARK } from '~/utils/receptionistHistory'
 import { chosenOfferedTime, chosenTimeNote } from '~/utils/receptionistFollowThrough'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import type { LeadFormAnswer, LeadOrigin } from '~/utils/receptionistLeadOrigin'
@@ -41,6 +41,8 @@ export interface Turn {
   /** 'them': the patient or lead. 'us': the receptionist. 'colleague': a person at the clinic. 'system': a reminder or automation. */
   from: 'them' | 'us' | 'colleague' | 'system'
   text: string
+  /** The day it was sent, YYYY-MM-DD on the clinic's clock; today (NOW) when left out. */
+  on?: string
 }
 
 export interface Scenario {
@@ -142,19 +144,25 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
 
   // As production does it: an answer that can only mean one of the times
   // just offered is said so in the prompt (receptionistDraft.ts).
+  const today = clinicDateOf(NOW, TIME_ZONE)
   const lastUs = scenario.conversation.map((t) => t.from).lastIndexOf('us')
   if (lastUs >= 0) {
     const answer = scenario.conversation.slice(lastUs + 1).filter((t) => t.from === 'them').map((t) => t.text).join(' ')
     const chosen = chosenOfferedTime(scenario.conversation[lastUs]!.text, answer)
-    if (chosen) system = { ...system, conversation: `${system.conversation}\n\n${chosenTimeNote(chosen, true)}` }
+    if (chosen) system = { ...system, conversation: `${system.conversation}\n\n${chosenTimeNote(chosen, true, { sentOn: scenario.conversation[lastUs]!.on ?? today, today })}` }
   }
 
   // The conversation as the model reads it (historyLine's marks), with each
   // side's consecutive messages joined into one turn.
   const messages: Anthropic.MessageParam[] = []
+  let day = ''
   for (const turn of scenario.conversation) {
     const role = turn.from === 'them' ? 'user' : 'assistant'
-    const content = turn.from === 'colleague' ? `${COLLEAGUE_MARK}\n${turn.text}` : turn.from === 'system' ? `${AUTOMATED_MARK}\n${turn.text}` : turn.text
+    const line = turn.from === 'colleague' ? `${COLLEAGUE_MARK}\n${turn.text}` : turn.from === 'system' ? `${AUTOMATED_MARK}\n${turn.text}` : turn.text
+    // The day each message was sent, as production marks it (withDayMarks).
+    const sentOn = turn.on ?? today
+    const content = sentOn === day ? line : `${dayMark(sentOn)}\n${line}`
+    day = sentOn
     const last = messages[messages.length - 1]
     if (last && last.role === role) last.content = `${last.content as string}\n${content}`
     else messages.push({ role, content })

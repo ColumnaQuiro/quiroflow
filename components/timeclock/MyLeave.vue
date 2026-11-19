@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BusinessHours } from '../../utils/businessHours'
+import { wholeWeek, type BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart } from '../../utils/workday'
 import { loadLeaveCarryIn } from '../../composables/useLeaveCarryIn'
@@ -39,7 +39,7 @@ const week = computed(() => {
 
 async function load() {
   const [{ data: m }, { data: clinic }, { data: days }, { data: allow }, { data: abs }, { data: blocks }, carry] = await Promise.all([
-    supabase.from('team_members').select('business_hours, is_practitioner').eq('id', props.teamMemberId).maybeSingle(),
+    supabase.from('team_members').select('business_hours, is_practitioner, team_member_clinics(business_hours)').eq('id', props.teamMemberId).maybeSingle(),
     supabase.from('clinics').select('business_hours').is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('day, ranges').eq('team_member_id', props.teamMemberId).gte('day', week.value[0]!).lte('day', week.value[6]!),
     supabase.from('staff_leave_allowances').select('days_per_year').eq('team_member_id', props.teamMemberId).maybeSingle(),
@@ -48,8 +48,10 @@ async function load() {
     supabase.from('availability_blocks').select('starts_at, ends_at').is('practitioner_id', null).is('room_id', null).gte('ends_at', `${year.value}-01-01`).lte('starts_at', `${year.value}-12-31T23:59:59`),
     loadLeaveCarryIn(supabase, { accountId: props.accountId, year: Number(year.value), timeZone: props.timeZone, memberId: props.teamMemberId }),
   ])
-  member.value = (m as { business_hours: BusinessHours | null; is_practitioner: boolean } | null) ?? null
   clinicHours.value = ((clinic as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+  // Their whole week, a second location's evenings included (wholeWeek).
+  const row = m as unknown as { business_hours: BusinessHours | null; is_practitioner: boolean; team_member_clinics: { business_hours: BusinessHours | null }[] | null } | null
+  member.value = row ? { is_practitioner: row.is_practitioner, business_hours: wholeWeek(row.is_practitioner ? clinicHours.value : null, row.business_hours, row.team_member_clinics) } : null
   overrides.value = new Map(((days as { day: string; ranges: ShiftRanges }[] | null) ?? []).map((d) => [d.day, d.ranges]))
   carried.value = carry.of(props.teamMemberId)
   allowance.value = (allow ? Number((allow as { days_per_year: number }).days_per_year) : DEFAULT_LEAVE_DAYS) + carried.value

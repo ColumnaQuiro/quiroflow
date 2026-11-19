@@ -8,7 +8,8 @@ import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON } from '~/server/utils/receptionistBooking'
+import type { OfferedSlot } from '~/utils/receptionistConversion'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason } from '~/utils/receptionistFollowThrough'
@@ -24,7 +25,7 @@ import { colleaguePromise, colleaguePromiseReason } from '~/utils/receptionistFo
 // pasted whole into every reply, which would make every reply pay for it.
 
 /** Tool rounds before the model has to answer with what it has. */
-const MAX_TOOL_ROUNDS = 3
+const MAX_TOOL_ROUNDS = 4
 
 const FIND_FREE_TIMES: Anthropic.Tool = {
   name: 'find_free_times',
@@ -59,8 +60,10 @@ export interface ReceptionistRun {
   toolUses: ReceptionistToolUse[]
   /** The checks in code that fired, in order (receptionist_reply_traces.checks). */
   checks: string[]
-  /** Choices to send with the text: the reasons for cancelling, after ask_why_cancelled. */
-  choices: 'cancellation_reason' | null
+  /** Choices to send with the text: the reasons for cancelling (after ask_why_cancelled), or the times it offers (after offer_times, in `offeredSlots`). */
+  choices: 'cancellation_reason' | 'times' | null
+  /** The times offer_times was last called with, when the reply books nothing. */
+  offeredSlots: OfferedSlot[]
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
 }
 
@@ -96,6 +99,8 @@ export function freeTimesLookup(
   practitionerIds: string[] | null = null,
   // for_name: someone in their family instead of the person writing.
   forWhom: FreeTimesForWhom | null = null,
+  // The conversation the times are offered in (loadReceptionistCalendar's offeredTo).
+  offeredTo?: string | null,
 ): FreeTimesLookup {
   return async (input) => {
     const now = new Date()
@@ -123,7 +128,7 @@ export function freeTimesLookup(
       from: startOfLocalDate(query.from, timeZone),
       days: query.days,
       maxTimesPerList: FREE_TIMES_MAX_TIMES,
-    }, whose.practitionerIds)
+    }, whose.practitionerIds, offeredTo)
     if (!calendar.availability) {
       return { content: 'The calendar could not be read. Do not offer a time: ask which days suit them and say your colleague will confirm an exact time shortly.', isError: true }
     }
@@ -180,6 +185,14 @@ export async function runReceptionistModel(
     askWhyCancelled?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer record_cancellation_reason (receptionistBooking.ts): same terms as `cancel`. */
     cancellationReason?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /**
+     * Offer offer_times (receptionistBooking.ts): same terms as `book`. The
+     * handler is built by the caller with `onOffered`, which this passes the
+     * times to keep for the send.
+     */
+    offerTimes?: ((onOffered: (slots: OfferedSlot[]) => void) => (input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer write_back_on (receptionistBooking.ts): same terms as `book`. */
+    writeBack?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer stop_earlier_time_offers (receptionistBooking.ts): a clinic offering earlier first visits, same terms as `book`. */
     stopEarlier?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /**
@@ -209,7 +222,14 @@ export async function runReceptionistModel(
   const checks: string[] = []
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
   let choices: ReceptionistRun['choices'] = null
-  const run = (text: string, refused: boolean): ReceptionistRun => ({ text, refused, handedOver, toolUses, checks, usage, choices: refused ? null : choices })
+  let offeredSlots: OfferedSlot[] = []
+  const offerTimes = opts.offerTimes ? opts.offerTimes((slots) => { offeredSlots = slots }) : null
+  // Times to tap go only with a reply that still offers them: one that booked
+  // or moved a visit has nothing left to choose, and "no reply" sends nothing.
+  const run = (text: string, refused: boolean): ReceptionistRun => {
+    const sent = refused || !text || isNoReply(text) ? null : choices === 'times' && (bookedVisit || !offeredSlots.length) ? null : choices
+    return { text, refused, handedOver, toolUses, checks, usage, choices: sent, offeredSlots: sent === 'times' ? offeredSlots : [] }
+  }
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
   const toolUses: ReceptionistToolUse[] = []
@@ -240,11 +260,15 @@ export async function runReceptionistModel(
     ...(opts.give ? [GIVE_VISIT_TO] : []),
     ...(opts.stopFollowUps ? [STOP_FOLLOW_UPS] : []),
     ...(opts.stopEarlier ? [STOP_EARLIER_TIME_OFFERS] : []),
+    ...(offerTimes ? [OFFER_TIMES] : []),
+    ...(opts.writeBack ? [WRITE_BACK_ON] : []),
   ]
   let handedOver: string | null = null
   // A booking's confirmation names its time (and a move, the old one too; a
   // cancellation, the one that was): not an offer, so not counted.
   let booked = false
+  // A visit booked or moved in this reply (not one cancelled): nothing is left to tap.
+  let bookedVisit = false
   let rewritten = false
   // The times the booking tools confirmed in this reply, and whether a reply
   // stating a booking they did not make has already been sent back once.
@@ -369,7 +393,7 @@ export async function runReceptionistModel(
             console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
             return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
           })
-          if (!result.isError) booked = true
+          if (!result.isError) { booked = true; bookedVisit = true }
         } else if (use.name === 'cancel_appointment' && opts.cancel) {
           result = await opts.cancel(use.input).catch((err) => {
             console.error('[receptionist] cancel_appointment failed:', (err as Error)?.message ?? err)
@@ -382,6 +406,17 @@ export async function runReceptionistModel(
             return { content: 'The reasons cannot be sent. Ask them in one short sentence why they cannot come, without listing reasons.', isError: true }
           })
           if (!result.isError) choices = 'cancellation_reason'
+        } else if (use.name === 'offer_times' && offerTimes) {
+          result = await offerTimes(use.input).catch((err) => {
+            console.error('[receptionist] offer_times failed:', (err as Error)?.message ?? err)
+            return { content: 'The buttons cannot be sent. Offer the times in words only.', isError: true }
+          })
+          if (!result.isError) choices = 'times'
+        } else if (use.name === 'write_back_on' && opts.writeBack) {
+          result = await opts.writeBack(use.input).catch((err) => {
+            console.error('[receptionist] write_back_on failed:', (err as Error)?.message ?? err)
+            return { content: 'It could not be arranged. Do not promise to write: tell them they can write whenever they know.', isError: true }
+          })
         } else if (use.name === 'record_cancellation_reason' && opts.cancellationReason) {
           result = await opts.cancellationReason(use.input).catch((err) => {
             console.error('[receptionist] record_cancellation_reason failed:', (err as Error)?.message ?? err)

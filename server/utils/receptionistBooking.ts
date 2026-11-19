@@ -18,6 +18,7 @@ import { CANCELLATION_REASONS, isCancellationReason, type CancellationReason } f
 import { deferFirstVisit, findLastCancelledVisit, isFirstVisitStage, recordCancellationReason } from '~/server/utils/cancellationReasons'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
+import { MAX_SLOTS_TO_TAP, SLOT_HOLD_MINUTES, agreedDueAt, cleanSlots, isLateNotice, lateChangeNote, lateChangeStaffNote, priorLateChanges, LATE_NOTICE_WINDOW_DAYS, type LateChangeRow, type OfferedSlot } from '~/utils/receptionistConversion'
 import { BROUGHT_RELATIONS, MINOR_AGE, REPEAT_CHANGE_LIMIT, repeatChangeRefusal, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
@@ -134,7 +135,7 @@ export const CANCEL_APPOINTMENT: Anthropic.Tool = {
       reason: {
         type: 'string',
         enum: [...CANCELLATION_REASONS],
-        description: 'Why, only when they said so: another_time (wants another day or time later), later (will book again later on), feeling_better, unforeseen (work, illness, an appointment, something came up), price, other. Leave out when they did not say.',
+        description: 'Why, only when they said so: another_time (wants another day or time later), later (will book again later on), feeling_better, unforeseen (they NAMED what came up: work, illness, another appointment, a trip), price, other. "No puedo ir", "no podré asistir" or "cancélala" alone give no reason: leave it out.',
       },
     },
     required: ['visit_on'],
@@ -159,6 +160,47 @@ export const RECORD_CANCELLATION_REASON: Anthropic.Tool = {
       reason: { type: 'string', enum: [...CANCELLATION_REASONS], description: 'What they said, as one of the reasons.' },
     },
     required: ['reason'],
+    additionalProperties: false,
+  },
+}
+
+export const OFFER_TIMES: Anthropic.Tool = {
+  name: 'offer_times',
+  description:
+    `Puts the times you are offering under your reply as buttons to tap, with "another day" after them, so they choose with one tap instead of typing. Call it every time you offer specific free times for a visit -- a new one, one being moved, or after cancelling one -- with exactly the times you name in the reply, taken from the Booking list or find_free_times. Still write the times in words in the reply and ask which they prefer. Not when you only state the time of a visit they already have, and not in the reply that books or moves one.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      times: {
+        type: 'array',
+        description: 'The times you offer in this reply, in the order you name them.',
+        items: {
+          type: 'object',
+          properties: {
+            date: { type: 'string', description: 'The day, as YYYY-MM-DD.' },
+            time: { type: 'string', description: "The start time on the clinic's clock, as HH:MM, exactly as listed." },
+          },
+          required: ['date', 'time'],
+          additionalProperties: false,
+        },
+      },
+      appointment_type: { type: 'string', description: 'The type the times are for, by its exact name. Leave out when moving or replacing a visit they have: it keeps its type.' },
+    },
+    required: ['times'],
+    additionalProperties: false,
+  },
+}
+
+export const WRITE_BACK_ON: Anthropic.Tool = {
+  name: 'write_back_on',
+  description:
+    'Has the clinic write to them first on a day you have agreed, to find their visit. Call it when they will not choose a time now and say they will get back to you ("ya te aviso", "mañana te digo", "cuando vuelva del viaje", "te confirmo el lunes") AND a day is settled: one they gave ("vuelvo el 2 de diciembre" -> the 2nd), or one you proposed in an earlier message and they accepted. If no day is settled yet, do not call it: propose one in your reply ("¿Te escribo yo el lunes por la mañana y lo vemos?") and call it once they agree. After it confirms, tell them in one sentence that you will write to them that day. Never promise to write without it.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      date: { type: 'string', description: 'The day to write to them, as YYYY-MM-DD: after today, and a day the clinic sees patients when you can.' },
+    },
+    required: ['date'],
     additionalProperties: false,
   },
 }
@@ -248,6 +290,8 @@ export interface BookingContext {
   person: { kind: 'lead'; leadId: string; patientId: string | null } | { kind: 'patient'; patientId: string }
   /** Told what was booked or moved, in words, to note it in the conversation. */
   onBooked: (summary: string) => Promise<void>
+  /** The Inbox's key for this conversation and the channel they write on: what a follow-up or a held time is filed under. */
+  conversation?: { key: string; channel: 'whatsapp' | 'app' | 'webchat' | 'messenger' }
   /** The clinic offers earlier times for first visits (accounts.earlier_first_visit_offers): stop_earlier_time_offers is on. */
   earlierTimeOffers?: boolean
   /**
@@ -489,6 +533,11 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const practitionerName = (practitioner as { full_name: string | null } | null)?.full_name ?? null
     const window = await resolveWindow(ctx.service, ctx.accountId, { startsAt: start.toISOString(), appointmentTypeId: type.id, practitionerId: chosen.practitionerId })
 
+    // A visit moved to another day with under a day's notice: once is nothing,
+    // a second time is said (lateChangeNote). Read before the change.
+    const lateMove = Boolean(moving) && isLateNotice(new Date(), moving!.startsAt) && clinicDateOf(new Date(moving!.startsAt), ctx.timeZone) !== date
+    const priorLateMoves = lateMove && ctx.person.patientId ? await loadPriorLateChanges(ctx, ctx.person.patientId) : 0
+
     used.add(whom)
     let appointmentId: string
     try {
@@ -529,7 +578,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? (confirmed ? ' (marcado como menor, con quien escribe como tutor)' : '') : ' (ficha nueva, menor, con quien escribe como tutor)'}`
       : relative ? ` para ${[relative.firstName, relative.lastName].filter(Boolean).join(' ')} (familiar en su ficha)` : brought ? ` para ${brought.name} (ficha nueva, referida por quien escribe)` : referrer ? ' (referido por un paciente, anotado en su ficha)' : ''
     const summary = moving
-      ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
+      ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.${lateMove ? lateChangeStaffNote(priorLateMoves) : ''}`
       : `He reservado ${type.name}${forChild} el ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
     console.info(`[receptionist] ${moving ? 'moved' : 'booked'} appointment ${appointmentId} (account ${ctx.accountId})`)
 
@@ -567,6 +616,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     return {
       content: [
         `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : brought ? ` for ${brought.firstName}, in their own name, referred by the person writing` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative || brought ? `${(relative ?? brought)!.firstName} will get the clinic's usual confirmation themselves${brought ? ', on their own phone' : ''}.` : quiet ? 'They asked not to get automatic messages, so no confirmation or reminder will be sent: do not promise one.' : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
+        lateMove ? lateChangeNote(priorLateMoves, 'moved') : '',
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
         earlierLine,
@@ -965,6 +1015,9 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     }
 
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
+    // Read before the change, so this one is not among the earlier ones.
+    const late = isLateNotice(new Date(), visit.startsAt)
+    const priorLate = late ? await loadPriorLateChanges(ctx, patientId) : 0
     used = true
     const { data: changed, error } = await writer
       .from('appointments')
@@ -990,7 +1043,7 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
 
     // Best-effort, as after a booking: the visit is cancelled either way.
     try {
-      await ctx.onBooked(`He cancelado su ${typeName ?? 'cita'} del ${format('es-ES')}.`)
+      await ctx.onBooked(`He cancelado su ${typeName ?? 'cita'} del ${format('es-ES')}.${late ? lateChangeStaffNote(priorLate) : ''}`)
     } catch (err) {
       console.error('[receptionist] after cancelling:', (err as Error)?.message ?? err)
     }
@@ -1004,7 +1057,8 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     return {
       content: [
         `Cancelled: ${typeName ?? 'their visit'}, ${format('en-GB')}. The time is free again. Tell them it is cancelled, with the day and time in words.`,
-        afterCancellingNote(firstVisit, reason, Boolean(ctx.asksWhyCancelled)),
+        afterCancellingNote(firstVisit, reason, Boolean(ctx.asksWhyCancelled), { today: clinicDateOf(new Date(visit.startsAt), ctx.timeZone) === clinicDateOf(new Date(), ctx.timeZone), canWriteBack: Boolean(ctx.conversation) }),
+        late ? lateChangeNote(priorLate, 'cancelled') : '',
         remaining.length ? `They still have ${remaining.length === 1 ? 'a visit' : 'visits'} on ${remaining.join(' and ')}, which ${remaining.length === 1 ? 'stands' : 'stand'}.` : '',
       ].filter(Boolean).join(' '),
       isError: false,
@@ -1018,11 +1072,22 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
  * the receptionist cancelled by 15 Nov 2026, one had booked again, and
  * nearly every reply ended "escríbenos cuando quieras" -- which nobody did.
  */
-function afterCancellingNote(firstVisit: boolean, reason: CancellationReason | null, asksWhy: boolean): string {
-  if (!firstVisit) return 'Say they can write whenever they want another time.'
+function afterCancellingNote(firstVisit: boolean, reason: CancellationReason | null, asksWhy: boolean, opts: { today: boolean; canWriteBack: boolean }): string {
+  // What a cancellation is answered with unless they have said they want no
+  // time now: two real times in the same message. "Escríbenos cuando quieras"
+  // was the answer to 34 of 48, and 5 of those people booked again.
+  const offer = `In this same reply offer two free times for a new visit of the same type -- from that type's own list under Booking, or find_free_times -- on ${opts.today ? 'another day (never today again)' : 'another day than the one cancelled'}, one this week or next and one the week after when there are, at about the same time of day as the one cancelled, and call offer_times with them. Never end with "escríbenos cuando quieras" or "cuando sepas qué día".`
+  const later = opts.canWriteBack
+    ? 'If they have said they are away, ill or busy with no date to come back to, do not offer times: ask which day you should write to them to find a new one ("¿Te escribo yo el lunes 30 y lo vemos?"), and once a day is settled call write_back_on.'
+    : 'If they have said they are away, ill or busy with no date to come back to, do not offer times: ask them roughly when they expect to be able to come.'
+  if (!firstVisit) {
+    if (reason === 'feeling_better' || reason === 'price') return 'Thank them briefly, and say they can write whenever they want to come.'
+    if (reason === 'later') return later.replace('If they have said they are away, ill or busy with no date to come back to, do not offer times: ', 'They will book later, so do not offer times now: ')
+    return `${offer} ${later}`
+  }
   if (!reason && !asksWhy) return 'This was their FIRST visit and they did not say why: ask them, in one short friendly sentence, why they cannot come. Do not offer times yet.'
   if (!reason) return 'This was their FIRST visit and they did not say why: call ask_why_cancelled now, then write the reply -- cancelled, with the day and time, and one short friendly question asking why. Do not list reasons yourself and do not offer times yet.'
-  if (reason === 'another_time') return 'They want another day or time: offer free times for a new first visit now.'
+  if (reason === 'another_time' || reason === 'unforeseen' || reason === 'other') return `${offer} ${later}`
   if (reason === 'later') return 'They will book later: tell them the clinic will write to them in a few weeks to find a time. Do not offer times now.'
   return 'Thank them briefly, and say they can write whenever they want to come.'
 }
@@ -1062,14 +1127,109 @@ export function cancellationReasonTool(ctx: BookingContext): (input: unknown) =>
     used = true
     await recordCancellationReason(receptionistServiceClient(ctx.event), ctx.accountId, patientId, last, reason)
     const next: Record<CancellationReason, string> = {
-      another_time: last.firstVisit ? 'Recorded. Now offer free times for a new first visit.' : 'Recorded. Now offer free times for a new visit.',
+      another_time: last.firstVisit ? 'Recorded. Now offer two free times for a new first visit, calling offer_times with them.' : 'Recorded. Now offer two free times for a new visit, calling offer_times with them.',
       later: 'Recorded. Tell them the clinic will write to them in a few weeks to find a time. Do not offer times now.',
       feeling_better: 'Recorded. Say you are glad, and that they can write whenever they need.',
-      unforeseen: 'Recorded. Thank them briefly, and say they can write whenever they want to come.',
+      unforeseen: 'Recorded. Thank them in a few words and, in this same reply, offer two free times for a new visit of the same type on another day, calling offer_times with them -- unless they said they do not know when they can come: then ask which day you should write to them.',
       price: 'Recorded. Thank them briefly. Do not argue about the price or offer a discount.',
-      other: 'Recorded. Thank them briefly, and say they can write whenever they want to come.',
+      other: 'Recorded. Thank them in a few words and, in this same reply, offer two free times for a new visit of the same type on another day, calling offer_times with them -- unless they said they do not want another time now.',
     }
     return { content: next[reason], isError: false }
+  }
+}
+
+/**
+ * How many times they have already cancelled or moved a visit at short
+ * notice (priorLateChanges), from the audit trail -- theirs, whoever made the
+ * change. 0 when it cannot be read: a rule said to someone it does not apply
+ * to is worse than one not said.
+ */
+async function loadPriorLateChanges(ctx: BookingContext, patientId: string): Promise<number> {
+  try {
+    const since = new Date(Date.now() - LATE_NOTICE_WINDOW_DAYS * DAY_MS).toISOString()
+    const { data: logs, error } = await ctx.service
+      .from('audit_logs')
+      .select('entity_id, created_at, changes')
+      .eq('account_id', ctx.accountId)
+      .eq('entity_type', 'appointment')
+      .eq('patient_id', patientId)
+      .eq('action', 'updated')
+      .gt('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) throw new Error(error.message)
+    const rows = ((logs ?? []) as { entity_id: string; created_at: string; changes: LateChangeRow['changes'] }[]).filter((l) => l.changes?.starts_at || l.changes?.status?.to === 'cancelled')
+    if (!rows.length) return 0
+    const { data: visits } = await ctx.service.from('appointments').select('id, starts_at').eq('account_id', ctx.accountId).in('id', [...new Set(rows.map((r) => r.entity_id))])
+    const startOf = new Map(((visits ?? []) as { id: string; starts_at: string }[]).map((v) => [v.id, v.starts_at]))
+    return priorLateChanges(rows.map((r) => ({ at: r.created_at, changes: r.changes, startsAt: startOf.get(r.entity_id) ?? null })), ctx.timeZone)
+  } catch (err) {
+    console.error('[receptionist] could not count earlier short-notice changes:', (err as Error)?.message ?? err)
+    return 0
+  }
+}
+
+/**
+ * offer_times: the times of this reply, to go under it as buttons. What it
+ * returns to the caller is the list (runReceptionistModel keeps it for the
+ * send); what it does here is hold them for a few minutes, so the same
+ * minute is not offered to somebody else while this person decides.
+ */
+export function offerTimesTool(ctx: BookingContext, onOffered: (slots: OfferedSlot[]) => void): (input: unknown) => Promise<ToolResult> {
+  return async (input) => {
+    const value = (input ?? {}) as { times?: unknown; appointment_type?: unknown }
+    const today = clinicDateOf(new Date(), ctx.timeZone)
+    const slots = cleanSlots(value.times, Math.min(MAX_SLOTS_TO_TAP, Math.max(1, ctx.config.slotsPerReply))).filter((slot) => slot.date >= today && wallClockToUtc(slot.date, slot.time, ctx.timeZone) > Date.now())
+    if (!slots.length) return { content: 'No valid times were given: each needs date as YYYY-MM-DD and time as HH:MM, in the future. Offer the times in words only, or call it again.', isError: true }
+    onOffered(slots)
+    if (ctx.conversation) {
+      // As long as the longest visit these could be: the type named, else
+      // the visit they have, else the longest it may book.
+      const named = findTypeByName([...ctx.types, ...ctx.booked.types], value.appointment_type)
+      const minutes = named?.durationMinutes ?? Math.max(30, ...[...ctx.booked.types, ...ctx.types].map((t) => t.durationMinutes || 0))
+      const expires = new Date(Date.now() + SLOT_HOLD_MINUTES * 60_000).toISOString()
+      const rows = slots.map((slot) => {
+        const start = wallClockToUtc(slot.date, slot.time, ctx.timeZone)
+        return { account_id: ctx.accountId, conversation_key: ctx.conversation!.key, starts_at: new Date(start).toISOString(), ends_at: new Date(start + minutes * 60_000).toISOString(), expires_at: expires }
+      })
+      try {
+        const writer = receptionistServiceClient(ctx.event) as any
+        await writer.from('receptionist_slot_holds').delete().eq('account_id', ctx.accountId).eq('conversation_key', ctx.conversation.key)
+        const { error } = await writer.from('receptionist_slot_holds').insert(rows)
+        if (error) console.error('[receptionist] could not hold the offered times:', error.message)
+      } catch (err) {
+        console.error('[receptionist] could not hold the offered times:', (err as Error)?.message ?? err)
+      }
+    }
+    return { content: `These ${slots.length === 1 ? 'time goes' : `${slots.length} times go`} under your reply as buttons to tap, with "another day" after them. Write the reply: name the same times in words, and ask which they prefer. Do not say there are buttons.`, isError: false }
+  }
+}
+
+/**
+ * write_back_on: the clinic writes first on the day agreed
+ * (receptionist_follow_ups, 'agreed'; sent by the handover job).
+ */
+export function writeBackTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  return async (input) => {
+    if (!ctx.conversation) return { content: 'You cannot arrange that here. Tell them they can write whenever they know.', isError: true }
+    const due = agreedDueAt((input as { date?: unknown } | null)?.date, new Date(), ctx.timeZone)
+    if (!due) return { content: 'date must be a day after today, within the next four months, as YYYY-MM-DD. Agree a day with them first, then call it again; do not promise to write yet.', isError: true }
+    const writer = receptionistServiceClient(ctx.event) as any
+    const key = { account_id: ctx.accountId, conversation_key: ctx.conversation.key, kind: 'agreed' }
+    // One agreed day per conversation: a new one replaces the old.
+    await writer.from('receptionist_follow_ups').update({ done_at: new Date().toISOString(), outcome: 'dropped' }).match(key).is('done_at', null)
+    const { error } = await writer.from('receptionist_follow_ups').insert({ ...key, channel: ctx.conversation.channel, due_at: due.toISOString() })
+    if (error) {
+      console.error('[receptionist] could not record the day to write back:', error.message)
+      return { content: 'It could not be arranged. Do not promise to write: tell them they can write whenever they know, and call hand_over_to_colleague saying which day they asked to be written to.', isError: true }
+    }
+    const when = due.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ctx.timeZone })
+    try {
+      await ctx.onBooked(`Le escribiré el ${due.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ctx.timeZone })} por la mañana para buscarle cita, como hemos quedado.`)
+    } catch (err) {
+      console.error('[receptionist] after agreeing a day to write:', (err as Error)?.message ?? err)
+    }
+    return { content: `Done: the clinic will write to them on ${when}, in the morning. Tell them so in one sentence, with the day in words, and that they can also write before if they know sooner. Do not offer times now.`, isError: false }
   }
 }
 

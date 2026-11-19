@@ -73,7 +73,7 @@ describe('Receptionist types by audience', () => {
     expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
     expect(section).toContain('that same type of appointment')
     expect(section).toContain('do not first ask whether they would rather move it: say your colleague will cancel it')
-    expect(section).toContain('in the same reply offer another day')
+    expect(section).toContain('in the same reply offer two free times for a new visit of the same type on another day')
     expect(section).not.toContain('cancel_appointment')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
@@ -88,7 +88,10 @@ describe('Receptionist types by audience', () => {
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true, canBook: true })
     expect(section).toContain('cancel it straight away with cancel_appointment (visit_on = its current day and time)')
     expect(section).toContain('do not first ask whether they would rather move it')
-    expect(section).toContain('Si quieres otro día, dime cuál te viene bien y te busco hueco')
+    // Two real times, not "dime cuál te viene bien": 34 of 48 cancellations
+    // were answered that way and 5 of those people booked again (19 Nov 2026).
+    expect(section).toContain('offer two real free times for a new visit of the same type on another day')
+    expect(section).toContain('never a bare "dime cuál te viene bien" or "escríbenos cuando quieras"')
     expect(section).toContain('book it with book_appointment as a new visit of the same type as the one cancelled')
     expect(section).toContain('Never leave a visit booked that they have said they will not come to')
     expect(section).toContain('that is a move, not a cancellation')

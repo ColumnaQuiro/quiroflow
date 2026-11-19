@@ -60,7 +60,7 @@ describe('Cancellation reasons as WhatsApp choices', () => {
 // booked again. "Dime cuál te viene bien" was answered by nobody.
 describe('Cancelling a first visit', () => {
   it('asks why instead of only offering another day, when it can send the reasons', () => {
-    expect(CANCEL_FIRST_BOOKING).toContain('except a FIRST visit cancelled without a reason: then call ask_why_cancelled')
+    expect(CANCEL_FIRST_BOOKING).toContain('a FIRST visit cancelled without a reason: then call ask_why_cancelled')
     expect(CANCEL_FIRST_BOOKING).toContain('call record_cancellation_reason')
     // A draft has no tools: a colleague does the cancelling, and nothing changes there.
     expect(CANCEL_FIRST_DRAFT).not.toContain('ask_why_cancelled')

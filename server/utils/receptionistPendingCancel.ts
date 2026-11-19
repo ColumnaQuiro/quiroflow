@@ -1,5 +1,6 @@
 import { announceHandover, type ReceptionistTarget } from '~/server/utils/receptionistSend'
 import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes } from '~/utils/receptionistFollowThrough'
+import { isFollowUpMessage } from '~/utils/receptionistConversion'
 
 // "¿Te quito la cita del jueves a las 16:00?" with no answer.
 //
@@ -77,16 +78,18 @@ export async function handOverUnansweredCancelQuestions(supabase: any, now = new
 async function handOverOne(supabase: any, key: string, a: Asked, now: Date): Promise<boolean> {
   // Anything in the conversation since -- their answer, a person's message,
   // the receptionist writing again -- means it is not waiting on this.
-  const after = (query: any) => query.eq('account_id', a.accountId).gt('created_at', a.askedAt).limit(1)
-  const reads: Promise<{ data: unknown[] | null }>[] = []
+  // Except its own nudge the morning after (receptionistFollowUps.ts), which
+  // asks after the offer and is no answer to it: the visit is still waiting.
+  const after = (query: any) => query.eq('account_id', a.accountId).gt('created_at', a.askedAt).order('created_at').limit(5)
+  const reads: Promise<{ data: { text: string | null }[] | null }>[] = []
   // A reminder or an automation since is not an answer: left out.
   const notAutomated = (query: any) => query.is('template_name', null).is('rule_id', null).is('automation_action_id', null)
-  if (a.leadId) reads.push(notAutomated(after(supabase.from('whatsapp_messages').select('id')).eq('lead_id', a.leadId)))
+  if (a.leadId) reads.push(notAutomated(after(supabase.from('whatsapp_messages').select('text:body_preview')).eq('lead_id', a.leadId)))
   if (a.patientId) {
-    reads.push(notAutomated(after(supabase.from('whatsapp_messages').select('id')).eq('patient_id', a.patientId)))
-    reads.push(after(supabase.from('patient_app_messages').select('id')).eq('patient_id', a.patientId))
+    reads.push(notAutomated(after(supabase.from('whatsapp_messages').select('text:body_preview')).eq('patient_id', a.patientId)))
+    reads.push(after(supabase.from('patient_app_messages').select('text:body')).eq('patient_id', a.patientId))
   }
-  if ((await Promise.all(reads)).some(({ data }) => (data ?? []).length > 0)) return false
+  if ((await Promise.all(reads)).some(({ data }) => (data ?? []).some((m) => !isFollowUpMessage(m.text)))) return false
 
   // Times offered are only waiting on a visit when they asked to change one:
   // times offered for a new booking leave nothing booked in the air.

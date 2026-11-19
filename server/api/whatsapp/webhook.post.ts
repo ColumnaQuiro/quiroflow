@@ -14,6 +14,7 @@ import { declinesOnlyARecall, recallReplyIntent } from '~/utils/recallReply'
 import { answerEarlierVisitTap } from '~/server/utils/earlierVisitOffers'
 import { appointmentReplyIntent } from '~/utils/appointmentReply'
 import { cancellationReasonFromRowId } from '~/utils/cancellationReason'
+import { slotFromRowId } from '~/utils/receptionistConversion'
 import { findLastCancelledVisit, recordCancellationReason } from '~/server/utils/cancellationReasons'
 import { importWhatsAppHistory, storeBusinessAppEcho, type CoexistenceMessage, type HistoryChunk } from '~/server/utils/whatsappCoexistence'
 
@@ -593,8 +594,13 @@ export default defineEventHandler(async (event) => {
         // earlier first visit (earlierVisitOffers.ts), answered there. Read
         // as nothing else: its "Sí" is not the reminder's Confirmar, and its
         // "No" not a recall's decline.
-        const earlierAnswered = patientId && !tappedReason ? await answerEarlierVisitTap(event, supabase, account.id, patientId, reply, msg.context?.id ?? null) : false
-        const answeredElsewhere = earlierAnswered || Boolean(tappedReason)
+        // A time tapped under the receptionist's offer, or its "Otro día"
+        // (utils/receptionistConversion.ts): an answer to that offer and to
+        // nothing else -- the receptionist books it on its next tick. "Otro
+        // día" is not a reminder's "Cambiar cita", nor a recall's decline.
+        const tappedSlot = slotFromRowId(msg.interactive?.button_reply?.id ?? msg.interactive?.list_reply?.id)
+        const earlierAnswered = patientId && !tappedReason && !tappedSlot ? await answerEarlierVisitTap(event, supabase, account.id, patientId, reply, msg.context?.id ?? null) : false
+        const answeredElsewhere = earlierAnswered || Boolean(tappedReason) || Boolean(tappedSlot)
         const recallIntent = patientId && !answeredElsewhere
           ? recallReplyIntent(reply, declinesOnlyARecall(reply) ? await answersRecall(supabase, patientIds, msg) : true)
           : null

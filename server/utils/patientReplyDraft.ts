@@ -1,8 +1,9 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, reasonChoices } from '~/server/utils/receptionistSend'
-import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, replyChoices } from '~/server/utils/receptionistSend'
+import { scheduleNudgeAfterOffer } from '~/server/utils/receptionistFollowUps'
+import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, offerTimesTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, writeBackTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
@@ -260,7 +261,7 @@ export async function draftPatientReply(
   // Moving a visit already booked keeps it with that visit's practitioner,
   // new or not, so the times offered for the move are hers.
   const own = visitsHad > 0 ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
-  const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
+  const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own, patientId)
   // Changed twice already without coming: the next change is a person's
   // (repeatChangeSection).
   const changesWithoutComing = await loadChangesWithoutComing(service as never, accountId, patientId, calendar.timeZone)
@@ -276,7 +277,7 @@ export async function draftPatientReply(
     // visit, with whoever is free.
     return { practitionerIds: null, types: uniqueTypes(minors.forNewChild, bringsSomeone.types) }
   }
-  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds, forWhom) : null
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds, forWhom, patientId) : null
 
   // Sent rather than stored: asked for, on the channel they last wrote on
   // (WhatsApp or the app), and nothing in the conversation holding it back.
@@ -354,6 +355,7 @@ export async function draftPatientReply(
           family,
           bringsSomeone,
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
+          conversation: { key: patientId, channel },
           earlierTimeOffers: earlierOn,
         }
       : null
@@ -367,6 +369,10 @@ export async function draftPatientReply(
   const askWhyCancelled = actions ? askWhyCancelledTool(actions) : null
   const cancellationReason = actions ? cancellationReasonTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
+  // Times to tap under the reply, and the day it agrees to write on
+  // (utils/receptionistConversion.ts).
+  const offerTimes = actions ? (onOffered: Parameters<typeof offerTimesTool>[1]) => offerTimesTool(actions, onOffered) : null
+  const writeBack = actions ? writeBackTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // Taking someone who has left off the recalls needs no calendar, only that
   // the reply is sent on its own: a draft waits for a person anyway.
@@ -399,6 +405,8 @@ export async function draftPatientReply(
     give,
     stopFollowUps,
     stopEarlier,
+    offerTimes,
+    writeBack,
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
@@ -468,7 +476,7 @@ export async function draftPatientReply(
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
-      await sendAsReceptionist(opts.send.event, service, accountId, target, draft, run.choices ? reasonChoices(patient.preferred_language) : null)
+      await sendAsReceptionist(opts.send.event, service, accountId, target, draft, replyChoices(run, patient.preferred_language))
     } catch (err) {
       // Refused (the window closed, "do not contact"...): it stays a waiting
       // draft, so a person still sees what it would have said -- and is told
@@ -482,6 +490,9 @@ export async function draftPatientReply(
     }
     // Sent: dealt with, so it no longer shows as a draft.
     await record('sent', run)
+    // Times offered and nothing booked: asked about once, the next morning,
+    // if they have not answered by then.
+    await scheduleNudgeAfterOffer(service, accountId, patientId, channel, { text: draft, offeredTimes: run.choices === 'times', changedDiary: replyActed(toolUses) }, calendar.timeZone)
     await service.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
     if (handedOver) await announceHandover(service, accountId, target, name, handedOver)
     return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }

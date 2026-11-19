@@ -55,6 +55,20 @@ export async function sendWhatsAppText(account: WhatsAppAccount, to: string, bod
  * (utils/cancellationReason.ts) held to those limits by their tests.
  */
 export async function sendWhatsAppChoices(account: WhatsAppAccount, to: string, body: string, choices: WhatsAppChoices) {
+  // Three or fewer are reply buttons: shown under the message and chosen
+  // with one tap, where a list has to be opened first. A button's title is
+  // capped at 20 characters, and a tap comes back as interactive.button_reply.
+  if (choices.rows.length <= 3 && choices.rows.every((row) => row.title.length <= 20)) {
+    return metaSend(account, {
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body.slice(0, 1024) },
+        action: { buttons: choices.rows.map((row) => ({ type: 'reply', reply: { id: row.id, title: row.title } })) },
+      },
+    })
+  }
   return metaSend(account, {
     to,
     type: 'interactive',

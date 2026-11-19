@@ -5,6 +5,7 @@ import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_
 import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { loadEarlierVisitFacts } from '~/server/utils/earlierVisitOffers'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
+import { transcribeVoiceNotes } from '~/server/utils/voiceNoteTranscripts'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
@@ -80,15 +81,19 @@ export async function draftPatientReply(
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
   const [{ data: wa }, { data: app }] = await Promise.all([
-    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
+    supabase.from('whatsapp_messages').select('id, direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename, transcript').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
     supabase.from('patient_app_messages').select('direction, body, created_at, sent_by_ai').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
   ])
+  // Voice notes as what they said, where they can be transcribed (oldest
+  // first, as the history reads); the rest still read as "[Voice note]".
+  const waRows = [...((wa ?? []) as { id: string; direction: string; media_type?: string | null; media_storage_path?: string | null; media_mime_type?: string | null; transcript?: string | null }[])].reverse()
+  await transcribeVoiceNotes(service, waRows, useRuntimeConfig().mistralApiKey)
   const turns: Turn[] = [
-    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_storage_path?: string | null; media_mime_type?: string | null; media_filename?: string | null }[]).map((m) => ({
+    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_storage_path?: string | null; media_mime_type?: string | null; media_filename?: string | null; transcript?: string | null }[]).map((m) => ({
       direction: m.direction,
       // As the model reads it: a reminder marked as the system's, a voice
       // note or a photo as what it is rather than dropped (historyLine).
-      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename }),
+      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename, transcript: m.transcript }),
       media_type: m.media_type,
       media_storage_path: m.media_storage_path,
       media_mime_type: m.media_mime_type,

@@ -21,7 +21,12 @@ export interface HistoryMessage {
   templateName?: string | null
   mediaType?: string | null
   mediaFilename?: string | null
+  /** What a voice note said, when it has been transcribed (server/utils/voiceNoteTranscripts.ts). */
+  transcript?: string | null
 }
+
+/** Starts a voice note the receptionist reads as text. */
+export const VOICE_NOTE_TRANSCRIPT_MARK = '[Voice note, transcribed automatically]'
 
 /**
  * One message as the model reads it; empty when there is nothing to read.
@@ -47,6 +52,10 @@ export function historyLine(m: HistoryMessage): string {
     // a time a person had already agreed with them.
     return m.sentByAi === false ? `${COLLEAGUE_MARK}\n${body}` : body
   }
+  // A voice note it could not hear was answered with "could you write it
+  // instead?"; transcribed, it reads as what they said.
+  const transcript = m.mediaType === 'audio' ? (m.transcript ?? '').trim() : ''
+  if (transcript) return [VOICE_NOTE_TRANSCRIPT_MARK, transcript, body].filter(Boolean).join('\n')
   const mark = mediaMark(m.mediaType, m.mediaFilename)
   if (!mark) return body
   return body ? `${mark}\n${body}` : mark
@@ -83,6 +92,7 @@ export function historyMarkersSection(handOver: boolean): string {
   // (22 Oct 2026): both read from earlier in the conversation.
   "- Times and appointments mentioned earlier in the conversation, by you or anyone, may no longer be true: a time offered before may have passed or been taken, and a visit may have been moved, had or cancelled since. What they have booked is only the visits this prompt lists now, and a time is free only if it is in the free times listed here (or find_free_times returns it). Never mention a visit that is not listed there, and never offer a time again just because it was offered before.",
   '- [Voice note], [Video], [Document] and [Sticker] stand for what they sent, which you cannot see or hear. [Image] is a picture; when it is attached to their message you can see it, so use what it shows.',
+  `- ${VOICE_NOTE_TRANSCRIPT_MARK} is followed by what they said in a voice note, written down by a machine. Answer it as if they had written it, and never mention the transcription. It can mishear a name, a date or a time: when one of those matters to the answer and reads oddly, ask them to confirm it rather than guess.`,
   '- Never start your own reply with any of these marks.',
   ].join('\n')
 }
@@ -97,7 +107,7 @@ const FILLER_OPENER = /^\s*¡?\s*(?:perfecto|genial|estupendo|fenomenal|claro(?:
  */
 export function cleanReply(text: string): string {
   let out = text.trim()
-  for (const mark of [AUTOMATED_MARK, COLLEAGUE_MARK]) if (out.startsWith(mark)) out = out.slice(mark.length).trim()
+  for (const mark of [AUTOMATED_MARK, COLLEAGUE_MARK, VOICE_NOTE_TRANSCRIPT_MARK]) if (out.startsWith(mark)) out = out.slice(mark.length).trim()
   const opener = out.match(FILLER_OPENER)
   if (opener && opener[0].length < out.length) {
     out = out.slice(opener[0].length)

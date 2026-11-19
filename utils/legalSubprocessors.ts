@@ -11,6 +11,11 @@
 //   (dataprivacyframework.gov) for Netlify, Resend, Meta, Stripe, Google and
 //   Sentry. Supabase and Anthropic are NOT on it; both DPAs use the 2021 SCCs.
 //   Apple is not on it either, and only ever receives a push token.
+//   Mistral AI (added 18 Nov 2026) hosts in the EEA by default; its DPA
+//   (legal.mistral.ai/terms/data-processing-addendum) uses SCCs for any
+//   transfer out, and its own subprocessors are listed at
+//   trust.mistral.ai/subprocessors. Whether it may train on the audio is an
+//   account toggle (Admin > Privacy), so nothing is claimed about that here.
 // A provider added to the app belongs here in the same change, and one whose
 // region or certification changes has to be corrected here too.
 
@@ -71,6 +76,16 @@ export const LEGAL_SUBPROCESSORS: Subprocessor[] = [
     note: {
       en: 'Only if the clinic turns these features on. Anthropic may not train models on this data, and deletes it within 30 days',
       es: 'Solo si la clínica activa estas funciones. Anthropic no puede entrenar modelos con estos datos y los borra en un máximo de 30 días',
+    },
+  },
+  {
+    name: 'Mistral AI',
+    purpose: { en: 'Transcribing WhatsApp voice notes for the AI receptionist', es: 'Transcripción de notas de voz de WhatsApp para la recepcionista IA' },
+    location: { en: 'EU (European Economic Area)', es: 'UE (Espacio Económico Europeo)' },
+    basis: SCC,
+    note: {
+      en: 'Only voice notes, and only if the clinic turns the AI receptionist on',
+      es: 'Solo las notas de voz, y solo si la clínica activa la recepcionista IA',
     },
   },
   {

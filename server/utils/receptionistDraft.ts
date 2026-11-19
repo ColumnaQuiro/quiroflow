@@ -1,8 +1,9 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, reasonChoices } from '~/server/utils/receptionistSend'
-import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, stopEarlierTimeOffersTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, replyChoices } from '~/server/utils/receptionistSend'
+import { followUpChannel, scheduleNudgeAfterOffer } from '~/server/utils/receptionistFollowUps'
+import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, offerTimesTool, stopEarlierTimeOffersTool, waitlistTool, writeBackTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { transcribeVoiceNotes } from '~/server/utils/voiceNoteTranscripts'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
@@ -254,11 +255,11 @@ export async function draftLeadReply(
   // the rest of the team's, and practitionerIds is what they are really with.
   // Moving a first visit already booked keeps it with its practitioner.
   const own = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
-  const { calendar, practitionerIds } = await loadPatientCalendar(calendarClient, accountId, config, bookable, own)
+  const { calendar, practitionerIds } = await loadPatientCalendar(calendarClient, accountId, config, bookable, own, `lead:${leadId}`)
   // Changed twice already without coming: the next change is a person's
   // (repeatChangeSection).
   const changesWithoutComing = await loadChangesWithoutComing(calendarClient as never, accountId, lead.patient_id ?? null, calendar.timeZone)
-  const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
+  const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds, null, `lead:${leadId}`) : null
 
   // Sent rather than drafted: asked for, a conversation on a channel it can
   // send on by itself (AUTO_SEND_CHANNELS), and nothing holding it back in
@@ -323,6 +324,7 @@ export async function draftLeadReply(
           bringsSomeone,
           referral,
           onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
+          conversation: { key: `lead:${leadId}`, channel: followUpChannel(replyChannel) },
           earlierTimeOffers: earlierOn,
         }
       : null
@@ -335,6 +337,10 @@ export async function draftLeadReply(
   const askWhyCancelled = actions ? askWhyCancelledTool(actions) : null
   const cancellationReason = actions ? cancellationReasonTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
+  // Times to tap under the reply, and the day it agrees to write on
+  // (utils/receptionistConversion.ts).
+  const offerTimes = actions ? (onOffered: Parameters<typeof offerTimesTool>[1]) => offerTimesTool(actions, onOffered) : null
+  const writeBack = actions ? writeBackTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
@@ -363,6 +369,8 @@ export async function draftLeadReply(
     cancellationReason,
     give,
     stopEarlier,
+    offerTimes,
+    writeBack,
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
@@ -428,7 +436,7 @@ export async function draftLeadReply(
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
-      await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft, run.choices ? reasonChoices(null) : null)
+      await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft, replyChoices(run, null))
     } catch (err) {
       // Refused by WhatsApp (the window closed, a bad number): it stays a
       // draft, so a person still sees what it would have said.
@@ -441,6 +449,9 @@ export async function draftLeadReply(
     }
     // Sent: no draft waiting any more.
     await record('sent', run)
+    // Times offered and nothing booked: asked about once, the next morning,
+    // if they have not answered by then.
+    await scheduleNudgeAfterOffer(calendarClient, accountId, `lead:${leadId}`, replyChannel, { text: draft, offeredTimes: run.choices === 'times', changedDiary: replyActed(toolUses) }, calendar.timeZone)
     await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
     // It answers leads on 'none' too (the ones in the Inbox before it was
     // switched on), but only 'handling' wears the "AI handling" chip -- so

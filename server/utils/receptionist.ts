@@ -670,6 +670,11 @@ export async function loadReceptionistCalendar(
   // and the prompt then hands the time to a colleague rather than offering
   // someone else's.
   practitionerIds: string[] | null = null,
+  // Whose conversation these times are for, when they are to be OFFERED: the
+  // times the receptionist has just offered in other conversations are left
+  // out for a few minutes (receptionist_slot_holds). Undefined -- booking a
+  // time, the earlier-visit offers, Try Alba -- reads the diary as it is.
+  offeredTo?: string | null,
 ): Promise<ReceptionistCalendar> {
   const fallback = (timeZone = DEFAULT_CLINIC_TIMEZONE): ReceptionistCalendar => ({ now, timeZone, availability: null, withWhom: null })
 
@@ -750,6 +755,18 @@ export async function loadReceptionistCalendar(
       ),
     ])
 
+    // Held for somebody else who is deciding: busy for everyone, since a hold
+    // does not know whose diary the time would land in. A read that fails
+    // holds nothing -- the booking itself still refuses a time that is gone.
+    const held: { starts_at: string; ends_at: string }[] = []
+    if (offeredTo !== undefined) {
+      let query = (supabase as any).from('receptionist_slot_holds').select('starts_at, ends_at').eq('account_id', accountId).gt('expires_at', now.toISOString()).lt('starts_at', to).gt('ends_at', from).limit(200)
+      if (offeredTo) query = query.neq('conversation_key', offeredTo)
+      const { data: holds, error: holdError } = await query
+      if (holdError) console.error('[receptionist] could not read held times:', holdError.message)
+      else held.push(...((holds ?? []) as { starts_at: string; ends_at: string }[]))
+    }
+
     const types: SlotType[] = offeredTypes.map((type) => ({
       ...type,
       // With someone widened in for another type, the rest keep to the
@@ -769,7 +786,10 @@ export async function loadReceptionistCalendar(
         clinicIds: (p.team_member_clinics ?? []).map((tmc) => tmc.clinic_id),
       })),
       types,
-      appointments: appointments.map((a) => ({ practitionerId: a.practitioner_id, starts_at: a.starts_at, ends_at: a.ends_at })),
+      appointments: [
+        ...appointments.map((a) => ({ practitionerId: a.practitioner_id, starts_at: a.starts_at, ends_at: a.ends_at })),
+        ...held.flatMap((h) => practitioners.map((p) => ({ practitionerId: p.id, starts_at: h.starts_at, ends_at: h.ends_at }))),
+      ],
       blocks: blocks.map((b): SlotBlock => ({ clinicId: b.clinic_id, practitionerId: b.practitioner_id, starts_at: b.starts_at, ends_at: b.ends_at })),
       bookingWindowDays: windowDays,
       minimumNoticeMinutes: config.minimumNoticeMinutes,
@@ -810,10 +830,12 @@ export async function loadPatientCalendar(
   config: ReceptionistConfig,
   offeredTypes: OfferedType[],
   practitionerIds: string[] | null,
+  // The conversation the times are offered in (loadReceptionistCalendar's offeredTo).
+  offeredTo?: string | null,
 ): Promise<{ calendar: ReceptionistCalendar; practitionerIds: string[] | null }> {
-  const own = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes, undefined, undefined, practitionerIds)
+  const own = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes, undefined, undefined, practitionerIds, offeredTo)
   if (!practitionerIds || hasFreeTimes(own.availability)) return { calendar: own, practitionerIds }
-  const team = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes)
+  const team = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes, undefined, undefined, null, offeredTo)
   // Nobody has anything either (or the calendar could not be read): the
   // narrowed answer stands, and a colleague picks the time as before.
   if (!hasFreeTimes(team.availability)) return { calendar: own, practitionerIds }

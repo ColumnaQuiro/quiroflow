@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { sendInboxMessage, withChoiceLines } from '~/server/utils/inboxSend'
 import type { WhatsAppChoices } from '~/server/utils/whatsappSend'
 import { CANCELLATION_REASON_BUTTON, cancellationReasonRows, choiceLanguage } from '~/utils/cancellationReason'
+import { slotChoices, type OfferedSlot } from '~/utils/receptionistConversion'
 import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
 import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoReply'
 import { HANDED_OVER_REPLY } from '~/utils/receptionistFollowThrough'
@@ -24,6 +25,17 @@ import { sendMessengerToLead } from '~/server/utils/messengerSend'
 export function reasonChoices(preferredLanguage: string | null | undefined): WhatsAppChoices {
   const language = choiceLanguage(preferredLanguage)
   return { button: CANCELLATION_REASON_BUTTON[language], rows: cancellationReasonRows(language) }
+}
+
+/**
+ * What goes under a reply to tap, from how it was written: the reasons for
+ * cancelling (ask_why_cancelled), the times it offers (offer_times), or
+ * nothing.
+ */
+export function replyChoices(run: { choices: 'cancellation_reason' | 'times' | null; offeredSlots: OfferedSlot[] }, preferredLanguage: string | null | undefined): WhatsAppChoices | null {
+  if (run.choices === 'cancellation_reason') return reasonChoices(preferredLanguage)
+  if (run.choices === 'times' && run.offeredSlots.length) return slotChoices(run.offeredSlots, choiceLanguage(preferredLanguage))
+  return null
 }
 
 export type ReceptionistTarget =

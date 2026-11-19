@@ -25,6 +25,10 @@ export interface ReportCancellations {
   cameBack: number
   firstVisits: number
   firstVisitsCameBack: number
+  /** Had no other visit ahead when it was cancelled: the ones a new time is needed for. */
+  alone?: number
+  /** Of those, how many had a new visit made within a fortnight. */
+  rebooked?: number
 }
 
 export interface ReceptionistReport {
@@ -35,6 +39,12 @@ export interface ReceptionistReport {
   moves: Partial<Record<ReportActor, { total: number; earlier: number }>>
   /** By appointments.cancellation_reason; null is "not said". */
   reasons: { reason: string | null; total: number; firstVisits: number; cameBack: number }[]
+  /** What the diary shows in the three days after the receptionist offered times (once per conversation and day; the last three days are not counted yet). */
+  timeOffers?: { total: number; bookedByReceptionist: number; bookedByTeam: number; nothing: number } | null
+  /** What became of a "Cambiar cita" tapped on a reminder, three days on. */
+  changeTaps?: { total: number; moved: number; cancelledOnly: number; nothing: number } | null
+  /** Messages the receptionist wrote first: the nudge after an unanswered offer, and the day it agreed to write on. */
+  followUps?: { nudgesSent: number; agreedSent: number; agreedTasks: number; dropped: number } | null
   earlierOffers: {
     enrolled: number
     offered: number

@@ -48,6 +48,24 @@ const cancelRows = computed(() => {
 
 const offers = computed(() => report.value?.earlierOffers ?? null)
 
+// Whether a visit is kept: of the cancellations that left nothing booked,
+// how many got a new time; of the times it offered, how many were taken; of
+// the "Cambiar cita" taps, how many ended moved rather than cancelled.
+const kept = computed(() => {
+  const r = report.value
+  if (!r) return null
+  const mine = r.cancellations.receptionist
+  return {
+    alone: mine?.alone ?? 0,
+    rebooked: mine?.rebooked ?? 0,
+    teamAlone: r.cancellations.staff?.alone ?? 0,
+    teamRebooked: r.cancellations.staff?.rebooked ?? 0,
+    offers: r.timeOffers ?? null,
+    taps: r.changeTaps ?? null,
+    followUps: r.followUps ?? null,
+  }
+})
+
 function pct(n: number, total: number) {
   const p = shareOf(n, total)
   return p === null ? '' : `${p} %`
@@ -168,6 +186,30 @@ function pct(n: number, total: number) {
           </table>
         </div>
         <p class="text-[11px] text-ink-faint">{{ t('"Came back": has a visit after the cancellation, booked or had.', '«Volvieron»: tienen una cita posterior a la cancelación, reservada o ya hecha.') }}</p>
+      </GrowthSettingCard>
+
+      <!-- Whether the visit is kept -->
+      <GrowthSettingCard v-if="kept && (kept.alone || kept.offers?.total || kept.taps?.total)" :title="t('Keeping the visit', 'Citas que no se pierden')">
+        <dl class="grid gap-2 sm:grid-cols-3" data-test="report-kept">
+          <div class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
+            <dd class="text-[16px] font-semibold text-ink-900">{{ nf(kept.rebooked) }} <span class="text-[12px] font-normal text-ink-muted">{{ t('of', 'de') }} {{ nf(kept.alone) }} {{ pct(kept.rebooked, kept.alone) }}</span></dd>
+            <dt class="text-[11px] text-ink-muted">{{ t('cancellations it handled that got a new visit within 14 days', 'cancelaciones que gestionó y tuvieron cita nueva en 14 días') }}<template v-if="kept.teamAlone"> · {{ t(`the team: ${nf(kept.teamRebooked)} of ${nf(kept.teamAlone)}`, `el equipo: ${nf(kept.teamRebooked)} de ${nf(kept.teamAlone)}`) }}</template></dt>
+          </div>
+          <div v-if="kept.offers" class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
+            <dd class="text-[16px] font-semibold text-ink-900">{{ nf(kept.offers.bookedByReceptionist + kept.offers.bookedByTeam) }} <span class="text-[12px] font-normal text-ink-muted">{{ t('of', 'de') }} {{ nf(kept.offers.total) }} {{ pct(kept.offers.bookedByReceptionist + kept.offers.bookedByTeam, kept.offers.total) }}</span></dd>
+            <dt class="text-[11px] text-ink-muted">{{ t(`times it offered that ended booked · ${nf(kept.offers.bookedByReceptionist)} by it, ${nf(kept.offers.bookedByTeam)} by the team`, `veces que ofreció horas y acabó en cita · ${nf(kept.offers.bookedByReceptionist)} ella, ${nf(kept.offers.bookedByTeam)} el equipo`) }}</dt>
+          </div>
+          <div v-if="kept.taps" class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
+            <dd class="text-[16px] font-semibold text-ink-900">{{ nf(kept.taps.moved) }} <span class="text-[12px] font-normal text-ink-muted">{{ t('of', 'de') }} {{ nf(kept.taps.total) }} {{ pct(kept.taps.moved, kept.taps.total) }}</span></dd>
+            <dt class="text-[11px] text-ink-muted">{{ t(`"Cambiar cita" taps that ended with a new time · ${nf(kept.taps.cancelledOnly)} ended cancelled`, `«Cambiar cita» que acabó con hora nueva · ${nf(kept.taps.cancelledOnly)} acabaron canceladas`) }}</dt>
+          </div>
+        </dl>
+        <p class="text-[11px] text-ink-faint">
+          {{ t('Cancellations counted are those that left no other visit booked. Offers and taps are looked at three days later, so the last three days are not in yet.', 'Se cuentan las cancelaciones que dejaron a la persona sin ninguna cita. Las horas ofrecidas y los «Cambiar cita» se miran tres días después, así que los tres últimos días aún no cuentan.') }}
+          <template v-if="kept.followUps && (kept.followUps.nudgesSent || kept.followUps.agreedSent || kept.followUps.agreedTasks)">
+            {{ t(`It wrote first ${nf(kept.followUps.nudgesSent)} times after an offer nobody answered and ${nf(kept.followUps.agreedSent)} on a day it had agreed; ${nf(kept.followUps.agreedTasks)} more went to the team to write.`, `Escribió ella primero ${nf(kept.followUps.nudgesSent)} veces tras ofrecer horas sin respuesta y ${nf(kept.followUps.agreedSent)} el día que había quedado; ${nf(kept.followUps.agreedTasks)} más pasaron al equipo para escribir.`) }}
+          </template>
+        </p>
       </GrowthSettingCard>
 
       <!-- Why -->

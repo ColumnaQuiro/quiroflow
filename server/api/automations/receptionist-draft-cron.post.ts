@@ -19,9 +19,14 @@ import { accountsAnsweringNow } from '~/server/utils/receptionistHeld'
 // wrong".
 //
 // Every minute, now that it can answer on its own: somebody in the middle of
-// booking should not wait five minutes per message. The pg_cron job only
-// calls this when an inbound message arrived in the last 15 minutes, so a
-// quiet clinic costs nothing; and a conversation still being typed (the
+// booking should not wait five minutes per message. The pg_cron job
+// (receptionist-draft-minute) only calls this when a clinic with the
+// receptionist on received a message in the last 6 minutes, so a quiet
+// clinic costs nothing; a second job calls it every 15 minutes regardless,
+// as a net. For five weeks the schedule in production was every 5 minutes
+// instead (19 Nov 2026: 364 of 376 replies went out on a five-minute mark,
+// the median wait 3 min 10 s), which is what this comment is here to stop
+// happening again. And a conversation still being typed (the
 // newest message under TYPING_PAUSE_SECONDS old) waits for the next tick, so
 // a burst of four messages gets one answer, not four.
 const MAX_PER_TICK = 25

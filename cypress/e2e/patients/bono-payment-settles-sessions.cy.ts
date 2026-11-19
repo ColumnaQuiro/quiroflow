@@ -32,8 +32,15 @@ describe('Paying a bono after sessions were drawn on credit', () => {
           cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
           cy.contains('2 of 3 sessions left', { timeout: 15000 }).should('be.visible')
 
-          // Second session: nothing left to cover it, so it is owed.
+          // Second session: nothing left to cover it, so it is owed. Today
+          // already has a visit on the bono, so the dialog picks nothing for
+          // itself -- record this one yesterday, "not on the calendar".
+          const yesterday = new Date()
+          yesterday.setDate(yesterday.getDate() - 1)
+          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
           cy.get('[data-cy="log-session-open"]').click()
+          cy.get('[data-cy="log-session-new"]').click()
+          cy.get('[data-cy="log-session-date"]').type(yesterdayStr)
           cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
           cy.contains('1 of 3 sessions left', { timeout: 15000 }).should('be.visible')
 

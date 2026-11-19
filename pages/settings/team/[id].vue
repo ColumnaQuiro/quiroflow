@@ -33,6 +33,9 @@ interface Form {
   // As stored: null is "no hours of their own", and stays null until someone
   // sets some. Normalising it on load made every save write a week back.
   business_hours: BusinessHours | null
+  // Their week at one location, by clinic id (team_member_clinics.business_hours).
+  // Missing or null: their usual hours there.
+  clinic_hours: Record<string, BusinessHours | null>
 }
 interface Override {
   id: string
@@ -65,7 +68,7 @@ async function load() {
   const accountId = store.accountId!
   const [m, links, r, all, ov, tf, acc, future] = await Promise.all([
     supabase.from('team_members').select('id, full_name, color, role_id, is_practitioner, online_booking_enabled, business_hours, is_owner, deleted_at, created_at, photo_storage_path').eq('id', memberId).maybeSingle(),
-    supabase.from('team_member_clinics').select('clinic_id').eq('team_member_id', memberId),
+    supabase.from('team_member_clinics').select('clinic_id, business_hours').eq('team_member_id', memberId),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
     supabase.from('team_members').select('id, full_name, is_practitioner').eq('account_id', accountId).is('deleted_at', null).neq('id', memberId).order('full_name'),
     supabase.from('appointment_type_overrides').select('id, duration_minutes, price_cents, type:appointment_types(id, name, duration_minutes, default_price_cents)').eq('team_member_id', memberId),
@@ -86,6 +89,7 @@ async function load() {
     online_booking_enabled: m.data.online_booking_enabled,
     clinic_ids: (links.data ?? []).map((l) => l.clinic_id).sort(),
     business_hours: m.data.business_hours as BusinessHours | null,
+    clinic_hours: Object.fromEntries((links.data ?? []).map((l) => [l.clinic_id, l.business_hours as BusinessHours | null])),
   }
   form.value = f
   original.value = JSON.stringify(f)
@@ -140,7 +144,7 @@ function canonicalHours(hours: BusinessHours | null): BusinessHours | null {
 // columns nobody touched -- renaming a Front Desk member switched off their
 // online booking and replaced their null hours with an empty week.
 const changes = computed(() => {
-  const out: Partial<Omit<Form, 'clinic_ids'>> = {}
+  const out: Partial<Omit<Form, 'clinic_ids' | 'clinic_hours'>> = {}
   if (!form.value) return out
   const f = form.value
   const before = JSON.parse(original.value) as Form
@@ -164,7 +168,35 @@ const clinicChanges = computed(() => {
   const before = (JSON.parse(original.value) as Form).clinic_ids
   return { added: ids.filter((c) => !before.includes(c)), removed: before.filter((c) => !ids.includes(c)) }
 })
-const dirty = computed(() => Object.keys(changes.value).length > 0 || clinicChanges.value.added.length > 0 || clinicChanges.value.removed.length > 0)
+// A week per location, for somebody who works at more than one: the gym on
+// Tuesday and Thursday evenings, the clinic the rest of the week. Booking
+// reads it through practitionerHoursAt and assert_booking_slot_open.
+const memberClinics = computed(() => activeClinics.value.filter((c) => form.value?.clinic_ids.includes(c.id)))
+const locationOpen = ref<Record<string, boolean>>({})
+function locationHoursSet(clinicId: string) {
+  return hasBusinessHoursConfigured(form.value?.clinic_hours[clinicId])
+}
+function clearLocationHours(clinicId: string) {
+  if (form.value) form.value.clinic_hours = { ...form.value.clinic_hours, [clinicId]: null }
+  locationOpen.value = { ...locationOpen.value, [clinicId]: false }
+}
+function setLocationHours(clinicId: string, hours: BusinessHours) {
+  if (form.value) form.value.clinic_hours = { ...form.value.clinic_hours, [clinicId]: hours }
+}
+const locationProblems = computed(() =>
+  Object.fromEntries(memberClinics.value.map((c) => [c.id, hoursProblems(normalizeHours(form.value?.clinic_hours[c.id]))])),
+)
+// The links they keep whose week changed. A link being added carries its week
+// in the insert, and one being removed takes its week with it.
+const locationHoursChanges = computed(() => {
+  if (!form.value) return []
+  const before = JSON.parse(original.value) as Form
+  return form.value.clinic_ids
+    .filter((id) => before.clinic_ids.includes(id))
+    .map((id) => ({ clinic_id: id, hours: canonicalHours(form.value!.clinic_hours[id] ?? null), was: canonicalHours(before.clinic_hours[id] ?? null) }))
+    .filter((c) => JSON.stringify(c.hours) !== JSON.stringify(c.was))
+})
+const dirty = computed(() => Object.keys(changes.value).length > 0 || clinicChanges.value.added.length > 0 || clinicChanges.value.removed.length > 0 || locationHoursChanges.value.length > 0)
 // The editor always works on a full week; form.business_hours only becomes
 // one when it emits a change.
 const editorHours = computed(() => normalizeHours(form.value?.business_hours))
@@ -174,7 +206,7 @@ const nameMissing = computed(() => !!form.value && !form.value.full_name.trim())
 // has none: they vanish from every calendar and from booking, and counting the
 // archived link let Save pass with the problem still there.
 const noClinic = computed(() => !!form.value && form.value.is_practitioner && !form.value.clinic_ids.some((id) => activeClinics.value.some((c) => c.id === id)))
-const canSave = computed(() => !nameMissing.value && !noClinic.value && Object.keys(problems.value).length === 0)
+const canSave = computed(() => !nameMissing.value && !noClinic.value && Object.keys(problems.value).length === 0 && Object.values(locationProblems.value).every((p) => Object.keys(p).length === 0))
 
 function toggleClinic(id: string) {
   if (!form.value) return
@@ -220,7 +252,7 @@ async function save() {
     }
   }
   if (added.length) {
-    const { error: e } = await supabase.from('team_member_clinics').insert(added.map((clinic_id) => ({ team_member_id: memberId, clinic_id })))
+    const { error: e } = await supabase.from('team_member_clinics').insert(added.map((clinic_id) => ({ team_member_id: memberId, clinic_id, business_hours: canonicalHours(f.clinic_hours[clinic_id] ?? null) })))
     if (e) {
       saving.value = false
       showToast(e.message, 'error', 8000)
@@ -229,6 +261,14 @@ async function save() {
   }
   if (removed.length) {
     const { error: e } = await supabase.from('team_member_clinics').delete().eq('team_member_id', memberId).in('clinic_id', removed)
+    if (e) {
+      saving.value = false
+      showToast(e.message, 'error', 8000)
+      return
+    }
+  }
+  for (const change of locationHoursChanges.value) {
+    const { error: e } = await supabase.from('team_member_clinics').update({ business_hours: change.hours }).eq('team_member_id', memberId).eq('clinic_id', change.clinic_id).select('clinic_id').single()
     if (e) {
       saving.value = false
       showToast(e.message, 'error', 8000)
@@ -246,6 +286,7 @@ async function save() {
 function discard() {
   form.value = JSON.parse(original.value)
   ownHoursOpen.value = false
+  locationOpen.value = {}
   tried.value = false
   seatRefused.value = ''
 }
@@ -537,6 +578,29 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="member-hours-none">
                     <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t("No hours of their own: they can be booked whenever their clinic is open. Set their own only if they work less than that.", 'Sin horario propio: se le puede reservar siempre que su sede esté abierta. Pon uno propio solo si trabaja menos que eso.') }}</span>
                     <UiBtn data-cy="member-hours-set" @click="ownHoursOpen = true">{{ t('Set their own hours', 'Poner horario propio') }}</UiBtn>
+                  </div>
+                </div>
+                <div v-if="memberClinics.length > 1" class="flex flex-col gap-3 border-t border-line-row pt-4" data-cy="member-location-hours">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Hours at each clinic', 'Horario en cada sede') }}</span>
+                    <span :class="hint">{{ t('Only if they are at one of them on set days. Fill in that one alone: at their other clinics they stop being offered at those times.', 'Solo si en alguna está unos días concretos. Basta con rellenar esa: en sus otras sedes deja de ofrecerse a esas horas.') }}</span>
+                  </div>
+                  <div v-for="c in memberClinics" :key="c.id" class="flex flex-col gap-3 rounded-ctl border border-line px-3.5 py-3" data-cy="member-location">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <span class="min-w-0 flex-1 text-[14px] font-semibold text-ink-900">{{ c.name }}</span>
+                      <button v-if="locationHoursSet(c.id) || locationOpen[c.id]" type="button" data-cy="member-location-clear" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="clearLocationHours(c.id)">{{ t('Use their usual hours', 'Usar su horario habitual') }}</button>
+                      <template v-else>
+                        <span class="text-[13.5px] text-ink-700">{{ t('Their usual hours', 'Su horario habitual') }}</span>
+                        <UiBtn data-cy="member-location-set" @click="locationOpen = { ...locationOpen, [c.id]: true }">{{ t('Set hours here', 'Poner horario aquí') }}</UiBtn>
+                      </template>
+                    </div>
+                    <SettingsClinicHoursEditor
+                      v-if="locationHoursSet(c.id) || locationOpen[c.id]"
+                      :model-value="normalizeHours(form.clinic_hours[c.id])"
+                      :problems="locationProblems[c.id] ?? {}"
+                      :empty-note="t('No days set yet: until one is, their usual hours apply here.', 'Aún sin días: hasta que marques alguno, aquí vale su horario habitual.')"
+                      @update:model-value="setLocationHours(c.id, $event)"
+                    />
                   </div>
                 </div>
                 <div class="flex flex-col gap-2 border-t border-line-row pt-4" data-cy="member-overrides">

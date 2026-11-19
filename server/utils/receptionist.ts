@@ -19,7 +19,7 @@ import {
   type SlotType,
 } from '~/utils/receptionistSlots'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
-import type { BusinessHours } from '~/utils/businessHours'
+import { practitionerHoursAt, type BusinessHours } from '~/utils/businessHours'
 import { patientAge } from '~/utils/patientAge'
 import { hasReceptionist } from '~/server/utils/requireGrowth'
 
@@ -169,7 +169,7 @@ export async function loadClinicDetails(supabase: SupabaseClient<Database>, acco
     supabase.from('clinics').select('id, name, address, phone, email, business_hours').eq('account_id', accountId).is('archived_at', null).order('created_at'),
     supabase
       .from('team_members')
-      .select('business_hours, team_member_clinics(clinic_id)')
+      .select('business_hours, team_member_clinics(clinic_id, business_hours)')
       .eq('account_id', accountId)
       .eq('is_practitioner', true)
       .eq('online_booking_enabled', true)
@@ -179,14 +179,15 @@ export async function loadClinicDetails(supabase: SupabaseClient<Database>, acco
     console.error('[receptionist] could not read clinics:', error.message)
     return []
   }
-  const staff = (practitioners ?? []) as unknown as { business_hours: BusinessHours | null; team_member_clinics: { clinic_id: string }[] | null }[]
+  const staff = (practitioners ?? []) as unknown as { business_hours: BusinessHours | null; team_member_clinics: { clinic_id: string; business_hours: BusinessHours | null }[] | null }[]
   return ((clinics ?? []) as { id: string; name: string; address: string | null; phone: string | null; email: string | null; business_hours: BusinessHours | null }[]).map((c) => ({
     name: c.name,
     address: c.address,
     phone: c.phone,
     email: c.email,
     clinicHours: c.business_hours,
-    practitionerHours: staff.filter((p) => (p.team_member_clinics ?? []).some((tmc) => tmc.clinic_id === c.id)).map((p) => p.business_hours),
+    // Each one's hours AT this clinic, where they have a week per location.
+    practitionerHours: staff.filter((p) => (p.team_member_clinics ?? []).some((tmc) => tmc.clinic_id === c.id)).map((p) => practitionerHoursAt(c.id, c.business_hours, p.business_hours, p.team_member_clinics)),
   }))
 }
 
@@ -709,7 +710,7 @@ export async function loadReceptionistCalendar(
       (staffIds
         ? supabase
             .from('team_members')
-            .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours)')
             .eq('account_id', accountId)
             .eq('is_practitioner', true)
             .eq('online_booking_enabled', true)
@@ -717,7 +718,7 @@ export async function loadReceptionistCalendar(
             .in('id', staffIds)
         : supabase
             .from('team_members')
-            .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours)')
             .eq('account_id', accountId)
             .eq('is_practitioner', true)
             .eq('online_booking_enabled', true)
@@ -784,6 +785,7 @@ export async function loadReceptionistCalendar(
         id: p.id,
         businessHours: p.business_hours as BusinessHours | null,
         clinicIds: (p.team_member_clinics ?? []).map((tmc) => tmc.clinic_id),
+        locationHours: (p.team_member_clinics ?? []).map((tmc) => ({ clinic_id: tmc.clinic_id, business_hours: tmc.business_hours as BusinessHours | null })),
       })),
       types,
       appointments: [

@@ -9682,14 +9682,17 @@ export type Database = {
       }
       team_member_clinics: {
         Row: {
+          business_hours: Json | null
           clinic_id: string
           team_member_id: string
         }
         Insert: {
+          business_hours?: Json | null
           clinic_id: string
           team_member_id: string
         }
         Update: {
+          business_hours?: Json | null
           clinic_id?: string
           team_member_id?: string
         }

@@ -402,9 +402,15 @@ async function addClinic(opts: { accountId: string; name: string }) {
 }
 
 /** Has somebody work at one more of the account's clinics, as Settings -> Team -> <member> -> Clinics does. */
-async function linkTeamMemberToClinic(opts: { teamMemberId: string; clinicId: string }) {
-  assertOk(await admin.from('team_member_clinics').insert({ team_member_id: opts.teamMemberId, clinic_id: opts.clinicId }))
+async function linkTeamMemberToClinic(opts: { teamMemberId: string; clinicId: string; businessHours?: Record<string, [string, string][]> | null }) {
+  assertOk(await admin.from('team_member_clinics').insert({ team_member_id: opts.teamMemberId, clinic_id: opts.clinicId, business_hours: opts.businessHours ?? null }))
   return { ok: true }
+}
+
+/** The week somebody works at one clinic (team_member_clinics.business_hours), or null for their usual hours. */
+async function teamMemberLocationHours(opts: { teamMemberId: string; clinicId: string }) {
+  const row = unwrap(await admin.from('team_member_clinics').select('business_hours').eq('team_member_id', opts.teamMemberId).eq('clinic_id', opts.clinicId).single())
+  return { businessHours: row.business_hours as Record<string, [string, string][]> | null }
 }
 
 /** A patient's place in the recall queue, set directly or read back. */
@@ -4949,6 +4955,7 @@ export const dbTasks = {
   'db:setRecallState': setRecallState,
   'db:addClinic': addClinic,
   'db:linkTeamMemberToClinic': linkTeamMemberToClinic,
+  'db:teamMemberLocationHours': teamMemberLocationHours,
   'db:recallState': recallState,
   'db:recallAssignment': recallAssignment,
   'db:setRecallAssignment': setRecallAssignment,

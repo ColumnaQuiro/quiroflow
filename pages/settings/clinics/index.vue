@@ -229,13 +229,13 @@ async function reactivate(c: ClinicRow) {
     <UiConfirmDialog
       v-if="addOpen && planFull"
       :title="t('Your plan has no more locations', 'Tu plan no incluye más sedes')"
-      :confirm-label="t('See plans', 'Ver planes')"
+      :confirm-label="t('Go to Subscription', 'Ir a Suscripción')"
       :cancel-label="t('Cancel', 'Cancelar')"
       @confirm="router.push('/subscription')"
       @cancel="addOpen = false"
     >
       <p class="text-[14px] leading-relaxed text-ink-500" data-cy="clinic-add-plan-full">
-        {{ t(`Your plan includes ${allowance} location(s) and all are in use. To open another, change plan or archive one you no longer use.`, `Tu plan incluye ${allowance} sede(s) y todas están en uso. Para abrir otra, cambia de plan o archiva una que ya no uséis.`) }}
+        {{ t(`Your plan includes ${allowance} location(s) and all are in use. To open another, add a location or change plan in Subscription, or archive one you no longer use.`, `Tu plan incluye ${allowance} sede(s) y todas están en uso. Para abrir otra, añade una sede o cambia de plan en Suscripción, o archiva una que ya no uséis.`) }}
       </p>
     </UiConfirmDialog>
     <UiConfirmDialog

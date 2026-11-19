@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MONTHS_PER_YEAR,
+  clinicAllowance,
   dateBlock,
   formatEur,
   formatGb,
@@ -114,6 +115,50 @@ describe('Seat allowance', () => {
   it('reports no ceiling for an unlimited plan or a comped account', () => {
     expect(seatAllowance(null, 0, false), 'unlimited plan').to.eq(null)
     expect(seatAllowance(4, 1, true), 'comped account').to.eq(null)
+  })
+})
+
+// Clinic since 19 Nov 2026: 2 locations and 6 practitioners included, 29 EUR
+// for each further location and 19 EUR for each further practitioner.
+describe('Clinic plan caps', () => {
+  const CLINIC: PlanPricing = {
+    monthlyPriceCents: 14900,
+    annualPriceCents: 13400,
+    extraProfessionalPriceCents: 1900,
+    extraClinicPriceCents: 2900,
+  }
+  const CLINIC_PLAN = { included_clinics: 2, extra_clinic_price_cents: 2900 }
+  const PRACTICE_PLAN = { included_clinics: 1, extra_clinic_price_cents: null }
+
+  it('charges each bought location, at the same rate on both intervals', () => {
+    // Three sites and nine practitioners: 149 + 1 x 29 + 3 x 19 = 235.
+    const monthly = { interval: 'monthly' as const, extraProfessionals: 3, extraClinics: 1, growthBilled: false }
+    expect(pricePerMonth(CLINIC, monthly, GROWTH)).to.eq(23500)
+    // Annual discounts the plan only: 134 + 29 + 57 = 220 a month, twelve at once.
+    const annual = { ...monthly, interval: 'annual' as const }
+    expect(pricePerMonth(CLINIC, annual, GROWTH)).to.eq(22000)
+    expect(nextChargeTotal(CLINIC, annual, GROWTH)).to.eq(22000 * MONTHS_PER_YEAR)
+  })
+
+  it('charges nothing for locations on a plan with no price for one', () => {
+    const stale = { interval: 'monthly' as const, extraProfessionals: 0, extraClinics: 2, growthBilled: false }
+    expect(pricePerMonth(PRACTICE, stale, GROWTH)).to.eq(9900)
+  })
+
+  it('adds bought locations to the two the plan includes', () => {
+    expect(clinicAllowance(CLINIC_PLAN, 0, false)).to.eq(2)
+    expect(clinicAllowance(CLINIC_PLAN, 3, false)).to.eq(5)
+  })
+
+  it('does not credit bought locations on a plan that does not sell them', () => {
+    // The row a clinic has just after leaving Clinic, before the webhook clears it.
+    expect(clinicAllowance(PRACTICE_PLAN, 2, false)).to.eq(1)
+  })
+
+  it('reports no ceiling for a comped account, an open trial, or a plan with none', () => {
+    expect(clinicAllowance(CLINIC_PLAN, 0, true), 'limits waived').to.eq(null)
+    expect(clinicAllowance({ included_clinics: null, extra_clinic_price_cents: null }, 0, false), 'no cap on the plan').to.eq(null)
+    expect(clinicAllowance(null, 0, false), 'no plan read yet').to.eq(null)
   })
 })
 

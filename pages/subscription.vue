@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
-import { planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
+import { clinicAllowance, planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
 
 // /subscription.
@@ -21,6 +21,7 @@ interface SubscriptionRow {
   status: string
   billing_interval: string
   extra_professionals: number
+  extra_clinics: number
   growth_addon: boolean
   receptionist_addon: boolean
   branding_addon: boolean
@@ -39,6 +40,7 @@ interface SubscriptionRow {
     included_clinics: number | null
     included_storage_gb: number | null
     extra_professional_price_cents: number | null
+    extra_clinic_price_cents: number | null
   } | null
 }
 
@@ -51,6 +53,7 @@ interface PlanRow {
   included_clinics: number | null
   included_storage_gb: number | null
   extra_professional_price_cents: number | null
+  extra_clinic_price_cents: number | null
   sort_order: number
 }
 
@@ -122,7 +125,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
+      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -200,9 +203,15 @@ async function loadReceptionistReplies() {
   receptionistReplies.value = typeof data === 'number' ? data : Number(data ?? 0)
 }
 
+/** Locations bought on top of the plan's; none on a plan that does not sell them. */
+const extraClinicsBilled = computed(() =>
+  subscription.value?.plans?.extra_clinic_price_cents ? (subscription.value.extra_clinics ?? 0) : 0,
+)
+
 const shape = computed(() => ({
   interval: interval.value,
   extraProfessionals: subscription.value?.extra_professionals ?? 0,
+  extraClinics: extraClinicsBilled.value,
   growthBilled: growthBilled.value,
   receptionistBilled: receptionistBilled.value,
   brandingBilled: !!subscription.value?.branding_addon,
@@ -216,6 +225,7 @@ const planPricing = computed(() => {
     monthlyPriceCents: p.monthly_price_cents,
     annualPriceCents: p.annual_price_cents,
     extraProfessionalPriceCents: p.extra_professional_price_cents,
+    extraClinicPriceCents: p.extra_clinic_price_cents,
   }
 })
 
@@ -262,6 +272,16 @@ const planLineItems = computed(() => {
       amountCents: sub.extra_professionals * plan.extra_professional_price_cents,
     })
   }
+  if (extraClinicsBilled.value > 0 && plan.extra_clinic_price_cents) {
+    items.push({
+      key: 'locations',
+      label:
+        extraClinicsBilled.value === 1
+          ? t('1 extra clinic', '1 clínica extra')
+          : t(`${extraClinicsBilled.value} extra clinics`, `${extraClinicsBilled.value} clínicas extra`),
+      amountCents: extraClinicsBilled.value * plan.extra_clinic_price_cents,
+    })
+  }
   if (growthBilled.value && growthAddon.value) {
     items.push({
       key: 'growth',
@@ -299,6 +319,10 @@ const planLineItems = computed(() => {
 
 const seatCeiling = computed(() =>
   seatAllowance(subscription.value?.plans?.included_professionals, subscription.value?.extra_professionals ?? 0, limitsWaived.value),
+)
+
+const clinicCeiling = computed(() =>
+  clinicAllowance(subscription.value?.plans, subscription.value?.extra_clinics ?? 0, limitsWaived.value),
 )
 
 const billingDay = computed(() => {
@@ -416,7 +440,7 @@ onMounted(async () => {
     supabase
       .from('plans')
       .select(
-        'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, sort_order',
+        'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents, sort_order',
       )
       .order('sort_order'),
     supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
@@ -532,6 +556,7 @@ async function addPaymentMethod() {
         planId: sub.plan_id,
         interval: interval.value,
         extraProfessionals: sub.extra_professionals ?? 0,
+        extraClinics: sub.plans?.extra_clinic_price_cents ? (sub.extra_clinics ?? 0) : 0,
         growth: !!sub.growth_addon,
         receptionist: !!sub.receptionist_addon,
       },
@@ -608,6 +633,8 @@ async function addPaymentMethod() {
           :current-plan-id="subscription.plan_id"
           :current-interval="interval"
           :current-extra-seats="subscription.extra_professionals"
+          :current-extra-clinics="extraClinicsBilled"
+          :open-clinic-count="store.clinics.length"
           :current-growth="!!subscription.growth_addon"
           :growth-addon="growthAddon"
           :current-receptionist="receptionistBilled"
@@ -672,7 +699,9 @@ async function addPaymentMethod() {
               :storage-gb="bytesToGb(usage?.storage_bytes ?? 0)"
               :storage-allowance-gb="comped ? null : (subscription.plans?.included_storage_gb ?? null)"
               :clinic-count="store.clinics.length"
-              :clinic-allowance="limitsWaived ? null : (subscription.plans?.included_clinics ?? null)"
+              :clinic-allowance="clinicCeiling"
+              :extra-clinic-price-cents="subscription.plans?.extra_clinic_price_cents ?? null"
+              :plan-clinics="subscription.plans?.included_clinics ?? null"
               :clinic-names="store.clinics.map((c) => c.name)"
               :comped="comped"
               :open-trial="limitsWaived && !comped"

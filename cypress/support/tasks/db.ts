@@ -249,6 +249,16 @@ async function setExtraProfessionals(opts: { accountId: string; extraProfessiona
 }
 
 /**
+ * The locations a Clinic account has bought on top of the plan's two, as the
+ * platform-billing webhook would write them from the Stripe item's quantity.
+ * Feeds clinic_location_allowance() and the cap trigger behind it.
+ */
+async function setExtraClinics(opts: { accountId: string; extraClinics: number }) {
+  assertOk(await admin.from('subscriptions').update({ extra_clinics: opts.extraClinics }).eq('account_id', opts.accountId))
+  return { ok: true }
+}
+
+/**
  * Directly sets a test account's Stripe customer/subscription ids -- bypasses
  * Stripe entirely, same as setSubscriptionStatus/setExtraProfessionals do,
  * for exercising UI that only renders once a "real" (non-trial) subscription
@@ -4810,6 +4820,7 @@ export const dbTasks = {
   'db:setSubscriptionStatus': setSubscriptionStatus,
   'db:setComped': setComped,
   'db:setExtraProfessionals': setExtraProfessionals,
+  'db:setExtraClinics': setExtraClinics,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createLoneUser': createLoneUser,
   'db:createInvite': createInvite,

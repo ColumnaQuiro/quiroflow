@@ -28,7 +28,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -47,6 +47,11 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   if (extraProfessionals > 0 && !addOnPriceId) {
     throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra professionals' })
   }
+  const extraClinicPriceId = body.interval === 'annual' ? plan.stripe_extra_clinic_annual_price_id : plan.stripe_extra_clinic_monthly_price_id
+  const sellsExtraClinics = plan.extra_clinic_price_cents !== null
+  if ((body.extraClinics ?? 0) > 0 && !sellsExtraClinics) {
+    throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra locations' })
+  }
 
   const growth = await growthAddonPrices(serviceRole, body.interval)
   if (wantsGrowth && !growth.priceId) {
@@ -63,9 +68,16 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
 
   const { data: subscription } = await serviceRole
     .from('subscriptions')
-    .select('stripe_customer_id, stripe_subscription_id')
+    .select('stripe_customer_id, stripe_subscription_id, extra_clinics')
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
+
+  // Same as subscribe.post.ts: kept unless the request says otherwise, and
+  // never on a plan that does not sell them.
+  const extraClinics = sellsExtraClinics ? Math.max(0, Math.trunc(body.extraClinics ?? subscription?.extra_clinics ?? 0)) : 0
+  if (extraClinics > 0 && !extraClinicPriceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Extra locations have no Stripe price configured for this billing interval' })
+  }
 
   if (!subscription?.stripe_subscription_id) {
     return { previewable: false }
@@ -85,12 +97,16 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   if (!current) {
     return { previewable: false }
   }
-  const { data: allPlans } = await serviceRole.from('plans').select('stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id')
+  const { data: allPlans } = await serviceRole
+    .from('plans')
+    .select('stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id, stripe_extra_clinic_monthly_price_id, stripe_extra_clinic_annual_price_id')
   const allPlanPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_monthly_price_id, p.stripe_annual_price_id].filter(Boolean)))
   const addOnPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_extra_professional_monthly_price_id, p.stripe_extra_professional_annual_price_id].filter(Boolean)))
 
   const planItem = current.items.data.find((item) => allPlanPriceIds.has(item.price.id))
   const addOnItem = current.items.data.find((item) => addOnPriceIds.has(item.price.id))
+  const extraClinicPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_extra_clinic_monthly_price_id, p.stripe_extra_clinic_annual_price_id].filter(Boolean)))
+  const extraClinicItem = current.items.data.find((item) => extraClinicPriceIds.has(item.price.id))
   const growthItem = current.items.data.find((item) => growth.allPriceIds.has(item.price.id))
 
   const items: Array<{ id?: string; price?: string; quantity?: number; deleted?: boolean }> = []
@@ -99,6 +115,11 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     items.push(addOnItem ? { id: addOnItem.id, price: addOnPriceId, quantity: extraProfessionals } : { price: addOnPriceId, quantity: extraProfessionals })
   } else if (addOnItem) {
     items.push({ id: addOnItem.id, deleted: true })
+  }
+  if (extraClinics > 0 && extraClinicPriceId) {
+    items.push(extraClinicItem ? { id: extraClinicItem.id, price: extraClinicPriceId, quantity: extraClinics } : { price: extraClinicPriceId, quantity: extraClinics })
+  } else if (extraClinicItem) {
+    items.push({ id: extraClinicItem.id, deleted: true })
   }
   if (wantsGrowth && growth.priceId) {
     items.push(growthItem ? { id: growthItem.id, price: growth.priceId, quantity: 1 } : { price: growth.priceId, quantity: 1 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, isVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
+import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, handoverReasonSaysNothing, isVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
 import { BASE_BEHAVIOUR, BASE_ESCALATIONS } from '../../utils/receptionistBaseRules'
 import { CONFIRM_BEFORE_BOOKING, phoneSharersSection } from '../../utils/receptionistTypes'
 
@@ -184,5 +184,21 @@ describe('A chosen time from an offer sent on an earlier day', () => {
   it('keeps a weekday to the one after the offer', () => {
     const weekly = 'Puedo ofrecerte el martes 24 a las 9:00 o el jueves 26 a las 15:30. ¿Cuál prefieres?'
     expect(chosenTimeNote(chosenOfferedTime(weekly, 'el jueves')!, true, days)).toContain('never a week later')
+  })
+})
+
+// 19 Nov 2026: a handover reached the Inbox banner, the note, the push and
+// the task with the reason "placeholder".
+describe('handoverReasonSaysNothing', () => {
+  it('refuses an empty, one-word or filler reason', () => {
+    for (const reason of ['', 'placeholder', 'Placeholder.', 'TODO', '...', 'n/a', 'No reason given', 'sin motivo', 'reason here', 'x y']) {
+      expect(handoverReasonSaysNothing(reason), reason).toBe(true)
+    }
+  })
+
+  it('accepts a short real reason', () => {
+    for (const reason of ['Quiere cancelar', 'Pregunta por una factura de octubre.', 'Wants a refund', 'Llega tarde a su cita de las 15:00 y pregunta si puede venir.']) {
+      expect(handoverReasonSaysNothing(reason), reason).toBe(false)
+    }
   })
 })

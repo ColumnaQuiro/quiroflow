@@ -12,7 +12,7 @@ import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMEN
 import type { OfferedSlot } from '~/utils/receptionistConversion'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
-import { colleaguePromise, colleaguePromiseReason } from '~/utils/receptionistFollowThrough'
+import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UNEXPLAINED_HANDOVER_REASON } from '~/utils/receptionistFollowThrough'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -450,8 +450,15 @@ export async function runReceptionistModel(
           })
         } else if (use.name === 'hand_over_to_colleague' && opts.handOver) {
           const reason = String((use.input as { reason?: unknown })?.reason ?? '').trim().slice(0, 300)
-          handedOver = reason || 'No reason given'
-          result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
+          // The handover stands either way: a reason that says nothing is
+          // asked for again, never a cause to lose the handover itself.
+          if (handoverReasonSaysNothing(reason)) {
+            handedOver = handedOver ?? UNEXPLAINED_HANDOVER_REASON
+            result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in the clinic's language: what the person needs and why you handed it over.`, isError: true }
+          } else {
+            handedOver = reason
+            result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
+          }
         } else {
           result = { content: `There is no tool called ${use.name}.`, isError: true }
         }

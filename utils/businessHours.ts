@@ -126,6 +126,30 @@ export function practitionerHoursAt(
   return hasBusinessHoursConfigured(out) ? out : NO_HOURS_HERE
 }
 
+// The whole week somebody works, wherever they are: for what is about the
+// PERSON rather than one location -- their shift against what they clocked,
+// the days a holiday uses up, when a push would reach them off duty.
+//
+// Their usual hours (their own, or clinicHours for a practitioner with none)
+// plus the week set for each location. An evening at a second location that
+// their usual hours do not cover is still an evening at work. With no
+// per-location week anywhere this returns memberHours untouched.
+export function wholeWeek(
+  clinicHours: BusinessHours | null | undefined,
+  memberHours: BusinessHours | null | undefined,
+  locations: { business_hours: BusinessHours | null }[] | null | undefined,
+): BusinessHours | null {
+  const set = (locations ?? []).filter((l) => hasBusinessHoursConfigured(l.business_hours))
+  if (set.length === 0) return memberHours ?? null
+  const base = hasBusinessHoursConfigured(memberHours) ? memberHours : clinicHours
+  const out: BusinessHours = {}
+  for (const day of DAY_KEYS) {
+    const windows = mergeWindows([...(base?.[day] ?? []), ...set.flatMap((l) => l.business_hours?.[day] ?? [])])
+    if (windows.length) out[day] = windows
+  }
+  return out
+}
+
 function toHhmm(mins: number): string {
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
 }

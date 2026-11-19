@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { practitionerHoursAt, practitionerWindowsForDay, type BusinessHours } from '../../utils/businessHours'
+import { practitionerHoursAt, practitionerWindowsForDay, wholeWeek, type BusinessHours } from '../../utils/businessHours'
 import { bookingSlotsForDay } from '../../utils/bookingSlots'
 
 // The week somebody works at ONE location (utils/businessHours.ts
@@ -65,5 +65,30 @@ describe('Hours per location', () => {
     expect(slots(GYM, gymHours, '2026-11-24')).toEqual(['2026-11-24T16:00:00.000Z', '2026-11-24T17:00:00.000Z', '2026-11-24T18:00:00.000Z'])
     expect(slots(GYM, gymHours, '2026-11-25')).toEqual([])
     expect(slots(CLINIC, clinicHours, '2026-11-24').at(-1)).toBe('2026-11-24T15:00:00.000Z')
+  })
+})
+
+// What is about the person rather than one location: their shift against what
+// they clocked, holiday days, push quiet hours (wholeWeek).
+describe('The whole week somebody works', () => {
+  const usual: BusinessHours = { mon: [['09:00', '14:00']], tue: [['09:00', '14:00']] }
+  const gym = [{ business_hours: { tue: [['17:00', '20:00']], sat: [['10:00', '12:00']] } as BusinessHours }]
+
+  it('is their usual hours when no location has a week of its own', () => {
+    expect(wholeWeek(null, usual, null)).toBe(usual)
+    expect(wholeWeek(null, usual, [{ business_hours: null }])).toBe(usual)
+    expect(wholeWeek(null, null, [])).toBe(null)
+  })
+
+  it('adds the week set for a location to their usual hours', () => {
+    expect(wholeWeek(null, usual, gym)).toEqual({ mon: [['09:00', '14:00']], tue: [['09:00', '14:00'], ['17:00', '20:00']], sat: [['10:00', '12:00']] })
+  })
+
+  it('folds a location that overlaps their usual hours into one stretch', () => {
+    expect(wholeWeek(null, usual, [{ business_hours: { tue: [['13:00', '16:00']] } }])?.tue).toEqual([['09:00', '16:00']])
+  })
+
+  it('starts from the clinic’s hours for a practitioner with none of their own', () => {
+    expect(wholeWeek({ wed: [['08:00', '12:00']] }, null, gym)).toEqual({ tue: [['17:00', '20:00']], wed: [['08:00', '12:00']], sat: [['10:00', '12:00']] })
   })
 })

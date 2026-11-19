@@ -3,7 +3,7 @@ import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
 import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows, visitLineMissing } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
-import { recordBonoSale } from '../utils/bonoSale'
+import { recordBonoSale, type SoldBono } from '../utils/bonoSale'
 
 // Charging one visit: raising its invoice, adding and removing lines, drawing
 // it from a bono, and taking payment for it -- with the factura, the credit
@@ -617,6 +617,53 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   /** Selling a bono needs what the patient record's sale needs, plus taking money. */
   const canSellBono = computed(() => (ctx.can('packages_edit') || ctx.can('billing_config')) && ctx.can('payments_allocate'))
 
+  // utils/bonoSale, with this patient's credit, and the summary read again
+  // after. Sets error when nothing was sold.
+  async function recordSale(sale: VisitBonoSale) {
+    saving.value = true
+    const result = await recordBonoSale(
+      supabase,
+      { issueFactura, t },
+      {
+        accountId: accountId(),
+        patientId: patientId(),
+        teamMemberId: toValue(ctx.teamMemberId) ?? null,
+        packageId: sale.packageId,
+        installments: sale.installments,
+        amountCents: sale.amountCents,
+        method: sale.method,
+        spendableCreditCents: spendableCreditCents.value,
+        creditLedgerCents: creditLedgerCents.value,
+      },
+    )
+    saving.value = false
+    await refreshSummary()
+    if (!result.purchase) error.value = result.error ?? t('Could not sell the bono.', 'No se ha podido vender el bono.')
+    return result
+  }
+
+  // The next bono, after this visit has drawn the last session of the one
+  // before. The checkout's sale makes the visit the new bono's first session,
+  // so it is only offered while the visit is unpaid -- and the visit that
+  // finishes a bono is paid by that bono, so the moment the patient decides to
+  // buy another was the one moment the appointment could not sell it, and the
+  // desk had to go to the record (19 Nov). This sells it and takes nothing:
+  // its first session is the next visit's.
+  /** Returns the bono sold, or null when nothing was. */
+  async function sellNextBono(sale: VisitBonoSale): Promise<SoldBono | null> {
+    error.value = ''
+    const { purchase, error: saleError } = await recordSale(sale)
+    if (!purchase) return null
+    if (saleError) {
+      const why = /[.!?]$/.test(saleError) ? saleError : `${saleError}.`
+      error.value = t(
+        `${purchase.package_name} was sold. ${why} Record the payment on the patient's Billing tab.`,
+        `${purchase.package_name} se ha vendido. ${why} Registra el pago en la ficha del paciente.`,
+      )
+    }
+    return purchase
+  }
+
   // A patient who has just decided to buy a bono, at the end of the visit
   // that convinced them: the visit is its first session. Reception used to
   // leave the appointment, sell the bono on the patient's record, and come
@@ -639,28 +686,8 @@ export function useVisitCharging(ctx: VisitChargingContext) {
       await loadInvoice()
       return null
     }
-    saving.value = true
-    const { purchase, error: saleError } = await recordBonoSale(
-      supabase,
-      { issueFactura, t },
-      {
-        accountId: accountId(),
-        patientId: patientId(),
-        teamMemberId: toValue(ctx.teamMemberId) ?? null,
-        packageId: sale.packageId,
-        installments: sale.installments,
-        amountCents: sale.amountCents,
-        method: sale.method,
-        spendableCreditCents: spendableCreditCents.value,
-        creditLedgerCents: creditLedgerCents.value,
-      },
-    )
-    saving.value = false
-    await refreshSummary()
-    if (!purchase) {
-      error.value = saleError ?? t('Could not sell the bono.', 'No se ha podido vender el bono.')
-      return null
-    }
+    const { purchase, error: saleError } = await recordSale(sale)
+    if (!purchase) return null
     // Sold, but the money was refused. The session is NOT taken: charged now
     // it would sit unpaid against a balance the payment never reached, and
     // the visit would read as settled by a bono nobody has paid for. The bono
@@ -836,6 +863,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     loadBonoTemplates,
     canSellBono,
     sellBonoForVisit,
+    sellNextBono,
     recordPayment,
     afterThirdPartyChange,
   }

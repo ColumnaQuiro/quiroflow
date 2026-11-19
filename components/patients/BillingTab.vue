@@ -308,6 +308,26 @@ const creditError = ref('')
 
 // Which quick-action panel (if any) is expanded below the summary strip.
 const activePanel = ref<'credit' | 'payment' | 'gift' | 'product' | null>(null)
+
+// "Sell product" only for a clinic that sells products (Settings > Products).
+// Most never set one up, and a button beside Cobrar that opened onto an empty
+// catalogue was where the front desk went looking for "sell a bono".
+const hasProducts = ref(false)
+async function loadHasProducts() {
+  const { count } = await supabase.from('services_products').select('id', { count: 'exact', head: true }).eq('kind', 'product')
+  hasProducts.value = (count ?? 0) > 0
+}
+
+// "Sell bono" beside Cobrar: the sale form is the first thing in the Bonos
+// card below, so this takes the eye there and opens the choice.
+const sellSelect = ref<HTMLSelectElement | null>(null)
+function openSellBono() {
+  activePanel.value = null
+  const el = sellSelect.value
+  if (!el) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  el.focus({ preventScroll: true })
+}
 // A gift voucher redeemed here (PatientsRedeemGiftVoucher) is a payment, a
 // credit row or a bono, and a factura: everything this tab shows moves.
 async function onMoneyAdded() {
@@ -1073,6 +1093,7 @@ async function onLedgerCreditsChanged() {
 onMounted(async () => {
   loadAll()
   loadFacturas()
+  loadHasProducts()
   maybeOpenPaymentFromTrigger()
   // Then preselect whatever the clinic put first, rather than leaving the
   // hardcoded 'cash' every form was initialised with.
@@ -2707,11 +2728,14 @@ const fieldId = useId()
           </li>
         </ul>
         <p v-else-if="outstandingCents <= 0" class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
-        <div v-if="canTakePayments" class="mt-3 flex flex-wrap gap-2">
-          <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
+        <div v-if="canTakePayments || canManagePackages" class="mt-3 flex flex-wrap gap-2">
+          <UiBtn v-if="canTakePayments" variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
             {{ t('Take payment', 'Cobrar') }}
           </UiBtn>
-          <UiBtn variant="secondary" size="sm" data-cy="sell-product-open" @click="activePanel = activePanel === 'product' ? null : 'product'">
+          <UiBtn v-if="canManagePackages" variant="secondary" size="sm" data-cy="sell-bono-open" @click="openSellBono">
+            {{ t('Sell bono', 'Vender bono') }}
+          </UiBtn>
+          <UiBtn v-if="canTakePayments && hasProducts" variant="secondary" size="sm" data-cy="sell-product-open" @click="activePanel = activePanel === 'product' ? null : 'product'">
             {{ t('Sell product', 'Vender producto') }}
           </UiBtn>
         </div>
@@ -3004,6 +3028,55 @@ const fieldId = useId()
           </div>
         </div>
         <template v-else>
+        <!-- The sale first, then what they already have. It sat under the
+        list, so a patient with a few bonos behind them pushed it off the
+        screen, and a receptionist looking for "sell a bono" found Cobrar and
+        Vender producto instead (19 Nov). "Vender bono" beside Cobrar brings
+        the eye here too. -->
+        <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2" data-cy="sell-package-form" @submit.prevent="sellPackage">
+          <select ref="sellSelect" v-model="sellPackageId" data-cy="sell-package-select" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
+            <option value="" disabled>{{ t('Sell a bono…', 'Vender un bono…') }}</option>
+            <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
+          </select>
+          <div v-if="sellPackageId && sellOptions.length">
+            <label :for="`${fieldId}-sellInstallments`" class="block text-[11px] text-ink-muted">{{ t('How it is paid', 'Forma de pago') }}</label>
+            <select :id="`${fieldId}-sellInstallments`" v-model.number="sellInstallments" data-cy="sell-package-installments" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+              <option :value="1">{{ t(`At once · ${money(sellTemplate!.price_cents)}`, `En un pago · ${money(sellTemplate!.price_cents)}`) }}</option>
+              <option v-for="o in sellOptions" :key="o.installments" :value="o.installments">
+                {{ t(`${o.installments} plazos of ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`, `${o.installments} plazos de ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`) }}
+              </option>
+            </select>
+          </div>
+          <div v-if="sellPackageId">
+            <label :for="`${fieldId}-sellAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
+            <input :id="`${fieldId}-sellAmountPaid`" v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+          </div>
+          <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
+            <label :for="`${fieldId}-sellMethod`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-sellMethod`" v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
+              <!--
+                Always rendered, disabled when there is nothing spendable,
+                rather than hidden. Hidden, paying from credit looked like
+                something the app couldn't do at all: there was no way to tell
+                "this patient has no credit" apart from "this isn't possible
+                here", and with only three patients in the database holding an
+                account_credits row, nobody ever saw it appear.
+              -->
+              <option value="credit" :disabled="spendableCreditCents <= 0">
+                {{ t('Credit on account', 'Crédito en cuenta') }}
+                ({{ spendableCreditCents > 0 ? `${formatEur(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+              </option>
+            </select>
+          </div>
+          <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
+        </form>
+        <p v-if="sellPackageId && sellInstallments > 1" class="mt-1.5 text-[11px] text-ink-faint" data-cy="sell-package-installments-note">
+          {{ t('Each further plazo falls due once the sessions already paid for are used. Collect it from the bono, or put it on Stripe autopay.', 'Cada plazo siguiente vence al gastar las sesiones ya pagadas. Cóbralo desde el bono o prográmalo con el pago automático de Stripe.') }}
+        </p>
+        <p v-else-if="sellPackageId && Number(sellAmountPaid) > 0 && Number(sellAmountPaid) * 100 < sellTotalCents" class="mt-1.5 text-[11px] text-ink-faint">
+          {{ t('Remaining balance can be scheduled via Stripe autopay after the sale.', 'El saldo restante se puede programar mediante el pago automático de Stripe después de la venta.') }}
+        </p>
         <div class="mt-3 space-y-3">
           <!-- data-cy so the specs can scope to one bono's card by name;
                everything in here is styling classes otherwise. -->
@@ -3247,50 +3320,6 @@ const fieldId = useId()
             {{ canManagePackages ? t('No bonos bought yet.', 'Aún no ha comprado ningún bono.') : t('Your role does not include selling or editing bonos.', 'Tu rol no incluye vender ni editar bonos.') }}
           </p>
         </div>
-        <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" data-cy="sell-package-form" @submit.prevent="sellPackage">
-          <select v-model="sellPackageId" data-cy="sell-package-select" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
-            <option value="" disabled>{{ t('Sell a bono…', 'Vender un bono…') }}</option>
-            <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
-          </select>
-          <div v-if="sellPackageId && sellOptions.length">
-            <label :for="`${fieldId}-sellInstallments`" class="block text-[11px] text-ink-muted">{{ t('How it is paid', 'Forma de pago') }}</label>
-            <select :id="`${fieldId}-sellInstallments`" v-model.number="sellInstallments" data-cy="sell-package-installments" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
-              <option :value="1">{{ t(`At once · ${money(sellTemplate!.price_cents)}`, `En un pago · ${money(sellTemplate!.price_cents)}`) }}</option>
-              <option v-for="o in sellOptions" :key="o.installments" :value="o.installments">
-                {{ t(`${o.installments} plazos of ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`, `${o.installments} plazos de ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`) }}
-              </option>
-            </select>
-          </div>
-          <div v-if="sellPackageId">
-            <label :for="`${fieldId}-sellAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
-            <input :id="`${fieldId}-sellAmountPaid`" v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
-          </div>
-          <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
-            <label :for="`${fieldId}-sellMethod`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-            <select :id="`${fieldId}-sellMethod`" v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
-              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-              <!--
-                Always rendered, disabled when there is nothing spendable,
-                rather than hidden. Hidden, paying from credit looked like
-                something the app couldn't do at all: there was no way to tell
-                "this patient has no credit" apart from "this isn't possible
-                here", and with only three patients in the database holding an
-                account_credits row, nobody ever saw it appear.
-              -->
-              <option value="credit" :disabled="spendableCreditCents <= 0">
-                {{ t('Credit on account', 'Crédito en cuenta') }}
-                ({{ spendableCreditCents > 0 ? `${formatEur(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
-              </option>
-            </select>
-          </div>
-          <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
-        </form>
-        <p v-if="sellPackageId && sellInstallments > 1" class="mt-1.5 text-[11px] text-ink-faint" data-cy="sell-package-installments-note">
-          {{ t('Each further plazo falls due once the sessions already paid for are used. Collect it from the bono, or put it on Stripe autopay.', 'Cada plazo siguiente vence al gastar las sesiones ya pagadas. Cóbralo desde el bono o prográmalo con el pago automático de Stripe.') }}
-        </p>
-        <p v-else-if="sellPackageId && Number(sellAmountPaid) > 0 && Number(sellAmountPaid) * 100 < sellTotalCents" class="mt-1.5 text-[11px] text-ink-faint">
-          {{ t('Remaining balance can be scheduled via Stripe autopay after the sale.', 'El saldo restante se puede programar mediante el pago automático de Stripe después de la venta.') }}
-        </p>
         </template>
       </div>
 

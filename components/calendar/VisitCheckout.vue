@@ -56,6 +56,7 @@ const {
   loadBonoTemplates,
   canSellBono,
   sellBonoForVisit,
+  sellNextBono,
   recordPayment,
 } = useVisitCharging({
   appointmentId: () => props.appointmentId,
@@ -167,6 +168,30 @@ watch(sellId, () => {
   prefillSale()
 })
 watch(sellInstallments, prefillSale)
+
+// The visit that uses up a bono is paid by it, so the checkout above is gone
+// by then -- and with it its "Sell a bono", at exactly the moment a patient
+// decides to buy the next one. Offered when this visit drew from a bono and
+// none of theirs has a session left; the bono is sold as it would be on the
+// record, and its first session is the next visit's (sellNextBono).
+const nextBonoOffered = computed(
+  () => ready.value && !offered.value && canSellBono.value && !!packageCoverage.value && activePackages.value.length === 0,
+)
+const nextBonoOpen = ref(false)
+const nextBonoSold = ref<string | null>(null)
+function openNextBono() {
+  nextBonoOpen.value = true
+  if (bonoTemplates.value.length === 0) void loadBonoTemplates()
+}
+async function sellNext() {
+  if (!sellTemplate.value || saving.value) return
+  const sold = await sellNextBono({ packageId: sellTemplate.value.id, installments: sellInstallments.value, amountCents: sellAmountCents.value, method: sellMethod.value })
+  if (!sold) return
+  nextBonoSold.value = sold.package_name
+  nextBonoOpen.value = false
+  sellId.value = ''
+  emit('completed')
+}
 
 const selectedPackage = computed(() => activePackages.value.find((p) => p.id === choice.value) ?? null)
 const buttonLabel = computed(() => {
@@ -285,40 +310,22 @@ async function charge() {
             <span class="text-[12.5px] text-ink-muted">{{ t('This visit is its first session', 'Esta visita es su primera sesión') }}</span>
           </span>
         </button>
-        <div v-if="choice === 'sell'" class="flex flex-col gap-2 px-3.5 pb-3 pl-[2.85rem] text-[12.5px] font-medium text-ink-600">
-          <label class="flex items-center gap-2">
-            {{ t('Bono', 'Bono') }}
-            <select v-model="sellId" data-cy="checkout-sell-select" :disabled="saving || processing" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="" disabled>{{ bonoTemplates.length ? t('Choose a bono…', 'Elige un bono…') : t('No bonos set up', 'No hay bonos configurados') }}</option>
-              <option v-for="b in bonoTemplates" :key="b.id" :value="b.id">{{ b.name }} ({{ b.session_count }}, {{ formatEur(b.price_cents) }})</option>
-            </select>
-          </label>
-          <label v-if="sellTemplate && sellOptions.length" class="flex items-center gap-2">
-            {{ t('How it is paid', 'Forma de pago') }}
-            <select v-model.number="sellInstallments" data-cy="checkout-sell-installments" :disabled="saving || processing" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option :value="1">{{ t(`At once · ${formatEur(sellTemplate.price_cents)}`, `En un pago · ${formatEur(sellTemplate.price_cents)}`) }}</option>
-              <option v-for="o in sellOptions" :key="o.installments" :value="o.installments">
-                {{ t(`${o.installments} plazos of ${formatEur(o.installmentCents)}`, `${o.installments} plazos de ${formatEur(o.installmentCents)}`) }}
-              </option>
-            </select>
-          </label>
-          <div v-if="sellTemplate" class="flex flex-wrap items-center gap-2">
-            <label class="flex items-center gap-2">
-              {{ t('Paid now (€)', 'Pagado ahora (€)') }}
-              <input v-model="sellAmount" data-cy="checkout-sell-amount" type="number" min="0" step="0.01" inputmode="decimal" :disabled="saving || processing" class="h-9 touch:h-11 w-24 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            </label>
-            <label v-if="sellAmountCents > 0" class="flex min-w-0 flex-1 items-center gap-2">
-              {{ t('Method', 'Método') }}
-              <select v-model="sellMethod" data-cy="checkout-sell-method" :disabled="saving || processing" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-                <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-                <option v-if="spendableCreditCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }})</option>
-              </select>
-            </label>
-          </div>
-          <p v-if="sellTemplate && sellAmountCents < sellTotalCents" class="text-[11.5px] font-normal text-ink-faint" data-cy="checkout-sell-owed-note">
-            {{ t('The rest stays owed on the bono; collect it later from the patient record.', 'El resto queda pendiente en el bono; cóbralo después desde la ficha del paciente.') }}
-          </p>
-        </div>
+        <CalendarBonoSaleFields
+          v-if="choice === 'sell'"
+          v-model:id="sellId"
+          v-model:installments="sellInstallments"
+          v-model:amount="sellAmount"
+          v-model:method="sellMethod"
+          class="px-3.5 pb-3 pl-[2.85rem]"
+          :templates="bonoTemplates"
+          :template="sellTemplate"
+          :options="sellOptions"
+          :amount-cents="sellAmountCents"
+          :total-cents="sellTotalCents"
+          :payment-methods="paymentMethods"
+          :spendable-credit-cents="spendableCreditCents"
+          :disabled="saving || processing"
+        />
       </div>
     </div>
 
@@ -329,6 +336,44 @@ async function charge() {
       <button type="button" data-cy="checkout-details" class="h-9 touch:h-11 text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="emit('details')">
         {{ t('Add services or split the payment', 'Añadir servicios o dividir el pago') }}
       </button>
+    </div>
+    <p v-if="error" role="alert" class="mt-2 text-[13px] text-danger-text" data-cy="checkout-error">{{ error }}</p>
+  </section>
+  <section v-else-if="nextBonoOffered || nextBonoSold" data-cy="next-bono">
+    <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Bono used up', 'Bono terminado') }}</h3>
+    <p v-if="nextBonoSold" class="rounded-ctl border border-success-border bg-success-bg px-3.5 py-2.5 text-[13px] font-semibold text-success-text" data-cy="next-bono-sold">
+      {{ t(`${nextBonoSold} sold. Its first session is the next visit.`, `${nextBonoSold} vendido. Su primera sesión será la próxima visita.`) }}
+    </p>
+    <div v-else class="rounded-ctl border border-line-control px-3.5 py-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="min-w-0 flex-1 text-[13px] text-ink-700">{{ t('No bono sessions left after this visit.', 'Después de esta visita no le quedan sesiones de bono.') }}</span>
+        <button v-if="!nextBonoOpen" type="button" data-cy="next-bono-open" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-bold text-brand-on hover:bg-brand-hover" @click="openNextBono">
+          {{ t('Sell a new bono', 'Vender bono nuevo') }}
+        </button>
+      </div>
+      <template v-if="nextBonoOpen">
+        <CalendarBonoSaleFields
+          v-model:id="sellId"
+          v-model:installments="sellInstallments"
+          v-model:amount="sellAmount"
+          v-model:method="sellMethod"
+          class="mt-3"
+          :templates="bonoTemplates"
+          :template="sellTemplate"
+          :options="sellOptions"
+          :amount-cents="sellAmountCents"
+          :total-cents="sellTotalCents"
+          :payment-methods="paymentMethods"
+          :spendable-credit-cents="spendableCreditCents"
+          :disabled="saving"
+        />
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" data-cy="next-bono-sell" :disabled="saving || !sellTemplate" class="flex h-10 touch:h-12 items-center rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="sellNext">
+            {{ saving ? t('Selling…', 'Vendiendo…') : sellTemplate ? t(`Sell ${sellTemplate.name}`, `Vender ${sellTemplate.name}`) : t('Choose a bono', 'Elige un bono') }}
+          </button>
+          <button type="button" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" :disabled="saving" @click="nextBonoOpen = false">{{ t('Cancel', 'Cancelar') }}</button>
+        </div>
+      </template>
     </div>
     <p v-if="error" role="alert" class="mt-2 text-[13px] text-danger-text" data-cy="checkout-error">{{ error }}</p>
   </section>

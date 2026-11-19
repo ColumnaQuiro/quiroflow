@@ -80,6 +80,8 @@ const loadError = ref('')
 const patient = ref<PatientRow | null>(null)
 const types = ref<TypeRow[]>([])
 const allPractitioners = ref<PractitionerRow[]>([])
+// Every practitioner's links to a clinic, each with the week they work there when they have one.
+const clinicLinks = ref<{ team_member_id: string; clinic_id: string; business_hours: BusinessHours | null }[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const clinic = ref<ClinicRow | null>(null)
 const plan = ref<PlanRow | null>(null)
@@ -110,7 +112,18 @@ const practitioners = computed(() => {
   }
   return allPractitioners.value
 })
-const practitioner = computed(() => practitioners.value.find((p) => p.id === practitionerId.value) ?? null)
+// With the hours they work at THIS clinic (practitionerHoursAt): somebody at
+// two locations can have a week for each, and the time they are down to be at
+// the other one is not theirs here. Everything below reads business_hours off
+// this, so the days, the times and the series check all follow.
+const practitioner = computed(() => {
+  const chosen = practitioners.value.find((p) => p.id === practitionerId.value)
+  if (!chosen) return null
+  return {
+    ...chosen,
+    business_hours: practitionerHoursAt(clinic.value?.id, clinic.value?.business_hours, chosen.business_hours, clinicLinks.value.filter((l) => l.team_member_id === chosen.id)),
+  }
+})
 const type = computed(() => types.value.find((x) => x.id === typeId.value) ?? null)
 // A moved visit keeps its own length, as a drag on the web calendar does.
 // A move can change the visit's type too (the web's "Cambiar"): kept at its
@@ -329,7 +342,7 @@ async function load() {
     // Not group classes: a class place is taken in its session, from the web calendar.
     supabase.from('appointment_types').select('id, name, duration_minutes, sort_order').is('archived_at', null).is('class_capacity', null).order('sort_order', { nullsFirst: false }).order('name'),
     supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
-    supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
+    supabase.from('team_member_clinics').select('team_member_id, clinic_id, business_hours'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('clinics').select('id, timezone, business_hours').is('archived_at', null).order('name'),
     supabase.from('care_plans').select('frequency_value, frequency_unit, visits_per_period, total_visits, started_at').eq('patient_id', props.patientId).order('created_at', { ascending: false }).limit(1),
@@ -373,7 +386,8 @@ async function load() {
   clinic.value = clinics.find((c) => c.id === context.value!.clinicId) ?? clinics.find((c) => c.id === patient.value!.clinic_id) ?? clinics[0] ?? null
 
   // The practitioners who work at this clinic, when the clinic has any linked.
-  const linked = new Set(((links.data as { team_member_id: string; clinic_id: string }[]) ?? []).filter((l) => l.clinic_id === clinic.value?.id).map((l) => l.team_member_id))
+  clinicLinks.value = (links.data as typeof clinicLinks.value | null) ?? []
+  const linked = new Set(clinicLinks.value.filter((l) => l.clinic_id === clinic.value?.id).map((l) => l.team_member_id))
   const everyone = (pr.data as PractitionerRow[]) ?? []
   // A visit being moved keeps its practitioner even when they are not
   // linked to this clinic: dropped from the list, the move silently handed

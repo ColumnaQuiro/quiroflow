@@ -94,7 +94,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: plans, error: plansError } = await supabase
     .from('plans')
-    .select('id, stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id')
+    .select('id, stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id, stripe_extra_clinic_monthly_price_id, stripe_extra_clinic_annual_price_id')
 
   if (plansError) fail('Could not read plans', plansError)
 
@@ -106,6 +106,7 @@ export default defineEventHandler(async (event) => {
   let planId: string | null = null
   let billingInterval: Database['public']['Tables']['subscriptions']['Row']['billing_interval'] = 'monthly'
   let extraProfessionals = 0
+  let extraClinics = 0
   let growthAddon = false
   let receptionistAddon = false
   let brandingAddon = false
@@ -123,6 +124,11 @@ export default defineEventHandler(async (event) => {
     const addOnPlan = (plans ?? []).find((p) => p.stripe_extra_professional_monthly_price_id === priceId || p.stripe_extra_professional_annual_price_id === priceId)
     if (addOnPlan) {
       extraProfessionals = item.quantity ?? 0
+      continue
+    }
+    const extraClinicPlan = (plans ?? []).find((p) => p.stripe_extra_clinic_monthly_price_id === priceId || p.stripe_extra_clinic_annual_price_id === priceId)
+    if (extraClinicPlan) {
+      extraClinics = item.quantity ?? 0
       continue
     }
     const growth = (addons ?? []).find((a) => a.id === 'growth' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
@@ -178,6 +184,9 @@ export default defineEventHandler(async (event) => {
             plan_id: planId as string,
             billing_interval: billingInterval,
             extra_professionals: extraProfessionals,
+            // Absent item, no bought locations -- which is what leaving
+            // Clinic, the only plan that sells them, looks like.
+            extra_clinics: extraClinics,
             // Absent item means absent add-on: dropping Growth has to turn the
             // column off, not just leave it wherever it was. That makes the
             // Stripe subscription the single source of truth for what was

@@ -58,7 +58,7 @@ describe('Buying the Growth add-on', () => {
 
       cy.get('@soloCard').contains('button', /^Switch to |^Stay on /).should('exist')
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, extraClinics: 0, growth: true, receptionist: false })
     })
   })
 
@@ -81,7 +81,7 @@ describe('Buying the Growth add-on', () => {
 
       cy.get('@growthCard').find('[role="switch"]').click()
       cy.get('@soloCard').contains('button', /^Stay on /).should('be.disabled')
-      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false })
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, extraClinics: 0, growth: false, receptionist: false })
     })
   })
 })
@@ -108,7 +108,7 @@ describe('Buying the AI receptionist on its own', () => {
       cy.get('@footer').should('contain', '64,00')
 
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: true })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, extraClinics: 0, growth: false, receptionist: true })
     })
   })
 
@@ -132,7 +132,7 @@ describe('Buying the AI receptionist on its own', () => {
       cy.contains('button', 'Confirm change').closest('.rounded-card').should('contain', '84,00')
 
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, extraClinics: 0, growth: true, receptionist: false })
     })
   })
 })

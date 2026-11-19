@@ -123,6 +123,8 @@ export interface PlanPricing {
   monthlyPriceCents: number
   annualPriceCents: number
   extraProfessionalPriceCents: number | null
+  /** What one location beyond the plan's own costs; null on a plan that does not sell them. */
+  extraClinicPriceCents?: number | null
 }
 
 export interface AddonPricing {
@@ -133,6 +135,8 @@ export interface AddonPricing {
 export interface SubscriptionShape {
   interval: BillingInterval
   extraProfessionals: number
+  /** Locations bought on top of the plan's own (Clinic only). */
+  extraClinics?: number
   /** Whether the add-on is actually bought AND billed as its own line. */
   growthBilled: boolean
   /** Clinic locations billed the VeriFactu fee (0 until the clinic is live). */
@@ -161,11 +165,12 @@ export function pricePerMonth(
   const annual = subscription.interval === 'annual'
   const base = annual ? plan.annualPriceCents : plan.monthlyPriceCents
   const seats = subscription.extraProfessionals * (plan.extraProfessionalPriceCents ?? 0)
+  const locations = (subscription.extraClinics ?? 0) * (plan.extraClinicPriceCents ?? 0)
   const growth = subscription.growthBilled && addon ? (annual ? addon.annualPriceCents : addon.monthlyPriceCents) : 0
   const verifactu = verifactuFee ? (subscription.verifactuLocations ?? 0) * (annual ? verifactuFee.annualPriceCents : verifactuFee.monthlyPriceCents) : 0
   const receptionistLine = subscription.receptionistBilled && receptionist ? (annual ? receptionist.annualPriceCents : receptionist.monthlyPriceCents) : 0
   const brandingLine = subscription.brandingBilled && branding ? (annual ? branding.annualPriceCents : branding.monthlyPriceCents) : 0
-  return base + seats + growth + verifactu + receptionistLine + brandingLine
+  return base + seats + locations + growth + verifactu + receptionistLine + brandingLine
 }
 
 /**
@@ -324,6 +329,22 @@ export function seatAllowance(
   if (waived) return null
   if (includedProfessionals === null || includedProfessionals === undefined) return null
   return includedProfessionals + extraProfessionals
+}
+
+/**
+ * Location ceiling for a plan, or null for "no limit": the plan's own plus
+ * any bought on top. The same rule as clinic_location_allowance() in the
+ * database -- bought locations count only on a plan that sells them, so a
+ * row that has just left Clinic is not credited with the ones it had there.
+ */
+export function clinicAllowance(
+  plan: { included_clinics: number | null; extra_clinic_price_cents: number | null } | null | undefined,
+  extraClinics: number,
+  waived: boolean,
+): number | null {
+  if (waived || !plan) return null
+  if (plan.included_clinics === null) return null
+  return plan.included_clinics + (plan.extra_clinic_price_cents === null ? 0 : extraClinics)
 }
 
 const GB = 1024 ** 3

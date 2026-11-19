@@ -1,6 +1,6 @@
 import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import type { BusinessHours } from '~/utils/businessHours'
+import { wholeWeek, type BusinessHours } from '~/utils/businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, localDay, startOfLocalDate, nextDate } from '~/utils/clinicClock'
 import { outsideHoursInZone } from '~/utils/staffQuietHours'
 import { sendPushToUsers } from './pushNotifications'
@@ -66,11 +66,22 @@ export async function wantingPush(
     .in('team_member_id', withUser.map((m) => m.id))
   const byId = new Map(((data as unknown as (Preferences & { team_member_id: string })[] | null) ?? []).map((p) => [p.team_member_id, p]))
   const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
+  // Off duty is judged on their whole week (wholeWeek): somebody at a second
+  // location on Tuesday evenings is at work then, whatever their usual hours
+  // say. Read only when somebody asked for quiet hours at all.
+  const quiet = withUser.filter((m) => (byId.get(m.id) ?? DEFAULTS).quiet_hours).map((m) => m.id)
+  const locationHours = new Map<string, { business_hours: BusinessHours | null }[]>()
+  if (kind !== 'morning_summary' && quiet.length) {
+    const { data: links } = await service.from('team_member_clinics').select('team_member_id, business_hours').in('team_member_id', quiet).not('business_hours', 'is', null)
+    for (const link of (links as unknown as { team_member_id: string; business_hours: BusinessHours | null }[] | null) ?? []) {
+      locationHours.set(link.team_member_id, [...(locationHours.get(link.team_member_id) ?? []), { business_hours: link.business_hours }])
+    }
+  }
   return withUser
     .filter((m) => {
       const p = byId.get(m.id) ?? DEFAULTS
       if (!p[kind]) return false
-      if (kind !== 'morning_summary' && p.quiet_hours && outsideHoursInZone(at, tz, clinic?.business_hours, m.business_hours)) return false
+      if (kind !== 'morning_summary' && p.quiet_hours && outsideHoursInZone(at, tz, clinic?.business_hours, wholeWeek(clinic?.business_hours, m.business_hours, locationHours.get(m.id)))) return false
       return true
     })
     .map((m) => m.user_id!)

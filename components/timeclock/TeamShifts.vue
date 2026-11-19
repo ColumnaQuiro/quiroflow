@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BusinessHours } from '../../utils/businessHours'
+import { wholeWeek, type BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart, workdaysOf, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
 import { currentContract, hoursOverContract } from '../../utils/staffContracts'
@@ -52,7 +52,7 @@ const loaded = ref(false)
 async function load() {
   const year = weekStart.value.slice(0, 4)
   const [{ data: ms }, { data: clinic }, { data: sd }, { data: ex }, { data: es }, { data: abs }, { data: allow }, { data: blocks }, { data: contracts }] = await Promise.all([
-    supabase.from('team_members').select('id, full_name, business_hours, is_practitioner, role').is('deleted_at', null).order('full_name'),
+    supabase.from('team_members').select('id, full_name, business_hours, is_practitioner, role, team_member_clinics(business_hours)').is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').gte('day', days.value[0]!).lte('day', days.value[6]!),
     supabase.from('time_clock_exemptions').select('team_member_id'),
@@ -62,8 +62,13 @@ async function load() {
     supabase.from('availability_blocks').select('starts_at, ends_at').is('practitioner_id', null).is('room_id', null).gte('ends_at', `${year}-01-01`).lte('starts_at', `${year}-12-31T23:59:59`),
     supabase.from('staff_contracts').select('team_member_id, starts_on, created_at, weekly_hours').eq('account_id', props.accountId),
   ])
-  members.value = (ms as unknown as Member[] | null) ?? []
   clinicHours.value = ((clinic as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+  // Their shift is their whole week: an evening set for a second location
+  // counts, though their usual hours do not cover it (wholeWeek).
+  members.value = ((ms as unknown as (Member & { team_member_clinics: { business_hours: BusinessHours | null }[] | null })[] | null) ?? []).map(({ team_member_clinics, ...m }) => ({
+    ...m,
+    business_hours: wholeWeek(m.is_practitioner ? clinicHours.value : null, m.business_hours, team_member_clinics),
+  }))
   overrides.value = new Map(((sd as { team_member_id: string; day: string; ranges: ShiftRanges }[] | null) ?? []).map((d) => [`${d.team_member_id}|${d.day}`, d.ranges]))
   exempt.value = new Set(((ex as { team_member_id: string }[] | null) ?? []).map((e) => e.team_member_id))
   entries.value = (es as (WorkEntry & { team_member_id: string })[] | null) ?? []

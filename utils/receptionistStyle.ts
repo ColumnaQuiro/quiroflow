@@ -13,7 +13,7 @@ import { teamCallNames } from './receptionistClinic'
 //
 // A plain module (no Nuxt auto-imports) so the unit tests can pin it.
 
-export type StyleProblem = 'emoji' | 'opener' | 'colleague' | 'numeric_date' | 'ad' | 'surname' | 'price_reason'
+export type StyleProblem = 'emoji' | 'opener' | 'colleague' | 'numeric_date' | 'ad' | 'surname' | 'price_reason' | 'affection'
 
 const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}]\u{FE0F}?/gu
 
@@ -43,6 +43,27 @@ const AD = /(?<!\p{L})(?:anuncio|anuncios|publicidad|our ad|the ad)(?!\p{L})/iu
 const PRICE_REASON = /(?<!\p{L})(?:precio|tarifa)s? (?:est[aá]ndar|normal|habitual|completo|completa|general|base)(?!\p{L})|(?<!\p{L})(?:standard|regular|normal|full) (?:price|rate|fee)s?(?!\p{L})|(?<!\p{L})no (?:es|era|sea) (?:un |una )?paciente(?!\p{L})|(?<!\p{L})(?:is not|isn['’]t|was not|wasn['’]t) (?:a )?patient(?!\p{L})/iu
 
 /**
+ * A sign-off a friend would write: "¡Un beso!", "Un abrazo fuerte", "Besos",
+ * "te quiero".
+ * A patient who ends with "un beso" got "¡Un beso!" back, twice, the second
+ * time under a message telling him his visit was not today (19 Nov 2026).
+ */
+const AFFECTION_WORDS = '(?:(?:un|muchos|mil)\\s+)?(?:fuerte\\s+)?(?:besos?|besitos?|besazos?|abrazos?|abracitos?|abrazotes?)(?:\\s+(?:muy\\s+)?(?:fuertes?|grandes?|enormes?))?|(?:big\\s+)?(?:hugs?|kiss(?:es)?)(?:\\s+and\\s+(?:hugs?|kiss(?:es)?))?|te\\s+quiero(?:\\s+mucho)?|os\\s+quiero(?:\\s+mucho)?'
+const AFFECTION = new RegExp(`(?<!\\p{L})(?:${AFFECTION_WORDS})(?!\\p{L})`, 'iu')
+/** One of those as a sentence of its own, with the space before it. */
+const AFFECTION_SENTENCE = new RegExp(`(^|[.!?…\\n])[ \\t]*[¡(]?[ \\t]*(?:y[ \\t]+)?(?:${AFFECTION_WORDS})[ \\t]*(?:[.!)]+|(?=\\n|$))`, 'giu')
+/** ...or hung on the end of one: "Hasta el jueves, un beso." */
+const AFFECTION_TAIL = new RegExp(`[ \\t]*,[ \\t]*(?:y[ \\t]+)?(?:${AFFECTION_WORDS})[ \\t]*(?=[.!]|\\n|$)`, 'giu')
+/**
+ * A pet name, where it is one: called to them after a comma or to open the
+ * reply ("Gracias, guapa.", "Cariño, tu cita..."). "El corazón" or "con
+ * cariño" in a sentence is not.
+ */
+const PET_NAMES = '(?:mi\\s+)?(?:cari(?:ñ[oa])?|guap[oa]|guap[ií]sim[oa]|cielo|coraz[oó]n|bonit[oa]|precios[oa]|rein[ao]|rey|tesoro|amor|maj[oa]|nen[ae]|chiquill[oa]|bombón|love|honey|darling|sweetie|dear)'
+const PET_NAME_CALLED = new RegExp(`[ \\t]*,[ \\t]*(?:${PET_NAMES})(?=[ \\t]*(?:[.!?,:;]|\\n|$))`, 'giu')
+const PET_NAME_OPENING = new RegExp(`^\\s*¡?\\s*(?:(?:hola|buenas|buenos d[ií]as|buenas tardes|gracias)[ \\t]*,?[ \\t]+)?(?:${PET_NAMES})[ \\t]*[,:!.][ \\t]*`, 'iu')
+
+/**
  * What is wrong with a reply, in the order the rewrite note lists it.
  * `teamNames`: the practitioners' full names (loadTeamNames).
  */
@@ -55,11 +76,12 @@ export function styleProblems(text: string, teamNames: string[] = []): StyleProb
   if (AD.test(text)) found.push('ad')
   if (surnamesUsed(text, teamNames).length) found.push('surname')
   if (PRICE_REASON.test(text)) found.push('price_reason')
+  if (AFFECTION.test(text) || new RegExp(PET_NAME_CALLED.source, 'iu').test(text) || PET_NAME_OPENING.test(text)) found.push('affection')
   return found
 }
 
 /** The ones fixStyle mends by itself, without asking the model again. */
-export const FIXED_IN_CODE: StyleProblem[] = ['emoji', 'opener', 'surname']
+export const FIXED_IN_CODE: StyleProblem[] = ['emoji', 'opener', 'surname', 'affection']
 
 /** The note the model gets back when a reply has to be reworded. */
 export function styleNote(problems: StyleProblem[]): string {
@@ -70,6 +92,7 @@ export function styleNote(problems: StyleProblem[]): string {
     numeric_date: 'It writes a date in figures ("20/10", "2026-10-20"): write it in words, with the weekday ("el martes 20 de octubre").',
     ad: 'It mentions the ad or advertising: never speak of an ad to them. The offer is simply an offer the clinic has right now.',
     surname: 'It calls a practitioner by their full name: use their first name only.',
+    affection: 'It sends a kiss or a hug ("un beso", "un abrazo") or calls them by a pet name ("guapa", "cariño"): take that out, even though they wrote that way. End on the substance, or with a plain "Un saludo".',
     price_reason: 'It explains a price ("precio estándar", "precio normal", "como no es paciente") or says whether someone is a patient of the clinic: give the price alone ("La primera visita son 70 €"), with no label and no reason, and never say whether anyone is or is not a patient.',
   }
   return `Rewrite your reply. ${problems.map((p) => lines[p]).join(' ')} Keep everything else exactly as it was, and do not call any tool again.`
@@ -82,6 +105,12 @@ export function styleNote(problems: StyleProblem[]): string {
  */
 export function fixStyle(text: string, teamNames: string[] = []): string {
   let out = text.replace(EMOJI, '').replace(/[ \t]+([.,;:!?])/g, '$1').replace(/[ \t]{2,}/g, ' ')
+  // A kiss or a hug as a sentence of its own, or hung on the end of one,
+  // goes; never the whole reply.
+  const plain = out.replace(PET_NAME_CALLED, '').replace(AFFECTION_TAIL, '').replace(AFFECTION_SENTENCE, '$1')
+  if (plain.trim()) out = plain
+  const petName = out.match(PET_NAME_OPENING)
+  if (petName && out.slice(petName[0].length).trim()) out = capitalise(out.slice(petName[0].length))
   const greeting = out.match(EXCLAIMED_GREETING)
   if (greeting) out = `${greeting[1]!.trim()}. ${out.slice(greeting[0].length)}`
   const opener = out.match(OPENER)

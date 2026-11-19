@@ -107,3 +107,18 @@ describe('Words a rule asks to be said are not a leak', () => {
     expect(briefingLeak('Te cuento: it means recalculating sessions and possibly a refund. Quote no figures.', notes)).toBe('quotes an internal rule')
   })
 })
+
+// A visit booked a week late and "no hoy" to a patient with a taxi ordered,
+// then "¡Un beso!" (19 Nov 2026).
+describe('The day they understood, and how she speaks', () => {
+  const section = baseBehaviourSection()
+  it('does not book a day other than the one they name', () => {
+    expect(section).toContain('the date you book must be that day')
+  })
+  it('does not repeat the booked day to someone who understood another', () => {
+    expect(section).toContain('never just repeat the booked one')
+  })
+  it('keeps a professional register whatever theirs is', () => {
+    expect(section).toContain('never mirror the way they write')
+  })
+})

@@ -4,11 +4,58 @@
 // A plain module (no Nuxt auto-imports) so the unit tests can pin it.
 
 import { RECEPTIONIST_LANGUAGES } from './receptionistLanguages'
+import { clinicDateOf } from './clinicClock'
 
 /** Starts a message the clinic's automations sent: a reminder, a welcome. */
 export const AUTOMATED_MARK = '[Automatic message from the clinic system]'
 /** Starts a message a person at the clinic wrote, as opposed to the receptionist. */
 export const COLLEAGUE_MARK = '[Written by a colleague at the clinic]'
+
+/**
+ * The line that says which day the messages after it were sent:
+ * "[Sent on Wednesday 18 November 2026]".
+ *
+ * The history used to reach the model as bare text. A patient offered "hoy
+ * mismo a las 17:30 o mañana jueves a las 15:00" on a Wednesday answered on
+ * the Thursday morning -- "tomo la del jueves 15:00, nos vemos hoy" -- and,
+ * with nothing saying the offer was a day old, "el jueves" was read from the
+ * day of the answer: the visit was booked a week later, and he was told "no
+ * hoy" with a taxi already ordered (19 Nov 2026).
+ */
+const DAY_MARK = /^\[Sent on [^\]\n]*\]\s*/
+
+/** "Wednesday 18 November 2026" for a clinic-local date (YYYY-MM-DD). */
+export function dayName(date: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+      .formatToParts(new Date(`${date}T12:00:00Z`))
+      .map((p) => [p.type, p.value]),
+  )
+  return `${parts.weekday} ${parts.day} ${parts.month} ${parts.year}`
+}
+
+/** "[Sent on Wednesday 18 November 2026]" for a clinic-local date (YYYY-MM-DD). */
+export function dayMark(date: string): string {
+  return `[Sent on ${dayName(date)}]`
+}
+
+/**
+ * Each message with the day it was sent, on the clinic's clock, in front of
+ * the first one of every day (oldest first, as the history reads). Absolute
+ * dates rather than "yesterday", so the same history reads the same on the
+ * next reply.
+ */
+export function withDayMarks<T extends { content: string; at: string }>(turns: T[], timeZone: string): T[] {
+  let day = ''
+  return turns.map((turn) => {
+    const sent = new Date(turn.at)
+    if (Number.isNaN(sent.getTime())) return turn
+    const date = clinicDateOf(sent, timeZone)
+    if (date === day) return turn
+    day = date
+    return { ...turn, content: `${dayMark(date)}\n${turn.content}` }
+  })
+}
 
 export interface HistoryMessage {
   direction: string
@@ -82,6 +129,9 @@ function mediaMark(type: string | null | undefined, filename: string | null | un
 export function historyMarkersSection(handOver: boolean): string {
   return [
   '# Marks in the conversation',
+  // See DAY_MARK: an offer made on a Wednesday and accepted on the Thursday.
+  '- A line like "[Sent on Wednesday 18 November 2026]" gives the day the messages after it were sent, up to the next such line. "Hoy", "mañana", "pasado mañana", "esta tarde" or a weekday in a message are counted from the day THAT message was sent, not from today: "mañana jueves a las 15:00" in a message sent on Wednesday 18 is Thursday 19, and still is when they answer on the 19th. When they accept a time offered earlier ("tomo la del jueves a las 15:00"), work out the date that offer meant and book that date, when it is still free; a weekday never means a week later than the one that was offered. If that date has passed or is no longer free, say so and offer other times instead of booking another day in silence.',
+  '- One of the other marks below may come on the line after it; it still means the same.',
   // Answering a recall's "Más adelante" button, a patient was told "No hay
   // ningún mensaje previo mío al que responder" (24 Oct 2026).
   `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message, a follow-up). You did not write it, but the clinic did: when they answer it, they are answering the clinic, so never say there is no earlier message. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
@@ -106,7 +156,7 @@ const FILLER_OPENER = /^\s*¡?\s*(?:perfecto|genial|estupendo|fenomenal|claro(?:
  * it still opened that way on its second day.
  */
 export function cleanReply(text: string): string {
-  let out = text.trim()
+  let out = text.trim().replace(DAY_MARK, '')
   for (const mark of [AUTOMATED_MARK, COLLEAGUE_MARK, VOICE_NOTE_TRANSCRIPT_MARK]) if (out.startsWith(mark)) out = out.slice(mark.length).trim()
   const opener = out.match(FILLER_OPENER)
   if (opener && opener[0].length < out.length) {

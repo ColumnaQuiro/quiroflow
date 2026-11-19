@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, replyLanguageLine, REPLY_DETAILS_LINE, SENT_FILES_LINE, standingClockTimes, STATED_LIMITS_LINE, unbookedClaim } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, replyLanguageLine, REPLY_DETAILS_LINE, SENT_FILES_LINE, standingClockTimes, STATED_LIMITS_LINE, unbookedClaim, withDayMarks } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -179,5 +179,40 @@ describe('Reply language', () => {
   // answered in Spanish (3 Nov 2026): the greeting set the language.
   it('judges the message as a whole, not its greeting', () => {
     expect(replyLanguageLine(['es', 'en'])).toContain('not its greeting')
+  })
+})
+
+// Offered "hoy mismo a las 17:30 o mañana jueves a las 15:00" on a Wednesday,
+// a patient took "la del jueves" on the Thursday and was booked a week later:
+// nothing in the history said the offer was a day old (19 Nov 2026).
+describe('The day each message was sent', () => {
+  const turns = [
+    { role: 'user', content: 'Hola, quería una cita', at: '2026-11-18T10:45:35Z' },
+    { role: 'assistant', content: 'Hoy mismo a las 17:30 o mañana jueves a las 15:00.', at: '2026-11-18T10:50:09Z' },
+    { role: 'user', content: 'Tomo la del jueves 15.00hs', at: '2026-11-19T09:51:38Z' },
+    { role: 'user', content: 'Nos vemos hoy', at: '2026-11-19T09:51:58Z' },
+  ]
+
+  it('goes in front of the first message of every day, and only that one', () => {
+    const dated = withDayMarks(turns, 'Europe/Madrid').map((t) => t.content)
+    expect(dated[0]).toBe('[Sent on Wednesday 18 November 2026]\nHola, quería una cita')
+    expect(dated[1]).toBe('Hoy mismo a las 17:30 o mañana jueves a las 15:00.')
+    expect(dated[2]).toBe('[Sent on Thursday 19 November 2026]\nTomo la del jueves 15.00hs')
+    expect(dated[3]).toBe('Nos vemos hoy')
+  })
+
+  it('is the day on the clinic\'s clock, not UTC\'s', () => {
+    const late = withDayMarks([{ content: 'Buenas noches', at: '2026-11-18T23:30:00Z' }], 'Europe/Madrid')
+    expect(late[0]!.content).toContain('Thursday 19 November 2026')
+  })
+
+  it('leaves the turns it was given as they were', () => {
+    withDayMarks(turns, 'Europe/Madrid')
+    expect(turns[0]!.content).toBe('Hola, quería una cita')
+  })
+
+  it('is explained to the model, and never sent back to the patient', () => {
+    expect(historyMarkersSection(true)).toContain('counted from the day THAT message was sent')
+    expect(cleanReply('[Sent on Thursday 19 November 2026]\nTu cita queda para hoy a las 15:00.')).toBe('Tu cita queda para hoy a las 15:00.')
   })
 })

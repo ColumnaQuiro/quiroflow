@@ -4,6 +4,8 @@
 //
 // A plain module (no Nuxt auto-imports) so the unit tests can pin it.
 
+import { dayName } from './receptionistHistory'
+
 /**
  * A voice note: it cannot be heard, so it is always a person's. The rule was
  * in every prompt, and on 2 Nov 2026 a voice note sent with two photos was
@@ -96,10 +98,14 @@ export function offeredTimes(text: string): OfferedTime[] {
   const token = new RegExp(`\\b(${WEEKDAY})(?:\\s+(\\d{1,2}))?\\b|\\b(hoy)\\b|(?<!la\\s)\\b(manana)\\b|\\b(?:el\\s+)?(\\d{1,2})\\s+de\\s+[a-z]+\\b|\\b([01]?\\d|2[0-3])[:.h]([0-5]\\d)\\b`, 'g')
   const out: OfferedTime[] = []
   let day: Omit<OfferedTime, 'time'> = { weekday: null, dayOfMonth: null, relative: null }
+  // Where a "hoy" or "mañana" ended: "mañana jueves" is one day said twice,
+  // and stays "mañana" -- the weekday alone says nothing of which week.
+  let relativeEnd = -1
   for (const m of t.matchAll(token)) {
-    if (m[1]) day = { weekday: m[1], dayOfMonth: m[2] ? Number(m[2]) : null, relative: null }
+    if (m[1]) day = { weekday: m[1], dayOfMonth: m[2] ? Number(m[2]) : null, relative: relativeEnd >= 0 && !t.slice(relativeEnd, m.index).trim() ? day.relative : null }
     else if (m[3]) day = { weekday: null, dayOfMonth: null, relative: 'hoy' }
     else if (m[4]) day = { weekday: null, dayOfMonth: null, relative: 'manana' }
+    if (m[3] || m[4]) relativeEnd = m.index + m[0].length
     else if (m[5]) day = { ...day, dayOfMonth: Number(m[5]) }
     else if (m[6]) out.push({ ...day, time: `${Number(m[6])}:${m[7]}` })
   }
@@ -160,9 +166,39 @@ export function offeredTimeLabel(o: OfferedTime): string {
   return `${day || 'the day you offered'} at ${o.time}`
 }
 
-/** The line the prompt gets when their answer picks one offered time. */
-export function chosenTimeNote(o: OfferedTime, canBook: boolean): string {
-  return `# Their answer picks one time\nTheir latest message can only mean one of the times you offered in your last message: ${offeredTimeLabel(o)}. ${canBook ? 'Book it now with book_appointment (with move_visit_on if it moves a visit they already have) and do not ask them to confirm it again.' : 'Take it as their choice and do not ask them to confirm it again.'}`
+/**
+ * The date a time offered as "hoy" or "mañana" meant, counted from the day
+ * the offer was sent (YYYY-MM-DD, the clinic's clock); null when it was
+ * offered by weekday or day of the month.
+ */
+export function offeredDate(o: OfferedTime, sentOn: string): string | null {
+  if (!o.relative) return null
+  const day = new Date(`${sentOn}T12:00:00Z`)
+  if (Number.isNaN(day.getTime())) return null
+  if (o.relative === 'manana') day.setUTCDate(day.getUTCDate() + 1)
+  return day.toISOString().slice(0, 10)
+}
+
+/**
+ * The line the prompt gets when their answer picks one offered time.
+ *
+ * `when`: the day the offer was sent and today, on the clinic's clock. An
+ * offer answered the next day used to read "tomorrow at 15:00" here -- a
+ * "mañana" a day old, counted again from the day of the answer (19 Nov 2026).
+ */
+export function chosenTimeNote(o: OfferedTime, canBook: boolean, when?: { sentOn: string; today: string }): string {
+  const heading = '# Their answer picks one time'
+  const stale = when && when.sentOn < when.today
+  const date = stale ? offeredDate(o, when.sentOn) : null
+  if (stale && date && date < when.today) {
+    return `${heading}\nTheir latest message picks ${o.time} from the times you offered on ${dayName(when.sentOn)}, which you offered for ${dayName(date)}: that day has passed. Do not book it on another day. Say that time has gone and offer other times.`
+  }
+  const which = date
+    ? `${dayName(date)} at ${o.time} (said as "${o.relative === 'hoy' ? 'hoy' : 'mañana'}" in a message sent on ${dayName(when!.sentOn)})`
+    : stale
+      ? `${offeredTimeLabel(o)} -- the one coming after ${dayName(when.sentOn)}, the day you offered it, never a week later`
+      : offeredTimeLabel(o)
+  return `${heading}\nTheir latest message can only mean one of the times you offered in your last message: ${which}. ${canBook ? 'Book it now with book_appointment (with move_visit_on if it moves a visit they already have) and do not ask them to confirm it again.' : 'Take it as their choice and do not ask them to confirm it again.'}`
 }
 
 /**

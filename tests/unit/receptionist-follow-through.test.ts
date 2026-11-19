@@ -157,3 +157,32 @@ describe('7 Nov 2026 review', () => {
     expect(asksWhetherToCancel('¿Te quito la del martes 10?')).toBe(true)
   })
 })
+
+// An offer answered the next day: "mañana" in it is a day old (19 Nov 2026).
+describe('A chosen time from an offer sent on an earlier day', () => {
+  const offer = 'Te ofrezco: hoy mismo a las 17:30 o mañana jueves a las 15:00. ¿Te viene bien alguna?'
+  const days = { sentOn: '2026-11-18', today: '2026-11-19' }
+
+  it('names the date "mañana" meant, not tomorrow', () => {
+    const note = chosenTimeNote(chosenOfferedTime(offer, 'la de las 15:00')!, true, days)
+    expect(note).toContain('Thursday 19 November 2026 at 15:00')
+    expect(note).not.toContain('tomorrow')
+    expect(note).toContain('book_appointment')
+  })
+
+  it('does not book a time whose day has passed', () => {
+    const note = chosenTimeNote(chosenOfferedTime(offer, 'a las 17:30')!, true, days)
+    expect(note).toContain('that day has passed')
+    expect(note).not.toContain('Book it now')
+  })
+
+  it('reads as before when the offer is from today', () => {
+    const today = { sentOn: '2026-11-19', today: '2026-11-19' }
+    expect(chosenTimeNote(chosenOfferedTime(offer, 'la de las 15:00')!, true, today)).toContain('tomorrow at 15:00')
+  })
+
+  it('keeps a weekday to the one after the offer', () => {
+    const weekly = 'Puedo ofrecerte el martes 24 a las 9:00 o el jueves 26 a las 15:30. ¿Cuál prefieres?'
+    expect(chosenTimeNote(chosenOfferedTime(weekly, 'el jueves')!, true, days)).toContain('never a week later')
+  })
+})

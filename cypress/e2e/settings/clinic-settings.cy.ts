@@ -54,6 +54,13 @@ describe('A clinic\'s settings page', () => {
       day('mon').find('[data-cy=hours-range]').first().find('input[type=time]').eq(1).clear().type('14:00')
       day('mon').find('[data-cy=hours-add-range]').click()
       day('mon').find('[data-cy=hours-range]').eq(1).find('input[type=time]').eq(1).clear().type('20:00')
+      // An afternoon whose opening time is, for a keystroke, earlier than the
+      // morning's stays where it is: a time field passes through 01:00 on the
+      // way to 15:00, and the range used to jump to the front under the cursor.
+      day('mon').find('[data-cy=hours-range]').eq(1).find('input[type=time]').eq(0).type('01:00')
+      day('mon').find('[data-cy=hours-range]').eq(1).find('input[type=time]').eq(0).should('have.value', '01:00')
+      day('mon').find('[data-cy=hours-range]').eq(0).find('input[type=time]').eq(0).should('have.value', '09:00')
+      day('mon').find('[data-cy=hours-range]').eq(1).find('input[type=time]').eq(0).type('14:00')
       cy.get('[data-cy=hours-copy-monday]').click()
       day('fri').find('[data-cy=hours-range]').should('have.length', 2)
       day('sun').find('[data-cy=hours-day-toggle]').then(($t) => {

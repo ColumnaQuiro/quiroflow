@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
-import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
+import { fullWeek, hoursProblems, normalizeHours } from '~/utils/clinicHours'
 import { COUNTRIES_BY_NAME, countryByCode } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 
@@ -162,7 +162,7 @@ const savedTimezone = computed(() => (original.value ? (JSON.parse(original.valu
 const closuresVersion = ref(0)
 // The editor always works on a full week; form.business_hours only becomes
 // one when it emits a change.
-const editorHours = computed(() => normalizeHours(form.value?.business_hours))
+const editorHours = computed(() => fullWeek(form.value?.business_hours))
 const problems = computed(() => (form.value ? hoursProblems(editorHours.value) : {}))
 const withOwnHours = computed(() => practitioners.value.filter((p) => p.ownHours))
 const withoutOwnHours = computed(() => practitioners.value.filter((p) => !p.ownHours))

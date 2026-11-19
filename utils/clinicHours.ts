@@ -22,13 +22,26 @@ function minutes(hhmm: string): number {
   return h * 60 + m
 }
 
-/** Every day present (an absent day is a closed day), each day's ranges copied and in order. */
-export function normalizeHours(hours: BusinessHours | null | undefined): BusinessHours {
+/**
+ * Every day present (an absent day is a closed day), each day's ranges copied
+ * and left in the order they are in. This is what the editor shows.
+ *
+ * It must not sort. A time field reports a value on every keystroke, so
+ * typing 15 into a 16:00 afternoon passes through 01:00; sorting then moved
+ * that range in front of the morning while the cursor stayed in the second
+ * box, and the 5 landed in the morning's opening time: 09:00-13:00 and
+ * 16:00-20:00 became 01:00-20:00 and 05:00-13:00.
+ */
+export function fullWeek(hours: BusinessHours | null | undefined): BusinessHours {
   const out: BusinessHours = {}
-  for (const d of WEEK) {
-    const ranges = (hours?.[d.key] ?? []).map(([s, e]) => [s, e] as [string, string])
-    out[d.key] = ranges.sort((a, b) => minutes(a[0]) - minutes(b[0]))
-  }
+  for (const d of WEEK) out[d.key] = (hours?.[d.key] ?? []).map(([s, e]) => [s, e] as [string, string])
+  return out
+}
+
+/** fullWeek with each day's ranges in order: what is saved, and what two weeks are compared as. */
+export function normalizeHours(hours: BusinessHours | null | undefined): BusinessHours {
+  const out = fullWeek(hours)
+  for (const d of WEEK) out[d.key].sort((a, b) => minutes(a[0]) - minutes(b[0]))
   return out
 }
 

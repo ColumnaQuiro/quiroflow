@@ -60,6 +60,72 @@ export function practitionerWindowsForDay(
   return practitionerHours?.[dayKey] ?? []
 }
 
+/** One row of team_member_clinics: the week somebody works at one location, when they have one. */
+export interface LocationHours {
+  clinic_id: string
+  business_hours: BusinessHours | null
+}
+
+// "Has a schedule, and it is empty": practitionerWindowsForDay reads a week
+// with no window anywhere as "never set, use the clinic's", which is the
+// opposite of what practitionerHoursAt means when every hour somebody would
+// work here is spent at their other location. The key is no weekday, so no
+// day ever reads it.
+const NO_HOURS_HERE: BusinessHours = { none: [['00:00', '00:00']] }
+
+/** `windows` with every stretch of `taken` cut out of them. */
+function subtractWindows(windows: [string, string][], taken: [string, string][]): [string, string][] {
+  let left = windows.map(([s, e]) => [toMinutes(s), toMinutes(e)] as [number, number])
+  for (const [ts, te] of taken.map(([s, e]) => [toMinutes(s), toMinutes(e)] as [number, number])) {
+    left = left.flatMap(([s, e]) => {
+      if (te <= s || ts >= e) return [[s, e] as [number, number]]
+      const parts: [number, number][] = []
+      if (ts > s) parts.push([s, ts])
+      if (te < e) parts.push([te, e])
+      return parts
+    })
+  }
+  return left.map(([s, e]) => [toHhmm(s), toHhmm(e)])
+}
+
+// The week somebody works AT ONE LOCATION, to hand to anything that takes a
+// practitioner's hours (practitionerWindowsForDay, bookingSlotsForDay…).
+//
+// A person has one week of their own (team_members.business_hours), and that
+// is all there is for somebody at one location. Somebody at two can have a
+// week per location (team_member_clinics.business_hours):
+//
+//   - set for THIS location: those are their hours here, nothing else counts;
+//   - not set here but set at ANOTHER: their usual hours (their own, or this
+//     location's for somebody with none) minus the time they are down to be
+//     there. Filling in "the gym, Tuesday and Thursday evenings" is enough;
+//     the clinic stops offering those evenings by itself.
+//
+// With no per-location week anywhere -- every account before 20261119124321
+// -- this returns memberHours untouched. assert_booking_slot_open applies the
+// same rule in the database.
+export function practitionerHoursAt(
+  clinicId: string | null | undefined,
+  clinicHours: BusinessHours | null | undefined,
+  memberHours: BusinessHours | null | undefined,
+  locations: LocationHours[] | null | undefined,
+): BusinessHours | null {
+  const set = (locations ?? []).filter((l) => hasBusinessHoursConfigured(l.business_hours))
+  if (!clinicId || set.length === 0) return memberHours ?? null
+  const here = set.find((l) => l.clinic_id === clinicId)
+  if (here) return here.business_hours
+  const base = hasBusinessHoursConfigured(memberHours) ? memberHours : clinicHours
+  // Nothing says when they work at all: nothing to take the other location out of.
+  if (!hasBusinessHoursConfigured(base)) return memberHours ?? null
+  const out: BusinessHours = {}
+  for (const day of DAY_KEYS) {
+    const elsewhere = set.flatMap((l) => l.business_hours?.[day] ?? [])
+    const windows = subtractWindows(base?.[day] ?? [], elsewhere)
+    if (windows.length) out[day] = windows
+  }
+  return hasBusinessHoursConfigured(out) ? out : NO_HOURS_HERE
+}
+
 function toHhmm(mins: number): string {
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
 }

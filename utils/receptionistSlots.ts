@@ -10,7 +10,7 @@
 // Pure, with no `~` imports: the app auto-imports this directory too, and in
 // its build `~` resolves to mobile/.
 import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange } from './bookingSlots'
-import type { BusinessHours } from './businessHours'
+import { practitionerHoursAt, type BusinessHours, type LocationHours } from './businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from './clinicClock'
 import type { PromptType } from './receptionistTypes'
 
@@ -26,6 +26,8 @@ export interface SlotPractitioner {
   businessHours: BusinessHours | null
   /** The clinics they work at (team_member_clinics). */
   clinicIds: string[]
+  /** Their week at each location, where they have one per location (team_member_clinics.business_hours). */
+  locationHours?: LocationHours[]
 }
 
 export interface SlotType extends PromptType {
@@ -141,7 +143,11 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
   const perClinic: { clinic: SlotClinic; lists: { types: PromptType[]; days: SlotDay[]; truncatedAfter: string | null }[] }[] = []
   for (const clinic of q.clinics) {
     const timeZone = clinic.timeZone || DEFAULT_CLINIC_TIMEZONE
-    const staff = q.practitioners.filter((p) => p.clinicIds.includes(clinic.id))
+    // With the hours each works at THIS clinic (practitionerHoursAt): somebody
+    // here two evenings a week is offered those, not their whole week.
+    const staff = q.practitioners
+      .filter((p) => p.clinicIds.includes(clinic.id))
+      .map((p) => ({ ...p, businessHours: practitionerHoursAt(clinic.id, clinic.businessHours, p.businessHours, p.locationHours) }))
     if (staff.length === 0) continue
     const busyFor = (practitionerId: string): BookingBusyRange[] => [
       ...q.appointments.filter((a) => a.practitionerId === practitionerId),

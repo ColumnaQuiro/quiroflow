@@ -11,6 +11,7 @@ export interface ChangePlanRow {
   included_clinics: number | null
   included_storage_gb: number | null
   extra_professional_price_cents: number | null
+  extra_clinic_price_cents: number | null
 }
 
 const props = defineProps<{
@@ -18,6 +19,9 @@ const props = defineProps<{
   currentPlanId: string
   currentInterval: 'monthly' | 'annual'
   currentExtraSeats: number
+  currentExtraClinics: number
+  /** Locations open right now, so the picker can say how many the choice leaves short. */
+  openClinicCount: number
   currentGrowth: boolean
   growthAddon: { monthly_price_cents: number; annual_price_cents: number } | null
   currentReceptionist: boolean
@@ -33,12 +37,25 @@ const { formatLongDate } = useDates()
 
 const interval = ref<'monthly' | 'annual'>(props.currentInterval)
 const extraSeats = ref(props.currentExtraSeats)
+const extraClinics = ref(props.currentExtraClinics)
 const wantsGrowth = ref(props.currentGrowth)
 const wantsReceptionist = ref(props.currentReceptionist)
 const selectedPlanId = ref(props.currentPlanId)
 
 const selectedPlan = computed(() => props.plans.find((p) => p.id === selectedPlanId.value) ?? null)
 const selectedIncludesGrowth = computed(() => planIncludesGrowth(selectedPlanId.value))
+
+// Extra locations exist only on a plan that prices them. The stepper keeps
+// its number while another plan is looked at, so going to Practice and back
+// does not lose it; what is charged and sent is this.
+const sellsExtraClinics = computed(() => !!selectedPlan.value?.extra_clinic_price_cents)
+const extraClinicsChosen = computed(() => (sellsExtraClinics.value ? extraClinics.value : 0))
+/** How many open locations the choice does not cover; the server refuses the change while it is above zero. */
+const clinicsShort = computed(() => {
+  const included = selectedPlan.value?.included_clinics
+  if (included === null || included === undefined) return 0
+  return Math.max(0, props.openClinicCount - included - extraClinicsChosen.value)
+})
 
 // Practice and Clinic bundle Growth, so a clinic on either is never quoted a price for it --
 // there is no Stripe line item to quote.
@@ -57,6 +74,7 @@ const perMonthCents = computed(() => {
   const annual = interval.value === 'annual'
   const base = annual ? plan.annual_price_cents : plan.monthly_price_cents
   const seats = extraSeats.value * (plan.extra_professional_price_cents ?? 0)
+  const locations = extraClinicsChosen.value * (plan.extra_clinic_price_cents ?? 0)
   const growth =
     growthChargeable.value && props.growthAddon
       ? annual
@@ -69,7 +87,7 @@ const perMonthCents = computed(() => {
         ? props.receptionistAddon.annual_price_cents
         : props.receptionistAddon.monthly_price_cents
       : 0
-  return base + seats + growth + receptionist
+  return base + seats + locations + growth + receptionist
 })
 
 const chargeCents = computed(() =>
@@ -85,11 +103,14 @@ function featuresFor(plan: ChangePlanRow) {
   const clinics =
     plan.included_clinics === null
       ? t('Unlimited clinics', 'Clínicas ilimitadas')
-      : t(`${plan.included_clinics} clinic`, `${plan.included_clinics} clínica`)
+      : t(`${plan.included_clinics} ${plan.included_clinics === 1 ? 'clinic' : 'clinics'}`, `${plan.included_clinics} ${plan.included_clinics === 1 ? 'clínica' : 'clínicas'}`)
   const features: { key: string; label: string; muted?: boolean }[] = [
     { key: 'seats', label: seats },
     { key: 'extra', label: t(`Extra seats ${formatEur(plan.extra_professional_price_cents ?? 0)}/mo each`, `Plazas extra ${formatEur(plan.extra_professional_price_cents ?? 0)}/mes cada una`) },
     { key: 'clinics', label: clinics },
+    ...(plan.extra_clinic_price_cents
+      ? [{ key: 'extra-clinics', label: t(`Extra clinics ${formatEur(plan.extra_clinic_price_cents)}/mo each`, `Clínicas extra ${formatEur(plan.extra_clinic_price_cents)}/mes cada una`) }]
+      : []),
     { key: 'storage', label: t(`${plan.included_storage_gb ?? 0} GB of patient files`, `${plan.included_storage_gb ?? 0} GB de archivos de pacientes`) },
   ]
   features.push(
@@ -124,7 +145,7 @@ async function preview(planId: string) {
   try {
     const result = await $fetch<{ previewable: boolean; amountDueCents?: number }>('/api/billing/preview', {
       method: 'POST',
-      body: { planId, interval: interval.value, extraProfessionals: extraSeats.value, growth: growthChargeable.value, receptionist: receptionistChargeable.value },
+      body: { planId, interval: interval.value, extraProfessionals: extraSeats.value, extraClinics: extraClinicsChosen.value, growth: growthChargeable.value, receptionist: receptionistChargeable.value },
     })
     previewCents.value = result.previewable ? (result.amountDueCents ?? null) : null
   } catch (error: unknown) {
@@ -144,6 +165,7 @@ const dirty = computed(
     selectedPlanId.value !== props.currentPlanId ||
     interval.value !== props.currentInterval ||
     extraSeats.value !== props.currentExtraSeats ||
+    extraClinicsChosen.value !== props.currentExtraClinics ||
     growthChargeable.value !== props.currentGrowth ||
     receptionistChargeable.value !== props.currentReceptionist,
 )
@@ -154,7 +176,7 @@ const dirty = computed(
 // charged a prorated amount they had never been shown. Debounced because the
 // seat stepper would otherwise fire a request per click.
 let previewTimer: ReturnType<typeof setTimeout> | undefined
-watch([selectedPlanId, interval, extraSeats, wantsGrowth, wantsReceptionist], () => {
+watch([selectedPlanId, interval, extraSeats, extraClinics, wantsGrowth, wantsReceptionist], () => {
   clearTimeout(previewTimer)
   previewCents.value = null
   if (!dirty.value) {
@@ -181,6 +203,7 @@ async function confirm() {
         planId: selectedPlanId.value,
         interval: interval.value,
         extraProfessionals: extraSeats.value,
+        extraClinics: extraClinicsChosen.value,
         growth: growthChargeable.value,
         receptionist: receptionistChargeable.value,
       },
@@ -203,6 +226,9 @@ const summary = computed(() => {
   const parts = [selectedPlan.value?.name ?? '', interval.value === 'annual' ? t('annual', 'anual') : t('monthly', 'mensual')]
   if (extraSeats.value > 0) {
     parts.push(t(`${extraSeats.value} extra seat(s)`, `${extraSeats.value} plaza(s) extra`))
+  }
+  if (extraClinicsChosen.value > 0) {
+    parts.push(t(`${extraClinicsChosen.value} extra clinic(s)`, `${extraClinicsChosen.value} clínica(s) extra`))
   }
   if (growthChargeable.value) parts.push(t('Growth add-on', 'complemento Growth'))
   if (receptionistChargeable.value) parts.push(t('AI receptionist', 'recepcionista IA'))
@@ -244,8 +270,8 @@ const summary = computed(() => {
         :key="plan.id"
         :name="plan.name"
         :description="
-          plan.included_clinics === null
-            ? t('Several clinics, unlimited team.', 'Varias clínicas, equipo ilimitado.')
+          plan.included_clinics === null || plan.included_clinics > 1
+            ? t('Several clinics, a larger team.', 'Varias clínicas, un equipo más grande.')
             : plan.included_professionals === 1
               ? t('One practitioner, one clinic.', 'Un profesional, una clínica.')
               : t('A single clinic with a small team.', 'Una clínica con un equipo pequeño.')
@@ -291,6 +317,49 @@ const summary = computed(() => {
             </div>
             <div v-if="extraSeats > 0 && selectedPlan" class="mt-0.5 font-mono text-[12.5px] text-ink-muted">
               {{ formatEur(extraSeats * (selectedPlan.extra_professional_price_cents ?? 0)) }}{{ t('/mo + IVA', '/mes + IVA') }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </SubscriptionCard>
+
+    <SubscriptionCard v-if="sellsExtraClinics && selectedPlan" data-testid="extra-clinics-card">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-5">
+        <div class="flex-1">
+          <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Clinics', 'Clínicas') }}</h3>
+          <p class="mt-1.5 text-[12.5px] leading-[1.5] text-ink-muted">
+            {{ t(`${selectedPlan.name} includes ${selectedPlan.included_clinics}.`, `${selectedPlan.name} incluye ${selectedPlan.included_clinics}.`) }}
+            {{ t('Extra clinics are', 'Las clínicas extra cuestan') }} {{ formatEur(selectedPlan.extra_clinic_price_cents ?? 0) }}{{ t('/mo + IVA each.', '/mes + IVA cada una.') }}
+            {{
+              t(
+                'Practitioner seats are shared across all of them.',
+                'Las plazas de profesional se reparten entre todas.',
+              )
+            }}
+          </p>
+          <p v-if="clinicsShort > 0" role="alert" class="mt-1.5 text-[12.5px] font-semibold text-warning-text" data-testid="extra-clinics-short">
+            {{
+              t(
+                `You have ${openClinicCount} clinics open: add ${clinicsShort} more here, or archive one first.`,
+                `Tienes ${openClinicCount} clínicas abiertas: añade ${clinicsShort} más aquí o archiva una antes.`,
+              )
+            }}
+          </p>
+        </div>
+        <div class="flex items-center gap-3.5">
+          <SubscriptionSeatStepper
+            v-model="extraClinics"
+            :min="0"
+            :max="50"
+            :decrease-label="t('Remove a clinic', 'Quitar una clínica')"
+            :increase-label="t('Add a clinic', 'Añadir una clínica')"
+          />
+          <div class="w-[152px]">
+            <div class="text-[12.5px] font-semibold text-ink-900">
+              {{ extraClinics === 0 ? t('No extra clinics', 'Sin clínicas extra') : t(`+${extraClinics} extra clinic(s)`, `+${extraClinics} clínica(s) extra`) }}
+            </div>
+            <div v-if="extraClinics > 0" class="mt-0.5 font-mono text-[12.5px] text-ink-muted">
+              {{ formatEur(extraClinics * (selectedPlan.extra_clinic_price_cents ?? 0)) }}{{ t('/mo + IVA', '/mes + IVA') }}
             </div>
           </div>
         </div>

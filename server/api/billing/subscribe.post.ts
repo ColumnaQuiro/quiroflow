@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -51,6 +51,13 @@ export default defineEventHandler(async (event) => {
   if (!planPriceId) throw createError({ statusCode: 500, statusMessage: 'This plan has no Stripe price configured' })
   if (extraProfessionals > 0 && !addOnPriceId) {
     throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra professionals' })
+  }
+  // Locations beyond the plan's own, sold only by a plan that prices them
+  // (Clinic). The same 29 EUR on both intervals, for the reason above.
+  const extraClinicPriceId = body.interval === 'annual' ? plan.stripe_extra_clinic_annual_price_id : plan.stripe_extra_clinic_monthly_price_id
+  const sellsExtraClinics = plan.extra_clinic_price_cents !== null
+  if ((body.extraClinics ?? 0) > 0 && !sellsExtraClinics) {
+    throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra locations' })
   }
 
   // Growth attaches to any plan, so it is resolved from `addons` rather than
@@ -87,6 +94,43 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const { data: subscription } = await serviceRole
+    .from('subscriptions')
+    .select('stripe_customer_id, stripe_subscription_id, status, trial_ends_at, comped, extra_clinics')
+    .eq('account_id', teamMember.account_id)
+    .maybeSingle()
+
+  // A request that does not mention locations keeps the ones already bought:
+  // the add-ons card and "add a card" know nothing about them, and turning
+  // Growth on must not take a location away. Never on a plan that does not
+  // sell them, which is how leaving Clinic drops the line.
+  const extraClinics = sellsExtraClinics ? Math.max(0, Math.trunc(body.extraClinics ?? subscription?.extra_clinics ?? 0)) : 0
+  if (extraClinics > 0 && !extraClinicPriceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Extra locations have no Stripe price configured for this billing interval' })
+  }
+
+  // The same going-forward gap as seats, for locations: the cap trigger
+  // (enforce_clinic_location_cap) fires when a clinic is added or brought
+  // back, not when the plan under it changes. So a group with three
+  // locations could move to Solo, or drop a bought location while it is
+  // still open, and keep all of them.
+  if (plan.included_clinics !== null) {
+    const { count: clinicCount } = await serviceRole
+      .from('clinics')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', teamMember.account_id)
+      .is('archived_at', null)
+    const locationAllowance = plan.included_clinics + extraClinics
+    if ((clinicCount ?? 0) > locationAllowance) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: sellsExtraClinics
+          ? `This plan covers ${locationAllowance} location(s), but ${clinicCount} are open. Add more extra locations, or archive one, before switching.`
+          : `This plan covers ${locationAllowance} location(s), but ${clinicCount} are open. Choose a plan that covers them, or archive one, before switching.`,
+      })
+    }
+  }
+
   // Deliberately after the seat check. This is an operator problem -- nobody
   // configured a Stripe price -- while the seat check is something the owner
   // can act on, and whichever throws first is the only message they see.
@@ -101,12 +145,6 @@ export default defineEventHandler(async (event) => {
   if (body.branding === true && !branding.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
   }
-
-  const { data: subscription } = await serviceRole
-    .from('subscriptions')
-    .select('stripe_customer_id, stripe_subscription_id, status, trial_ends_at, comped')
-    .eq('account_id', teamMember.account_id)
-    .maybeSingle()
 
   const stripe = await stripeForPlatformBilling()
 
@@ -144,12 +182,16 @@ export default defineEventHandler(async (event) => {
     // Every plan's price ids, not just the target plan's, so the item
     // actually carrying the CURRENT plan is found regardless of which
     // plan/interval that was.
-    const { data: allPlans } = await serviceRole.from('plans').select('stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id')
+    const { data: allPlans } = await serviceRole
+      .from('plans')
+      .select('stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id, stripe_extra_clinic_monthly_price_id, stripe_extra_clinic_annual_price_id')
     const allPlanPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_monthly_price_id, p.stripe_annual_price_id].filter(Boolean)))
     const addOnPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_extra_professional_monthly_price_id, p.stripe_extra_professional_annual_price_id].filter(Boolean)))
 
     const planItem = current.items.data.find((item) => allPlanPriceIds.has(item.price.id))
     const addOnItem = current.items.data.find((item) => addOnPriceIds.has(item.price.id))
+    const extraClinicPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_extra_clinic_monthly_price_id, p.stripe_extra_clinic_annual_price_id].filter(Boolean)))
+    const extraClinicItem = current.items.data.find((item) => extraClinicPriceIds.has(item.price.id))
     const growthItem = current.items.data.find((item) => growth.allPriceIds.has(item.price.id))
 
     const items: Array<{ id?: string; price?: string; quantity?: number; deleted?: boolean }> = []
@@ -158,6 +200,11 @@ export default defineEventHandler(async (event) => {
       items.push(addOnItem ? { id: addOnItem.id, price: addOnPriceId, quantity: extraProfessionals } : { price: addOnPriceId, quantity: extraProfessionals })
     } else if (addOnItem) {
       items.push({ id: addOnItem.id, deleted: true })
+    }
+    if (extraClinics > 0 && extraClinicPriceId) {
+      items.push(extraClinicItem ? { id: extraClinicItem.id, price: extraClinicPriceId, quantity: extraClinics } : { price: extraClinicPriceId, quantity: extraClinics })
+    } else if (extraClinicItem) {
+      items.push({ id: extraClinicItem.id, deleted: true })
     }
     // Quantity 1 always: Growth is one flat thing per account, unlike extra
     // professionals which are priced per seat.
@@ -243,6 +290,7 @@ export default defineEventHandler(async (event) => {
     line_items: [
       { price: planPriceId, quantity: 1 },
       ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
+      ...(extraClinics > 0 && extraClinicPriceId ? [{ price: extraClinicPriceId, quantity: extraClinics }] : []),
       ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
       ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
       ...(body.branding === true && branding.priceId ? [{ price: branding.priceId, quantity: 1 }] : []),

@@ -43,7 +43,7 @@ export interface WhatsAppTemplateSummary {
   urlButtonCount: number
   mediaHeaderFormat: string | null
   /** Every button, in order; `dynamic` marks a URL button that takes a per-recipient parameter. */
-  buttons: { type: string; text: string; dynamic: boolean }[]
+  buttons: { type: string; text: string; dynamic: boolean; url: string | null }[]
   /** Meta's reason when it REJECTED the template ("INVALID_FORMAT", "TAG_CONTENT_MISMATCH"...); null otherwise. */
   rejectedReason: string | null
 }
@@ -82,7 +82,7 @@ function summarise(t: MetaTemplate): WhatsAppTemplateSummary {
     variableCount,
     urlButtonCount: buttons.filter(isDynamic).length,
     mediaHeaderFormat: header?.format && header.format !== 'TEXT' ? header.format : null,
-    buttons: buttons.map((b) => ({ type: b.type, text: b.text ?? '', dynamic: isDynamic(b) })),
+    buttons: buttons.map((b) => ({ type: b.type, text: b.text ?? '', dynamic: isDynamic(b), url: b.url ?? null })),
     rejectedReason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null,
   }
 }

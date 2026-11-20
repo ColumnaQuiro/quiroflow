@@ -21,6 +21,20 @@ export interface TemplateDraft {
   /** One sample per {{n}} in the body, in order. Meta reviews the template with these filled in. */
   examples: string[]
   footer: string
+  /**
+   * A button that opens one of the clinic's QuiroFlow forms. Its link is
+   * `<app>/doc/{{1}}`, and each send fills the {{1}} with the token of the
+   * patient's own copy of `docTemplateId` -- which is why the form is chosen
+   * here, once, and kept beside the template (whatsapp_template_forms).
+   */
+  formButton?: FormButton | null
+}
+
+export interface FormButton {
+  /** What the button says: "Rellenar formulario". */
+  text: string
+  /** The doc_templates row the button opens a copy of. */
+  docTemplateId: string
 }
 
 export interface Bilingual {
@@ -54,6 +68,21 @@ export const HEADER_FILES: Record<Exclude<TemplateHeaderKind, 'none'>, { mimeTyp
 
 export const BODY_MAX = 1024
 export const FOOTER_MAX = 60
+/** Meta's limit for the words on a button. */
+export const BUTTON_TEXT_MAX = 25
+
+/** The path a form button's link ends in: the public page that opens a patient's copy of a form. */
+export const FORM_BUTTON_PATH = '/doc/'
+
+/** The link Meta stores on a form button, with the {{1}} each send fills. */
+export function formButtonUrl(origin: string): string {
+  return `${origin.replace(/\/+$/, '')}${FORM_BUTTON_PATH}{{1}}`
+}
+
+/** Whether a button Meta lists is a form button: a URL ending in /doc/{{1}}. */
+export function isFormButton(button: { type?: string; url?: string | null }): boolean {
+  return button.type === 'URL' && /\/doc\/\{\{1\}\}$/.test(button.url ?? '')
+}
 export const NAME_MAX = 512
 
 /**
@@ -144,6 +173,16 @@ export function templateDraftProblems(draft: TemplateDraft, { editing = false }:
   }
   if (/\{\{\s*\d+\s*\}\}/.test(footer)) problems.push({ en: 'The footer cannot have variables.', es: 'El pie no puede llevar variables.' })
 
+  if (draft.formButton) {
+    const text = draft.formButton.text.trim()
+    if (!text) problems.push({ en: 'Write what the button says.', es: 'Escribe qué pone en el botón.' })
+    else if (text.length > BUTTON_TEXT_MAX) {
+      problems.push({ en: `The button text is ${text.length} characters; WhatsApp allows ${BUTTON_TEXT_MAX}.`, es: `El texto del botón tiene ${text.length} caracteres; WhatsApp permite ${BUTTON_TEXT_MAX}.` })
+    }
+    if (/\{\{|\}\}/.test(text)) problems.push({ en: 'The button text cannot have variables.', es: 'El texto del botón no puede llevar variables.' })
+    if (!draft.formButton.docTemplateId) problems.push({ en: 'Choose the form the button opens.', es: 'Elige el formulario que abre el botón.' })
+  }
+
   return problems
 }
 
@@ -177,8 +216,12 @@ export function headerFileProblem(kind: TemplateHeaderKind, file: { type: string
  * is what the resumable upload returned for the sample file; Meta wants the
  * sample at creation and reviews the template with it, but it is only a
  * sample -- each send attaches its own file.
+ *
+ * `origin` is the app a form button links to. Meta keeps that link for good,
+ * so it has to be where patients open forms -- the origin the clinic is
+ * using QuiroFlow from when it creates the template.
  */
-export function templateComponents(draft: TemplateDraft, headerHandle: string | null): Record<string, unknown>[] {
+export function templateComponents(draft: TemplateDraft, headerHandle: string | null, origin = ''): Record<string, unknown>[] {
   const components: Record<string, unknown>[] = []
   if (draft.header !== 'none' && headerHandle) {
     components.push({ type: 'HEADER', format: draft.header.toUpperCase(), example: { header_handle: [headerHandle] } })
@@ -192,6 +235,14 @@ export function templateComponents(draft: TemplateDraft, headerHandle: string | 
   })
   const footer = draft.footer.trim()
   if (footer) components.push({ type: 'FOOTER', text: footer })
+  if (draft.formButton) {
+    const url = formButtonUrl(origin)
+    components.push({
+      type: 'BUTTONS',
+      // Meta reviews a dynamic link with a sample of the whole URL.
+      buttons: [{ type: 'URL', text: draft.formButton.text.trim(), url, example: [url.replace('{{1}}', 'ejemplo')] }],
+    })
+  }
   return components
 }
 
@@ -270,9 +321,11 @@ export interface ExistingTemplate {
   footerText?: string | null
   headerText: string | null
   mediaHeaderFormat: string | null
-  buttons: unknown[]
+  buttons: { type: string; text: string; url?: string | null }[]
   /** The file it was created with in QuiroFlow, when it was. */
   headerMedia?: { type: string; storage_path: string; filename: string }
+  /** The form its form button opens, when it was made with one in QuiroFlow. */
+  form?: { docTemplateId: string }
 }
 
 /** What POST /api/whatsapp/templates/{id} answers: the file the template now has, and the one it replaced. */
@@ -302,7 +355,10 @@ export function templateEditBlocker(t: ExistingTemplate): Bilingual | null {
   }
   if (!EDITABLE_STATUSES.includes(t.status)) return { en: 'Meta has disabled it, so it cannot be changed.', es: 'Meta la ha desactivado, así que no se puede cambiar.' }
   const manager = { en: 'Edit it in WhatsApp Manager.', es: 'Edítala en WhatsApp Manager.' }
-  if (t.buttons.length > 0) return { en: `It has buttons, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Tiene botones, que QuiroFlow aún no sabe editar. ${manager.es}` }
+  // One form button is something this dialog makes, so it can say it again;
+  // any other button would be dropped by the edit.
+  const onlyFormButton = t.buttons.length === 1 && isFormButton(t.buttons[0]!)
+  if (t.buttons.length > 0 && !onlyFormButton) return { en: `It has buttons, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Tiene botones, que QuiroFlow aún no sabe editar. ${manager.es}` }
   if (t.headerText !== null) return { en: `It has a heading, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Tiene un título, que QuiroFlow aún no sabe editar. ${manager.es}` }
   if (t.mediaHeaderFormat && !['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.mediaHeaderFormat)) {
     return { en: `It has a location at the top, which QuiroFlow cannot edit yet. ${manager.en}`, es: `Lleva una ubicación arriba, que QuiroFlow aún no sabe editar. ${manager.es}` }
@@ -331,6 +387,7 @@ export function draftFromTemplate(t: ExistingTemplate): TemplateDraft {
     body: t.bodyText,
     examples: Array.from({ length: exampleCount(t.bodyText) }, (_, i) => t.bodyExamples?.[i] ?? ''),
     footer: t.footerText ?? '',
+    formButton: t.buttons.length === 1 && isFormButton(t.buttons[0]!) ? { text: t.buttons[0]!.text, docTemplateId: t.form?.docTemplateId ?? '' } : null,
   }
 }
 

@@ -3,6 +3,8 @@ import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose } from '~/utils/phone'
 import { findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
+import { templateForm } from '~/server/utils/whatsappTemplateForms'
+import { generateDocLink } from '~/server/utils/runAutomationActions'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
 // messages like recalls and confirmations require a pre-approved template
@@ -55,6 +57,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }
 
+  const admin = serverSupabaseServiceRole<Database>(event)
   let to: string | null
   // Whose thread the row is filed in, when that is not body.patientId: a
   // converted lead's patient, or the patient who owns a bare number. As in
@@ -116,7 +119,6 @@ export default defineEventHandler(async (event) => {
     if (!to || to.length < 8) {
       throw createError({ statusCode: 400, statusMessage: 'That phone number could not be formatted for WhatsApp' })
     }
-    const admin = serverSupabaseServiceRole<Database>(event)
     const owners = await findPatientIdsByPhone(admin, teamMember.account_id, to)
     ownerPatientId = await pickInboundPatientId(admin, teamMember.account_id, to, owners)
   }
@@ -142,7 +144,6 @@ export default defineEventHandler(async (event) => {
     // The guide or picture the template was made with. Looked up here by the
     // template's own name rather than taken as a path from the browser, so a
     // send can only ever attach a file of this clinic's templates.
-    const admin = serverSupabaseServiceRole<Database>(event)
     const media = await templateMediaFile(admin, teamMember.account_id, body.templateName, body.templateLanguage)
     if (media) {
       const { data: signed } = await admin.storage.from('whatsapp-media').createSignedUrl(media.path, 60 * 60 * 24)
@@ -186,6 +187,29 @@ export default defineEventHandler(async (event) => {
     components.push({ type: 'body', parameters: body.variables.map((v) => ({ type: 'text', text: v })) })
   }
 
+  // A template made in QuiroFlow with a form button: its link ends in the
+  // token of the patient's own copy of that form, made here for this send.
+  // Without it Meta refuses the send outright (131008), so a template that
+  // opens a form goes only to someone with a patient record to hold the copy.
+  const formId = await templateForm(admin, teamMember.account_id, body.templateName, body.templateLanguage)
+  let formToken: string | null = null
+  if (formId) {
+    const formPatientId = body.patientId ?? ownerPatientId
+    if (!formPatientId) {
+      throw createError({ statusCode: 400, statusMessage: 'This template opens a form, and a form can only be sent to a patient. Add them as a patient first.' })
+    }
+    const { data: formPatient } = await admin
+      .from('patients')
+      .select('id, first_name, last_name, email, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, preferred_language')
+      .eq('id', formPatientId)
+      .eq('account_id', teamMember.account_id)
+      .maybeSingle()
+    formToken = formPatient ? await generateDocLink(admin, teamMember.account_id, formPatient, formId) : null
+    if (!formToken) throw createError({ statusCode: 400, statusMessage: 'The form this template opens could not be prepared for this patient.' })
+    // The creator makes a form button the template's only button: index 0.
+    components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: formToken }] })
+  }
+
   const url: string = `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_phone_number_id}/messages`
   let wamid: string | null = null
   try {
@@ -203,6 +227,9 @@ export default defineEventHandler(async (event) => {
     // status or a reply (via the webhook) back to this specific send.
     wamid = response?.messages?.[0]?.id ?? null
   } catch (err: any) {
+    // The copy made for a send that never went out would sit on their record
+    // as a form they were sent.
+    if (formToken) await admin.from('patient_docs').delete().eq('public_token', formToken).eq('account_id', teamMember.account_id)
     // error_data.details is where Meta says WHICH parameter; the message
     // alone is a category ("Required parameter is missing").
     const metaMessage = err?.data?.error?.message

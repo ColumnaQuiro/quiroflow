@@ -32,10 +32,16 @@ describe('templateEditBlocker', () => {
   // Meta replaces every component on an edit: what the dialog cannot say
   // would be deleted, so these go to WhatsApp Manager instead.
   it('leaves templates with parts the dialog cannot rebuild to WhatsApp Manager', () => {
-    expect(templateEditBlocker(existing({ buttons: [{ type: 'URL', text: 'Reservar', dynamic: true }] }))?.en).toContain('buttons')
+    expect(templateEditBlocker(existing({ buttons: [{ type: 'URL', text: 'Reservar', url: 'https://app.quiroflow.com/reserva/{{1}}' }] }))?.en).toContain('buttons')
     expect(templateEditBlocker(existing({ headerText: 'Tu cita', mediaHeaderFormat: null }))?.en).toContain('heading')
     expect(templateEditBlocker(existing({ mediaHeaderFormat: 'LOCATION' }))?.en).toContain('location')
     expect(templateEditBlocker(existing({ bodyText: 'Hola {{first_name}}, tu guía.' }))?.en).toContain('named variables')
+  })
+
+  it('edits a template whose only button opens a form, which the dialog can rebuild', () => {
+    const form = { type: 'URL', text: 'Rellenar formulario', url: 'https://app.quiroflow.com/doc/{{1}}' }
+    expect(templateEditBlocker(existing({ buttons: [form] }))).toBeNull()
+    expect(templateEditBlocker(existing({ buttons: [form, { type: 'QUICK_REPLY', text: 'Llamar' }] }))?.en).toContain('buttons')
   })
 
   it('needs the id Meta lists it under', () => {
@@ -53,7 +59,18 @@ describe('draftFromTemplate', () => {
       body: 'Hola {{1}}, aquí tienes tu guía de {{2}} para casa.',
       examples: ['Ana', 'ejercicios'],
       footer: 'Clínica Demo',
+      formButton: null,
     })
+  })
+
+  it('keeps a form button and the form QuiroFlow knows it opens', () => {
+    const tpl = existing({
+      buttons: [{ type: 'URL', text: 'Rellenar formulario', url: 'https://app.quiroflow.com/doc/{{1}}' }],
+      form: { docTemplateId: '7d0b2a1e-0000-4000-8000-000000000001' },
+    })
+    expect(draftFromTemplate(tpl).formButton).toEqual({ text: 'Rellenar formulario', docTemplateId: '7d0b2a1e-0000-4000-8000-000000000001' })
+    // Made in WhatsApp Manager: the button is there, the form is for the clinic to choose.
+    expect(draftFromTemplate(existing({ buttons: tpl.buttons })).formButton).toEqual({ text: 'Rellenar formulario', docTemplateId: '' })
   })
 
   it('leaves an example blank where Meta has none, for the clinic to give one', () => {

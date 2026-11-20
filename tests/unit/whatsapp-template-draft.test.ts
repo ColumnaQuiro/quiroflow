@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   exampleCount,
+  formButtonUrl,
+  isFormButton,
   headerFileProblem,
   parseTemplateMediaName,
   templateComponents,
@@ -96,5 +98,42 @@ describe('where the file is kept', () => {
 
   it('ignores anything else in the folder', () => {
     expect(parseTemplateMediaName('1700000000000-saludo.mp4')).toBeNull()
+  })
+})
+
+// A button that opens one of the clinic's forms: Meta stores the link, each
+// send fills the {{1}} with the token of the patient's own copy.
+describe('a form button', () => {
+  const FORM = '7d0b2a1e-0000-4000-8000-000000000001'
+  const withButton = (patch: Partial<NonNullable<TemplateDraft['formButton']>> = {}) =>
+    draft({ header: 'none', formButton: { text: 'Rellenar formulario', docTemplateId: FORM, ...patch } })
+
+  it('is accepted with words and a form', () => {
+    expect(templateDraftProblems(withButton())).toEqual([])
+  })
+
+  it('needs words, at most 25 of them in characters, and no variables', () => {
+    expect(es(withButton({ text: '  ' }))).toContain('Escribe qué pone en el botón.')
+    expect(es(withButton({ text: 'Rellenar el formulario de primera visita' }))[0]).toMatch(/WhatsApp permite 25/)
+    expect(es(withButton({ text: 'Hola {{1}}' }))).toContain('El texto del botón no puede llevar variables.')
+  })
+
+  it('needs the form it opens', () => {
+    expect(es(withButton({ docTemplateId: '' }))).toContain('Elige el formulario que abre el botón.')
+  })
+
+  it('goes to Meta as a dynamic link to the public form page, with a sample', () => {
+    const buttons = templateComponents(withButton(), null, 'https://app.quiroflow.com/').find((c) => c.type === 'BUTTONS')
+    expect(buttons).toEqual({
+      type: 'BUTTONS',
+      buttons: [{ type: 'URL', text: 'Rellenar formulario', url: 'https://app.quiroflow.com/doc/{{1}}', example: ['https://app.quiroflow.com/doc/ejemplo'] }],
+    })
+    expect(templateComponents(draft({ header: 'none' }), null, 'https://app.quiroflow.com').some((c) => c.type === 'BUTTONS')).toBe(false)
+  })
+
+  it('is told apart from other link buttons by where it points', () => {
+    expect(isFormButton({ type: 'URL', url: formButtonUrl('https://app.quiroflow.com') })).toBe(true)
+    expect(isFormButton({ type: 'URL', url: 'https://app.quiroflow.com/oferta-primera-visita/{{1}}' })).toBe(false)
+    expect(isFormButton({ type: 'QUICK_REPLY' })).toBe(false)
   })
 })

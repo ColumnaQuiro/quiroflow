@@ -35,11 +35,15 @@ export interface AppointmentPanelInputs {
   activity: PanelActivityRow[]
 }
 
+type PanelPackage = { package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean; purchased_at: string | null }
+
 /** What the appointment_panel function returns: raw rows, read here as they always were. */
 interface AppointmentPanelRows {
   visit_payments: VisitPaymentRows
   balance: { outstanding_cents: number | null } | null
-  package_purchases: { package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }[]
+  package_purchases: PanelPackage[]
+  /** Live bonos shared with the patient (a family bono), from 20261120093315. */
+  shared_package_purchases: PanelPackage[]
   reschedule_count: number
   has_later_visit: boolean
   overrides: AppointmentTypeOverride[]
@@ -71,13 +75,11 @@ export function useAppointmentPanelLoader() {
 
     const payments = visitPaymentsFromRows([a.id], rows.visit_payments)
     const balance = rows.balance ?? null
-    const packages = rows.package_purchases ?? []
+    const packages = [...(rows.package_purchases ?? []), ...(rows.shared_package_purchases ?? [])]
     const moved = rows.reschedule_count ?? 0
     const ovr = rows.overrides ?? []
 
     const payment: VisitPayment = payments[a.id] ?? { kind: 'none' }
-    // Same rule as the calendar: the newest pack that is neither closed nor used up.
-    const active = packages.find((p) => !p.is_closed && p.sessions_used < p.sessions_total) ?? null
     const stage = appointmentStage(a, reminderSettings)
 
     const view: BlockView = {
@@ -91,7 +93,8 @@ export function useAppointmentPanelLoader() {
       typeColor: a.appointment_types?.color ?? null,
       practitionerName: (a.team_members?.full_name ?? '').trim().split(/\s+/)[0] || null,
       owesCents: Math.max(0, balance?.outstanding_cents ?? 0),
-      bono: bonoForVisit(payment, active),
+      // Same rule as the calendar: own and shared, live only (bonoForVisit).
+      bono: bonoForVisit(payment, packages),
       hasNote: !!a.patients?.sticky_note?.trim(),
       pendingForms: pendingFormsFlag(stage, a.starts_at, a.patients?.pending_forms),
       redFlags: a.patients?.red_flags?.trim() || null,

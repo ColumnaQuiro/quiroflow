@@ -181,7 +181,9 @@ const lineClass = computed(() => {
 
       <div v-if="view.bono" class="flex items-center gap-2 px-3.5 py-2.5 text-[12.5px]" :class="view.owesCents > 0 ? '' : 'border-t border-line-divider'" data-cy="appt-hover-bono">
         <span class="h-2 w-2 shrink-0 rounded-[2px] bg-brand" aria-hidden="true" />
-        <span class="text-ink-700">{{ t('This visit:', 'Esta visita:') }} <strong>{{ view.bono.packageName }}</strong><span class="text-ink-muted"> · {{ t(`${view.bono.remaining} left`, `quedan ${view.bono.remaining}`) }}</span></span>
+        <!-- Two or more live bonos: which one pays is chosen at checkout, so none is named here. -->
+        <span v-if="view.bono.choices > 1" class="text-ink-700">{{ t('This visit:', 'Esta visita:') }} <strong>{{ t(`${view.bono.choices} bonos`, `${view.bono.choices} bonos`) }}</strong><span class="text-ink-muted"> · {{ t('choose which one at checkout', 'elige cuál al cobrar') }}</span></span>
+        <span v-else class="text-ink-700">{{ t('This visit:', 'Esta visita:') }} <strong>{{ view.bono.packageName }}</strong><span class="text-ink-muted"> · {{ t(`${view.bono.remaining} left`, `quedan ${view.bono.remaining}`) }}</span></span>
       </div>
     </div>
 

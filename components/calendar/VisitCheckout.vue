@@ -125,15 +125,17 @@ const chargeable = computed(
 )
 watch(offered, (v) => emit('offered', v), { immediate: true })
 
-// 'money', 'sell', or the id of the bono to draw from. A patient holding a bono has
-// already paid for this visit, so the bono is what opens selected.
+// 'money', 'sell', the id of the bono to draw from, or '' when nothing is picked
+// yet. A patient holding one bono has already paid for this visit, so that bono
+// is what opens selected; holding two or more (their own and a shared one, say),
+// none is -- the front desk picks (utils/bonoOrder checkoutDefaultChoice).
 const choice = ref<string>('money')
 const chosen = ref(false)
 watch(
   [activePackages, ready],
   () => {
     if (chosen.value) return
-    choice.value = activePackages.value[0]?.id ?? 'money'
+    choice.value = checkoutDefaultChoice(activePackages.value)
   },
   { immediate: true },
 )
@@ -197,6 +199,7 @@ const selectedPackage = computed(() => activePackages.value.find((p) => p.id ===
 const buttonLabel = computed(() => {
   if (saving.value || processing.value) return t('Processing…', 'Procesando…')
   if (selectedPackage.value) return t(`Process · 1 session of ${selectedPackage.value.package_name}`, `Procesar · 1 sesión de ${selectedPackage.value.package_name}`)
+  if (choice.value === '') return t('Process · choose a bono', 'Procesar · elige un bono')
   if (choice.value === 'sell') {
     return sellTemplate.value
       ? t(`Process · sell ${sellTemplate.value.name}, use 1 session`, `Procesar · vender ${sellTemplate.value.name} y usar 1 sesión`)
@@ -207,6 +210,8 @@ const buttonLabel = computed(() => {
 
 async function process() {
   if (saving.value || processing.value) return
+  // Nothing picked: without this the press fell through to charging in money.
+  if (choice.value === '') return
   if (choice.value === 'sell' && !sellTemplate.value) return
   if (choice.value !== 'sell' && !selectedPackage.value && !canTakeMoney.value) {
     emit('details')
@@ -330,7 +335,7 @@ async function charge() {
     </div>
 
     <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <button type="button" data-cy="checkout-process" :disabled="saving || processing || (choice === 'sell' && !sellTemplate)" class="flex h-10 touch:h-12 items-center rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="process">
+      <button type="button" data-cy="checkout-process" :disabled="saving || processing || choice === '' || (choice === 'sell' && !sellTemplate)" class="flex h-10 touch:h-12 items-center rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="process">
         {{ buttonLabel }}
       </button>
       <button type="button" data-cy="checkout-details" class="h-9 touch:h-11 text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="emit('details')">

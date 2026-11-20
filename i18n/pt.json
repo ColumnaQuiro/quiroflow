@@ -1322,6 +1322,7 @@
   "{0} sent · {1} opened": "{0} enviados · {1} abertos",
   "{0} sent · {1} read": "{0} enviadas · {1} lidas",
   "{0} sessions": "{0} sessões",
+  "{0} sessions left": "restam {0} sessões",
   "{0} sessions used · {1} visits recorded · bought {2}": "{0} sessões usadas · {1} consultas registadas · comprado {2}",
   "{0} sets": "{0} séries",
   "{0} shown": "{0} apresentados",

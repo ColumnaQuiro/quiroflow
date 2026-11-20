@@ -70,6 +70,48 @@ export function lineItemsTotalCents(lines: { price_cents: number; quantity: numb
 }
 
 /**
+ * The status a visit's receipt is raised with when someone presses "Charge".
+ *
+ * A visit whose price is 0 € -- a free adjustment, a report-of-findings, a
+ * talk -- owes nothing, so its receipt is settled the moment it exists. It
+ * used to be raised 'unpaid' like any other, and since a receipt only turns
+ * paid when payments cover it, and there is no 0 € payment to record, it then
+ * sat in Billing's unpaid list and on the patient's visits as "Unpaid · 0,00 €"
+ * for good -- 68 such receipts across three clinics by 20 Nov 2026, none with
+ * a payment or a priced line -- and the visit was never completed.
+ */
+export function newVisitReceiptStatus(priceCents: number): 'paid' | 'unpaid' {
+  return priceCents > 0 ? 'unpaid' : 'paid'
+}
+
+/**
+ * Whether the lines of a visit's receipt can still be changed.
+ *
+ * An unpaid receipt can. A paid one normally cannot -- money was taken against
+ * those lines -- except a 0 € receipt nothing was paid on, which is what a
+ * free visit is now raised as (newVisitReceiptStatus). Selling a product at a
+ * free visit is ordinary, and that receipt is where it goes. A visit drawn
+ * from a bono is paid with no payment row too, but its price is the bono's, so
+ * it stays closed.
+ */
+export function visitReceiptEditable(input: { status: string | null | undefined; totalCents: number; paidCents: number; coveredByBono: boolean }): boolean {
+  if (!input.status || input.status === 'void') return false
+  if (input.status !== 'paid') return true
+  return !input.coveredByBono && input.totalCents === 0 && input.paidCents === 0
+}
+
+/**
+ * What a receipt's status should be after its lines changed: a settled free
+ * receipt that now carries something priced is owed again. Anything else
+ * keeps the status it had -- an unpaid receipt is settled by taking a payment,
+ * not by editing it.
+ */
+export function receiptStatusAfterLinesChange(input: { status: string; totalCents: number; paidCents: number; coveredByBono: boolean }): string {
+  if (input.status === 'paid' && !input.coveredByBono && input.totalCents > input.paidCents) return 'unpaid'
+  return input.status
+}
+
+/**
  * Whether an open receipt is missing the visit itself, so the visit's price
  * can be put (back) on it.
  *

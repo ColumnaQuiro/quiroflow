@@ -1,6 +1,6 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, openingPaymentRows, visitLineMissing } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, newVisitReceiptStatus, openingPaymentRows, receiptStatusAfterLinesChange, visitLineMissing, visitReceiptEditable } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
 import { recordBonoSale, type SoldBono } from '../utils/bonoSale'
@@ -256,7 +256,9 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         patient_id: patientId(),
         appointment_id: appointmentId(),
         invoice_number: invoiceNumber,
-        status: 'unpaid',
+        // A free visit owes nothing: settled on the spot, or it is an unpaid
+        // 0 € receipt forever. See newVisitReceiptStatus.
+        status: newVisitReceiptStatus(priceCents),
         total_cents: priceCents,
       })
       .select('id, invoice_number, status, total_cents')
@@ -340,10 +342,30 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   async function recalcInvoiceTotal() {
     if (!invoice.value) return
     const totalCents = lineItemsTotalCents(lineItems.value)
-    await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
+    // A free visit's receipt is raised paid; a product sold on it makes it
+    // owed again (receiptStatusAfterLinesChange).
+    const status = receiptStatusAfterLinesChange({
+      status: invoice.value.status,
+      totalCents,
+      paidCents: paidCents.value,
+      coveredByBono: !!packageCoverage.value,
+    })
+    await supabase.from('invoices').update({ total_cents: totalCents, status }).eq('id', invoice.value.id)
     invoice.value.total_cents = totalCents
+    invoice.value.status = status
     openPaymentRows()
   }
+
+  // Whether lines can still be added to or taken off the receipt -- see
+  // visitReceiptEditable for the free-visit exception to "paid is closed".
+  const receiptEditable = computed(() =>
+    visitReceiptEditable({
+      status: invoice.value?.status,
+      totalCents: invoice.value?.total_cents ?? 0,
+      paidCents: paidCents.value,
+      coveredByBono: !!packageCoverage.value,
+    }),
+  )
 
   // "Charge" on an unbilled visit: raise the invoice at the appointment type's
   // price, which is exactly what opening billing used to do by itself. The
@@ -362,7 +384,17 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     error.value = ''
     const inv = await ensureInvoice()
     saving.value = false
-    if (inv) await loadInvoice()
+    if (!inv) return
+    // A free visit was settled as it was raised, which is exactly what a
+    // payment covering it would have done -- so it completes the visit the
+    // same way (recordPayment, afterThirdPartyChange).
+    if (inv.status === 'paid') {
+      const { completedNow } = await completeVisit(supabase, appointmentId())
+      ctx.onCompleted?.()
+      if (completedNow) fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
+      await refreshSummary()
+    }
+    await loadInvoice()
   }
 
   // The open receipt has no priced line for the visit itself: see
@@ -854,6 +886,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     init,
     loadInvoice,
     chargeVisit,
+    receiptEditable,
     visitMissing,
     addVisitLine,
     addLineItem,

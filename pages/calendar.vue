@@ -378,10 +378,28 @@ function isSameDate(a: Date, b: Date) {
 
 const weekStart = computed(() => startOfWeek(anchorDate.value))
 const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart.value, i)))
-// Work week shows the same Mon-Sun grid as Week, just fewer day columns
-// (Mon-Fri) -- data fetching and week navigation stay identical, this only
-// slices which day columns render.
-const visibleWeekDays = computed(() => (viewMode.value === 'workweek' ? weekDays.value.slice(0, 5) : weekDays.value))
+// Work week shows the same Mon-Sun grid as Week, just fewer day columns --
+// data fetching and week navigation stay identical, this only picks which day
+// columns render.
+//
+// The days are the ones somebody works, read from the same hours that hatch
+// "Fuera de horario" (workingWindowsFor): on one practitioner's tab their own
+// week, on the whole clinic anyone's. It used to be Monday to Friday for
+// everyone, so a clinic open on Saturdays had to switch to Week and carry an
+// empty Sunday to see it. A day with a visit on it stays whatever the hours
+// say, so a one-off Sunday appointment is never hidden. Nobody has set hours
+// at all, or none fall in this clinic: Monday to Friday, as before. The app
+// agenda does the same (mobile/pages/calendar/index.vue, weekColumnsDates).
+const visibleWeekDays = computed(() => {
+  if (viewMode.value !== 'workweek') return weekDays.value
+  const worked = (d: Date) => {
+    const windows = workingWindowsFor(d)
+    return windows === null ? d.getDay() >= 1 && d.getDay() <= 5 : windows.length > 0
+  }
+  const booked = (d: Date) => (appointmentsByDay.value.get(toDateKey(d)) ?? []).some(isApptVisible)
+  const open = weekDays.value.filter((d) => worked(d) || booked(d))
+  return open.length ? open : weekDays.value.slice(0, 5)
+})
 // The week grid's own width, so its room sub-columns can share it out.
 const weekScrollerRef = ref<HTMLElement | null>(null)
 const weekScrollerWidth = ref(0)
@@ -3687,7 +3705,7 @@ function showNowLineOn(day: Date) {
                 </div>
               </div>
 
-              <div v-for="(day, di) in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+              <div v-for="(day, di) in visibleWeekDays" :key="toDateKey(day)" data-cy="week-day-col" :data-day="dayKeyFor(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
                 <div class="sticky top-0 z-30 bg-surface">
                   <div
                     class="relative flex h-6 items-center justify-center gap-1"

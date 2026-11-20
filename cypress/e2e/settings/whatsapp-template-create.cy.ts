@@ -110,6 +110,82 @@ describe('Creating a WhatsApp template with a PDF', () => {
     })
   })
 
+  it('ends in a button that opens one of the clinic\'s forms, and each send opens the patient\'s own copy', () => {
+    cy.seedStaffAccount().then((account: Account) => {
+      cy.task('db:startMetaGraphStub', {})
+      connect(account)
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Primera visita' }).then((form) => {
+        cy.task('db:createDocTemplate', { accountId: account.accountId, title: 'Consentimiento' })
+        cy.login(account.email, account.password)
+        cy.visit('/settings/whatsapp')
+
+        cy.get('[data-cy="whatsapp-template-create"]').should('not.be.disabled').click()
+        cy.get('[data-cy="template-dialog"]').within(() => {
+          cy.get('[data-cy="template-title"]').type('Primera visita formulario')
+          cy.get('[data-cy="template-body"]').type('Hola ')
+          cy.get('[data-cy="template-add-variable"]').click()
+          cy.get('[data-cy="template-body"]').type(', antes de tu primera visita rellena este formulario. ¡Gracias!')
+          // Off until chosen; on, it needs a form before Meta is asked.
+          cy.get('[data-cy="template-button-none"]').should('have.attr', 'aria-checked', 'true')
+          cy.get('[data-cy="template-button-form"]').click()
+          cy.get('[data-cy="template-submit"]').click()
+          cy.get('[data-cy="template-problems"]').should('contain', 'Choose the form the button opens')
+          // The dropdown lists the clinic's own forms.
+          cy.get('[data-cy="template-button-form-select"] option').should('contain', 'Primera visita').and('contain', 'Consentimiento')
+          cy.get('[data-cy="template-button-form-select"]').select('Primera visita')
+          cy.get('[data-cy="template-button-text"]').should('have.value', 'Fill in the form').clear().type('Rellenar formulario')
+          cy.get('[data-cy="template-preview-button"]').should('contain', 'Rellenar formulario')
+          cy.get('[data-cy="template-submit"]').click()
+        })
+        cy.get('[data-cy="template-dialog"]').should('not.exist')
+
+        cy.location('origin').then((origin) => {
+          cy.task<{ creates: any[] }>('db:metaGraphStubTemplateCreates').then(({ creates }) => {
+            expect(creates).to.have.length(1)
+            expect(creates[0].components.at(-1)).to.deep.eq({
+              type: 'BUTTONS',
+              buttons: [{ type: 'URL', text: 'Rellenar formulario', url: `${origin}/doc/{{1}}`, example: [`${origin}/doc/ejemplo`] }],
+            })
+          })
+
+          // Approved: the list says which form it opens, for the automation step to start from.
+          cy.task('db:startMetaGraphStub', {
+            templates: [
+              {
+                name: 'primera_visita_formulario',
+                language: 'es',
+                status: 'APPROVED',
+                body: 'Hola {{1}}, antes de tu primera visita rellena este formulario. ¡Gracias!',
+                buttons: [{ type: 'URL', text: 'Rellenar formulario', url: `${origin}/doc/{{1}}` }],
+              },
+            ],
+          })
+          cy.request('/api/whatsapp/templates').then((res) => {
+            expect(res.body.templates[0].form).to.deep.eq({ docTemplateId: form.id })
+          })
+
+          // A send by hand fills the button with the token of the patient's own copy.
+          cy.task('db:setWhatsappPhoneNumberId', { accountId: account.accountId, phoneNumberId: `pnid-${Date.now()}` })
+          cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lucía', lastName: 'Prueba', phone: '612345678' }).then((patient) => {
+            cy.request({
+              method: 'POST',
+              url: '/api/whatsapp/send',
+              body: { patientId: patient.id, templateName: 'primera_visita_formulario', templateLanguage: 'es', variables: ['Lucía'], personal: true },
+            })
+            cy.task<any[]>('db:metaGraphStubSends').then((sends) => {
+              const button = sends.at(-1).template.components.find((c: any) => c.type === 'button')
+              expect(button).to.deep.include({ sub_type: 'url', index: '0' })
+              const token = button.parameters[0].text
+              expect(token).to.match(/^[0-9a-f-]{16,}$/)
+              cy.visit(`/doc/${token}`)
+              cy.contains('h1', 'Primera visita').should('be.visible')
+            })
+          })
+        })
+      })
+    })
+  })
+
   it("says Meta's reason when it refuses, and keeps no file behind", () => {
     cy.seedStaffAccount().then((account: Account) => {
       cy.task('db:startMetaGraphStub', { refuseTemplate: 'There is already English (US) content for this template.' })

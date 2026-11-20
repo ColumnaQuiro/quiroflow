@@ -1,6 +1,8 @@
 import {
   HEADER_FILES,
+  FORM_BUTTON_PATH,
   headerFileProblem,
+  isFormButton,
   mimeTypeFromFilename,
   safeFileName,
   templateComponents,
@@ -11,6 +13,7 @@ import {
 } from '~/utils/whatsappTemplateDraft'
 import { withMessagingTokens } from '~/server/utils/accountSecrets'
 import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
+import { isOwnForm, saveTemplateForm } from '~/server/utils/whatsappTemplateForms'
 import type { WhatsAppTemplateSummary } from '~/server/utils/whatsappTemplates'
 
 // Submits a new message template to Meta for review, from inside QuiroFlow.
@@ -48,8 +51,10 @@ interface HeaderFile {
  * JSON and `file` the PDF, image or video for the top when there is one.
  * Every field is coerced to what a draft may hold, so the checks after this
  * see a draft, whatever was posted.
+ *
+ * `origin` is the app the request came to, which a new form button links to.
  */
-export async function readTemplateSubmission(event: any): Promise<{ draft: TemplateDraft; file: HeaderFile | null }> {
+export async function readTemplateSubmission(event: any): Promise<{ draft: TemplateDraft; file: HeaderFile | null; origin: string }> {
   const form = await readMultipartFormData(event)
   const raw = form?.find((part) => part.name === 'draft')?.data?.toString()
   let parsed: Partial<TemplateDraft>
@@ -66,10 +71,21 @@ export async function readTemplateSubmission(event: any): Promise<{ draft: Templ
     body: String(parsed.body ?? ''),
     examples: Array.isArray(parsed.examples) ? parsed.examples.map((e) => String(e ?? '')) : [],
     footer: String(parsed.footer ?? ''),
+    formButton:
+      parsed.formButton && typeof parsed.formButton === 'object'
+        ? { text: String(parsed.formButton.text ?? ''), docTemplateId: String(parsed.formButton.docTemplateId ?? '') }
+        : null,
   }
   const filePart = form?.find((part) => part.name === 'file' && part.filename)
   const file = filePart?.data ? { data: filePart.data, type: filePart.type ?? '', filename: filePart.filename ?? 'archivo' } : null
-  return { draft, file }
+  return { draft, file, origin: getRequestURL(event).origin }
+}
+
+/** Refuses a form button that opens a form this clinic does not have, before Meta is asked. */
+async function checkForm(supabase: any, accountId: string, draft: TemplateDraft) {
+  if (draft.formButton && !(await isOwnForm(supabase, accountId, draft.formButton.docTemplateId))) {
+    throw new TemplateCreateError('That form is not one of this clinic\'s forms. Choose it again.', 400)
+  }
 }
 
 function metaMessage(err: any): string | null {
@@ -168,8 +184,9 @@ async function keepFile(supabase: any, accountId: string, draft: TemplateDraft, 
  * (templateDraftProblems / headerFileProblem); this only talks to Meta and
  * keeps the file.
  */
-export async function createWhatsAppTemplate(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile | null): Promise<CreatedTemplate> {
+export async function createWhatsAppTemplate(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile | null, origin: string): Promise<CreatedTemplate> {
   const { graph, token, wabaId } = await connection(supabase, accountId)
+  await checkForm(supabase, accountId, draft)
   const kept = draft.header !== 'none' && file ? await keepFile(supabase, accountId, draft, file) : null
 
   try {
@@ -183,13 +200,17 @@ export async function createWhatsAppTemplate(supabase: any, accountId: string, d
           name: draft.name,
           language: draft.language,
           category: draft.category,
-          components: templateComponents(draft, handle),
+          components: templateComponents(draft, handle, origin),
         },
       })
     } catch (err: any) {
       const detail = metaMessage(err)
       throw new TemplateCreateError(detail ? `Meta refused the template: ${detail}` : 'Could not reach WhatsApp to submit the template.', 502)
     }
+    // After Meta accepted it: a refused template leaves no row behind. Always
+    // written, so a template made again under a name an earlier one had does
+    // not inherit that one's form.
+    await saveTemplateForm(supabase, accountId, draft.name, draft.language, draft.formButton?.docTemplateId ?? null)
     return { id: String(created.id), status: created.status ?? 'PENDING', category: created.category ?? draft.category, storagePath: kept?.storagePath ?? null }
   } catch (err) {
     await kept?.forget()
@@ -224,11 +245,17 @@ export async function editWhatsAppTemplate(
   existing: WhatsAppTemplateSummary,
   draft: TemplateDraft,
   file: HeaderFile | null,
+  origin: string,
 ): Promise<EditedTemplate> {
   const blocked = templateEditBlocker(existing)
   if (blocked) throw new TemplateCreateError(blocked.en, 409)
   // Neither can change at Meta; the draft carries what the template has.
   draft = { ...draft, name: existing.name, language: existing.language }
+  await checkForm(supabase, accountId, draft)
+  // A form button it already has keeps linking where it did: the app it was
+  // made from, not whichever one this edit happens to come from.
+  const formUrl = existing.buttons.find(isFormButton)?.url
+  const buttonOrigin = formUrl ? formUrl.slice(0, formUrl.lastIndexOf(FORM_BUTTON_PATH)) : origin
 
   const { graph, token } = await connection(supabase, accountId)
   const previous = existing.mediaHeaderFormat ? await templateMediaFile(supabase, accountId, existing.name, existing.language) : null
@@ -258,7 +285,7 @@ export async function editWhatsAppTemplate(
       await $fetch(`${graph}/${existing.id}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: { ...categoryChange, components: templateComponents(draft, handle) },
+        body: { ...categoryChange, components: templateComponents(draft, handle, buttonOrigin) },
       })
     } catch (err: any) {
       const detail = metaMessage(err)
@@ -268,6 +295,7 @@ export async function editWhatsAppTemplate(
     await kept?.forget()
     throw err
   }
+  await saveTemplateForm(supabase, accountId, existing.name, existing.language, draft.formButton?.docTemplateId ?? null)
 
   const headerMedia = kept && draft.header !== 'none' ? { type: draft.header, storage_path: kept.storagePath, filename: safeFileName(file!.filename) } : null
   await moveAutomationSteps(supabase, accountId, existing, draft, previous?.path ?? null, headerMedia)

@@ -6,6 +6,8 @@ import { docInLanguage, docTranslationsOf } from '~/utils/docTranslations'
 import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
+import { isFormButton } from '~/utils/whatsappTemplateDraft'
+import { templateForm } from '~/server/utils/whatsappTemplateForms'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
 import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignTokens, type EmailTheme } from '~/utils/emailDesign'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
@@ -767,7 +769,7 @@ async function docTemplateForLanguage(
   return { templateId: docTemplateId, ...sent }
 }
 
-async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction | undefined, docTemplateId: string): Promise<string | null> {
+export async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction | undefined, docTemplateId: string): Promise<string | null> {
   // Patient-only by construction. A doc is the patient's own copy of a health
   // history or consent form and hangs off patient_id, so a lead has nothing
   // to attach one to -- the button falls back to Meta's example suffix
@@ -960,8 +962,14 @@ async function runWhatsAppAction(
       sentBody = bodyText
     }
 
+    // A form button made in QuiroFlow's template creator knows its own form
+    // (whatsapp_template_forms): a step that chose nothing else for it sends
+    // that one, rather than Meta's example suffix and a link to no form.
+    const ownForm = buttons.some((b: any) => isFormButton(b)) ? await templateForm(supabase, accountId, templateName, templateLanguage) : null
+
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
-      const docTemplateId = docTemplateIds[i]
+      const button = buttons[dynamicUrlButtonIndexes[i]]
+      const docTemplateId = docTemplateIds[i] ?? (!buttonParams[i] && ownForm && isFormButton(button) ? ownForm : null)
       const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
       const configured = buttonParams[i]
       const paramText = token

@@ -12,7 +12,7 @@ import { headerFileProblem, templateDraftProblems } from '~/utils/whatsappTempla
 // templates are part of how the clinic's WhatsApp is configured.
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requirePermission(event, 'communication_config')
-  const { draft, file } = await readTemplateSubmission(event)
+  const { draft, file, origin } = await readTemplateSubmission(event)
 
   // The dialog checks all of this as the clinic types; this is the same check
   // for anything that reaches the endpoint another way, before a call to Meta
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (problem) throw createError({ statusCode: 400, statusMessage: problem.en })
 
   try {
-    const created = await createWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, draft, draft.header === 'none' ? null : file)
+    const created = await createWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, draft, draft.header === 'none' ? null : file, origin)
     return { id: created.id, name: draft.name, language: draft.language, status: created.status, category: created.category }
   } catch (err) {
     if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })

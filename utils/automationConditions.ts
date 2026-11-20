@@ -27,6 +27,8 @@ export interface Condition {
   /** 'doc_answer' only: which form, and which question on it. */
   doc_template_id?: string
   doc_field_id?: string
+  /** 'lead_answer' only: the question, as its {{answer_…}} key (answerKey). */
+  answer_key?: string
 }
 
 export interface BranchConfig {
@@ -60,6 +62,10 @@ export const CONDITION_FIELDS = [
   'lead_stage',
   'lead_source',
   'lead_channel',
+  // An answer on the lead form they came in through (a Meta lead ad's
+  // questions): "how soon do you want to be seen, 1 to 10?" decides which
+  // first message they get.
+  'lead_answer',
   // An answer on a form the automation sent: a review request for whoever
   // scored the visit 8 or more, a call for whoever scored it low.
   'doc_answer',
@@ -73,8 +79,24 @@ export type ConditionField = (typeof CONDITION_FIELDS)[number]
 export type ConditionFacts = Partial<Record<ConditionField, unknown>> & { [key: string]: unknown }
 
 /** Where a condition's fact is kept in ConditionFacts. */
-export function factKey(c: Pick<Condition, 'field' | 'doc_template_id' | 'doc_field_id'>): string {
-  return c.field === 'doc_answer' ? `doc_answer:${c.doc_template_id ?? ''}:${c.doc_field_id ?? ''}` : c.field
+export function factKey(c: Pick<Condition, 'field' | 'doc_template_id' | 'doc_field_id' | 'answer_key'>): string {
+  if (c.field === 'doc_answer') return `doc_answer:${c.doc_template_id ?? ''}:${c.doc_field_id ?? ''}`
+  if (c.field === 'lead_answer') return `lead_answer:${c.answer_key ?? ''}`
+  return c.field
+}
+
+/**
+ * A fact as a number, for at least / at most. A lead form's answers are free
+ * text, so "8", " 8 " and "8/10" all read as 8; "Dentro de 2 semanas" is not
+ * a number and fails every comparison, as does a blank answer (Number('') is
+ * 0, which would have put somebody who wrote nothing at the bottom of the
+ * scale rather than nowhere on it).
+ */
+function asNumber(v: unknown): number {
+  if (typeof v === 'number') return v
+  if (typeof v !== 'string') return Number(v)
+  const m = v.trim().match(/^-?\d+(?:[.,]\d+)?(?=$|[\s/])/)
+  return m ? Number(m[0].replace(',', '.')) : Number.NaN
 }
 
 const lower = (v: unknown) => String(v ?? '').toLowerCase()
@@ -111,7 +133,7 @@ export function conditionHolds(actual: unknown, op: ConditionOp, expected: unkno
     case 'gte':
     case 'lt':
     case 'lte': {
-      const a = Number(actual)
+      const a = asNumber(actual)
       const b = Number(expected)
       if (actual === undefined || actual === null || !Number.isFinite(a) || !Number.isFinite(b)) return false
       return op === 'gt' ? a > b : op === 'gte' ? a >= b : op === 'lt' ? a < b : a <= b

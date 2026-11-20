@@ -297,7 +297,7 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         break
       }
       case 'branch': {
-        const conditions: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string }[] = Array.isArray(c.conditions) ? c.conditions : []
+        const conditions: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string; answer_key?: string }[] = Array.isArray(c.conditions) ? c.conditions : []
         if (conditions.length === 0) add(step.id, 'An if/else step asks nothing, so everyone would take "Yes".', 'Un paso «Si / si no» no pregunta nada: todos irían por «Sí».')
         for (const cond of conditions) {
           const def = conditionFieldDef(String(cond.field ?? ''))
@@ -309,6 +309,9 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
           if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadTrigger(rule.trigger_event)) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
           if (def.value === 'doc_answer' && !(isUuid(cond.doc_template_id) && cond.doc_field_id)) {
             add(step.id, 'A form-answer condition does not say which form and question.', 'Una condición de respuesta no dice qué formulario y qué pregunta.')
+          }
+          if (def.value === 'lead_answer' && !cond.answer_key) {
+            add(step.id, 'A lead form condition does not say which question.', 'Una condición del formulario del lead no dice qué pregunta.')
           }
           if (!cond.op) add(step.id, `The condition "${def.label[0]}" has no comparison.`, `La condición «${def.label[1]}» no tiene comparación.`)
           const valueless = VALUELESS_OPS.includes(String(cond.op))

@@ -32,7 +32,7 @@ import type { DocField } from '~/utils/docFields'
 import { asAudienceRef, asAudienceRefs, respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
 import { audienceMemberIds } from '~/server/utils/audienceMembers'
 import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
-import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
+import { answerKey, automationFieldValue, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
@@ -1334,6 +1334,18 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
     if (used.has('lead_channel')) facts.lead_channel = lead.channel ?? null
     if (used.has('has_email')) facts.has_email = Boolean(lead.email)
     if (used.has('has_phone')) facts.has_phone = Boolean(lead.phone)
+    if (used.has('lead_answer')) {
+      // The same answers a step's {{answer_…}} variable reads
+      // (runAutomationActions), matched by the same key, so a branch and the
+      // message after it cannot disagree about what the lead said. Absent
+      // when they skipped the question: undefined goes down "No".
+      const { data: events } = await supabase.from('lead_events').select('body').eq('lead_id', lead.id).eq('kind', 'qualification').order('occurred_at')
+      const answers = leadAnswersFromEvents(events ?? [])
+      for (const c of config.conditions ?? []) {
+        if (c.field !== 'lead_answer' || !c.answer_key) continue
+        facts[factKey(c)] = answers.filter((a) => answerKey(a.question) === c.answer_key).pop()?.answer
+      }
+    }
   }
 
   const who = subject.kind === 'patient' ? { column: 'patient_id', id: subject.patient.id } : { column: 'lead_id', id: subject.lead.id }

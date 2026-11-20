@@ -556,7 +556,7 @@ export function quietHoursText(t: Translate, q: { from: string; to: string; days
 
 // ------------------------------------------------------------------ conditions
 
-export type ValueKind = 'none' | 'text' | 'number' | 'multi' | 'balance' | 'channel' | 'doc_answer'
+export type ValueKind = 'none' | 'text' | 'number' | 'multi' | 'balance' | 'channel' | 'doc_answer' | 'lead_answer'
 export type OptionSource = 'appointment_types' | 'practitioners' | 'lead_stages' | 'lead_channels' | 'clinics' | 'memberships' | 'patient_types'
 
 export interface ConditionFieldDef {
@@ -641,6 +641,21 @@ export const BRANCH_FIELDS: ConditionFieldDef[] = [
   { field: 'has_phone', label: ['Has a phone number', 'Tiene teléfono'], ops: BOOL_OPS, value: 'none' },
   { field: 'lead_stage', label: ['Lead stage', 'Etapa del lead'], ops: IN_OPS, value: 'multi', options: 'lead_stages', subject: 'lead' },
   { field: 'lead_channel', label: ['Lead channel', 'Canal del lead'], ops: IN_OPS, value: 'multi', options: 'lead_channels', subject: 'lead' },
+  {
+    // A question on the lead form (a Meta lead ad's), as {{answer_…}} names
+    // it. Free text, so "at least 7" reads a leading number and anything
+    // that is not one goes down "No".
+    field: 'lead_answer',
+    label: ['Lead form answer', 'Respuesta del formulario del lead'],
+    ops: [
+      { op: 'gte', label: ['at least', 'al menos'] },
+      { op: 'lte', label: ['at most', 'como mucho'] },
+      { op: 'is', label: ['is', 'es'] },
+      { op: 'contains', label: ['contains', 'contiene'] },
+    ],
+    value: 'lead_answer',
+    subject: 'lead',
+  },
   {
     field: 'lead_source',
     label: ['Lead source', 'Origen del lead'],

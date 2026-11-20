@@ -355,8 +355,8 @@ const LAUNCH_CARDS = computed(() => [
     key: 'reminders',
     title: t('WhatsApp & email reminders', 'Recordatorios por WhatsApp y email'),
     body: t(
-      'Sent 24 hours ahead, unless you choose otherwise. When a patient taps Confirmar, the calendar marks the visit confirmed.',
-      'Se envían 24 horas antes, salvo que elijas otro plazo. Cuando el paciente pulsa Confirmar, la agenda marca la cita como confirmada.',
+      'Sent the day before at 10:00, unless you choose otherwise. When a patient taps Confirmar, the calendar marks the visit confirmed.',
+      'Se envían el día antes a las 10:00, salvo que elijas otro plazo. Cuando el paciente pulsa Confirmar, la agenda marca la cita como confirmada.',
     ),
   },
   {

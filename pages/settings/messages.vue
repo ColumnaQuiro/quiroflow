@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TablesUpdate } from '~/types/database.types'
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
+import { clampReminderDays, MAX_REMINDER_DAYS, REMINDER_SEND_HOUR } from '~/utils/appointmentReminderDue'
 
 // Settings > Messages (was Communication > General, which still redirects
 // here): what patients are sent on their own around each appointment, and
@@ -18,7 +19,14 @@ const emailConfirmationBody = ref('')
 
 const reminderEnabled = ref(true)
 const reminderChannels = ref<string[]>(['whatsapp'])
-const reminderHoursBefore = ref(24)
+// Days before the visit; the reminders go out together at 10:00 clinic time
+// that day (utils/appointmentReminderDue.ts).
+const reminderDaysBefore = ref(1)
+const REMINDER_DAY_CHOICES = Array.from({ length: MAX_REMINDER_DAYS }, (_, i) => i + 1)
+const reminderSendTime = `${String(REMINDER_SEND_HOUR).padStart(2, '0')}:00`
+function reminderDaysLabel(days: number) {
+  return days === 1 ? t('The day before', 'El día antes') : t(`${days} days before`, `${days} días antes`)
+}
 const emailReminderSubject = ref('')
 const emailReminderBody = ref('')
 
@@ -44,7 +52,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_days_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -54,7 +62,7 @@ async function load() {
   emailConfirmationBody.value = data?.email_confirmation_body ?? ''
   reminderEnabled.value = data?.appointment_reminder_enabled ?? true
   reminderChannels.value = data?.appointment_reminder_channels ?? ['whatsapp']
-  reminderHoursBefore.value = data?.appointment_reminder_hours_before ?? 24
+  reminderDaysBefore.value = clampReminderDays(data?.appointment_reminder_days_before)
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
   googleReviewUrl.value = data?.google_review_url ?? ''
@@ -82,13 +90,6 @@ async function save() {
       return
     }
   }
-  // Number('') is 0: a cleared box is refused, not read as zero hours.
-  const rawHours = reminderHoursBefore.value as number | string
-  const hours = rawHours === '' || rawHours === null ? Number.NaN : Number(rawHours)
-  if (reminderEnabled.value && (!Number.isInteger(hours) || hours < 1 || hours > 168)) {
-    showToast(t('The reminder goes out between 1 and 168 hours (a week) before the visit.', 'El recordatorio sale entre 1 y 168 horas (una semana) antes de la visita.'), 'error')
-    return
-  }
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     appointment_confirmation_enabled: confirmationEnabled.value,
@@ -97,8 +98,7 @@ async function save() {
     email_confirmation_body: emailConfirmationBody.value.trim() || null,
     appointment_reminder_enabled: reminderEnabled.value,
     appointment_reminder_channels: reminderChannels.value,
-    // Checked above while reminders are on; off, a cleared box keeps the default.
-    appointment_reminder_hours_before: Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24,
+    appointment_reminder_days_before: clampReminderDays(reminderDaysBefore.value),
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,
@@ -217,12 +217,14 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               <template v-if="m.key === 'confirmation' ? confirmationEnabled : reminderEnabled">
                 <div v-if="m.key === 'reminder'" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
                   <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                    <label for="reminder-hours" class="text-[14.5px] font-bold text-ink-900">{{ t('When', 'Cuándo') }}</label>
-                    <span class="text-[13px] text-ink-500">{{ t("How long before the appointment it goes out. A patient's record can set their own.", 'Con cuánta antelación se envía. En la ficha de un paciente se puede fijar la suya.') }}</span>
+                    <label for="reminder-days" class="text-[14.5px] font-bold text-ink-900">{{ t('When', 'Cuándo') }}</label>
+                    <span class="text-[13px] text-ink-500">{{ t(`A day's reminders all go out together, at ${reminderSendTime} clinic time. A patient's record can set their own.`, `Los recordatorios de un día salen todos juntos, a las ${reminderSendTime} (hora de la clínica). En la ficha de un paciente se puede fijar otra antelación.`) }}</span>
                   </div>
                   <label class="flex items-center gap-2 text-[14px] text-ink-500">
-                    <input id="reminder-hours" v-model.number="reminderHoursBefore" type="number" min="1" max="168" data-cy="reminder-hours" :class="[inputClass, 'w-20 text-right']" />
-                    {{ t('hours before', 'horas antes') }}
+                    <select id="reminder-days" v-model.number="reminderDaysBefore" data-cy="reminder-days" :class="inputClass">
+                      <option v-for="d in REMINDER_DAY_CHOICES" :key="d" :value="d">{{ reminderDaysLabel(d) }}</option>
+                    </select>
+                    {{ t(`at ${reminderSendTime}`, `a las ${reminderSendTime}`) }}
                   </label>
                 </div>
 

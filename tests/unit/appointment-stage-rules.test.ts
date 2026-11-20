@@ -40,7 +40,7 @@ describe('Appointment stage', () => {
 
   describe('a staff booking nobody has asked about yet', () => {
     const now = new Date('2026-11-12T10:00:00.000Z')
-    const reminders = { enabled: true, hoursBefore: 24 }
+    const reminders = { enabled: true, daysBefore: 1, timeZone: 'Europe/Madrid' }
     // Thursday next week, booked a month ago: its reminder is days away.
     const nextWeek = { ...booked, starts_at: '2026-11-19T09:00:00.000Z', created_at: '2026-10-07T07:26:00.000Z', confirmation_sent_at: null, reminder_claimed_at: null, rescheduled: false }
 
@@ -48,12 +48,12 @@ describe('Appointment stage', () => {
       expect(appointmentStage(nextWeek, reminders, now)).to.equal('pending')
     })
 
-    it('is unconfirmed when its reminder is due on the next tick', () => {
+    it('is unconfirmed when its reminder is due on the next tick (tomorrow\'s visit, after 10:00 today)', () => {
       expect(appointmentStage({ ...nextWeek, starts_at: '2026-11-13T09:00:00.000Z' }, reminders, now)).to.equal('pending')
     })
 
     it('is confirmed at a clinic with reminders switched off', () => {
-      expect(appointmentStage(nextWeek, { enabled: false, hoursBefore: 24 }, now)).to.equal('confirmed')
+      expect(appointmentStage(nextWeek, { enabled: false, daysBefore: 1, timeZone: 'Europe/Madrid' }, now)).to.equal('confirmed')
     })
 
     it('is confirmed when no reminder will go: booked at the desk an hour before', () => {

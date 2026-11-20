@@ -47,7 +47,9 @@ export interface StageInput {
 /** The clinic's appointment reminder, as accounts holds it (useReminderSettings). */
 export interface ReminderSettings {
   enabled: boolean
-  hoursBefore: number
+  /** Days before the visit, sent at 10:00 in `timeZone`. */
+  daysBefore: number
+  timeZone: string
 }
 
 /**
@@ -67,7 +69,7 @@ export function reminderStillToCome(a: StageInput, reminders: ReminderSettings |
     reminder_claimed_at: a.reminder_claimed_at ?? null,
     rescheduled: a.rescheduled ?? null,
   }
-  const decision = appointmentReminderDecision(candidate, reminders.hoursBefore, now)
+  const decision = appointmentReminderDecision(candidate, { days: reminders.daysBefore, timeZone: reminders.timeZone }, now)
   return decision === 'not_yet' || decision === 'send'
 }
 

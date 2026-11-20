@@ -1685,6 +1685,7 @@ export type Database = {
           appointment_confirmation_enabled: boolean
           appointment_reminder_channels: string[]
           appointment_reminder_enabled: boolean
+          appointment_reminder_days_before: number
           appointment_reminder_hours_before: number
           cancellation_fee_cents: number | null
           clinical_retention_years: number
@@ -1815,6 +1816,7 @@ export type Database = {
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
           appointment_reminder_enabled?: boolean
+          appointment_reminder_days_before?: number
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           clinical_retention_years?: number
@@ -1944,6 +1946,7 @@ export type Database = {
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
           appointment_reminder_enabled?: boolean
+          appointment_reminder_days_before?: number
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           clinical_retention_years?: number

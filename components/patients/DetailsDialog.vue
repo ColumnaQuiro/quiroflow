@@ -16,7 +16,7 @@ import { ADULT_AGE, patientAge } from '~/utils/patientAge'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { checkSpanishTaxId } from '~/utils/spanishTaxId'
-import { DEFAULT_REMINDER_HOURS, PATIENT_REMINDER_HOUR_OPTIONS } from '~/utils/appointmentReminderDue'
+import { clampReminderDays, DEFAULT_REMINDER_DAYS, PATIENT_REMINDER_HOUR_OPTIONS, REMINDER_SEND_HOUR } from '~/utils/appointmentReminderDue'
 
 const props = defineProps<{ patient: Tables<'patients'> }>()
 const emit = defineEmits<{ updated: []; close: [] }>()
@@ -70,11 +70,11 @@ onMounted(async () => {
   const [{ data: members }, { data: sources }, { data: reminderSettings }] = await Promise.all([
     supabase.from('team_members').select('id, full_name').order('full_name'),
     supabase.from('referral_sources').select('*').order('name'),
-    supabase.from('accounts').select('appointment_reminder_enabled, appointment_reminder_hours_before').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('appointment_reminder_enabled, appointment_reminder_days_before').eq('id', store.accountId!).maybeSingle(),
   ])
   teamMembers.value = members ?? []
   referralSources.value = sources ?? []
-  clinicReminderHours.value = reminderSettings?.appointment_reminder_hours_before ?? DEFAULT_REMINDER_HOURS
+  clinicReminderDays.value = clampReminderDays(reminderSettings?.appointment_reminder_days_before)
   clinicRemindersOn.value = reminderSettings?.appointment_reminder_enabled ?? true
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
@@ -171,7 +171,8 @@ function channelLabel(value: string) {
 // clinic's Settings > Messages; a number overrides it for this patient only
 // (utils/appointmentReminderDue.ts). Some patients want the day before, some
 // two hours before, and the front desk was phoning the second kind by hand.
-const clinicReminderHours = ref(DEFAULT_REMINDER_HOURS)
+// The clinic's own is in days, at 10:00 that day; the patient's in hours.
+const clinicReminderDays = ref(DEFAULT_REMINDER_DAYS)
 const clinicRemindersOn = ref(true)
 function hoursLabel(hours: number) {
   if (hours % 24 === 0) {
@@ -180,8 +181,12 @@ function hoursLabel(hours: number) {
   }
   return t(`${hours} hours before`, `${hours} horas antes`)
 }
+function clinicDaysLabel(days: number) {
+  const at = `${String(REMINDER_SEND_HOUR).padStart(2, '0')}:00`
+  return days === 1 ? t(`the day before at ${at}`, `el día antes a las ${at}`) : t(`${days} days before at ${at}`, `${days} días antes a las ${at}`)
+}
 function reminderTimingLabel(hours: number | null) {
-  return hours === null ? t(`Clinic default (${hoursLabel(clinicReminderHours.value)})`, `Por defecto de la clínica (${hoursLabel(clinicReminderHours.value)})`) : hoursLabel(hours)
+  return hours === null ? t(`Clinic default (${clinicDaysLabel(clinicReminderDays.value)})`, `Por defecto de la clínica (${clinicDaysLabel(clinicReminderDays.value)})`) : hoursLabel(hours)
 }
 // The stored value is offered even when it is not one of the presets: a
 // number set through the API must not be rewritten by opening the form.

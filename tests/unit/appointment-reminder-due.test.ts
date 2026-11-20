@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   answeredAReminder,
   appointmentReminderDecision,
-  effectiveReminderHours,
+  effectiveReminderLead,
   reminderCandidateRange,
+  reminderOpensAt,
   REMINDER_CRON_INTERVAL_MINUTES,
   type ReminderCandidate,
+  type ReminderLead,
 } from '../../utils/appointmentReminderDue'
 
 const HOUR = 60 * 60 * 1000
@@ -30,7 +32,7 @@ function appt(overrides: Partial<ReminderCandidate> = {}): ReminderCandidate {
 // visit until the visit, with the claim it writes on a send or a skip. The
 // number of hours can change between ticks (`hoursAt`), as an override or
 // the clinic's setting can.
-function runTicks(a: ReminderCandidate, hoursAt: (msBefore: number) => number, fromMs = 8 * 24 * HOUR, phaseMs = 0) {
+function runTicks(a: ReminderCandidate, hoursAt: (msBefore: number) => ReminderLead, fromMs = 8 * 24 * HOUR, phaseMs = 0) {
   const sentAt: number[] = []
   let row = { ...a }
   for (let before = fromMs - phaseMs; before > 0; before -= REMINDER_CRON_INTERVAL_MINUTES * MINUTE) {
@@ -47,11 +49,85 @@ function runTicks(a: ReminderCandidate, hoursAt: (msBefore: number) => number, f
   return sentAt
 }
 
-describe('which number of hours applies', () => {
-  it("is the patient's own when set, the clinic's otherwise, 24 when neither is", () => {
-    expect(effectiveReminderHours(2, 24)).toBe(2)
-    expect(effectiveReminderHours(null, 48)).toBe(48)
-    expect(effectiveReminderHours(undefined, null)).toBe(24)
+describe('which lead applies', () => {
+  it("is the patient's own hours when set, the clinic's days otherwise, one day when neither is", () => {
+    expect(effectiveReminderLead(2, 1, 'Europe/Madrid')).toBe(2)
+    expect(effectiveReminderLead(null, 2, 'Atlantic/Canary')).toEqual({ days: 2, timeZone: 'Atlantic/Canary' })
+    expect(effectiveReminderLead(undefined, null, null)).toEqual({ days: 1, timeZone: 'Europe/Madrid' })
+    // Out of range in the row: read as the nearest allowed.
+    expect(effectiveReminderLead(null, 30, 'Europe/Madrid')).toEqual({ days: 7, timeZone: 'Europe/Madrid' })
+  })
+})
+
+describe("the clinic's reminder, N days before at 10:00", () => {
+  const madrid = (days: number): ReminderLead => ({ days, timeZone: 'Europe/Madrid' })
+  // 21 Oct 2026 is summer time in Madrid (UTC+2): the visit is at 12:00 there,
+  // and the day before at 10:00 Madrid is 08:00 UTC.
+  const dayBeforeAtTen = new Date(Date.UTC(2026, 9, 20, 8, 0))
+
+  it('goes out at 10:00 clinic time on the day before, not 24 hours before the visit', () => {
+    expect(reminderOpensAt(visit, madrid(1))).toEqual(dayBeforeAtTen)
+    expect(appointmentReminderDecision(appt(), madrid(1), new Date(dayBeforeAtTen.getTime() - MINUTE))).toBe('not_yet')
+    expect(appointmentReminderDecision(appt(), madrid(1), dayBeforeAtTen)).toBe('send')
+  })
+
+  it('sends a whole day of visits together, whatever hour each is at', () => {
+    const early = new Date(Date.UTC(2026, 9, 21, 7, 0)) // 09:00 Madrid
+    const late = new Date(Date.UTC(2026, 9, 21, 17, 30)) // 19:30 Madrid
+    const lastMinute = new Date(Date.UTC(2026, 9, 21, 21, 59)) // 23:59 Madrid
+    for (const v of [early, late, lastMinute]) expect(reminderOpensAt(v, madrid(1))).toEqual(dayBeforeAtTen)
+    // 00:30 Madrid on the 22nd is still the 21st in UTC: it belongs to the next batch.
+    expect(reminderOpensAt(new Date(Date.UTC(2026, 9, 21, 22, 30)), madrid(1))).toEqual(new Date(Date.UTC(2026, 9, 21, 8, 0)))
+  })
+
+  it('counts calendar days at the clinic: three days before is the 18th at 10:00', () => {
+    expect(reminderOpensAt(visit, madrid(3))).toEqual(new Date(Date.UTC(2026, 9, 18, 8, 0)))
+  })
+
+  it('is 10:00 on the clock after the clocks go back', () => {
+    // Monday 26 Oct 2026, 09:00 Madrid (winter time, UTC+1). Summer time ended
+    // at 03:00 on the Sunday, so 10:00 that Sunday is 09:00 UTC, not 08:00.
+    const monday = new Date(Date.UTC(2026, 9, 26, 8, 0))
+    expect(reminderOpensAt(monday, madrid(1))).toEqual(new Date(Date.UTC(2026, 9, 25, 9, 0)))
+  })
+
+  it("is 10:00 in the clinic's own zone", () => {
+    // The Canaries are an hour behind the mainland: their 10:00 is 09:00 UTC in summer.
+    expect(reminderOpensAt(visit, { days: 1, timeZone: 'Atlantic/Canary' })).toEqual(new Date(Date.UTC(2026, 9, 20, 9, 0)))
+  })
+
+  it('goes out exactly once, on the first tick from 10:00, for every number of days and any tick phase', () => {
+    for (const days of [1, 2, 3, 7]) {
+      const opensMsBefore = visit.getTime() - reminderOpensAt(visit, madrid(days)).getTime()
+      for (const phase of [0, 1, 7, 14]) {
+        const sent = runTicks(appt(), () => madrid(days), 9 * 24 * HOUR, phase * MINUTE)
+        expect(sent, `${days} d, ticks ${phase} min off`).toHaveLength(1)
+        expect(sent[0]).toBeLessThanOrEqual(opensMsBefore)
+        expect(sent[0]).toBeGreaterThan(opensMsBefore - REMINDER_CRON_INTERVAL_MINUTES * MINUTE)
+      }
+    }
+  })
+
+  it('goes out on the next tick for a visit booked after 10:00 for tomorrow, unless the confirmation just said it', () => {
+    const bookedAfterTen = { created_at: new Date(dayBeforeAtTen.getTime() + 5 * HOUR).toISOString() }
+    const nextTick = new Date(dayBeforeAtTen.getTime() + 5 * HOUR + 10 * MINUTE)
+    expect(appointmentReminderDecision(appt({ ...bookedAfterTen, confirmation_sent_at: null }), madrid(1), nextTick)).toBe('send')
+    expect(appointmentReminderDecision(appt({ ...bookedAfterTen, confirmation_sent_at: bookedAfterTen.created_at }), madrid(1), nextTick)).toBe('skip')
+    // Booked that morning before 10:00: it joins the 10:00 batch like any other.
+    const bookedAtNine = { created_at: new Date(dayBeforeAtTen.getTime() - HOUR).toISOString(), confirmation_sent_at: new Date(dayBeforeAtTen.getTime() - HOUR).toISOString() }
+    expect(appointmentReminderDecision(appt(bookedAtNine), madrid(1), dayBeforeAtTen)).toBe('send')
+  })
+
+  it('is not sent with less than two hours to go', () => {
+    expect(appointmentReminderDecision(appt({ created_at: at(3 * HOUR).toISOString(), confirmation_sent_at: null }), madrid(1), at(119 * MINUTE))).toBe('skip')
+  })
+
+  it('is asked of the database for every visit whose 10:00 can already have come', () => {
+    const now = dayBeforeAtTen
+    const range = reminderCandidateRange(madrid(1), now)
+    expect(range.from).toEqual(new Date(now.getTime() + 2 * HOUR))
+    // The last visit of tomorrow (23:59 Madrid) is inside the range.
+    expect(new Date(Date.UTC(2026, 9, 21, 21, 59)).getTime()).toBeLessThanOrEqual(range.to.getTime())
   })
 })
 

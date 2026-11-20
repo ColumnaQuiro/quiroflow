@@ -55,7 +55,10 @@ function booking(account: Account, patientId: string, online = false) {
     accountId: account.accountId,
     clinicId: account.clinicId,
     patientId,
-    ...(online ? { startsAt: hours(48), source: 'online' } : { startsAt: hours(20), source: 'staff', createdAt: weekAgo() }),
+    // Three hours ahead is past its "day before at 10:00" whatever time the
+    // spec runs: today's visit opened yesterday, and one after midnight
+    // (run after 21:00) opened at 10:00 today.
+    ...(online ? { startsAt: hours(48), source: 'online' } : { startsAt: hours(3), source: 'staff', createdAt: weekAgo() }),
   })
 }
 
@@ -69,7 +72,7 @@ describe("A minor's automatic messages go to their tutor", () => {
   beforeEach(() => {
     cy.seedStaffAccount().then((seeded) => {
       account = seeded as unknown as Account
-      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderHoursBefore: 24 })
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderDaysBefore: 1 })
       templates()
     })
   })

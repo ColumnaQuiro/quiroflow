@@ -184,6 +184,8 @@ function onDrop(target: number) {
 
 // ---- Page menu --------------------------------------------------------------
 const menuOpen = ref(false)
+const menuRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(menuRoot, menuOpen)
 const confirmingDelete = ref(false)
 async function toggleVisibility() {
   if (!page.value) return
@@ -292,7 +294,7 @@ const meta = computed(() => {
               :extra="compareText ? [compareText] : []"
               @busy="(on: boolean) => (pdfBusy = on)"
             />
-            <div class="relative">
+            <div ref="menuRoot" class="relative">
               <UiBtn :aria-label="t('More', 'Más')" data-cy="report-page-menu" @click="menuOpen = !menuOpen">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
               </UiBtn>

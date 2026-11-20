@@ -81,18 +81,23 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
   // left out, ordered by id so the parallel pages cannot overlap.
   async function loadAppts() {
     await once('names', loadNames)
-    type Row = Omit<Appt, 'at' | 'stage'> & { starts_at: string }
+    type Row = Omit<Appt, 'at' | 'stage' | 'created'> & { starts_at: string; created_at: string | null }
     const rows = await fetchAllRows<Row>(
       (f, t) =>
         supabase
           .from('appointments')
-          .select('id, patient_id, starts_at, status, appointment_type_id, practitioner_id, clinic_id, source, confirmation_status')
+          .select('id, patient_id, starts_at, created_at, status, appointment_type_id, practitioner_id, clinic_id, source, confirmation_status')
           .is('deleted_at', null)
           .order('id')
           .range(f, t) as unknown as PromiseLike<{ data: Row[] | null; error: unknown }>,
       { total: supabase.from('appointments').select('id', { count: 'exact', head: true }).is('deleted_at', null) },
     )
-    appts = rows.map(({ starts_at, ...a }) => ({ ...a, at: Date.parse(starts_at), stage: a.appointment_type_id ? (typeStage.get(a.appointment_type_id) ?? null) : null }))
+    appts = rows.map(({ starts_at, created_at, ...a }) => ({
+      ...a,
+      at: Date.parse(starts_at),
+      created: created_at ? Date.parse(created_at) : null,
+      stage: a.appointment_type_id ? (typeStage.get(a.appointment_type_id) ?? null) : null,
+    }))
   }
 
   // Income & Payments' load, embed for embed.

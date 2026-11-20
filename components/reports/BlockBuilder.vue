@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DateRange } from '~/composables/useDateRangePresets'
 import { newBlockId, type ChartKind, type Compare, type OwnPeriod, type ReportBlock, type SplitKey } from '~/utils/reportBlocks'
-import { AREAS, METRICS, METRIC_BY_KEY, pivotColumnsFor, SPLIT_LABELS, type Area } from '~/utils/reportMetrics'
+import { AREAS, labelFor, metricLabel, METRICS, METRIC_BY_KEY, pivotColumnsFor, SPLIT_LABELS, type Area, type BookedVia } from '~/utils/reportMetrics'
 
 // New report / Edit block: pick a metric from the catalogue, how to split it,
 // how to draw it, and for which period -- with the block itself as the
@@ -19,9 +19,19 @@ const emit = defineEmits<{ save: [block: ReportBlock, alsoSaveToLibrary: boolean
 const t = useT()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 const { methods, ensureLoaded: ensureMethods } = usePaymentMethods()
-onMounted(() => {
+const supabase = useSupabaseClient()
+const appointmentTypes = ref<{ id: string; name: string; stage: string | null }[]>([])
+const referralSources = ref<string[]>([])
+onMounted(async () => {
   loadFilterOptions()
   ensureMethods()
+  const [types, sources] = await Promise.all([
+    // Archived types too: past visits were of them, and a filter on last year's offer has to find it.
+    supabase.from('appointment_types').select('id, name, stage, archived_at').order('name'),
+    supabase.from('referral_sources').select('name').order('name'),
+  ])
+  appointmentTypes.value = ((types.data ?? []) as { id: string; name: string; stage: string | null; archived_at: string | null }[]).sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at))
+  referralSources.value = ((sources.data ?? []) as { name: string }[]).map((r) => r.name)
 })
 
 const metric = ref(props.initial?.config.metric ?? 'income_paid')
@@ -32,6 +42,13 @@ const columns = ref<SplitKey | ''>(props.initial?.config.columns ?? '')
 const practitionerFilter = ref(props.initial?.config.filters?.practitionerId ?? '')
 const clinicFilter = ref(props.initial?.config.filters?.clinicId ?? '')
 const methodFilter = ref(props.initial?.config.filters?.method ?? '')
+const typeFilter = ref<string[]>([...(props.initial?.config.filters?.typeIds ?? [])])
+const stageFilter = ref<string[]>([...(props.initial?.config.filters?.stages ?? [])])
+const referralFilter = ref(props.initial?.config.filters?.referralSource ?? '')
+const bookedViaFilter = ref<BookedVia | ''>(props.initial?.config.filters?.bookedVia ?? '')
+const visitNumber = ref<number>(props.initial?.config.params?.visitNumber ?? 3)
+// '' = no limit, for a metric where that is allowed.
+const withinDays = ref<number | ''>(props.initial?.config.params?.withinDays ?? '')
 const periodMode = ref<'page' | 'own'>(props.initial?.config.period?.mode ?? 'page')
 const ownPreset = ref<OwnPeriod>(props.initial?.config.period?.mode === 'own' ? props.initial.config.period.preset : 'last_12_months')
 const title = ref(props.initial?.title ?? '')
@@ -41,6 +58,28 @@ const search = ref('')
 const area = ref<Area>(METRIC_BY_KEY.get(metric.value)?.area ?? 'money')
 
 const def = computed(() => METRIC_BY_KEY.get(metric.value)!)
+const honours = computed(() => new Set(def.value.filters ?? []))
+const paramSpec = (key: 'visitNumber' | 'withinDays') => def.value.params?.find((p) => p.key === key) ?? null
+const withinSpec = computed(() => paramSpec('withinDays'))
+const params = computed(() => {
+  if (!def.value.params) return undefined
+  const out: { visitNumber?: number | null; withinDays?: number | null } = {}
+  const n = paramSpec('visitNumber')
+  if (n) out.visitNumber = Math.min(n.max, Math.max(n.min, Math.round(Number(visitNumber.value) || n.default || n.min)))
+  const w = withinSpec.value
+  if (w) out.withinDays = withinDays.value === '' ? w.default : Math.min(w.max, Math.max(w.min, Math.round(Number(withinDays.value))))
+  return out
+})
+const STAGES = ['first_visit', 'first_visit_offer', 'report', 'adjustment', 'revision', 'maintenance', 'other']
+const stageLabel = (s: string) => labelFor('stage', s, { member: new Map(), clinic: new Map(), type: new Map(), service: new Map(), package: new Map(), method: (k) => k }, t)
+function toggle(list: string[], v: string) {
+  const i = list.indexOf(v)
+  if (i >= 0) list.splice(i, 1)
+  else list.push(v)
+}
+// A metric that follows new patients filters the first visit they start from.
+const followsNewPatients = computed(() => ['conversion_to_visit', 'first_visit_dropouts', 'income_per_new_patient'].includes(def.value.key))
+const extraFilterCount = computed(() => typeFilter.value.length + stageFilter.value.length + (referralFilter.value ? 1 : 0) + (bookedViaFilter.value ? 1 : 0))
 const visibleMetrics = computed(() => {
   const q = search.value.trim().toLowerCase()
   const list = q ? METRICS.filter((m) => [...m.label, ...m.description].some((s) => s.toLowerCase().includes(q))) : METRICS.filter((m) => m.area === area.value)
@@ -65,6 +104,12 @@ const columnChoices = computed(() => (chart.value === 'table' ? pivotColumnsFor(
 watch(metric, () => {
   if (!def.value.splits.includes(split.value)) split.value = 'none'
   if (!def.value.permission && def.value.area !== 'money') methodFilter.value = ''
+  if (!honours.value.has('appointment_type')) typeFilter.value = []
+  if (!honours.value.has('stage')) stageFilter.value = []
+  if (!honours.value.has('referral_source')) referralFilter.value = ''
+  if (!honours.value.has('booked_via')) bookedViaFilter.value = ''
+  // Each metric's own default: no limit for conversion, 90 days for income.
+  withinDays.value = props.initial?.config.metric === metric.value ? (props.initial.config.params?.withinDays ?? '') : (withinSpec.value?.default ?? '')
 })
 watch(
   [split, metric],
@@ -79,7 +124,7 @@ watch(columnChoices, (choices) => {
 })
 // The title follows the choices until someone types one.
 const suggestedTitle = computed(() => {
-  const m = t(...def.value.label)
+  const m = metricLabel(def.value, params.value, t)
   if (split.value === 'none') return m
   const by = `${m} ${t('by', 'por')} ${t(...SPLIT_LABELS[split.value]).toLowerCase()}`
   return columns.value ? `${by} ${t('and', 'y')} ${t(...SPLIT_LABELS[columns.value]).toLowerCase()}` : by
@@ -99,9 +144,18 @@ const draft = computed<ReportBlock>(() => ({
     ...(columns.value ? { columns: columns.value } : {}),
     chart: chart.value,
     filters:
-      practitionerFilter.value || clinicFilter.value || methodFilter.value
-        ? { practitionerId: practitionerFilter.value || null, clinicId: clinicFilter.value || null, method: methodFilter.value || null }
+      practitionerFilter.value || clinicFilter.value || methodFilter.value || extraFilterCount.value
+        ? {
+            practitionerId: practitionerFilter.value || null,
+            clinicId: clinicFilter.value || null,
+            method: methodFilter.value || null,
+            ...(typeFilter.value.length ? { typeIds: [...typeFilter.value] } : {}),
+            ...(stageFilter.value.length ? { stages: [...stageFilter.value] } : {}),
+            ...(referralFilter.value ? { referralSource: referralFilter.value } : {}),
+            ...(bookedViaFilter.value ? { bookedVia: bookedViaFilter.value } : {}),
+          }
         : undefined,
+    ...(params.value ? { params: params.value } : {}),
     period: periodMode.value === 'own' ? { mode: 'own', preset: ownPreset.value } : { mode: 'page' },
   },
 }))
@@ -156,6 +210,34 @@ const optionClass = (on: boolean) =>
               <p v-if="visibleMetrics.length === 0" class="px-2.5 py-2 text-[12.5px] text-ink-faint2">{{ t('No metric matches.', 'Ninguna métrica coincide.') }}</p>
             </div>
             <p class="text-[12px] leading-snug text-ink-muted2">{{ t(...def.description) }}<template v-if="def.snapshot"> · {{ t('As of now: the period does not apply.', 'A día de hoy: el periodo no aplica.') }}</template></p>
+            <div v-if="def.params" class="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-[13px] text-ink-700">
+              <label v-if="paramSpec('visitNumber')" class="flex items-center gap-2">
+                {{ t('Visit number', 'Visita número') }}
+                <input
+                  v-model.number="visitNumber"
+                  type="number"
+                  inputmode="numeric"
+                  :min="paramSpec('visitNumber')!.min"
+                  :max="paramSpec('visitNumber')!.max"
+                  class="h-8 w-16 rounded-ctl border border-line-control bg-surface px-2 text-[13px] touch:h-11"
+                  data-cy="report-builder-visit-number"
+                />
+              </label>
+              <label v-if="withinSpec" class="flex items-center gap-2">
+                {{ t('Within', 'En') }}
+                <input
+                  v-model.number="withinDays"
+                  type="number"
+                  inputmode="numeric"
+                  :min="withinSpec.min"
+                  :max="withinSpec.max"
+                  :placeholder="withinSpec.default === null ? t('any', 'sin límite') : String(withinSpec.default)"
+                  class="h-8 w-20 rounded-ctl border border-line-control bg-surface px-2 text-[13px] touch:h-11"
+                  data-cy="report-builder-within-days"
+                />
+                {{ t('days of the first visit', 'días desde la primera visita') }}
+              </label>
+            </div>
           </div>
 
           <div v-if="def.splits.length > 1" class="space-y-2">
@@ -196,6 +278,54 @@ const optionClass = (on: boolean) =>
                 <option value="">{{ t('Every payment method', 'Todos los métodos de pago') }}</option>
                 <option v-for="m in methods" :key="m.key" :value="m.key">{{ m.name }}</option>
               </select>
+            </div>
+            <div v-if="honours.size" class="space-y-2.5 pt-1">
+              <p v-if="followsNewPatients" class="text-[12px] text-ink-muted2">{{ t('These choose the first visit each new patient starts from; every later visit counts.', 'Eligen la primera visita de la que parte cada paciente nuevo; todas las visitas siguientes cuentan.') }}</p>
+              <div v-if="honours.has('stage')" class="space-y-1.5">
+                <p class="text-[12px] font-semibold text-ink-600">{{ followsNewPatients ? t('First visit', 'Primera visita') : t('Stage', 'Etapa') }}</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="s in followsNewPatients ? ['first_visit', 'first_visit_offer'] : STAGES"
+                    :key="s"
+                    type="button"
+                    class="h-8 rounded-ctl border px-2.5 text-[12.5px] touch:h-11"
+                    :class="optionClass(stageFilter.includes(s))"
+                    :aria-pressed="stageFilter.includes(s)"
+                    :data-cy="`report-filter-stage-${s}`"
+                    @click="toggle(stageFilter, s)"
+                  >
+                    {{ followsNewPatients ? (s === 'first_visit' ? t('Without the offer', 'Sin oferta') : t('With the offer', 'Con oferta')) : stageLabel(s) }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="honours.has('appointment_type') && appointmentTypes.length" class="space-y-1.5">
+                <p class="text-[12px] font-semibold text-ink-600">{{ followsNewPatients ? t('Type of the first visit', 'Tipo de la primera visita') : t('Appointment type', 'Tipo de cita') }}</p>
+                <div class="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+                  <button
+                    v-for="ty in followsNewPatients ? appointmentTypes.filter((x) => x.stage === 'first_visit' || x.stage === 'first_visit_offer') : appointmentTypes"
+                    :key="ty.id"
+                    type="button"
+                    class="h-8 rounded-ctl border px-2.5 text-[12.5px] touch:h-11"
+                    :class="optionClass(typeFilter.includes(ty.id))"
+                    :aria-pressed="typeFilter.includes(ty.id)"
+                    data-cy="report-filter-type"
+                    @click="toggle(typeFilter, ty.id)"
+                  >
+                    {{ ty.name }}
+                  </button>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <select v-if="honours.has('referral_source') && referralSources.length" v-model="referralFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :aria-label="t('Referral source', 'Origen')" data-cy="report-filter-referral">
+                  <option value="">{{ t('Every referral source', 'Todos los orígenes') }}</option>
+                  <option v-for="r in referralSources" :key="r" :value="r">{{ r }}</option>
+                </select>
+                <select v-if="honours.has('booked_via')" v-model="bookedViaFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :aria-label="t('Booked by', 'Reservada por')" data-cy="report-filter-booked-via">
+                  <option value="">{{ t('Booked by anyone', 'Reservada por cualquiera') }}</option>
+                  <option value="staff">{{ t('Booked by reception', 'Reservada por recepción') }}</option>
+                  <option value="patient">{{ t('Booked online by the patient', 'Reservada online por el paciente') }}</option>
+                </select>
+              </div>
             </div>
             <p class="text-[12px] text-ink-faint2">{{ t("The page's own filters still apply on top.", 'Los filtros de la página se siguen aplicando encima.') }}</p>
           </div>

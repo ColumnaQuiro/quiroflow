@@ -106,7 +106,7 @@ describe('Adding a payment method', () => {
       cy.visit('/subscription')
 
       // Before: a plain trial is asked, in both places.
-      cy.contains('a', 'Upgrade now').should('be.visible')
+      cy.contains('[data-cy=trial-banner] a', 'Add a card').should('be.visible')
       cy.get('[data-test="trial-banner"]').within(() => {
         cy.contains('button', 'Add payment method').should('be.visible')
       })
@@ -123,7 +123,7 @@ describe('Adding a payment method', () => {
         cy.contains('The first payment is taken on').should('be.visible')
         cy.contains('button', 'Add payment method').should('not.exist')
       })
-      cy.contains('a', 'Upgrade now').should('not.exist')
+      cy.contains('[data-cy=trial-banner] a', 'Add a card').should('not.exist')
     })
   })
 

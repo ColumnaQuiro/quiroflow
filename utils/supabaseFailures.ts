@@ -64,6 +64,10 @@ const REFUSAL_CODES = new Set([
   // Settings -> Team, Settings -> Clinics, reactivating a team member -- and
   // reporting it made one invitee retrying /join an "escalating" Sentry issue.
   'PT402',
+  // The account is read-only: an ended trial past its grace week, or a
+  // cancelled plan (refuse_writes_while_read_only). The app asks for a card;
+  // nothing is broken.
+  'PT423',
 ])
 
 // Statuses the code handles itself, or that are not about the query.
@@ -159,6 +163,15 @@ export function isRefusedWrite({ url, method, status, body }: SupabaseResponseIn
   if (isRead(method.toUpperCase(), targetOf(path))) return false
   const code = (body as { code?: unknown } | null)?.code
   return status === 403 || code === '42501' || (typeof code === 'string' && REFUSAL_CODES.has(code))
+}
+
+/**
+ * A write refused because the account is read-only: 423 with the reason the
+ * database (`detail`) and the server (`data.reason`) both give,
+ * account_read_only. Matched in the raw body so one test serves both shapes.
+ */
+export function isAccountReadOnlyResponse(status: number, bodyText: string): boolean {
+  return status === 423 && bodyText.includes('account_read_only')
 }
 
 /** The failure a rejected fetch amounts to, or null when it was deliberately aborted. */

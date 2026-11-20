@@ -1,3 +1,5 @@
+import { isReadOnlyAccount, trialGraceEndsAt, trialPhase } from '../../utils/billing'
+
 // The web app resolves account/clinic context from stores/account.ts, a
 // Pinia store -- but mobile's nuxt.config.ts deliberately doesn't register
 // @pinia/nuxt (keeping this bundle a plain small Nuxt project, not a layer
@@ -35,9 +37,17 @@ export interface PractitionerContext {
    * store's hasStaffSection. Solo owners get the gate instead.
    */
   hasStaffSection: boolean
+  /**
+   * The account has not paid (an ended trial past its grace week, or a
+   * cancelled plan): every screen reads, and the database refuses any change
+   * (20261120184541_trial_grace_then_read_only.sql). The layout says so.
+   */
+  readOnly: boolean
+  /** The trial ended with no card: the day the account turns read-only. Null otherwise. */
+  graceEndsAt: string | null
 }
 
-type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null }
+type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null; trial_ends_at?: string | null; has_stripe_subscription?: boolean | null }
 
 // The server's rule (server/utils/requireGrowth.ts, hasReceptionist), which
 // the web's account store repeats and this repeats again, since neither is
@@ -77,6 +87,22 @@ const clinics = ref<{ id: string; name: string; timezone: string | null }[]>([])
 const CLINIC_KEY = 'quiroflow_current_clinic'
 let loadedForUserId: string | null = null
 let retryTimer: ReturnType<typeof setTimeout> | undefined
+// The web's account store asks the same two things (isReadOnly, trialEnded),
+// from the same shared rules in utils/billing.ts.
+function billingStateFrom(subscription: BootstrapSubscription | null | undefined): { readOnly: boolean; graceEndsAt: string | null } {
+  const comped = !!subscription?.comped
+  const phase = trialPhase({
+    status: subscription?.status ?? null,
+    trial_ends_at: subscription?.trial_ends_at ?? null,
+    comped,
+    has_stripe_subscription: !!subscription?.has_stripe_subscription,
+  })
+  return {
+    readOnly: isReadOnlyAccount(subscription?.status ?? null, comped),
+    graceEndsAt: phase === 'grace' && subscription?.trial_ends_at ? trialGraceEndsAt(subscription.trial_ends_at).toISOString() : null,
+  }
+}
+
 let retryHooked = false
 
 export function usePractitionerContext() {
@@ -148,6 +174,7 @@ export function usePractitionerContext() {
       hasReceptionist: receptionistFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
       hasGrowth: growthFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
       hasStaffSection: staffSectionIncluded((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription ?? null),
+      ...billingStateFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
     }
     loading.value = false
   }

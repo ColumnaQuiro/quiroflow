@@ -219,7 +219,7 @@ export function useVisitNoteAutosave(opts: {
   /** Offline, refused by RLS (42501), or anything else. */
   function failureKind(err: unknown): 'offline' | 'refused' | 'failed' {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline'
-    if ((err as { code?: string } | null)?.code === '42501') return 'refused'
+    if ((err as { code?: string } | null)?.code === '42501' || (err as { code?: string } | null)?.code === 'PT423') return 'refused'
     return 'failed'
   }
 

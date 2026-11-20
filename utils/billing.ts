@@ -301,6 +301,141 @@ export function subscriptionState(status: string, comped: boolean): Subscription
   return 'locked'
 }
 
+// ------------------------------------------------------------ trial's end
+//
+// A trial with no card on file does not stop on the day it ends. It runs on
+// for a grace week -- everything working, the app saying every day that it
+// has ended -- and then trial-expiry-cron sets 'locked', which is READ-ONLY,
+// not locked out: every screen still opens, exports still work, and changing
+// anything asks for a card (20261120184541_trial_grace_then_read_only.sql).
+
+/** Days a trial with no card keeps working after it ends. */
+export const TRIAL_GRACE_DAYS = 7
+
+const DAY_MS = 86_400_000
+
+/** When an ended trial turns read-only: trial_ends_at plus the grace week. */
+export function trialGraceEndsAt(trialEndsAt: string | Date): Date {
+  const ends = typeof trialEndsAt === 'string' ? new Date(trialEndsAt) : trialEndsAt
+  return new Date(ends.getTime() + TRIAL_GRACE_DAYS * DAY_MS)
+}
+
+/**
+ * Where a subscription row stands against the end of its trial, for the rows
+ * that still have one to end: 'trial' (days left), 'grace' (ended, still
+ * working), or null for everything else -- a comped account, a card already
+ * on file (Stripe decides what happens then), or a row that is not trialing.
+ */
+export function trialPhase(
+  row: { status: string | null; trial_ends_at: string | null; comped: boolean; has_stripe_subscription: boolean } | null | undefined,
+  now: Date = new Date(),
+): 'trial' | 'grace' | null {
+  if (!row || row.comped || row.has_stripe_subscription || row.status !== 'trialing' || !row.trial_ends_at) return null
+  return new Date(row.trial_ends_at).getTime() > now.getTime() ? 'trial' : 'grace'
+}
+
+function addMonthsClamped(date: Date, months: number): Date {
+  const out = new Date(date.getTime())
+  const day = out.getUTCDate()
+  out.setUTCDate(1)
+  out.setUTCMonth(out.getUTCMonth() + months)
+  const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate()
+  out.setUTCDate(Math.min(day, lastDay))
+  return out
+}
+
+/**
+ * Paying for the grace week, not getting it free.
+ *
+ * A card added during the grace week must not start the paid period on the
+ * day it was added: the clinic has been using the app since the trial ended,
+ * and starting from today would hand it those days for nothing and move its
+ * billing date every time someone waits. The period starts when the trial
+ * ended instead.
+ *
+ * Checkout cannot start a subscription in the past (backdate_start_date is a
+ * Subscriptions API parameter; in Checkout it is preview-only), so the same
+ * result is built from two parts Checkout does take: the billing cycle is
+ * anchored one period after the trial ended -- which Stripe prorates, charging
+ * from now to that anchor -- and the days already used since the trial ended
+ * go on the first invoice as a one-off line (graceCatchUpCents). Together
+ * they are one full period from the end of the trial, and every renewal after
+ * lands on that date.
+ *
+ * Null when there is nothing to make up: still inside the trial (Checkout
+ * carries it over instead, checkoutTrialEnd), comped, a card already there,
+ * past the grace week -- an account that turned read-only could not work in
+ * the meantime, so it pays from the day it comes back -- or an anchor too
+ * close for Stripe to accept.
+ */
+export function graceBackdate(
+  row: { status: string; trial_ends_at: string | null; comped: boolean; stripe_subscription_id?: string | null } | null | undefined,
+  interval: BillingInterval,
+  now: Date = new Date(),
+): { periodStart: number; anchor: number } | null {
+  if (!row || row.comped || row.stripe_subscription_id || row.status !== 'trialing' || !row.trial_ends_at) return null
+  const ended = new Date(row.trial_ends_at)
+  if (!Number.isFinite(ended.getTime()) || ended.getTime() > now.getTime()) return null
+  if (now.getTime() - ended.getTime() > (TRIAL_GRACE_DAYS + 1) * DAY_MS) return null
+  const anchor = addMonthsClamped(ended, interval === 'annual' ? MONTHS_PER_YEAR : 1)
+  // Stripe wants the anchor in the future; a day of headroom so a page left
+  // open does not cross it.
+  if (anchor.getTime() - now.getTime() < DAY_MS) return null
+  return { periodStart: Math.floor(ended.getTime() / 1000), anchor: Math.floor(anchor.getTime() / 1000) }
+}
+
+/**
+ * The one-off charge for the days used since the trial ended: the period's
+ * price, in the proportion of the period that has already gone. Stripe's own
+ * proration charges the rest, from now to the anchor, by the same
+ * seconds-over-period rule.
+ */
+export function graceCatchUpCents(periodCents: number, backdate: { periodStart: number; anchor: number }, now: Date = new Date()): number {
+  const span = backdate.anchor - backdate.periodStart
+  if (span <= 0 || periodCents <= 0) return 0
+  const used = Math.max(0, Math.floor(now.getTime() / 1000) - backdate.periodStart)
+  return Math.round((periodCents * used) / span)
+}
+
+/** Whole days until a date, rounded up, never below zero: "3 days left" on the morning of the third. */
+export function daysUntil(when: string | Date, now: Date = new Date()): number {
+  const at = typeof when === 'string' ? new Date(when) : when
+  return Math.max(0, Math.ceil((at.getTime() - now.getTime()) / DAY_MS))
+}
+
+/**
+ * Why a write was refused for unpaid billing: the database's `detail`
+ * (refuse_writes_while_read_only) and the server's `data.reason`
+ * (requireActiveAccount), so the app can tell it from every other refusal.
+ */
+export const ACCOUNT_READ_ONLY = 'account_read_only'
+
+/** What a call site that prints the error shows. Spanish, as the database says it. */
+export const READ_ONLY_MESSAGE_ES = 'Tu cuenta está en modo solo lectura. Añade un método de pago en Suscripción para seguir trabajando.'
+
+/** Whether an account only reads: 'locked' (an ended trial, past its grace week) or 'canceled'. Never comped. */
+export function isReadOnlyAccount(status: string | null | undefined, comped: boolean): boolean {
+  return !comped && (status === 'locked' || status === 'canceled')
+}
+
+// Non-GET routes a read-only account may still call: ones that only read or
+// export -- having its data is exactly what read-only promises -- and the
+// ones for talking to us and to colleagues.
+const READ_ONLY_ALLOWED_PATHS = [
+  /^\/api\/patients\/[^/]+\/gdpr-export(\?|$)/,
+  /^\/api\/patient-invoices\/pdf-link(\?|$)/,
+  /^\/api\/automations\/segment-preview(\?|$)/,
+  /^\/api\/support\//,
+  /^\/api\/team-messages\//,
+]
+
+/** Whether requireActiveAccount lets a read-only account through to this request. */
+export function readOnlyAllowsRequest(method: string, path: string): boolean {
+  const m = method.toUpperCase()
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return true
+  return READ_ONLY_ALLOWED_PATHS.some((re) => re.test(path))
+}
+
 /**
  * Whether the plan's practitioner and location caps are lifted: a comped
  * account, or a free trial nobody has put a card on yet. The same rule as

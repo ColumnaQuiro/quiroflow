@@ -529,6 +529,10 @@ function openStripeCancel() {
 // An account that DOES have a customer (past_due, or changing a card later)
 // still goes to the portal, which is the right tool once it exists.
 const addingCard = ref(false)
+// In the grace week the first payment is taken the day the card goes on --
+// counted from the end of the trial (graceBackdate) -- not on the trial's end
+// date, which has already gone.
+const todayIso = new Date().toISOString()
 
 async function addPaymentMethod() {
   const sub = subscription.value
@@ -658,6 +662,15 @@ async function addPaymentMethod() {
               @compare-plans="changingPlan = true"
             />
 
+            <SubscriptionTrialEndedBanner
+              v-else-if="store.isOwner && (store.trialEnded || state === 'locked' || state === 'canceled')"
+              :mode="store.trialEnded ? 'grace' : 'read_only'"
+              :trial-ends-at="subscription.trial_ends_at"
+              :grace-ends-at="store.graceEndsAt"
+              :busy="addingCard"
+              @add-card="addPaymentMethod"
+            />
+
             <SubscriptionFailedBanner
               v-else-if="state === 'past_due'"
               :amount-cents="billingInfo?.pastDue?.amountCents ?? nextChargeCents"
@@ -760,7 +773,7 @@ async function addPaymentMethod() {
               </div>
               <p v-else class="mt-2.5 text-[12.5px] text-ink-muted">
                 {{ t('No payments yet.', 'Todavía no hay pagos.') }}
-                <template v-if="subscription.trial_ends_at">
+                <template v-if="subscription.trial_ends_at && store.trialDaysLeft !== null">
                   {{ t('The first lands on', 'El primero será el') }} {{ formatLongDate(subscription.trial_ends_at) }}.
                 </template>
               </p>
@@ -775,7 +788,7 @@ async function addPaymentMethod() {
               :total-cents="nextChargeCents"
               :subtotal-cents="nextChargeSubtotal"
               :tax-cents="nextChargeTax"
-              :date="billingInfo?.nextPaymentDate ?? subscription.trial_ends_at"
+              :date="billingInfo?.nextPaymentDate ?? (store.trialEnded ? todayIso : subscription.trial_ends_at)"
               :card="billingInfo?.card ?? null"
               :retry-date="billingInfo?.pastDue?.nextAttemptAt ?? null"
               :decline-reason="state === 'past_due' ? (billingInfo?.pastDue?.declineReason ?? null) : null"
@@ -829,7 +842,7 @@ async function addPaymentMethod() {
               :total-cents="nextChargeCents"
               :subtotal-cents="nextChargeSubtotal"
               :tax-cents="nextChargeTax"
-              :date="billingInfo?.nextPaymentDate ?? subscription.trial_ends_at"
+              :date="billingInfo?.nextPaymentDate ?? (store.trialEnded ? todayIso : subscription.trial_ends_at)"
               :card="billingInfo?.card ?? null"
               :estimated="!usingStripeAmount"
               @portal="openStripePortal"

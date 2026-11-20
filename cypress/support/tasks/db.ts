@@ -2550,6 +2550,25 @@ async function rpcAsStaff(opts: { email: string; password: string; fn: string; a
   return { data: data ?? null, error: error ? error.message : null }
 }
 
+/**
+ * An update as a signed-in staff member, with the browser's own key: what the
+ * database says to a change made straight through PostgREST. Returns the
+ * error rather than throwing, so a spec can assert on a refusal.
+ */
+async function updateAsStaff(opts: { email: string; password: string; table: string; values: Record<string, unknown>; match: Record<string, unknown> }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { error } = await (userClient.from(opts.table as never) as any).update(opts.values).match(opts.match)
+  return { error: error ? error.message : null, code: error?.code ?? null, details: error?.details ?? null }
+}
+
+/** Inserts with the service role, returning the error instead of throwing on it. */
+async function tryInsertRows(opts: { table: string; rows: Record<string, unknown>[] }) {
+  const { error } = await (admin.from(opts.table as never) as any).insert(opts.rows)
+  return { error: error ? error.message : null }
+}
+
 /** A signed URL for a private object, as a signed-in user: null when their storage policies refuse it. */
 async function storageSignAsUser(opts: { email: string; password: string; bucket: string; path: string }) {
   const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -4744,6 +4763,8 @@ async function cardPaymentsFor(opts: { patientId: string }) {
 }
 
 export const dbTasks = {
+  'db:updateAsStaff': updateAsStaff,
+  'db:tryInsertRows': tryInsertRows,
   'db:seedReportDataset': seedReportDataset,
   'db:inboxUnreadCounts': inboxUnreadCounts,
   'db:recordVerifactuSubmission': recordVerifactuSubmission,

@@ -1,4 +1,4 @@
-describe('Platform billing: trial banner, subscription page, and lock screen', () => {
+describe('Platform billing: trial banner, subscription page, and read-only', () => {
   it('shows the trial countdown banner and the subscription page for a fresh trialing account', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
@@ -23,16 +23,15 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
     })
   })
 
-  it('blocks the whole staff app behind a full-screen lock once the account is locked', () => {
+  it('keeps a locked account readable: the app opens, with a read-only bar instead of a lock screen', () => {
     cy.seedStaffAccount().then((account) => {
       cy.setSubscriptionStatus(account.accountId, 'locked')
       cy.login(account.email, account.password)
       cy.visit('/dashboard')
-      cy.contains('h1', 'Account locked').should('be.visible')
-      // The owner gets an escape hatch to reactivate; the rest of the app
-      // (sidebar, dashboard content) never renders at all.
-      cy.contains('a', 'Choose a plan').should('be.visible')
-      cy.get('aside').should('not.exist')
+      cy.get('[data-cy=read-only-banner]').should('contain.text', 'Read-only account')
+      // The app itself is there: no lock screen in its place.
+      cy.contains('Account locked').should('not.exist')
+      cy.get('aside').should('exist')
     })
   })
 
@@ -105,17 +104,18 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
     })
   })
 
-  it('lets a locked owner through to the subscription page to pay', () => {
+  it('takes a read-only owner from the bar to the subscription page to pay', () => {
     cy.seedStaffAccount().then((account) => {
       cy.setSubscriptionStatus(account.accountId, 'locked')
       cy.login(account.email, account.password)
       cy.visit('/dashboard')
-      cy.contains('a', 'Choose a plan').click()
-      // /subscription is the one page exempt from the lock -- without it a
-      // trial that expired without ever subscribing has no way to pay us.
+      // Once a day the owner is asked as well; put away here.
+      cy.get('[data-cy=confirm-dialog-cancel]').click()
+      cy.get('[data-cy=read-only-banner]').contains('a', 'Add a card to reactivate').click()
       cy.location('pathname').should('eq', '/subscription')
       cy.contains('h1', 'Subscription').should('be.visible')
-      cy.contains('Account locked').should('not.exist')
+      cy.get('[data-cy=trial-ended-banner]').should('contain.text', 'Your account is read-only')
+      cy.get('[data-cy=trial-ended-add-card]').should('be.visible')
       cy.contains('Solo').should('be.visible')
     })
   })

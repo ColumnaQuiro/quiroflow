@@ -11,6 +11,8 @@ const t = useT()
 const replies = ref<SavedReply[]>([])
 const loaded = ref(false)
 const open = ref(false)
+const root = ref<HTMLElement | null>(null)
+useDismissOnOutside(root, open)
 
 async function load() {
   if (loaded.value) return
@@ -31,7 +33,7 @@ function pick(r: SavedReply) {
 </script>
 
 <template>
-  <div class="relative">
+  <div ref="root" class="relative">
     <button
       type="button"
       class="flex shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle"

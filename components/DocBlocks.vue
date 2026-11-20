@@ -196,6 +196,8 @@ function updateOtherText(index: number, text: string) {
 }
 
 const showAddMenu = ref(false)
+const addMenuRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(addMenuRoot, showAddMenu)
 const addMenuEl = ref<HTMLElement | null>(null)
 
 // On a tablet the button often sits at the bottom of the screen, so the list
@@ -511,7 +513,7 @@ const fieldId = useId()
       </div>
     </div>
 
-    <div v-if="mode === 'build'">
+    <div v-if="mode === 'build'" ref="addMenuRoot">
       <button type="button" class="rounded-md border border-dashed border-line-control px-3 py-1.5 touch:py-2.5 text-sm text-ink-muted hover:border-brand hover:text-brand-text" :aria-expanded="showAddMenu" data-cy="doc-add-block" @click="toggleAddMenu">
         + {{ t('Add block', 'Añadir bloque') }}
       </button>

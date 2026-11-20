@@ -341,7 +341,11 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
       {{ t("Couldn't load them.", 'No se han podido cargar.') }}
       <button type="button" class="ml-1 font-semibold text-brand-text" @click="load">{{ t('Try again', 'Reintentar') }}</button>
     </p>
-    <ul v-else-if="assigned.length" class="mt-3 grid gap-2.5 md:grid-cols-2 2xl:grid-cols-3">
+    <!-- grid-cols-1 (minmax(0,1fr)), not the implicit auto column: on a phone
+         the week's seven days plus "0 of 7 days" are wider than the card, and
+         an auto column grew to fit them and ran past the card's edge. The
+         days row wraps instead. -->
+    <ul v-else-if="assigned.length" class="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3">
       <li v-for="pe in assigned" :key="pe.id" class="flex gap-3 rounded-ctl border border-line-row p-2.5" data-cy="exercise-row">
         <div class="h-[54px] w-24 shrink-0 overflow-hidden rounded-ctlSm bg-surface-subtle">
           <img v-if="poster(pe.exercises?.starter_key)" :src="poster(pe.exercises?.starter_key)!" alt="" loading="lazy" class="h-full w-full object-cover" />
@@ -360,7 +364,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
           <!-- Where it came from: a patient type, or someone on the team. Removing
                one a type gave is remembered, so updating the type does not put it back. -->
           <p v-if="origin(pe)" class="text-[11.5px] text-ink-faint" data-cy="exercise-row-origin">{{ origin(pe) }}</p>
-          <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
+          <div class="mt-1.5 flex flex-wrap items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
             <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold" :class="d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
             <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${daysDone(pe).filter((d) => d.done).length} of 7 days`, `${daysDone(pe).filter((d) => d.done).length} de 7 días`) }}</span>
           </div>

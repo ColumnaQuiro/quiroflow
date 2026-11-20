@@ -2,24 +2,29 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import {
   appointmentReminderDecision,
-  effectiveReminderHours,
+  clampReminderDays,
+  effectiveReminderLead,
   lateReminderMinLeadHours,
   reminderCandidateRange,
   type ReminderCandidate,
 } from '~/utils/appointmentReminderDue'
+import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 
 // Same reasoning and auth pattern as birthday-cron.post.ts: reminders have no
-// client action to fire from (nothing happens N hours before an appointment
+// client action to fire from (nothing happens the day before an appointment
 // except time passing), so a pg_cron job hits this on a schedule instead --
 // the actual cron.schedule(...) registration needs this deployment's real
 // URL/secret and, like birthday-cron's, is applied directly against the
 // hosted project rather than tracked in a migration. Run every 15 minutes
 // (appointment-reminders-15min).
 //
-// Which appointments are due, and why the rule is "from N hours before,
-// once per appointment time" rather than a window N hours out, is in
-// utils/appointmentReminderDue.ts. N is the patient's own
-// appointment_reminder_hours_before when set, the clinic's otherwise.
+// Which appointments are due, and why the rule is "from its send time on,
+// once per appointment time" rather than a window, is in
+// utils/appointmentReminderDue.ts. The clinic's setting is N days before at
+// 10:00 its own time (accounts.appointment_reminder_days_before, read in the
+// visit's clinic's time zone), so a clinic's reminders for a day all go out
+// on the 10:00 tick; a patient's own appointment_reminder_hours_before, when
+// set, is hours before their visit instead.
 //
 // Bookings made without staff whose confirmation nobody sent. The patient
 // app books through create_patient_booking and calls nothing afterwards, so
@@ -41,11 +46,12 @@ type CandidateRow = ReminderCandidate & {
   id: string
   account_id: string
   patients: { appointment_reminder_hours_before: number | null } | null
-  accounts: { appointment_reminder_hours_before: number | null } | null
+  accounts: { appointment_reminder_days_before: number | null } | null
+  clinics: { timezone: string | null } | null
 }
 
 const CANDIDATE_COLUMNS =
-  'id, account_id, starts_at, created_at, confirmation_sent_at, reminder_claimed_at, rescheduled, patients!inner(appointment_reminder_hours_before), accounts!inner(appointment_reminder_enabled, appointment_reminder_hours_before)'
+  'id, account_id, starts_at, created_at, confirmation_sent_at, reminder_claimed_at, rescheduled, patients!inner(appointment_reminder_hours_before), accounts!inner(appointment_reminder_enabled, appointment_reminder_days_before), clinics(timezone)'
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
@@ -89,17 +95,17 @@ export default defineEventHandler(async (event) => {
   // Asked per reminder setting, not per account. It was one select of the
   // accounts -- which stops at PostgREST's 1,000-row cap without saying so,
   // so past a thousand clinics the rest were never reminded -- and then two
-  // queries per account. Clinics share a handful of settings (24 hours, 48...),
+  // queries per account. Clinics share a handful of settings (1 day, 2...),
   // so this is a few queries whatever the number of clinics.
   const settings = new Set<number>()
   for (let from = 0; ; from += 1000) {
     const { data: page } = await supabase
       .from('accounts')
-      .select('appointment_reminder_hours_before')
+      .select('appointment_reminder_days_before')
       .eq('appointment_reminder_enabled', true)
       .order('id')
       .range(from, from + 999)
-    for (const a of page ?? []) settings.add(effectiveReminderHours(null, a.appointment_reminder_hours_before))
+    for (const a of page ?? []) settings.add(clampReminderDays(a.appointment_reminder_days_before))
     if (!page || page.length < 1000) break
   }
 
@@ -131,9 +137,10 @@ export default defineEventHandler(async (event) => {
 
   const found = new Map<string, CandidateRow>()
   // Patients on the clinic's setting, a query per setting.
-  for (const hoursBefore of settings) {
-    const rows = await candidates(reminderCandidateRange(hoursBefore, nowDate), (q) =>
-      q.eq('accounts.appointment_reminder_hours_before', hoursBefore).is('patients.appointment_reminder_hours_before', null),
+  // The range does not depend on the time zone (reminderCandidateRange).
+  for (const daysBefore of settings) {
+    const rows = await candidates(reminderCandidateRange({ days: daysBefore, timeZone: DEFAULT_CLINIC_TIMEZONE }, nowDate), (q) =>
+      q.eq('accounts.appointment_reminder_days_before', daysBefore).is('patients.appointment_reminder_hours_before', null),
     )
     for (const row of rows) found.set(row.id, row)
   }
@@ -148,8 +155,8 @@ export default defineEventHandler(async (event) => {
   let sent = 0
   let skipped = 0
   await mapWithConcurrency([...found.values()], SEND_CONCURRENCY, async (appt) => {
-    const hoursBefore = effectiveReminderHours(appt.patients?.appointment_reminder_hours_before, appt.accounts?.appointment_reminder_hours_before)
-    const decision = appointmentReminderDecision(appt, hoursBefore, nowDate)
+    const lead = effectiveReminderLead(appt.patients?.appointment_reminder_hours_before, appt.accounts?.appointment_reminder_days_before, appt.clinics?.timezone)
+    const decision = appointmentReminderDecision(appt, lead, nowDate)
     if (decision !== 'send' && decision !== 'skip') return
     // A skip is claimed too: it is final for this appointment time, and
     // claimed it stops being fetched on every tick until the visit.

@@ -174,7 +174,7 @@ describe('Automatic confirmations and reminders', () => {
 
   it('reminds a visit booked inside its reminder window, unless its confirmation went out', () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderHoursBefore: 24 })
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderDaysBefore: 1 })
       templates()
       patient(account).then((p) =>
         // Booked now for five hours' time: the 24-hour window has passed it by.
@@ -193,9 +193,9 @@ describe('Automatic confirmations and reminders', () => {
     })
   })
 
-  it("reminds each patient at their own number of hours, falling back to the clinic's, once", () => {
+  it("reminds each patient at their own number of hours, falling back to the clinic's day before at 10:00, once", () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderHoursBefore: 24 })
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderDaysBefore: 1 })
       templates()
       // Booked a week ago, so none of these is "booked inside its reminder time".
       const weekAgo = minutesAgo(7 * 24 * 60)
@@ -205,28 +205,39 @@ describe('Automatic confirmations and reminders', () => {
             booking(account, p.id, { source: 'staff', startsAt, createdAt: weekAgo }).then((appt) => ({ ...p, appointmentId: appt.id })),
           ),
         )
-      // Asked for two hours: reminded at 1 h 50, not at the clinic's 24.
+      // Asked for two hours: reminded at 1 h 50, not the day before.
       twoHourPatient(hours(1 + 50 / 60)).then((soon) => {
         twoHourPatient(hours(23.9)).then((tomorrow) => {
-          // The clinic's 24 hours, for a patient who chose nothing.
+          // The clinic's day before at 10:00, for patients who chose nothing.
+          // Times picked to hold whatever hour the spec runs at: three hours
+          // ahead its 10:00 has always come (today's visit opened yesterday,
+          // one past midnight opened at 10:00 today); fifty hours ahead it
+          // never has (that visit is at least two days off, so its 10:00 is
+          // tomorrow's at the earliest).
           patient(account).then((usual) =>
-            booking(account, usual.id, { source: 'staff', startsAt: hours(23.9), createdAt: weekAgo }).then((usualAppt) => {
-              runCron()
-              runCron()
-              state(soon.appointmentId).its('reminder_sent_at').should('not.eq', null)
-              sendsTo(soon.phone).should('have.length', 1)
-              state(tomorrow.appointmentId).its('reminder_sent_at').should('eq', null)
-              sendsTo(tomorrow.phone).should('have.length', 0)
-              state(usualAppt.id).its('reminder_sent_at').should('not.eq', null)
-              sendsTo(usual.phone).should('have.length', 1)
+            booking(account, usual.id, { source: 'staff', startsAt: hours(3), createdAt: weekAgo }).then((usualAppt) =>
+              patient(account).then((later) =>
+                booking(account, later.id, { source: 'staff', startsAt: hours(50), createdAt: weekAgo }).then((laterAppt) => {
+                  runCron()
+                  runCron()
+                  state(soon.appointmentId).its('reminder_sent_at').should('not.eq', null)
+                  sendsTo(soon.phone).should('have.length', 1)
+                  state(tomorrow.appointmentId).its('reminder_sent_at').should('eq', null)
+                  sendsTo(tomorrow.phone).should('have.length', 0)
+                  state(usualAppt.id).its('reminder_sent_at').should('not.eq', null)
+                  sendsTo(usual.phone).should('have.length', 1)
+                  state(laterAppt.id).its('reminder_sent_at').should('eq', null)
+                  sendsTo(later.phone).should('have.length', 0)
 
-              // Moved after its reminder went out: reminded again, for the
-              // new time. The others are not touched by the extra tick.
-              cy.task('db:updateRows', { table: 'appointments', values: { starts_at: hours(1.9) }, match: { id: soon.appointmentId } })
-              runCron()
-              sendsTo(soon.phone).should('have.length', 2)
-              sendsTo(usual.phone).should('have.length', 1)
-            }),
+                  // Moved after its reminder went out: reminded again, for the
+                  // new time. The others are not touched by the extra tick.
+                  cy.task('db:updateRows', { table: 'appointments', values: { starts_at: hours(1.9) }, match: { id: soon.appointmentId } })
+                  runCron()
+                  sendsTo(soon.phone).should('have.length', 2)
+                  sendsTo(usual.phone).should('have.length', 1)
+                }),
+              ),
+            ),
           )
         })
       })
@@ -235,7 +246,7 @@ describe('Automatic confirmations and reminders', () => {
 
   it('neither confirms nor reminds an appointment the clinic deleted', () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: true, reminder: true, reminderHoursBefore: 24 })
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: true, reminder: true, reminderDaysBefore: 1 })
       templates()
       patient(account).then((p) =>
         // Booked from the app five minutes ago -- the cron's confirmation

@@ -16,9 +16,36 @@
 // has been dealt with for its current time (a trigger clears it when the
 // appointment moves). Whatever the setting was or becomes, each appointment
 // time is reminded once.
+//
+// The clinic's own setting is a number of DAYS, and the reminder goes out at
+// REMINDER_SEND_HOUR on that day, clinic time: "1 day before" reminds every
+// visit of tomorrow together at 10:00 today, whatever hour each visit is at.
+// Counting hours sent them all day long, each 24 hours before its own visit,
+// so a 9:00 visit was reminded at 9:00 and a 19:00 one at 19:00 -- patients
+// heard from the clinic at odd times and the front desk could not answer the
+// replies in one go. A patient's own override (patients.appointment_reminder_
+// hours_before) is still hours: it exists for the patient who wants to be
+// told two hours before, which a day count cannot say.
+
+import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE, wallClockToUtc } from './clinicClock'
 
 /** The clinic's default when it has none stored, as settings/messages.vue saves. */
-export const DEFAULT_REMINDER_HOURS = 24
+export const DEFAULT_REMINDER_DAYS = 1
+
+/** The longest lead the clinic's setting allows (and the column's check). */
+export const MAX_REMINDER_DAYS = 7
+
+/** The hour of the day, at the clinic, that the day-based reminders go out. */
+export const REMINDER_SEND_HOUR = 10
+
+/** "N days before, at 10:00 clinic time": the clinic's setting. */
+export interface DaysBefore {
+  days: number
+  timeZone: string
+}
+
+/** A number is hours (a patient's own override); otherwise days at 10:00. */
+export type ReminderLead = number | DaysBefore
 
 /** pg_cron calls the endpoint every 15 minutes (job appointment-reminders-15min). */
 export const REMINDER_CRON_INTERVAL_MINUTES = 15
@@ -53,42 +80,71 @@ export type ReminderDecision =
   | 'skip'
 
 const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
 
-/** The patient's own choice wins; then the clinic's; then the default. */
-export function effectiveReminderHours(patientHours: number | null | undefined, clinicHours: number | null | undefined): number {
-  return patientHours ?? clinicHours ?? DEFAULT_REMINDER_HOURS
-}
-
-export function lateReminderMinLeadHours(hoursBefore: number): number {
-  return Math.min(LATE_REMINDER_MIN_LEAD_HOURS, hoursBefore / 2)
+/** A stored day count, as the column's check allows it. */
+export function clampReminderDays(days: number | null | undefined): number {
+  if (typeof days !== 'number' || !Number.isInteger(days)) return DEFAULT_REMINDER_DAYS
+  return Math.min(MAX_REMINDER_DAYS, Math.max(1, days))
 }
 
 /**
- * When the reminder for a visit at `startsAt` becomes due. The tick before the
- * exact mark, not the one after, so "24 hours before" never arrives at 23h50
- * -- the old window sent up to one tick early too.
+ * The patient's own choice (hours) wins; then the clinic's days, at 10:00
+ * in the visit's clinic's time zone; then the default.
  */
-export function reminderOpensAt(startsAt: Date, hoursBefore: number): Date {
-  return new Date(startsAt.getTime() - hoursBefore * HOUR - REMINDER_CRON_INTERVAL_MINUTES * 60 * 1000)
+export function effectiveReminderLead(patientHours: number | null | undefined, clinicDays: number | null | undefined, timeZone: string | null | undefined): ReminderLead {
+  if (patientHours != null) return patientHours
+  return { days: clampReminderDays(clinicDays), timeZone: timeZone || DEFAULT_CLINIC_TIMEZONE }
+}
+
+export function lateReminderMinLeadHours(lead: ReminderLead): number {
+  if (typeof lead !== 'number') return LATE_REMINDER_MIN_LEAD_HOURS
+  return Math.min(LATE_REMINDER_MIN_LEAD_HOURS, lead / 2)
+}
+
+/** `date` (YYYY-MM-DD) moved by `days` calendar days. */
+function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
+/**
+ * When the reminder for a visit at `startsAt` becomes due.
+ *
+ * In hours: the tick before the exact mark, not the one after, so "24 hours
+ * before" never arrives at 23h50 -- the old window sent up to one tick early
+ * too.
+ *
+ * In days: 10:00 at the clinic on the calendar day that many days before the
+ * visit's own day there. Read on the clinic's calendar, not as 24-hour steps,
+ * so a visit on the Monday after the clocks change is still reminded at 10:00
+ * on the Sunday.
+ */
+export function reminderOpensAt(startsAt: Date, lead: ReminderLead): Date {
+  if (typeof lead === 'number') return new Date(startsAt.getTime() - lead * HOUR - REMINDER_CRON_INTERVAL_MINUTES * 60 * 1000)
+  const sendDay = shiftDate(clinicDateOf(startsAt, lead.timeZone), -lead.days)
+  return new Date(wallClockToUtc(sendDay, `${String(REMINDER_SEND_HOUR).padStart(2, '0')}:00`, lead.timeZone))
 }
 
 /**
  * The starts_at range a tick has to look at for appointments with this lead:
- * everything whose reminder has opened and that is not yet too close.
+ * everything whose reminder has opened and that is not yet too close. For a
+ * day count that is up to the end of the clinic's day `days` from today --
+ * read here as a day more than `days`, plus an hour for a clock change, since
+ * one query serves clinics in every time zone; the verdict sorts out the rest.
  */
-export function reminderCandidateRange(hoursBefore: number, now: Date): { from: Date; to: Date } {
-  return {
-    from: new Date(now.getTime() + lateReminderMinLeadHours(hoursBefore) * HOUR),
-    to: new Date(now.getTime() + hoursBefore * HOUR + REMINDER_CRON_INTERVAL_MINUTES * 60 * 1000),
-  }
+export function reminderCandidateRange(lead: ReminderLead, now: Date): { from: Date; to: Date } {
+  const from = new Date(now.getTime() + lateReminderMinLeadHours(lead) * HOUR)
+  if (typeof lead === 'number') return { from, to: new Date(now.getTime() + lead * HOUR + REMINDER_CRON_INTERVAL_MINUTES * 60 * 1000) }
+  return { from, to: new Date(now.getTime() + (lead.days + 1) * DAY + HOUR) }
 }
 
-export function appointmentReminderDecision(appt: ReminderCandidate, hoursBefore: number, now: Date): ReminderDecision {
+export function appointmentReminderDecision(appt: ReminderCandidate, lead: ReminderLead, now: Date): ReminderDecision {
   if (appt.reminder_claimed_at) return 'done'
   const startsAt = new Date(appt.starts_at)
-  const opensAt = reminderOpensAt(startsAt, hoursBefore)
+  const opensAt = reminderOpensAt(startsAt, lead)
   if (now < opensAt) return 'not_yet'
-  if (startsAt.getTime() - now.getTime() < lateReminderMinLeadHours(hoursBefore) * HOUR) return 'skip'
+  if (startsAt.getTime() - now.getTime() < lateReminderMinLeadHours(lead) * HOUR) return 'skip'
   // Booked once its reminder time had already come -- tomorrow morning,
   // booked tonight -- and the confirmation went out: that told the patient
   // the same thing a moment ago. Not once it has been moved, because the

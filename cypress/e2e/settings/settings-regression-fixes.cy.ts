@@ -158,7 +158,7 @@ describe('Settings review fixes, second round', () => {
     })
   })
 
-  it('saves a cleared number box as the default rather than failing', () => {
+  it('saves the reminder days picked, and a cleared booking-days box as the default', () => {
     cy.seedStaffAccount().then((account) => {
       cy.intercept('PATCH', '**/rest/v1/accounts*').as('saveAccount')
       cy.login(account.email, account.password)
@@ -168,12 +168,11 @@ describe('Settings review fixes, second round', () => {
       cy.get('[data-cy="messages-reminder"] [data-cy="messages-enabled"]').then(($s) => {
         if ($s.attr('aria-checked') !== 'true') cy.wrap($s).click()
       })
-      // A cleared box is refused in words now, rather than silently saved as
-      // 24 -- and never sent to Postgres as ''.
-      cy.get('[data-cy="reminder-hours"]').clear()
+      // The reminder's lead is a choice of days now (sent at 10:00 that day),
+      // so there is no box to clear: what is picked is what is saved.
+      cy.get('[data-cy="reminder-days"]').select('2 days before')
       cy.get('[data-cy="messages-save"]').click()
-      cy.contains('between 1 and 168 hours').should('be.visible')
-      cy.get('@saveAccount.all').should('have.length', 0)
+      cy.wait('@saveAccount').its('request.body.appointment_reminder_days_before').should('eq', 2)
 
       cy.visit('/settings/online-booking')
       cy.get('[data-cy="booking-settings"][data-ready="true"]')

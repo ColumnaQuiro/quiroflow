@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/nuxt'
 import { SENTRY_DATA_COLLECTION, scrubBreadcrumb, scrubEvent } from './utils/sentryPrivacy'
-import { watchSupabaseFailures } from './utils/supabaseFailures'
+import { supabaseFailureFingerprint, watchSupabaseFailures } from './utils/supabaseFailures'
 
 // Error monitoring on the server: every SSR page and /api route, which on
 // Netlify is the one function .netlify/functions-internal/server. The SDK
@@ -30,7 +30,7 @@ if (dsn) {
       level: 'error',
       tags: { postgrest_code: f.code, supabase_target: f.target, http_method: f.method, http_status: String(f.status), schema_mismatch: f.schema, side: 'server' },
       extra: { path: f.path },
-      fingerprint: ['supabase-failure', f.code, f.method, f.target, f.message],
+      fingerprint: supabaseFailureFingerprint(f),
     })
   })
 }

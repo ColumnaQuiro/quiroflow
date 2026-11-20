@@ -171,6 +171,22 @@ export function classifySupabaseNetworkFailure(url: string, method: string, erro
   return { status: 0, method, code: 'network', message: 'The request never got a response', path, target, schema: false, read: isRead(method, target) }
 }
 
+/**
+ * How Sentry groups a failure: one broken query is one issue.
+ *
+ * Except a 5xx with no PostgREST code, which is a gateway page -- Supabase's
+ * edge, or the project's API restarting -- rather than a query. Those arrive
+ * together on every table being read at the time, and keying them by table
+ * made one outage into seven issues (JAVASCRIPT-NUXT-12..18, 19 Nov 2026:
+ * http_555 on platform_status, automation_rules, import_jobs... within the same
+ * second). Grouped by status alone, an outage is one issue, and a table that
+ * keeps failing alone is still visible in its supabase_target tag.
+ */
+export function supabaseFailureFingerprint(f: SupabaseFailure): string[] {
+  if (/^http_5\d\d$/.test(f.code)) return ['supabase-failure', 'gateway', f.code]
+  return ['supabase-failure', f.code, f.method, f.target, f.message]
+}
+
 function requestUrl(input: RequestInfo | URL): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 }

@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nuxt'
-import { watchSupabaseFailures } from '~/utils/supabaseFailures'
+import { supabaseFailureFingerprint, watchSupabaseFailures } from '~/utils/supabaseFailures'
 
 // A failed Supabase query, reported instead of rendered as "nothing here".
 //
@@ -28,7 +28,7 @@ export default defineNuxtPlugin(() => {
         level: 'error',
         tags: { postgrest_code: f.code, supabase_target: f.target, http_method: f.method, http_status: String(f.status), schema_mismatch: f.schema, side: 'client' },
         extra: { path: f.path },
-        fingerprint: ['supabase-failure', f.code, f.method, f.target, f.message],
+        fingerprint: supabaseFailureFingerprint(f),
       })
     } else {
       console.error(`[supabase] ${f.method} ${f.target} failed with ${f.status} ${f.code}: ${f.message}`)

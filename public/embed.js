@@ -39,6 +39,11 @@
  * that would put every patient of a clinic that never touched a setting into
  * English. With the picker shown, the widget goes on following the browser.
  *
+ * And it listens to the widget (onMessage, below): the frame reports its
+ * height so the box fits the step it is showing, and when a booking completes
+ * with a thank-you page configured, that page opens on the clinic's site
+ * rather than inside the box.
+ *
  * Deliberately ES5 and dependency-free: it runs on whatever a clinic's site
  * is built with, which in practice means WordPress themes of unknown vintage.
  */
@@ -76,6 +81,22 @@
 
   /** Already-processed iframes carry this, so a second run is a no-op. */
   var MARK = 'data-quiroflow-attributed'
+
+  /**
+   * A built iframe's size before the widget has said how tall it is: enough
+   * for the calendar on a phone without an inner scrollbar. Marked with
+   * DEFAULT_FLOOR so the first height report can lift it.
+   */
+  var DEFAULT_HEIGHT = '780px'
+  var DEFAULT_FLOOR = 'data-quiroflow-default-height'
+
+  /**
+   * The tallest the widget may make its box. Its longest step on a narrow
+   * phone, with a long service list, is a few thousand pixels; this is only
+   * there so a runaway report (a layout loop, a bug) cannot push the rest of
+   * the clinic's page tens of thousands of pixels down.
+   */
+  var MAX_HEIGHT = 12000
 
   /**
    * The origin this script was served from, so a staging or self-hosted
@@ -229,9 +250,8 @@
   /**
    * Builds an iframe for the declarative form.
    *
-   * The sizing matches what the widget needs to render its calendar without
-   * an inner scrollbar on a phone; a clinic can override either with a style
-   * attribute on the container.
+   * Full width; the height follows the widget's own reports (onMessage), with
+   * data-height as a floor for a clinic that wants the box never shorter.
    */
   function buildIframe(container, params) {
     if (container.hasAttribute(MARK)) return
@@ -258,9 +278,95 @@
     iframe.setAttribute('allow', 'payment')
     iframe.setAttribute(MARK, '')
     iframe.style.width = '100%'
-    iframe.style.minHeight = container.getAttribute('data-height') || '780px'
+    // Until the widget reports its height (onMessage), this is the box's
+    // size. A data-height stays as the floor after that; the default only
+    // stands in for a report that has not arrived, so it is dropped then.
+    var floor = container.getAttribute('data-height')
+    iframe.style.minHeight = floor || DEFAULT_HEIGHT
+    if (!floor) iframe.setAttribute(DEFAULT_FLOOR, '')
     iframe.style.border = '0'
     container.appendChild(iframe)
+  }
+
+  /** The <iframe> element whose window sent a message, if it is one of ours. */
+  function bookingFrameFor(source) {
+    if (!source) return null
+    var iframes = document.getElementsByTagName('iframe')
+    for (var i = 0; i < iframes.length; i++) {
+      if (iframes[i].contentWindow !== source) continue
+      // The src as written on the page, not wherever the frame is now: an
+      // iframe the clinic pasted pointing at /book/… counts whether or not
+      // upgradeIframe touched it (it does not, for an organic visit).
+      return isBookingUrl(iframes[i].getAttribute('src') || '') ? iframes[i] : null
+    }
+    return null
+  }
+
+  function resize(iframe, height) {
+    // typeof, then a range: NaN and Infinity fail one or the other.
+    if (typeof height !== 'number' || !(height > 0) || height === Infinity) return
+    iframe.style.height = Math.min(Math.ceil(height), MAX_HEIGHT) + 'px'
+    if (iframe.hasAttribute(DEFAULT_FLOOR)) {
+      iframe.removeAttribute(DEFAULT_FLOOR)
+      iframe.style.minHeight = ''
+    }
+  }
+
+  var redirected = false
+
+  /**
+   * The clinic's thank-you page, opened on its own site.
+   *
+   * The widget offers this first and then, a moment later, navigates the
+   * frame itself, because a page without this script would otherwise get no
+   * thank-you page at all. Answering with redirect_taken cancels that, so the
+   * page loads once -- on the top window, where its conversion tags see the
+   * visitor's own cookies -- and not a second time inside the box.
+   *
+   * http(s) is the only check on the destination, and deliberately the only
+   * one. The url is the clinic's "Página de agradecimiento" (Settings >
+   * Online booking), which is its own site but under any domain it likes --
+   * a landing-page builder, a second brand -- so there is no host this could
+   * hold it to. What makes it trustworthy is where it came from: a message
+   * from our origin, sent by a booking frame on this page, which the widget
+   * built from the clinic's own setting. The protocol check is what keeps a
+   * javascript: url out of window.location whatever that frame says.
+   */
+  function redirect(source, url) {
+    if (redirected || typeof url !== 'string') return
+    var target
+    try {
+      target = new URL(url)
+    } catch (e) {
+      return
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return
+    redirected = true
+    try {
+      source.postMessage({ source: 'quiroflow-embed', event: 'redirect_taken' }, ORIGIN)
+    } catch (e) {
+      /* the frame shows its own thank-you page instead; nothing lost */
+    }
+    window.location.href = target.href
+  }
+
+  /**
+   * What the widget (pages/book/[slug].vue) sends to its parent:
+   *   { source: 'quiroflow-booking', height }            on mount and resize
+   *   { source: 'quiroflow-booking', event: 'booking_completed', url }
+   *
+   * Accepted only from our own origin, and only from a booking iframe on this
+   * page: any other frame here (an ad, a chat widget, a second embed from
+   * somewhere else) could otherwise resize the box or send the visitor away.
+   */
+  function onMessage(event) {
+    if (event.origin !== ORIGIN) return
+    var data = event.data
+    if (!data || typeof data !== 'object' || data.source !== 'quiroflow-booking') return
+    var iframe = bookingFrameFor(event.source)
+    if (!iframe) return
+    if (data.event === 'booking_completed') redirect(event.source, data.url)
+    else if (data.height !== undefined) resize(iframe, data.height)
   }
 
   function run() {
@@ -290,6 +396,15 @@
     // buildIframe above already ran, so snapshot the length first regardless.
     var count = iframes.length
     for (var j = 0; j < count; j++) upgradeIframe(iframes[j], params)
+  }
+
+  // One listener per page however many times the script is included (a
+  // theme plus a page builder, say), keyed by origin so a staging copy and a
+  // production copy on the same test page each still hear their own frames.
+  var LISTENING = '__quiroflowBookingListener:' + ORIGIN
+  if (!window[LISTENING]) {
+    window[LISTENING] = true
+    window.addEventListener('message', onMessage)
   }
 
   // Once as early as possible, for embeds already parsed above this tag, and

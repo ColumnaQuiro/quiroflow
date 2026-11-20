@@ -1017,9 +1017,15 @@ function successUrl(): URL | null {
 }
 
 // How long the host page gets to take the redirect over before the frame
-// navigates itself. Long enough for a message handler to run, short enough
-// that a host which isn't listening shows no perceptible delay.
-const HOST_REDIRECT_GRACE_MS = 150
+// navigates itself. public/embed.js answers within milliseconds and cancels
+// this (onHostMessage), so the wait only ever runs out on a page without the
+// script, where it is a pause after a booking that has just made a network
+// round trip anyway. Long enough that a busy host page -- a WordPress theme
+// still running its trackers -- answers in time: when it does not, the
+// thank-you page loads twice, in the frame and then on top, and its
+// conversion tags count the booking twice.
+const HOST_REDIRECT_GRACE_MS = 400
+let hostRedirectTimer: number | null = null
 
 function goToSuccess() {
   const target = successUrl()
@@ -1039,12 +1045,27 @@ function goToSuccess() {
       { source: 'quiroflow-booking', event: 'booking_completed', url: target.href },
       '*',
     )
-    window.setTimeout(() => {
+    hostRedirectTimer = window.setTimeout(() => {
+      hostRedirectTimer = null
       window.location.href = target.href
     }, HOST_REDIRECT_GRACE_MS)
     return
   }
   window.location.href = target.href
+}
+
+// embed.js has taken the redirect on the top window: the frame does not load
+// the thank-you page as well, and shows its own confirmation for as long as
+// the host's navigation takes (or for good, if the host page cancels it).
+// Only the parent can send this, and all it can do is stop a redirect.
+function onHostMessage(event: MessageEvent) {
+  if (event.source !== window.parent || window.self === window.top) return
+  const data = event.data
+  if (!data || data.source !== 'quiroflow-embed' || data.event !== 'redirect_taken') return
+  if (hostRedirectTimer === null) return
+  window.clearTimeout(hostRedirectTimer)
+  hostRedirectTimer = null
+  phase.value = 'success'
 }
 
 function onPaymentSucceeded() {
@@ -1066,15 +1087,40 @@ function proceedToDatetime() {
 }
 
 // --- iframe embed: report height to parent so a fixed-height iframe isn't needed ---
+//
+// public/embed.js sizes the iframe to this. It is the content's height, not
+// document.documentElement.scrollHeight: that never reports less than the
+// viewport, and inside an iframe the viewport IS the box, so the box could
+// grow to the tallest step and never shrink back -- a long service list on a
+// phone left the calendar after it sitting on hundreds of pixels of blank.
+// The root's min-h-screen does the same in CSS; measuring the inner column
+// (flow-root, so its children's margins count) sidesteps both.
+const bookingRoot = ref<HTMLElement | null>(null)
+const bookingContent = ref<HTMLElement | null>(null)
 if (import.meta.client) {
   const reportHeight = () => {
     if (window.self === window.top) return
-    window.parent.postMessage({ source: 'quiroflow-booking', height: document.documentElement.scrollHeight }, '*')
+    const root = bookingRoot.value
+    const content = bookingContent.value
+    let height = document.documentElement.scrollHeight
+    if (root && content) {
+      const padding = parseFloat(getComputedStyle(root).paddingBottom) || 0
+      height = Math.ceil(content.getBoundingClientRect().bottom - root.getBoundingClientRect().top + padding)
+    }
+    window.parent.postMessage({ source: 'quiroflow-booking', height }, '*')
   }
+  let observer: ResizeObserver | null = null
   onMounted(() => {
+    window.addEventListener('message', onHostMessage)
     reportHeight()
-    const observer = new ResizeObserver(reportHeight)
+    observer = new ResizeObserver(reportHeight)
     observer.observe(document.documentElement)
+    if (bookingContent.value) observer.observe(bookingContent.value)
+  })
+  onBeforeUnmount(() => {
+    window.removeEventListener('message', onHostMessage)
+    observer?.disconnect()
+    if (hostRedirectTimer !== null) window.clearTimeout(hostRedirectTimer)
   })
 }
 
@@ -1248,8 +1294,8 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
 </script>
 
 <template>
-  <div class="min-h-screen bg-surface-page px-4 py-8 sm:px-6 sm:py-12" :style="brandStyle">
-    <div class="mx-auto max-w-5xl">
+  <div ref="bookingRoot" class="min-h-screen bg-surface-page px-4 py-8 sm:px-6 sm:py-12" :style="brandStyle">
+    <div ref="bookingContent" class="mx-auto flow-root max-w-5xl">
       <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
 
       <!-- 'failed' is the clinic's data not loading at all (the server's

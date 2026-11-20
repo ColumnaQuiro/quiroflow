@@ -91,6 +91,8 @@ const t = useT()
 
 const expandedKey = ref<string | null>(null)
 const menuOpen = ref(false)
+const menuRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(menuRoot, menuOpen)
 
 function money(cents: number) {
   const amount = formatEur(Math.abs(cents))
@@ -754,7 +756,7 @@ const fieldId = useId()
           {{ t('All receipts', 'Todos los recibos') }}
         </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
-        <div class="relative">
+        <div ref="menuRoot" class="relative">
           <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" data-cy="ledger-menu" :aria-label="t('More actions', 'Más acciones')" @click="menuOpen = !menuOpen">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>

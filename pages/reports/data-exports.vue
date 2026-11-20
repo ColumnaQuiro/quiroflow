@@ -131,6 +131,8 @@ const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.
 const dataType = ref('patients')
 const dateRange = ref<DateRange | null>(null)
 const dateRangeOpen = ref(false)
+const dateRangeRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(dateRangeRoot, dateRangeOpen)
 const customFrom = ref('')
 const customTo = ref('')
 
@@ -303,7 +305,7 @@ const fieldId = useId()
             <p v-if="dataType !== 'patients'" class="mt-1 text-[12px] text-warning-text">{{ t("This data type isn't available to export yet.", 'Este tipo de datos todavía no se puede exportar.') }}</p>
           </div>
 
-          <div class="relative mt-4 max-w-xs">
+          <div ref="dateRangeRoot" class="relative mt-4 max-w-xs">
             <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Created Date Range', 'Periodo de creación') }}</label>
             <p class="mt-0.5 text-[11.5px] text-ink-faint2">{{ t('Filters by the created date of each patient', 'Filtra por la fecha de creación de cada paciente') }}</p>
             <button

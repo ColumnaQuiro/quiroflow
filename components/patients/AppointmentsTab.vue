@@ -179,6 +179,8 @@ function feeLine(appt: AppointmentRow): string | null {
 }
 
 const sendMenuOpen = ref(false)
+const sendMenuRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(sendMenuRoot, sendMenuOpen)
 const sending = ref(false)
 const sendMessage = ref('')
 async function sendHistory(channel: 'email' | 'whatsapp') {
@@ -255,7 +257,7 @@ const stats = computed(() => [
           </div>
           <div v-else class="flex items-center gap-2">
             <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>
-            <div class="relative">
+            <div ref="sendMenuRoot" class="relative">
               <UiBtn
                 variant="secondary"
                 size="sm"

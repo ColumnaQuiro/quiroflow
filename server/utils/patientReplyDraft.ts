@@ -16,7 +16,7 @@ import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom, type Rece
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
-import { chosenOfferedTime, chosenTimeNote, isVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
+import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
 // A reply to a PATIENT's message in the Inbox, drafted by the receptionist
@@ -53,7 +53,7 @@ export type PatientDraftOutcome =
   /** The clinic's monthly ceiling is reached (receptionist_config.monthly_reply_limit). */
   | { status: 'limit_reached' }
 
-interface Turn extends StoredImage { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean }
+interface Turn extends StoredImage { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean; transcript?: string | null }
 
 /**
  * `supabase` is the asker's own client (RLS decides what of the patient they
@@ -99,6 +99,8 @@ export async function draftPatientReply(
       media_type: m.media_type,
       media_storage_path: m.media_storage_path,
       media_mime_type: m.media_mime_type,
+      // Filled above when it could be transcribed (isUnheardVoiceNote).
+      transcript: m.transcript,
       created_at: m.created_at,
       sent_by_ai: m.sent_by_ai,
       // A template or an automation's send: the system, not a person (autoReplyHeldBack).
@@ -316,9 +318,11 @@ export async function draftPatientReply(
       ? recordReply(service, { accountId, conversationKey: patientId, kind: 'patient', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
       : Promise.resolve()
 
-  // A voice note since the clinic last wrote: always a person's, decided
-  // here rather than by the model (utils/receptionistFollowThrough.ts).
-  if (turns.slice(lastOutbound + 1).some((m) => m.direction === 'inbound' && isVoiceNote(m.media_type)) && newestInboundAt && (opts.store || opts.send)) {
+  // A voice note since the clinic last wrote that could not be transcribed:
+  // always a person's, decided here rather than by the model
+  // (utils/receptionistFollowThrough.ts). A transcribed one goes on to the
+  // model, which reads what it said.
+  if (turns.slice(lastOutbound + 1).some((m) => m.direction === 'inbound' && isUnheardVoiceNote(m.media_type, m.transcript)) && newestInboundAt && (opts.store || opts.send)) {
     const now = new Date().toISOString()
     await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: VOICE_NOTE_REPLY, drafted_through_at: newestInboundAt, dismissed_at: null, handed_over_at: sends ? now : null, created_at: now })
     if (!sends || !opts.send || !channel) {

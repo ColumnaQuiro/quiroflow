@@ -15,7 +15,7 @@ import { freeTimesLookup, runReceptionistModel, type ReceptionistRun } from '~/s
 import { cameFromAd, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
-import { chosenOfferedTime, chosenTimeNote, isVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
+import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 
 // Writing a receptionist reply for one lead.
 //
@@ -278,9 +278,11 @@ export async function draftLeadReply(
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
     recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
 
-  // A voice note since the clinic last wrote: always a person's, decided
-  // here rather than by the model (utils/receptionistFollowThrough.ts).
-  if (ordered.slice(lastOutbound + 1).some((m: { direction: string; media_type?: string | null }) => m.direction === 'inbound' && isVoiceNote(m.media_type))) {
+  // A voice note since the clinic last wrote that could not be transcribed:
+  // always a person's, decided here rather than by the model
+  // (utils/receptionistFollowThrough.ts). A transcribed one goes on to the
+  // model, which reads what it said.
+  if (ordered.slice(lastOutbound + 1).some((m: { direction: string; media_type?: string | null; transcript?: string | null }) => m.direction === 'inbound' && isUnheardVoiceNote(m.media_type, m.transcript))) {
     await supabase.from('leads').update({ ai_draft_body: VOICE_NOTE_REPLY, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
     if (!sends || !opts.send) {
       await record('voice_note', null)

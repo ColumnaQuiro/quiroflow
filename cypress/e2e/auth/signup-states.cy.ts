@@ -88,4 +88,22 @@ describe('Signup form states', () => {
     cy.get('#password-error').should('not.exist')
     cy.get('@signupSent').should('not.have.been.called')
   })
+
+  // Throwaway inboxes are refused before an auth user exists. Not stubbed:
+  // yopmail.com is on the always-refused list, so the real route answers it
+  // even when the live lists cannot be reached.
+  it('refuses a temporary email address before creating the account', () => {
+    cy.intercept('POST', SIGNUP, cy.spy().as('signupSent'))
+    cy.intercept('POST', '**/api/signup/check-email').as('check')
+    cy.visit('/signup')
+
+    cy.get('#email').type('someone@yopmail.com')
+    cy.get('#password').type('valencia2026')
+    cy.contains('button', 'Create account').click()
+    cy.wait('@check').its('response.body').should('deep.equal', { disposable: true })
+
+    cy.get('#email-error').should('contain', 'Temporary email addresses can’t be used')
+    cy.get('#email').should('have.focus').and('have.value', 'someone@yopmail.com')
+    cy.get('@signupSent').should('not.have.been.called')
+  })
 })

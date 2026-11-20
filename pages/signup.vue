@@ -8,8 +8,8 @@ const t = useT()
 
 const email = ref('')
 const password = ref('')
-// 'taken' renders with a link out (the #error slot); the other two are plain.
-const emailError = ref<'' | 'missing' | 'invalid' | 'taken'>('')
+// 'taken' renders with a link out (the #error slot); the others are plain.
+const emailError = ref<'' | 'missing' | 'invalid' | 'disposable' | 'taken'>('')
 const passwordError = ref('')
 const formError = ref('')
 const loading = ref(false)
@@ -21,7 +21,12 @@ const emailErrorText = computed(() =>
     ? t('Enter your email address.', 'Escribe tu correo electrónico.')
     : emailError.value === 'invalid'
       ? t('That doesn’t look like an email address. Check it for typos.', 'Eso no parece un correo electrónico. Revisa que esté bien escrito.')
-      : undefined,
+      : emailError.value === 'disposable'
+        ? t(
+            'Temporary email addresses can’t be used to create an account. Use the address you normally use for your clinic.',
+            'No se pueden usar correos temporales para crear una cuenta. Usa el correo que utilizas normalmente en tu clínica.',
+          )
+        : undefined,
 )
 
 // Carries a "Refer Your Friends!" link's ?ref=<account slug> through the
@@ -75,6 +80,20 @@ async function onSubmit() {
   }
   email.value = typed
   loading.value = true
+  // Throwaway inboxes (10minemail and the like) are refused before an auth
+  // user exists. A failed check lets the signup through: it is a filter, not
+  // a gate a real clinic should ever be stuck behind.
+  const check = await $fetch<{ disposable: boolean }>('/api/signup/check-email', {
+    method: 'POST',
+    body: { email: typed },
+  }).catch(() => null)
+  if (check?.disposable) {
+    loading.value = false
+    emailError.value = 'disposable'
+    await nextTick()
+    emailField.value?.focus()
+    return
+  }
   localStorage.setItem('signup_intent', 'staff')
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,

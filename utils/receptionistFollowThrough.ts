@@ -7,15 +7,20 @@
 import { dayName } from './receptionistHistory'
 
 /**
- * A voice note: it cannot be heard, so it is always a person's. The rule was
- * in every prompt, and on 2 Nov 2026 a voice note sent with two photos was
+ * A voice note the receptionist could not hear: always a person's. The rule
+ * was in every prompt, and on 2 Nov 2026 a voice note sent with two photos was
  * answered, and a visit moved, from what the receptionist could not hear.
+ *
+ * One with a transcript (server/utils/voiceNoteTranscripts.ts) is not: the
+ * model reads what it said and answers it like a written message. Before
+ * 20 Nov 2026 this checked the media type alone, so a transcribed voice note
+ * still got the fixed "No puedo escuchar notas de voz" and went to a person.
  */
-export function isVoiceNote(mediaType: string | null | undefined): boolean {
-  return mediaType === 'audio'
+export function isUnheardVoiceNote(mediaType: string | null | undefined, transcript?: string | null): boolean {
+  return mediaType === 'audio' && !transcript?.trim()
 }
 
-/** The fixed answer to a voice note (BASE_ESCALATIONS says the same words). */
+/** The fixed answer to a voice note it could not hear (BASE_ESCALATIONS says the same words). */
 export const VOICE_NOTE_REPLY = 'No puedo escuchar notas de voz; mi compañera la escuchará y te contestará.'
 
 /** Why a voice note went to a person, for the handover note. */

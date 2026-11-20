@@ -51,7 +51,7 @@ export const BASE_ESCALATIONS: BaseRule[] = [
     action: 'Do not argue the number: say your colleague will check it, and hand it to a person.',
   },
   {
-    rule: 'They send a voice note',
+    rule: 'They send a voice note you cannot listen to ("[Voice note -- you cannot listen to it]"). One marked "[Voice note, transcribed automatically]" is not this: answer what it says like a written message',
     action: 'You cannot listen to it: hand it to a person and say exactly "No puedo escuchar notas de voz; mi compañera la escuchará y te contestará" (in their language, and "mi compañero" if that is who answers), with no joke.',
   },
   {

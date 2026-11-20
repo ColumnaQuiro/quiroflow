@@ -51,6 +51,7 @@ const {
   sendInvoiceEmail,
   init,
   chargeVisit,
+  receiptEditable,
   visitMissing,
   addVisitLine,
   addLineItem,
@@ -236,7 +237,7 @@ const fieldId = useId()
           <span class="flex items-center gap-1">
             <span class="font-mono">{{ formatEur((line.price_cents * line.quantity)) }}</span>
             <button
-              v-if="can('billing_access') && invoice.status !== 'paid'"
+              v-if="can('billing_access') && receiptEditable"
               type="button"
               :aria-label="t(`Remove ${line.description}`, `Quitar ${line.description}`)"
               :title="t('Remove', 'Quitar')"
@@ -264,7 +265,7 @@ const fieldId = useId()
       </div>
 
       <select
-        v-if="can('billing_access') && invoice.status !== 'paid'"
+        v-if="can('billing_access') && receiptEditable"
         v-model="addServiceId"
         class="mt-2 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11"
         @change="addLineItem"

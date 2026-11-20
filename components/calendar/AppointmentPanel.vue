@@ -435,11 +435,31 @@ function undoVisitError(hint: string | null | undefined, message: string) {
 const methodLabel = (m: string) => ({ cash: t('cash', 'efectivo'), card: t('card', 'tarjeta'), transfer: t('transfer', 'transferencia'), bizum: 'Bizum' })[m] ?? m
 const visitMoney = computed<{ title: string; sub: string; right?: string; tone: 'ok' | 'due' | 'muted' }>(() => {
   const p = props.payment
-  const bono = props.view.bono
+  // The calendar's view.bono is the patient's newest bono of their OWN; the
+  // checkout offers every one they can draw from, a family bono shared with
+  // them included. Before the visit is drawn, describe what the checkout will
+  // offer: two or more is the front desk's choice, so none is named here, and
+  // a patient whose only bono is a shared one still shows it.
+  const live = activePackages.value
+  if (p.kind === 'none' && !props.view.bono?.drawn && live.length > 1) {
+    const left = live.reduce((n, x) => n + Math.max(0, x.sessions_total - x.sessions_used), 0)
+    return {
+      title: t(`${live.length} bonos`, `${live.length} bonos`),
+      sub: t('choose which one at checkout', 'elige cuál al cobrar'),
+      right: t(`${left} sessions left`, `quedan ${left} sesiones`),
+      tone: 'ok',
+    }
+  }
+  const only = live[0]
+  const bono = props.view.bono?.drawn
+    ? props.view.bono
+    : p.kind === 'none' && live.length === 1 && only
+      ? { packageName: only.package_name, remaining: only.sessions_total - only.sessions_used, total: only.sessions_total, drawn: false }
+      : props.view.bono
   if (bono) {
     // The rate the session is charged at is the bono's, not the type's --
     // the same rounding AppointmentBillingTab bills it with.
-    const pack = activePackages.value.find((x) => x.package_name === bono.packageName) ?? activePackages.value[0]
+    const pack = live.length === 1 ? only : (live.find((x) => x.package_name === bono.packageName) ?? only)
     const rate = !bono.drawn && pack?.sessions_total ? formatEur(Math.round(pack.price_cents / pack.sessions_total)) : null
     return {
       title: bono.packageName,

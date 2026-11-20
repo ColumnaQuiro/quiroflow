@@ -81,6 +81,48 @@ describe('Charging a visit from the first screen of its panel', () => {
     })
   })
 
+  // Their own bono and a family one shared with them: both are offered, the
+  // shared one says whose it is, and neither is picked for the front desk --
+  // Process waits until someone chooses, then draws from the one chosen.
+  it('offers every bono, own and shared, and lets the front desk choose', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30, defaultPriceCents: 5500 })
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Owner' }).then((owner: any) => {
+        cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Dora', lastName: 'Twobonos' }).then((patient: any) => {
+          cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: patient.id, packageName: 'Bono 5', sessionsTotal: 5, sessionsUsed: 1, priceCents: 22000 }).then((own: any) => {
+            cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: owner.id, packageName: 'Bono 10', sessionsTotal: 10, sessionsUsed: 2, priceCents: 40000 }).then((family: any) => {
+              cy.task('db:sharePackageWith', { accountId: account.accountId, packagePurchaseId: family.id, patientId: patient.id })
+              cy.login(account.email, account.password)
+              bookAndOpen('Dora Twobonos', 'Consultation')
+
+              cy.get('[data-cy=appt-sheet]').within(() => {
+                cy.get('[data-cy=visit-money]').should('contain.text', '2 bonos').and('contain.text', 'choose which one at checkout')
+                cy.get('[data-cy=visit-checkout]').within(() => {
+                  cy.get('[data-cy=checkout-bono]').should('have.length', 2).each(($b) => expect($b).to.have.attr('aria-checked', 'false'))
+                  cy.contains('[data-cy=checkout-bono]', 'Bono 10').should('contain.text', 'Shared by Olga Owner')
+                  cy.get('[data-cy=checkout-process]').should('be.disabled').and('contain.text', 'choose a bono')
+
+                  cy.contains('[data-cy=checkout-bono]', 'Bono 10').click().should('have.attr', 'aria-checked', 'true')
+                  cy.get('[data-cy=checkout-process]').should('not.be.disabled').and('contain.text', '1 session of Bono 10').click()
+                })
+                cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('not.exist')
+              })
+
+              cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: family.id }).then((eff: any) => {
+                expect(eff.purchase.sessions_used, 'the chosen, shared bono gave the session').to.eq(3)
+                expect(eff.sessions).to.have.length(1)
+                expect(eff.sessions[0].package_purchase_id).to.eq(family.id)
+              })
+              cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: own.id }).then((eff: any) => {
+                expect(eff.purchase.sessions_used, 'their own bono is untouched').to.eq(1)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
   it('charges the price instead when "No bono" is chosen, receipt and payment together', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30, defaultPriceCents: 5500 })

@@ -15,6 +15,7 @@
 //     (calendar_read_only), which the database refuses anyway (0047);
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
+import { checkoutDefaultChoice } from '../../../utils/bonoOrder'
 import { openEndedPlanLabel } from '../../../utils/planRenewal'
 import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
 import { appointmentStage, hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '../../../utils/appointmentStage'
@@ -447,14 +448,16 @@ const checkoutOffered = computed(
         !(appointmentIsUpcoming.value && !invoice.value) &&
         (activePackages.value.length > 0 || canTakeMoney.value))),
 )
-// 'money', 'sell', or the id of the bono to draw from: a patient holding a bono has
-// already paid for this visit, so the bono is what opens selected.
+// 'money', 'sell', the id of the bono to draw from, or '' when nothing is picked
+// yet: a patient holding one bono has already paid for this visit, so that bono
+// is what opens selected; holding two or more, none is -- the front desk picks
+// (utils/bonoOrder checkoutDefaultChoice, as on web).
 const checkoutChoice = ref('money')
 let checkoutChosen = false
 watch(
   [activePackages, chargingReady],
   () => {
-    if (!checkoutChosen) checkoutChoice.value = activePackages.value[0]?.id ?? 'money'
+    if (!checkoutChosen) checkoutChoice.value = checkoutDefaultChoice(activePackages.value)
   },
   { immediate: true },
 )
@@ -480,6 +483,7 @@ const checkoutPackage = computed(() => activePackages.value.find((p) => p.id ===
 const checkoutLabel = computed(() => {
   if (saving.value || processing.value) return t('Processing…', 'Procesando…')
   if (checkoutPackage.value) return t(`Process · 1 session of ${checkoutPackage.value.package_name}`, `Procesar · 1 sesión de ${checkoutPackage.value.package_name}`)
+  if (checkoutChoice.value === '') return t('Process · choose a bono', 'Procesar · elige un bono')
   if (checkoutChoice.value === 'sell') {
     return sellTemplate.value
       ? t(`Process · sell ${sellTemplate.value.name}, use 1 session`, `Procesar · vender ${sellTemplate.value.name} y usar 1 sesión`)
@@ -489,6 +493,8 @@ const checkoutLabel = computed(() => {
 })
 async function processCheckout() {
   if (saving.value || processing.value) return
+  // Nothing picked: without this the press fell through to charging in money.
+  if (checkoutChoice.value === '') return
   if (checkoutChoice.value === 'sell' && !sellTemplate.value) return
   if (checkoutChoice.value !== 'sell' && !checkoutPackage.value && !canTakeMoney.value) return
   // Held on screen until both writes are in: charging in money raises the
@@ -1055,6 +1061,11 @@ watch(
               </span>
               <span class="flex min-w-0 flex-1 flex-col">
                 <span class="text-[14px] font-semibold text-ink-900">{{ p.package_name }}</span>
+                <!-- Which bono is whose: a patient's own and a family one shared
+                     with them often carry the same name. -->
+                <span v-if="p.shared" class="text-[12px] font-semibold text-info-text" data-cy="checkout-bono-shared">
+                  {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
+                </span>
                 <span class="text-[12.5px] text-ink-muted">
                   {{ t(`${p.sessions_total - p.sessions_used} left, ${p.sessions_total - p.sessions_used - 1} after this visit`, `Quedan ${p.sessions_total - p.sessions_used}, pasará a ${p.sessions_total - p.sessions_used - 1}`) }}
                   · {{ bonoRateLabel(p) }}
@@ -1105,7 +1116,7 @@ watch(
               </div>
             </div>
           </div>
-          <AppButton variant="primary" class="mt-2.5 w-full" :disabled="saving || processing || (checkoutChoice === 'sell' && !sellTemplate)" data-cy="checkout-process" @click="processCheckout">{{ checkoutLabel }}</AppButton>
+          <AppButton variant="primary" class="mt-2.5 w-full" :disabled="saving || processing || checkoutChoice === '' || (checkoutChoice === 'sell' && !sellTemplate)" data-cy="checkout-process" @click="processCheckout">{{ checkoutLabel }}</AppButton>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </section>
 

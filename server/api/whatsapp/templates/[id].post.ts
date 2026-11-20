@@ -12,7 +12,7 @@ import { headerFileProblem, templateDraftProblems } from '~/utils/whatsappTempla
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
   const id = getRouterParam(event, 'id') ?? ''
-  const { draft, file } = await readTemplateSubmission(event)
+  const { draft, file, origin } = await readTemplateSubmission(event)
 
   const problem = templateDraftProblems(draft, { editing: true })[0] ?? (file ? headerFileProblem(draft.header, { type: file.type, size: file.data.length }) : null)
   if (problem) throw createError({ statusCode: 400, statusMessage: problem.en })
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'That template is not on this WhatsApp account any more. Refresh from Meta.' })
 
   try {
-    const edited = await editWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, existing, draft, draft.header === 'none' ? null : file)
+    const edited = await editWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, existing, draft, draft.header === 'none' ? null : file, origin)
     return { id, name: existing.name, language: existing.language, ...edited }
   } catch (err) {
     if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })

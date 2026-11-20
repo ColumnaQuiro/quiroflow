@@ -4,6 +4,7 @@ import { withServerDetail } from '~/utils/serverMessage'
 import {
   APPROVED_EDIT_LIMIT,
   BODY_MAX,
+  BUTTON_TEXT_MAX,
   FOOTER_MAX,
   HEADER_FILES,
   TEMPLATE_LANGUAGES,
@@ -31,6 +32,11 @@ import {
 // what Meta has now, with the name and language fixed (Meta does not let an
 // edit change them) and, once approved, the category too. The parent only
 // offers it for a template templateEditBlocker allows.
+//
+// A template can also end in a button that opens one of the clinic's forms
+// (Settings > Forms): each send makes the patient's own copy and links the
+// button to it, so a "Primera visita" form goes out as a button rather than
+// a bare link in the text.
 
 const props = defineProps<{ template?: ExistingTemplate }>()
 const emit = defineEmits<{
@@ -55,6 +61,27 @@ const file = ref<File | null>(null)
 const body = ref(start?.body ?? '')
 const examples = ref<string[]>(start?.examples ?? [])
 const footer = ref(start?.footer ?? '')
+
+// The form button. Off for a new template; an edited one keeps the button it
+// has, and the form it was made with when QuiroFlow knows it.
+const hasFormButton = ref(!!start?.formButton)
+const buttonText = ref(start?.formButton?.text ?? t('Fill in the form', 'Rellenar formulario'))
+const formId = ref(start?.formButton?.docTemplateId ?? '')
+const supabase = useSupabaseClient()
+const forms = ref<{ id: string; title: string }[]>([])
+const formsLoaded = ref(false)
+onMounted(async () => {
+  // Originals only: a legacy translation row is sent through its original,
+  // in the patient's language.
+  const { data } = await supabase.from('doc_templates').select('id, title').is('translation_of', null).order('title')
+  forms.value = (data ?? []) as { id: string; title: string }[]
+  formsLoaded.value = true
+})
+function toggleFormButton(on: boolean) {
+  hasFormButton.value = on
+  if (on && !formId.value && forms.value.length === 1) formId.value = forms.value[0]!.id
+}
+const chosenForm = computed(() => forms.value.find((f) => f.id === formId.value) ?? null)
 // The file a template made in QuiroFlow already has: it goes to Meta again
 // unless another is attached, so it need not be chosen a second time.
 const keptFile = computed(() => (props.template?.headerMedia && header.value === start?.header ? props.template.headerMedia : null))
@@ -108,6 +135,7 @@ const draft = computed<TemplateDraft>(() => ({
   body: body.value,
   examples: examples.value,
   footer: footer.value,
+  formButton: hasFormButton.value ? { text: buttonText.value, docTemplateId: formId.value } : null,
 }))
 const problems = computed(() => {
   const list = templateDraftProblems(draft.value, { editing: editing.value })
@@ -268,6 +296,31 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             <input v-model="footer" :class="FIELD" :placeholder="t('Your clinic', 'Tu clínica')" data-cy="template-footer" />
           </label>
           <span class="-mt-3 self-end text-[12px] tabular-nums" :class="footer.trim().length > FOOTER_MAX ? 'text-danger-text' : 'text-ink-faint'">{{ footer.trim().length }}/{{ FOOTER_MAX }}</span>
+
+          <div class="flex flex-col gap-1.5">
+            <span :class="SECTION" id="tpl-button">{{ t('Button', 'Botón') }}</span>
+            <div :class="SEGMENT_WRAP" role="radiogroup" aria-labelledby="tpl-button" class="self-start">
+              <button type="button" role="radio" :aria-checked="!hasFormButton" :class="segmentBtn(!hasFormButton)" data-cy="template-button-none" @click="toggleFormButton(false)">{{ t('No button', 'Sin botón') }}</button>
+              <button type="button" role="radio" :aria-checked="hasFormButton" :class="segmentBtn(hasFormButton)" data-cy="template-button-form" @click="toggleFormButton(true)">{{ t('Opens a form', 'Abre un formulario') }}</button>
+            </div>
+            <template v-if="hasFormButton">
+              <label :class="LABEL">
+                {{ t('Form', 'Formulario') }}
+                <select v-model="formId" :class="FIELD" data-cy="template-button-form-select">
+                  <option value="" disabled>{{ t('Choose a form…', 'Elige un formulario…') }}</option>
+                  <option v-for="f in forms" :key="f.id" :value="f.id">{{ f.title }}</option>
+                </select>
+              </label>
+              <span v-if="formsLoaded && !forms.length" :class="HINT" class="text-warning-text">{{ t('This clinic has no forms yet. Create one in Settings > Forms first.', 'Esta clínica aún no tiene formularios. Crea uno antes en Ajustes > Formularios.') }}</span>
+              <span v-else-if="editing && !formId" :class="HINT" class="text-warning-text" data-cy="template-button-form-unknown">{{ t('QuiroFlow does not know which form this button opens. Choose it.', 'QuiroFlow no sabe qué formulario abre este botón. Elígelo.') }}</span>
+              <label :class="LABEL">
+                {{ t('Button text', 'Texto del botón') }}
+                <input v-model="buttonText" :class="FIELD" data-cy="template-button-text" />
+              </label>
+              <span class="-mt-1 self-end text-[12px] tabular-nums" :class="buttonText.trim().length > BUTTON_TEXT_MAX ? 'text-danger-text' : 'text-ink-faint'">{{ buttonText.trim().length }}/{{ BUTTON_TEXT_MAX }}</span>
+              <span :class="HINT">{{ t('Each send creates the patient\'s own copy of the form and the button opens it. It can only be sent to patients, not to leads.', 'Cada envío crea la copia del formulario para ese paciente y el botón la abre. Solo se puede enviar a pacientes, no a leads.') }}</span>
+            </template>
+          </div>
         </div>
 
         <!-- What the patient sees, beside what the clinic writes. -->
@@ -282,6 +335,14 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
               <p class="whitespace-pre-line px-1" :class="body.trim() ? '' : 'text-ink-faint'">{{ previewBody }}</p>
               <p v-if="footer.trim()" class="px-1 text-[12px] text-ink-muted">{{ footer.trim() }}</p>
             </div>
+            <div
+              v-if="hasFormButton"
+              class="flex items-center justify-center gap-1.5 rounded-card border border-success-border bg-success-bg px-2 py-2 text-[13px] font-semibold text-brand-text"
+              data-cy="template-preview-button"
+            >
+              <span aria-hidden="true">↗</span>{{ buttonText.trim() || t('Fill in the form', 'Rellenar formulario') }}
+            </div>
+            <span v-if="hasFormButton && chosenForm" :class="HINT">{{ t(`Opens “${chosenForm.title}”`, `Abre «${chosenForm.title}»`) }}</span>
           </div>
         </div>
       </div>

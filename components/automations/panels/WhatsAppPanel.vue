@@ -35,7 +35,8 @@ function selectTemplate(value: string) {
     variables: Array.from({ length: tpl.variableCount }, () => ({ source: 'first_name' })),
     // One document slot per dynamic URL button, or a single one (sent as the
     // last body variable) for a template with none.
-    doc_template_ids: Array.from({ length: Math.max(tpl.urlButtonCount, 1) }, () => null),
+    // A template made with a form button brings the form it opens.
+    doc_template_ids: Array.from({ length: Math.max(tpl.urlButtonCount, 1) }, (_, i) => (i === 0 && tpl.urlButtonCount > 0 ? (tpl.form?.docTemplateId ?? null) : null)),
     button_params: undefined,
     // A template made in QuiroFlow brings the file it was made with, so the
     // guide or picture goes out without being uploaded a second time. It is

@@ -39,6 +39,8 @@ export interface Appt {
   source: string
   confirmation_status: string | null
   stage: string | null
+  /** created_at, epoch ms: when it was booked. Absent in older callers. */
+  created?: number | null
 }
 
 export interface MoneyPayment {
@@ -164,9 +166,24 @@ export interface Ctx {
   practitionerId?: string | null
   clinicId?: string | null
   method?: string | null
+  /** A block's own filters (BlockFilterKey); a metric reads only those it lists in `filters`. */
+  typeIds?: string[] | null
+  stages?: string[] | null
+  referralSource?: string | null
+  bookedVia?: BookedVia | null
+  /** A block's own parameters (MetricParam); a metric reads only those it lists in `params`. */
+  visitNumber?: number | null
+  withinDays?: number | null
   now: Date
   t: (en: string, es: string) => string
 }
+
+/** Who booked: reception, or the patient themselves (booking page, app, API). */
+export type BookedVia = 'staff' | 'patient'
+/** The filters a block can narrow a metric by, beyond practitioner, clinic and payment method. */
+export type BlockFilterKey = 'appointment_type' | 'stage' | 'referral_source' | 'booked_via'
+/** The numbers a metric is asked for: "conversion to visit N", "within N days". */
+export type MetricParam = 'visitNumber' | 'withinDays'
 
 // ---- Metric definitions ---------------------------------------------------
 
@@ -198,9 +215,20 @@ export interface MetricDef {
   clinicWide?: boolean
   /** The permission its data needs, beyond Reports (RLS returns nothing without it). */
   permission?: 'billing' | 'inbox' | 'growth'
-  /** Records, summed per group (or a rate of sums, or distinct patients). */
+  /**
+   * The block filters it honours. For a visit metric they narrow the visits
+   * counted; for a metric that follows new patients (conversion, drop-outs)
+   * they narrow the first visit each one starts from -- "first visits with
+   * the offer" -- and every later visit counts whatever its type.
+   */
+  filters?: BlockFilterKey[]
+  /** The numbers it is asked for, with their defaults. */
+  params?: { key: MetricParam; default: number | null; min: number; max: number }[]
+  /** Periods beyond the block's own whose data it reads: income in the N days after a first visit. */
+  extraRanges?: (ctx: Ctx) => { from: Date; to: Date }[]
+  /** Records, summed per group (or a rate of sums, a mean, or distinct patients). */
   records?: (data: ReportData, ctx: Ctx, split: SplitKey) => Rec[]
-  reduce?: 'sum' | 'rate' | 'distinct'
+  reduce?: 'sum' | 'rate' | 'distinct' | 'mean'
   /** For figures that are not a sum of parts: computed again for each group. */
   value?: (data: ReportData, ctx: Ctx) => number | null
   /** For a funnel. */
@@ -236,6 +264,90 @@ function apptDims(a: Appt): Rec['dims'] {
   }
 }
 const apptRec = (a: Appt, v = 1, d?: number): Rec => ({ at: a.at, dims: apptDims(a), v, d })
+
+// ---- Block filters and new-patient cohorts -----------------------------------
+
+const DAY = 86_400_000
+const isFirstVisit = (a: Appt) => a.stage === 'first_visit' || a.stage === 'first_visit_offer'
+const FIRST_VISIT_FILTERS: BlockFilterKey[] = ['appointment_type', 'stage', 'referral_source', 'booked_via']
+const VISIT_FILTERS = FIRST_VISIT_FILTERS
+
+// One lookup per load of the patients, not one per block per redraw.
+const referralCache = new WeakMap<PatientRow[], Map<string, string>>()
+function referralOf(data: ReportData) {
+  let m = referralCache.get(data.patients)
+  if (!m) referralCache.set(data.patients, (m = new Map(data.patients.map((p) => [p.id, p.referral_source ?? '']))))
+  return m
+}
+
+/** Whether a visit passes the block's own filters (type, stage, who booked it, the patient's origin). */
+function visitPasses(data: ReportData, ctx: Ctx, a: Appt) {
+  if (ctx.typeIds?.length && !(a.appointment_type_id && ctx.typeIds.includes(a.appointment_type_id))) return false
+  if (ctx.stages?.length && !ctx.stages.includes(a.stage ?? '')) return false
+  if (ctx.bookedVia && (a.source === 'staff') !== (ctx.bookedVia === 'staff')) return false
+  if (ctx.referralSource && referralOf(data).get(a.patient_id) !== ctx.referralSource) return false
+  return true
+}
+
+/** The visits a visit metric counts: the page's practitioner and clinic, then the block's own filters. */
+function countedAppts(data: ReportData, ctx: Ctx) {
+  const all = filteredAppts(data, ctx)
+  if (!ctx.typeIds?.length && !ctx.stages?.length && !ctx.bookedVia && !ctx.referralSource) return all
+  return all.filter((a) => visitPasses(data, ctx, a))
+}
+
+/** patient -> their completed visits, oldest first. */
+function completedByPatient(data: ReportData, ctx: Ctx) {
+  const index = new Map<string, Appt[]>()
+  for (const a of filteredAppts(data, ctx)) {
+    if (a.status !== 'completed') continue
+    const list = index.get(a.patient_id)
+    if (list) list.push(a)
+    else index.set(a.patient_id, [a])
+  }
+  for (const list of index.values()) list.sort((x, y) => x.at - y.at)
+  return index
+}
+
+/**
+ * The new patients of the period, as New patients counts them: each one's
+ * first completed first visit (with or without the offer) inside the period,
+ * with every completed visit they have had since, that one included. The
+ * block's filters choose which first visits start a patient off.
+ */
+function newPatientCohort(data: ReportData, ctx: Ctx) {
+  const out: { first: Appt; visits: Appt[] }[] = []
+  for (const visits of completedByPatient(data, ctx).values()) {
+    const i = visits.findIndex((a) => isFirstVisit(a) && inRange(a.at, ctx))
+    if (i === -1 || !visitPasses(data, ctx, visits[i]!)) continue
+    out.push({ first: visits[i]!, visits: visits.slice(i) })
+  }
+  return out
+}
+
+function cohortRec(data: ReportData, first: Appt, v: number, d?: number): Rec {
+  return { at: first.at, dims: { ...apptDims(first), referral_source: referralOf(data).get(first.patient_id) ?? '' }, v, d, p: first.patient_id }
+}
+
+const COHORT_SPLITS: SplitKey[] = ['none', 'month', 'week', 'practitioner', 'clinic', 'appointment_type', 'stage', 'referral_source', 'booked_via']
+
+/**
+ * A metric's name with its numbers in it -- "Conversion to visit 3" --
+ * for titles and table headers. Most metrics have none and keep their label.
+ */
+export function metricLabel(def: MetricDef, params: { visitNumber?: number | null; withinDays?: number | null } | undefined, t: Ctx['t']) {
+  if (def.key === 'conversion_to_visit') {
+    const n = params?.visitNumber ?? 3
+    const days = params?.withinDays
+    const base = t(`Conversion to visit ${n}`, `Conversión a la visita ${n}`)
+    return days ? `${base} ${t(`within ${days} days`, `en ${days} días`)}` : base
+  }
+  if (def.key === 'income_per_new_patient') {
+    const days = params?.withinDays ?? 90
+    return t(`Income per new patient (first ${days} days)`, `Ingreso por paciente nuevo (primeros ${days} días)`)
+  }
+  return t(...def.label)
+}
 
 /** patient -> stage -> their completed visits at that stage, oldest first. */
 function byPatientStage(completed: Appt[]) {
@@ -353,7 +465,8 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, ...VISIT_DIMS, 'status', 'booked_via'],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => inRange(a.at, ctx)).map((a) => apptRec(a)),
   },
   {
     key: 'visits_completed',
@@ -363,7 +476,8 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, ...VISIT_DIMS],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => a.status === 'completed' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'completed' && inRange(a.at, ctx)).map((a) => apptRec(a)),
   },
   {
     key: 'first_visits',
@@ -373,7 +487,60 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, 'weekday', 'shift', 'practitioner', 'clinic', 'appointment_type'],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => a.status === 'completed' && a.stage === 'first_visit' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'completed' && a.stage === 'first_visit' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+  },
+  {
+    key: 'first_visit_offers',
+    area: 'visits',
+    label: ['First visits with the offer', 'Primeras visitas con oferta'],
+    description: ['Completed visits of a "first visit (offer)" type (Appointment Types › stage)', 'Visitas completadas de un tipo de "primera visita con oferta" (Tipos de cita › etapa)'],
+    unit: 'count',
+    splits: ['none', ...TIME, 'weekday', 'shift', 'practitioner', 'clinic', 'appointment_type', 'booked_via'],
+    needs: ['appts'],
+    filters: ['appointment_type', 'referral_source', 'booked_via'],
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'completed' && a.stage === 'first_visit_offer' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+  },
+  {
+    key: 'first_visits_all',
+    area: 'visits',
+    label: ['First visits (with and without the offer)', 'Primeras visitas (con y sin oferta)'],
+    description: ['Every completed first visit. Split by stage to set the offer ones beside the rest', 'Todas las primeras visitas completadas. Divide por etapa para ver las de oferta junto al resto'],
+    unit: 'count',
+    splits: ['none', ...TIME, 'weekday', 'shift', 'practitioner', 'clinic', 'appointment_type', 'stage', 'booked_via'],
+    needs: ['appts'],
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'completed' && isFirstVisit(a) && inRange(a.at, ctx)).map((a) => apptRec(a)),
+  },
+  {
+    key: 'rebooking_rate',
+    area: 'visits',
+    label: ['Rebooking rate', 'Tasa de re-reserva'],
+    description: [
+      'Of completed visits, how many left with the next one booked: another appointment created by the end of that day. Visits before QuiroFlow (imported) cannot tell',
+      'De las visitas completadas, cuántas salieron con la siguiente reservada: otra cita creada antes de acabar ese día. Las visitas anteriores a QuiroFlow (importadas) no lo pueden saber',
+    ],
+    unit: 'pct',
+    splits: ['none', ...TIME, 'weekday', 'shift', 'practitioner', 'clinic', 'appointment_type', 'stage'],
+    needs: ['appts'],
+    filters: VISIT_FILTERS,
+    reduce: 'rate',
+    records: (data, ctx) => {
+      const byPatient = new Map<string, Appt[]>()
+      for (const a of filteredAppts(data, ctx)) {
+        const list = byPatient.get(a.patient_id)
+        if (list) list.push(a)
+        else byPatient.set(a.patient_id, [a])
+      }
+      return countedAppts(data, ctx)
+        .filter((a) => a.status === 'completed' && inRange(a.at, ctx))
+        .map((a) => {
+          const end = new Date(a.at)
+          end.setHours(23, 59, 59, 999)
+          const rebooked = (byPatient.get(a.patient_id) ?? []).some((n) => n.at > a.at && n.created != null && n.created <= end.getTime())
+          return apptRec(a, rebooked ? 1 : 0, 1)
+        })
+    },
   },
   {
     key: 'show_rate',
@@ -383,9 +550,10 @@ export const METRICS: MetricDef[] = [
     unit: 'pct',
     splits: ['none', ...TIME, ...VISIT_DIMS],
     needs: ['appts'],
+    filters: VISIT_FILTERS,
     reduce: 'rate',
     records: (data, ctx) =>
-      filteredAppts(data, ctx)
+      countedAppts(data, ctx)
         .filter((a) => (a.status === 'completed' || a.status === 'no_show') && inRange(a.at, ctx))
         .map((a) => apptRec(a, a.status === 'completed' ? 1 : 0, 1)),
   },
@@ -397,9 +565,10 @@ export const METRICS: MetricDef[] = [
     unit: 'pct',
     splits: ['none', ...TIME, ...VISIT_DIMS],
     needs: ['appts'],
+    filters: VISIT_FILTERS,
     reduce: 'rate',
     records: (data, ctx) =>
-      filteredAppts(data, ctx)
+      countedAppts(data, ctx)
         .filter((a) => (a.status === 'completed' || a.status === 'no_show') && inRange(a.at, ctx))
         .map((a) => apptRec(a, a.status === 'no_show' ? 1 : 0, 1)),
   },
@@ -411,7 +580,8 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, ...VISIT_DIMS],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => a.status === 'no_show' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'no_show' && inRange(a.at, ctx)).map((a) => apptRec(a)),
   },
   {
     key: 'cancellations',
@@ -421,7 +591,8 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, ...VISIT_DIMS],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => a.status === 'cancelled' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS,
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.status === 'cancelled' && inRange(a.at, ctx)).map((a) => apptRec(a)),
   },
   {
     key: 'visits_daily_average',
@@ -444,7 +615,8 @@ export const METRICS: MetricDef[] = [
     unit: 'count',
     splits: ['none', ...TIME, 'booked_via', 'practitioner', 'clinic', 'appointment_type'],
     needs: ['appts'],
-    records: (data, ctx) => filteredAppts(data, ctx).filter((a) => a.source !== 'staff' && inRange(a.at, ctx)).map((a) => apptRec(a)),
+    filters: VISIT_FILTERS.filter((f) => f !== 'booked_via'),
+    records: (data, ctx) => countedAppts(data, ctx).filter((a) => a.source !== 'staff' && inRange(a.at, ctx)).map((a) => apptRec(a)),
   },
 
   // --- Patients --------------------------------------------------------------
@@ -462,6 +634,43 @@ export const METRICS: MetricDef[] = [
       return filteredAppts(data, ctx)
         .filter((a) => a.status === 'completed' && (a.stage === 'first_visit' || a.stage === 'first_visit_offer') && inRange(a.at, ctx))
         .map((a) => ({ ...apptRec(a), dims: { ...apptDims(a), referral_source: referral.get(a.patient_id) ?? '' }, p: a.patient_id }))
+    },
+  },
+  {
+    key: 'patients_seen',
+    area: 'patients',
+    label: ['Patients seen', 'Pacientes atendidos'],
+    description: ['Patients with at least one completed visit in the period, each counted once', 'Pacientes con al menos una visita completada en el periodo, cada uno una vez'],
+    unit: 'count',
+    splits: ['none', ...TIME, 'practitioner', 'clinic', 'appointment_type', 'stage', 'referral_source'],
+    needs: ['appts', 'patients'],
+    filters: VISIT_FILTERS,
+    reduce: 'distinct',
+    records: (data, ctx) =>
+      countedAppts(data, ctx)
+        .filter((a) => a.status === 'completed' && inRange(a.at, ctx))
+        .map((a) => ({ ...apptRec(a), dims: { ...apptDims(a), referral_source: referralOf(data).get(a.patient_id) ?? '' }, p: a.patient_id })),
+  },
+  {
+    key: 'reactivated_patients',
+    area: 'patients',
+    label: ['Patients back after 90+ days', 'Pacientes reactivados (90+ días)'],
+    description: ['Patients whose first visit in the period came 90 days or more after the one before it', 'Pacientes cuya primera visita del periodo llegó 90 días o más después de la anterior'],
+    unit: 'count',
+    splits: ['none', ...TIME, 'practitioner', 'clinic', 'appointment_type', 'referral_source'],
+    needs: ['appts', 'patients'],
+    filters: VISIT_FILTERS,
+    reduce: 'distinct',
+    records: (data, ctx) => {
+      const out: Rec[] = []
+      for (const visits of completedByPatient(data, ctx).values()) {
+        const i = visits.findIndex((a) => inRange(a.at, ctx))
+        if (i < 1) continue
+        const back = visits[i]!
+        if (back.at - visits[i - 1]!.at < 90 * DAY || !visitPasses(data, ctx, back)) continue
+        out.push(cohortRec(data, back, 1))
+      }
+      return out
     },
   },
   {
@@ -511,12 +720,61 @@ export const METRICS: MetricDef[] = [
   {
     key: 'conversion_third_visit',
     area: 'patients',
-    label: ['Conversion to 3rd visit', 'Conversión a la 3.ª visita'],
-    description: ['Of patients given their report in the period, how many came back for an adjustment', 'De los pacientes con informe en el periodo, cuántos volvieron a un ajuste'],
+    label: ['Conversion report → adjustment', 'Conversión informe → ajuste'],
+    description: [
+      'Of patients given their report in the period, how many came back for an adjustment. What Statistics calls "Conversion to 3rd visit"',
+      'De los pacientes con informe en el periodo, cuántos volvieron a un ajuste. Lo que Estadísticas llama "Conversión a 3ª visita"',
+    ],
     unit: 'pct',
     splits: ['none', 'month', 'practitioner', 'clinic'],
     needs: ['appts'],
     value: (data, ctx) => stepConversion(data, ctx, 'report', 'adjustment'),
+  },
+  {
+    key: 'conversion_to_visit',
+    area: 'patients',
+    label: ['Conversion to visit N', 'Conversión a la visita N'],
+    description: [
+      'Of the new patients of the period, how many reached their Nth completed visit, the first visit being the 1st. Filter or split by the type of first visit to compare the offer with the rest. Recent patients have had less time: set "within N days" to compare like with like',
+      'De los pacientes nuevos del periodo, cuántos llegaron a su N.ª visita completada, contando la primera visita como la 1.ª. Filtra o divide por el tipo de primera visita para comparar la oferta con el resto. Los pacientes recientes han tenido menos tiempo: usa "en N días" para comparar en igualdad',
+    ],
+    unit: 'pct',
+    splits: COHORT_SPLITS,
+    needs: ['appts', 'patients'],
+    filters: FIRST_VISIT_FILTERS,
+    params: [
+      { key: 'visitNumber', default: 3, min: 2, max: 20 },
+      { key: 'withinDays', default: null, min: 7, max: 365 },
+    ],
+    reduce: 'rate',
+    records: (data, ctx) => {
+      const n = Math.max(2, Math.round(ctx.visitNumber ?? 3))
+      const until = (first: Appt) => (ctx.withinDays ? first.at + ctx.withinDays * DAY : Infinity)
+      return newPatientCohort(data, ctx).map(({ first, visits }) => {
+        const nth = visits[n - 1]
+        return cohortRec(data, first, nth && nth.at <= until(first) ? 1 : 0, 1)
+      })
+    },
+  },
+  {
+    key: 'first_visit_dropouts',
+    area: 'patients',
+    label: ['Lost after the first visit', 'Perdidos tras la primera visita'],
+    description: [
+      'New patients of the period with no visit after their first one and nothing booked',
+      'Pacientes nuevos del periodo sin ninguna visita después de la primera y sin nada reservado',
+    ],
+    unit: 'count',
+    splits: COHORT_SPLITS,
+    needs: ['appts', 'patients'],
+    filters: FIRST_VISIT_FILTERS,
+    reduce: 'distinct',
+    records: (data, ctx) => {
+      const ahead = new Set(filteredAppts(data, ctx).filter((a) => a.status === 'booked' && a.at > ctx.now.getTime()).map((a) => a.patient_id))
+      return newPatientCohort(data, ctx)
+        .filter(({ first, visits }) => visits.length === 1 && !ahead.has(first.patient_id))
+        .map(({ first }) => cohortRec(data, first, 1))
+    },
   },
   {
     key: 'retention_post_revision',
@@ -681,6 +939,41 @@ export const METRICS: MetricDef[] = [
       if (visits === 0) return null
       const paid = filteredPayments(data, ctx).payments.filter((p) => isReceipt(p.method)).reduce((s, p) => s + p.amount_cents, 0)
       return Math.round(paid / visits)
+    },
+  },
+  {
+    key: 'income_per_new_patient',
+    area: 'money',
+    label: ['Income per new patient', 'Ingreso por paciente nuevo'],
+    description: [
+      'Average paid by each new patient of the period in the days from their first visit (refunds netted, credit left out)',
+      'Media cobrada a cada paciente nuevo del periodo en los días desde su primera visita (reembolsos descontados, sin crédito)',
+    ],
+    unit: 'eur',
+    splits: COHORT_SPLITS,
+    needs: ['appts', 'patients', 'money'],
+    filters: FIRST_VISIT_FILTERS,
+    params: [{ key: 'withinDays', default: 90, min: 7, max: 365 }],
+    reduce: 'mean',
+    extraRanges: (ctx) => [{ from: ctx.from, to: new Date(ctx.to.getTime() + (ctx.withinDays ?? 90) * DAY) }],
+    records: (data, ctx) => {
+      const days = ctx.withinDays ?? 90
+      const m = data.money(ctx.from, new Date(ctx.to.getTime() + days * DAY))
+      const paid = new Map<string, { at: number; cents: number }[]>()
+      for (const p of m.payments) {
+        if (!p.patient_id || !isReceipt(p.method)) continue
+        const list = paid.get(p.patient_id)
+        if (list) list.push({ at: p.at, cents: p.amount_cents })
+        else paid.set(p.patient_id, [{ at: p.at, cents: p.amount_cents }])
+      }
+      return newPatientCohort(data, ctx).map(({ first }) => {
+        // From the start of the first visit's day: a first visit is often paid before it starts.
+        const start = new Date(first.at)
+        start.setHours(0, 0, 0, 0)
+        const end = first.at + days * DAY
+        const cents = (paid.get(first.patient_id) ?? []).filter((p) => p.at >= start.getTime() && p.at <= end).reduce((s, p) => s + p.cents, 0)
+        return cohortRec(data, first, cents, 1)
+      })
     },
   },
   {
@@ -1129,6 +1422,10 @@ function recKey(r: Rec, split: SplitKey): string | null {
 
 function reduceRecs(recs: Rec[], how: MetricDef['reduce']): number | null {
   if (how === 'distinct') return new Set(recs.map((r) => r.p)).size
+  if (how === 'mean') {
+    const d = recs.reduce((s, r) => s + (r.d ?? 0), 0)
+    return d === 0 ? null : Math.round(recs.reduce((s, r) => s + r.v, 0) / d)
+  }
   if (how === 'rate') {
     const d = recs.reduce((s, r) => s + (r.d ?? 0), 0)
     return d === 0 ? null : Math.round((recs.reduce((s, r) => s + r.v, 0) / d) * 100)
@@ -1236,7 +1533,7 @@ export function computeMetric(def: MetricDef, split: SplitKey, data: ReportData,
     if (list) list.push(r)
     else groups.set(k, [r])
   }
-  const empty = def.reduce === 'rate' ? null : 0
+  const empty = def.reduce === 'rate' || def.reduce === 'mean' ? null : 0
   let rows: MetricRow[]
   if (effectiveSplit === 'month' || effectiveSplit === 'week' || effectiveSplit === 'day') {
     rows = timeBuckets(effectiveSplit, ctx).map((b) => ({ key: b.key, label: b.label, value: groups.has(b.key) ? reduceRecs(groups.get(b.key)!, def.reduce) : empty }))
@@ -1300,7 +1597,7 @@ export function computePivot(def: MetricDef, split: SplitKey, columns: SplitKey,
   // Recorded with the split across the top, as a by-service total is: a
   // metric is free to record differently per split.
   const recs = def.records!(data, ctx, columns)
-  const empty = def.reduce === 'rate' ? null : 0
+  const empty = def.reduce === 'rate' || def.reduce === 'mean' ? null : 0
 
   const byRow = new Map<string, Rec[]>()
   const byCol = new Map<string, Rec[]>()

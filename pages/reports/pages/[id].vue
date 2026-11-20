@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computePresetRange, type DateRange, type DateRangePreset } from '~/composables/useDateRangePresets'
 import { REPORT_DATA_KEY, useReportDataHub } from '~/composables/useReportData'
-import { newBlockId, normaliseBlocks, SPAN_CLASS, type Compare, type PagePeriod, type PageSettings, type ReportBlock } from '~/utils/reportBlocks'
+import { clampRows, clampSpan, GRID_GAP_PX, newBlockId, normaliseBlocks, ROW_PX, rowsHeight, SPAN_CLASS, type Compare, type PagePeriod, type PageSettings, type ReportBlock, type Span } from '~/utils/reportBlocks'
 
 // A report page: the clinic's own dashboard, a grid of blocks sharing one
 // period and one set of filters, downloadable as a PDF. Editing saves as it
@@ -182,6 +182,61 @@ function onDrop(target: number) {
   blocks.value.splice(target, 0, b!)
 }
 
+// Drag an edge to resize: a 12-column grid shows while dragging, and an
+// outline of the size it will snap to. Nothing changes until it is let go,
+// so the blocks around it do not reflow under the pointer.
+interface Resize {
+  index: number
+  axis: 'x' | 'y' | 'xy'
+  /** The block's top-left, relative to the grid. */
+  left: number
+  top: number
+  colW: number
+  span: Span
+  rows: number
+}
+const resizing = ref<Resize | null>(null)
+const resizeOutline = computed(() => {
+  const r = resizing.value
+  if (!r) return null
+  return { left: `${r.left}px`, top: `${r.top}px`, width: `${r.span * r.colW + (r.span - 1) * GRID_GAP_PX}px`, height: `${rowsHeight(r.rows, GRID_GAP_PX)}px` }
+})
+function startResize(i: number, e: PointerEvent, axis: Resize['axis']) {
+  const grid = gridRoot.value
+  const cell = (e.target as HTMLElement).closest('[data-block-id]') as HTMLElement | null
+  if (!grid || !cell) return
+  const g = grid.getBoundingClientRect()
+  const c = cell.getBoundingClientRect()
+  const b = blocks.value[i]!
+  const state: Resize = {
+    index: i,
+    axis,
+    left: c.left - g.left,
+    top: c.top - g.top,
+    colW: (g.width - 11 * GRID_GAP_PX) / 12,
+    span: b.span,
+    rows: b.rows ?? clampRows(Math.round((c.height + GRID_GAP_PX) / (ROW_PX + GRID_GAP_PX)))!,
+  }
+  resizing.value = state
+  const move = (ev: PointerEvent) => {
+    if (axis !== 'y') state.span = clampSpan(Math.round((ev.clientX - c.left + GRID_GAP_PX) / (state.colW + GRID_GAP_PX)))
+    if (axis !== 'x') state.rows = clampRows(Math.round((ev.clientY - c.top + GRID_GAP_PX) / (ROW_PX + GRID_GAP_PX)))!
+    resizing.value = { ...state }
+  }
+  const end = (ev: PointerEvent) => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    resizing.value = null
+    if (ev.type === 'pointercancel') return
+    if (axis !== 'y') b.span = state.span
+    if (axis !== 'x') b.rows = state.rows
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
+}
+
 // ---- Page menu --------------------------------------------------------------
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
@@ -278,7 +333,7 @@ const meta = computed(() => {
         <div class="flex flex-wrap items-center gap-2">
           <template v-if="editing">
             <span class="text-[12px] text-ink-faint2" data-cy="report-page-save-state">
-              {{ { idle: t('Drag a block to move it', 'Arrastra un bloque para moverlo'), saving: t('Saving…', 'Guardando…'), saved: t('Saved', 'Guardado'), failed: t('Not saved', 'Sin guardar') }[saveState] }}
+              {{ { idle: t('Drag a block to move it, or its edge to resize it', 'Arrastra un bloque para moverlo, o su borde para cambiar su tamaño'), saving: t('Saving…', 'Guardando…'), saved: t('Saved', 'Guardado'), failed: t('Not saved', 'Sin guardar') }[saveState] }}
             </span>
             <UiBtn data-cy="report-page-add" @click="showPanel = true">+ {{ t('Add a block', 'Añadir un bloque') }}</UiBtn>
             <UiBtn variant="primary" data-cy="report-page-done" @click="finishEditing">{{ t('Done', 'Hecho') }}</UiBtn>
@@ -326,20 +381,37 @@ const meta = computed(() => {
             </button>
           </div>
 
-          <div ref="gridRoot" class="mt-4 grid grid-cols-12 gap-3.5" data-cy="report-page-grid">
+          <div ref="gridRoot" class="relative mt-4 grid grid-cols-12 gap-3.5" :class="resizing && 'select-none'" data-cy="report-page-grid">
+            <template v-if="resizing && resizeOutline">
+              <div class="pointer-events-none absolute inset-0 z-20 grid grid-cols-12 gap-3.5" aria-hidden="true" data-pdf-skip>
+                <div v-for="n in 12" :key="n" class="rounded-ctlSm bg-brand-tint opacity-60" />
+              </div>
+              <div
+                class="pointer-events-none absolute z-30 rounded-card border-2 border-dashed border-brand bg-brand-tint/30"
+                :style="resizeOutline"
+                aria-hidden="true"
+                data-pdf-skip
+                data-cy="report-resize-outline"
+              >
+                <span class="absolute bottom-2 right-2 rounded-ctlSm bg-brand px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">
+                  {{ resizing.span }}/12<template v-if="resizing.axis !== 'x'"> · {{ resizing.rows }} {{ t('rows', 'filas') }}</template>
+                </span>
+              </div>
+            </template>
             <ReportsBlock
               v-for="(b, i) in blocks"
               :key="b.id"
               :data-block-id="b.id"
               :class="[SPAN_CLASS[b.span], dragging === i && 'opacity-40']"
               :block="b"
+              :height="b.rows ? rowsHeight(b.rows, GRID_GAP_PX) : null"
               :range="range"
               :compare="compare"
               :practitioner-id="practitionerFilter || null"
               :clinic-id="clinicFilter || null"
               :own-only="!!reportsPractitionerId"
               :editing="editing"
-              :draggable="editing"
+              :draggable="editing && !resizing"
               @dragstart="dragging = i"
               @dragend="dragging = null"
               @dragover.prevent
@@ -347,7 +419,9 @@ const meta = computed(() => {
               @edit="builderFor = b"
               @remove="removeBlock(i)"
               @duplicate="duplicateBlock(i)"
-              @resize="(s: ReportBlock['span']) => (b.span = s)"
+              @resize="(s: Span) => (b.span = s)"
+              @resize-rows="(r: number | null) => (b.rows = r)"
+              @resize-start="(e: PointerEvent, axis: 'x' | 'y' | 'xy') => startResize(i, e, axis)"
               @move="(by: -1 | 1) => moveBlock(i, by)"
             />
             <button

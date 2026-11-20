@@ -258,9 +258,10 @@ function nudge(e: KeyboardEvent, axis: 'x' | 'y' | 'xy') {
   if ((axis !== 'y' && dx) || (axis !== 'x' && dy)) e.preventDefault()
 }
 
-function closeMenuSoon() {
-  setTimeout(() => (menuOpen.value = false), 150)
-}
+// The menu used to close on its button's blur, which Safari never fires: it
+// does not focus a button on click, so the menu stayed open over the page.
+const menuRoot = ref<HTMLElement | null>(null)
+useDismissOnOutside(menuRoot, menuOpen)
 </script>
 
 <template>
@@ -292,8 +293,8 @@ function closeMenuSoon() {
       </h3>
       <span v-if="periodTag" class="shrink-0 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 text-[11px] font-semibold text-warning-text">{{ periodTag }}</span>
       <span v-if="block.origin && !editing && chart !== 'number'" class="hidden shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] font-semibold text-chip-text sm:inline" data-pdf-skip>{{ block.origin }}</span>
-      <div v-if="editing" class="relative -mr-1.5 -mt-1 shrink-0" data-pdf-skip>
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" data-cy="report-block-menu" :aria-label="t('Block options', 'Opciones del bloque')" @click="menuOpen = !menuOpen" @blur="closeMenuSoon">
+      <div v-if="editing" ref="menuRoot" class="relative -mr-1.5 -mt-1 shrink-0" data-pdf-skip>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" data-cy="report-block-menu" :aria-label="t('Block options', 'Opciones del bloque')" @click="menuOpen = !menuOpen">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
         </button>
         <div v-if="menuOpen" class="absolute right-0 z-20 mt-1 w-52 rounded-ctl border border-line bg-surface p-1 text-[13px] shadow-popover">

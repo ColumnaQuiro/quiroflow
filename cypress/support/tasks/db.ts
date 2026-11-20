@@ -761,7 +761,7 @@ async function setAutomaticMessages(opts: {
   channels?: string[]
   templateName?: string
   templateLanguage?: string
-  reminderHoursBefore?: number
+  reminderDaysBefore?: number
 }) {
   assertOk(
     await admin
@@ -775,7 +775,7 @@ async function setAutomaticMessages(opts: {
         appointment_reminder_channels: opts.channels ?? ['whatsapp'],
         whatsapp_reminder_template_name: opts.templateName ?? 'confirmacion_cita',
         whatsapp_reminder_template_language: opts.templateLanguage ?? 'es',
-        appointment_reminder_hours_before: opts.reminderHoursBefore ?? 24,
+        appointment_reminder_days_before: opts.reminderDaysBefore ?? 1,
         whatsapp_business_account_id: 'waba-stub',
         whatsapp_phone_number_id: `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
         whatsapp_access_token: 'stub-token',

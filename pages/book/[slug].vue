@@ -1025,7 +1025,7 @@ function successUrl(): URL | null {
 // thank-you page loads twice, in the frame and then on top, and its
 // conversion tags count the booking twice.
 const HOST_REDIRECT_GRACE_MS = 400
-let hostRedirectTimer: ReturnType<typeof setTimeout> | null = null
+let hostRedirectTimer: number | null = null
 
 function goToSuccess() {
   const target = successUrl()

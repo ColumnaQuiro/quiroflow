@@ -264,8 +264,13 @@ export function useSetupChecklist() {
       skippable: false,
       title: t('Choose your plan', 'Elige tu plan'),
       body:
-        store.trialDaysLeft === 0
-          ? t('Your trial ends today. Add a card so the clinic keeps running.', 'Tu prueba termina hoy. Añade una tarjeta para que la clínica siga funcionando.')
+        store.isReadOnly
+          ? t('The account is read-only. Add a card to create and change things again.', 'La cuenta está en modo solo lectura. Añade una tarjeta para volver a crear y modificar.')
+          : store.trialEnded && store.graceEndsAt
+          ? t(
+              `Your trial has ended. Add a card before ${formatLongDate(store.graceEndsAt)} or the account becomes read-only.`,
+              `Tu prueba ha terminado. Añade una tarjeta antes del ${formatLongDate(store.graceEndsAt)} o la cuenta pasará a solo lectura.`,
+            )
           : store.trialDaysLeft === 1
             ? t('Add a card before your trial ends in 1 day. Nothing is charged until then.', 'Añade una tarjeta antes de que acabe tu prueba, en 1 día. No se cobra nada hasta entonces.')
             : store.trialDaysLeft !== null

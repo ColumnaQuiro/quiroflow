@@ -113,12 +113,28 @@ export const useAccountStore = defineStore('account', {
     // the server routes for the pack apply too.
     hasStaffSection: (state) => staffSectionIncluded({ plan_id: state.planId, status: state.subscriptionStatus, comped: state.comped }),
     // Only meaningful while still trialing -- null once on a real plan (no
-    // trial_ends_at) or already past it (negative), so the banner can just
-    // check `!== null`.
+    // trial_ends_at) or once it has ended (the grace week is trialEnded), so
+    // the banner can just check `!== null`.
     trialDaysLeft: (state) => {
       if (state.subscriptionStatus !== 'trialing' || !state.trialEndsAt) return null
-      return Math.max(0, Math.ceil((new Date(state.trialEndsAt).getTime() - Date.now()) / 86400000))
+      const ms = new Date(state.trialEndsAt).getTime() - Date.now()
+      if (ms <= 0) return null
+      return Math.ceil(ms / 86400000)
     },
+    // The trial ended with no card and the account is in its grace week:
+    // still 'trialing', everything working, until trialGraceEndsAt.
+    trialEnded: (state) =>
+      trialPhase({ status: state.subscriptionStatus, trial_ends_at: state.trialEndsAt, comped: state.comped, has_stripe_subscription: state.hasStripeSubscription }) === 'grace',
+    // When the grace week ends and the account turns read-only; null outside it.
+    graceEndsAt(): Date | null {
+      return this.trialEnded && this.trialEndsAt ? trialGraceEndsAt(this.trialEndsAt) : null
+    },
+    graceDaysLeft(): number | null {
+      return this.graceEndsAt ? daysUntil(this.graceEndsAt) : null
+    },
+    // 'locked' (an ended trial past its grace week) or 'canceled': every
+    // screen reads, nothing changes (20261120184541_trial_grace_then_read_only).
+    isReadOnly: (state) => isReadOnlyAccount(state.subscriptionStatus, state.comped),
     // Still trialing AND nothing will be charged when it ends. An owner who
     // added a card mid-trial is also 'trialing' -- the trial carries over into
     // Stripe -- but asking them to "upgrade now" is asking for what they have

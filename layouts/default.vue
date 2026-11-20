@@ -20,10 +20,6 @@ const showDenied = ref(route.query.denied === '1')
 
 // The router's own route, not useRoute(). In a layout, useRoute() is the route
 // of the page on screen, and it only moves once the next page has rendered.
-// The lock screen renders no page at all, so on "Choose a plan" the address
-// changed to /subscription, the page never rendered, the route never moved,
-// and the lock screen stayed -- a locked owner could not reach the one page
-// that lets them pay.
 const currentPath = computed(() => router.currentRoute.value.path)
 
 // Used to live in the sidebar, costing it a full row of width every screen
@@ -68,8 +64,6 @@ function dismissDenied() {
   delete query.denied
   router.replace({ query })
 }
-
-const contactHref = 'mailto:hola@quiroflow.com'
 
 // A release published since this tab loaded (plugins/stale-build-reload.client.ts).
 // The next navigation reloads anyway; this is for someone who stays put.
@@ -117,7 +111,43 @@ onUnmounted(() => {
 })
 onUnmounted(router.afterEach(() => (lastActedAt = 0)))
 watch(refusedWrites, () => {
+  // A read-only account's refusals are answered by the dialog below.
+  if (store.isReadOnly) return
   if (Date.now() - lastActedAt < 2000) sayNotSaved()
+})
+
+// The end of the trial, where it gets in the way. An account that is
+// read-only (an ended trial past its grace week, or a cancelled plan) still
+// opens every screen; what it cannot do is change anything, and the moment it
+// tries is the moment to ask for a card (plugins/read-only.client.ts). Only
+// after something the person did, like the toast above: a write a screen
+// makes for itself on load is nobody's lost work.
+const { refusedAt } = useReadOnlyPrompt()
+const addCardDialog = ref<'grace' | 'read_only' | 'refused' | null>(null)
+watch(refusedAt, (at) => {
+  if (at && at - lastActedAt < 3000) addCardDialog.value = 'refused'
+})
+
+// And once a day to the owner, from the day the trial ends: the bar above
+// every screen is easy to stop seeing. Remembered per account in this browser;
+// never on Subscription, which is where the dialog would send them.
+const DAILY_PROMPT_KEY = 'quiroflow-trial-ended-prompt'
+function maybeDailyPrompt() {
+  if (!store.loaded || !store.isOwner || !store.accountId) return
+  if (!store.trialEnded && !store.isReadOnly) return
+  if (currentPath.value === '/subscription' || addCardDialog.value) return
+  const today = new Date().toISOString().slice(0, 10)
+  const key = `${DAILY_PROMPT_KEY}:${store.accountId}`
+  try {
+    if (localStorage.getItem(key) === today) return
+    localStorage.setItem(key, today)
+  } catch {
+    // Storage refused (a private window): ask anyway, once per load.
+  }
+  addCardDialog.value = store.trialEnded ? 'grace' : 'read_only'
+}
+onMounted(() => {
+  watch(() => [store.loaded, store.trialEnded, store.isReadOnly, currentPath.value], maybeDailyPrompt, { immediate: true })
 })
 onUnmounted(router.afterEach(() => (dataNoticeShown = false)))
 watch(supabaseFailure, (f) => {
@@ -137,34 +167,11 @@ watch(supabaseFailure, (f) => {
 </script>
 
 <template>
-  <!-- Only the staff app (this layout) locks -- public booking, the patient
-  portal, and shared docs use their own layouts and keep working regardless,
-  so a clinic's unpaid bill never blocks their own patients. -->
-  <!-- /subscription is exempt so the escape hatch below has somewhere to go.
-  It used to open Stripe's hosted portal directly, which is a dead end for the
-  case that matters most: a trial that expired without ever subscribing has no
-  Stripe customer, so portal-session.post.ts 400s and useBillingPortal quietly
-  redirects to a mailto -- an account that wants to pay us could not. The
-  subscription page carries both routes out (Checkout for a first
-  subscription, the portal for a lapsed one), and every API it calls is gated
-  on requireTeamMember rather than requireActiveAccount, so all of them keep
-  working while the account is locked. -->
-  <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen supports-[height:100dvh]:h-dvh items-center justify-center bg-surface-page px-6">
-    <div class="max-w-sm text-center">
-      <h1 class="text-lg font-semibold text-ink-900">{{ t('Account locked', 'Cuenta bloqueada') }}</h1>
-      <p class="mt-2 text-sm text-ink-600">{{ t('This QuiroFlow account is locked pending payment.', 'Esta cuenta de QuiroFlow está bloqueada hasta que se complete el pago.') }}</p>
-      <NuxtLink
-        v-if="store.isOwner"
-        to="/subscription"
-        class="mt-4 flex h-11 w-full items-center justify-center rounded-ctl bg-brand px-4 text-sm font-semibold text-brand-on hover:bg-brand-hover"
-      >
-        {{ t('Choose a plan', 'Elegir un plan') }}
-      </NuxtLink>
-      <p v-else class="mt-4 text-sm text-ink-600">{{ t('Ask the account owner to renew the subscription.', 'Pide a la persona titular de la cuenta que renueve la suscripción.') }}</p>
-      <p class="mt-3 text-sm text-ink-600">{{ t('Or contact us directly:', 'O escríbenos directamente:') }}</p>
-      <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-brand-text hover:underline">hola@quiroflow.com</a>
-    </div>
-  </div>
+  <!-- No lock screen. An account that has not paid (an ended trial past its
+  grace week, or a cancelled plan) is READ-ONLY: every screen still opens, and
+  what is refused is changing anything (20261120184541_trial_grace_then_read_only).
+  BillingBanner says so above every screen, and SubscriptionAddCardDialog asks
+  for a card when a change is refused. -->
   <!-- 100dvh where the browser has it: 100vh on iPhone Safari is the height
   with its toolbars hidden, so the bottom of every page -- the Inbox composer,
   a list's last row -- sat behind the toolbar. Behind @supports rather than
@@ -173,7 +180,7 @@ watch(supabaseFailure, (f) => {
   absolutely positioned element with no positioned ancestor (an sr-only label
   in a wide table cell, say): left alone those resolve against the page
   itself and let an iPhone pan the whole app sideways. -->
-  <div v-else class="relative flex h-screen supports-[height:100dvh]:h-dvh flex-col overflow-hidden bg-surface-page">
+  <div class="relative flex h-screen supports-[height:100dvh]:h-dvh flex-col overflow-hidden bg-surface-page">
     <!-- First thing a keyboard reaches: otherwise eighteen sidebar links and
     the top bar come before the page, on every page. Hidden until focused. -->
     <a
@@ -244,5 +251,6 @@ watch(supabaseFailure, (f) => {
     </div>
     <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" @shortcuts="(paletteOpen = false), (shortcutsOpen = true)" />
     <ShortcutsDialog v-if="shortcutsOpen" @close="shortcutsOpen = false" />
+    <SubscriptionAddCardDialog v-if="addCardDialog" :mode="addCardDialog" @close="addCardDialog = null" />
   </div>
 </template>

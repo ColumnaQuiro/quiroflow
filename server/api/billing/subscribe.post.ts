@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { planIncludesGrowth, receptionistLineWanted } from '~/utils/growthPlans'
-import { checkoutTrialEnd } from '~/utils/billing'
+import { checkoutTrialEnd, graceBackdate, graceCatchUpCents } from '~/utils/billing'
 import { billingLanguage, retrieveChangeableSubscription, stripeForPlatformBilling, stripeLocale } from '~/server/utils/platformBillingStripe'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 
@@ -268,6 +268,42 @@ export default defineEventHandler(async (event) => {
   const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, [])
   const verifactuFeeLine = verifactuFee && 'price' in verifactuFee ? [{ price: verifactuFee.price, quantity: verifactuFee.quantity }] : []
 
+  const recurringLines = [
+    { price: planPriceId, quantity: 1 },
+    ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
+    ...(extraClinics > 0 && extraClinicPriceId ? [{ price: extraClinicPriceId, quantity: extraClinics }] : []),
+    ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
+    ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
+    ...(body.branding === true && branding.priceId ? [{ price: branding.priceId, quantity: 1 }] : []),
+    ...verifactuFeeLine,
+  ]
+
+  // A trial that ended a few days ago, card added now: the paid period starts
+  // when the trial ended, not today, so the grace week is paid for rather than
+  // given away and the billing date does not drift (graceBackdate says how).
+  const language = await billingLanguage(serviceRole, teamMember.account_id)
+  const backdate = trialEnd ? null : graceBackdate(subscription, body.interval)
+  const catchUpLines: Array<{ price_data: { currency: string; unit_amount: number; product_data: { name: string } }; quantity: number; tax_rates?: string[] }> = []
+  if (backdate) {
+    const prices = await Promise.all(recurringLines.map((line) => stripe.prices.retrieve(line.price as string)))
+    const periodCents = recurringLines.reduce((sum, line, i) => sum + (prices[i]?.unit_amount ?? 0) * (line.quantity ?? 1), 0)
+    const cents = graceCatchUpCents(periodCents, backdate)
+    if (cents > 0) {
+      const from = new Date(backdate.periodStart * 1000).toLocaleDateString(language === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' })
+      catchUpLines.push({
+        price_data: {
+          currency: prices[0]?.currency ?? 'eur',
+          unit_amount: cents,
+          product_data: { name: language === 'es' ? `Uso desde el fin de la prueba (${from})` : `Use since the trial ended (${from})` },
+        },
+        quantity: 1,
+        // A one-off line is not a subscription item, so default_tax_rates does
+        // not reach it: IVA goes on it directly.
+        ...(defaultTaxRates ? { tax_rates: defaultTaxRates } : {}),
+      })
+    }
+  }
+
   const origin = getRequestURL(event).origin
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -283,19 +319,11 @@ export default defineEventHandler(async (event) => {
     // every invoice and receipt in that language. The webhook keeps it in
     // line afterwards (syncInvoiceLanguage); see billingLanguage for why
     // this is the language to follow.
-    locale: stripeLocale(await billingLanguage(serviceRole, teamMember.account_id)),
+    locale: stripeLocale(language),
     // Only valid alongside an existing `customer`; without it Stripe collects
     // the address and then discards it instead of saving it to the customer.
     ...(subscription?.stripe_customer_id ? { customer_update: { address: 'auto' as const, name: 'auto' as const } } : {}),
-    line_items: [
-      { price: planPriceId, quantity: 1 },
-      ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
-      ...(extraClinics > 0 && extraClinicPriceId ? [{ price: extraClinicPriceId, quantity: extraClinics }] : []),
-      ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
-      ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
-      ...(body.branding === true && branding.priceId ? [{ price: branding.priceId, quantity: 1 }] : []),
-      ...verifactuFeeLine,
-    ],
+    line_items: [...recurringLines, ...catchUpLines],
     // On the subscription rather than the line items: line-item tax_rates
     // apply to this one checkout's invoice, so every renewal after it would
     // have gone out with no VAT on it.
@@ -303,6 +331,7 @@ export default defineEventHandler(async (event) => {
       metadata: { account_id: teamMember.account_id },
       ...(defaultTaxRates ? { default_tax_rates: defaultTaxRates } : {}),
       ...(trialEnd ? { trial_end: trialEnd } : {}),
+      ...(backdate ? { billing_cycle_anchor: backdate.anchor } : {}),
     },
     success_url: `${origin}/subscription?checkout=success`,
     cancel_url: `${origin}/subscription`,

@@ -3,6 +3,7 @@ import { serverSupabaseClient } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
 import { attachAuditActor } from '~/server/utils/auditActor'
+import { ACCOUNT_READ_ONLY, READ_ONLY_MESSAGE_ES, isReadOnlyAccount, readOnlyAllowsRequest } from '~/utils/billing'
 
 // The web app authenticates via a cookie (handled by serverSupabaseClient).
 // The mobile app has no cookie -- Capacitor's WebView origin can't reliably
@@ -86,13 +87,20 @@ export async function requireTeamMember(event: H3Event) {
   return { supabase, teamMember }
 }
 
-// Defense-in-depth behind the full-screen lock every staff page already
-// shows once an account is 'locked'/'canceled' (see layouts/default.vue) --
-// this is what stops the underlying API calls too, in case something
-// reaches them without going through that UI (a stale tab, a direct call).
+// The server's half of read-only (20261120184541_trial_grace_then_read_only):
+// an account that is 'locked' or 'canceled' still READS through every route,
+// and is refused anything that changes data, with 423 and the reason the app
+// recognises (plugins/read-only.client.ts opens the "add a card" dialog on
+// it). The database refuses the same writes when they go straight through
+// PostgREST; this is the same rule for the routes that write with the
+// service role, which no trigger can tell apart from a cron.
+//
+// A few non-GET routes only read or export (readOnlyAllowsRequest), and
+// talking to us or to colleagues keeps working.
 // Not applied to requireTeamMember itself: a few routes call that directly
 // for internal/system work (webhooks, cron-fired automations) that
-// shouldn't stop just because a clinic hasn't paid.
+// shouldn't stop just because a clinic hasn't paid -- and the subscription
+// routes, which are how a read-only account pays.
 //
 // The subscription is read in the same request as the team member, embedded
 // through their account, rather than in a second one after it: every API
@@ -128,8 +136,13 @@ export async function requireActiveAccount(event: H3Event) {
   const { accounts, ...teamMember } = row
   const subscriptions = (accounts as { subscriptions: AccountSubscription[] } | null)?.subscriptions ?? []
   const subscription = subscriptions.length === 1 ? subscriptions[0]! : null
-  if (subscription && (subscription.status === 'locked' || subscription.status === 'canceled')) {
-    throw createError({ statusCode: 402, statusMessage: 'This account is locked pending payment' })
+  if (subscription && isReadOnlyAccount(subscription.status, !!subscription.comped) && !readOnlyAllowsRequest(event.method, event.path)) {
+    throw createError({
+      statusCode: 423,
+      statusMessage: 'Account is read-only',
+      message: READ_ONLY_MESSAGE_ES,
+      data: { reason: ACCOUNT_READ_ONLY },
+    })
   }
 
   attachAuditActor(event, teamMember.id)

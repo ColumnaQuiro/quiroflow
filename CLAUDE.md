@@ -330,6 +330,39 @@ that creates a table or view in `public` without either. A table that must
 not be reachable through the API at all says why where it is created:
 `-- table-grants-ok: my_table: <reason>`.
 
+## An unpaid account is read-only, enforced by the database
+
+A trial that ends with no card is not locked out. It keeps working for a
+**grace week** (`TRIAL_GRACE_DAYS` in `utils/billing.ts`), then
+`trial-expiry-cron` sets `subscriptions.status = 'locked'`, which means
+**read-only**: every screen opens and reads, exports work, and changing
+anything is refused. `'canceled'` behaves the same. The same cron emails the
+owner before and after the end (`server/utils/trialNotices.ts`) and tells
+`signupNotifyEmail` three days before, so somebody can call.
+
+Read-only is a statement trigger on every table, `read_only_while_unpaid`
+(`20261120184541_trial_grace_then_read_only.sql`), not an RLS policy: much of
+the app writes through SECURITY DEFINER functions, which RLS never reaches. It
+refuses staff of a read-only account with `PT423` (HTTP 423, `detail`
+`account_read_only`), which `plugins/read-only.client.ts` turns into the
+"add a card" dialog. The service role, anon and patients pass untouched, so
+crons, webhooks and the patient portal keep working; online bookings
+(`source = 'online'`) are refused separately while the account is read-only.
+
+**A new table gets the guard from `require_two_factor_on`**, which now also
+calls `read_only_guard_on` -- the line `check:rls-two-factor` already
+insists on. A table a read-only clinic must still write (a log a READ leaves,
+read-state, a person's own preferences, support chat) is exempted by name
+inside `read_only_guard_on`; add it there, in a migration, rather than
+dropping its trigger. Server routes get the same rule from
+`requireActiveAccount`, which lets GET through and refuses other methods
+except those in `readOnlyAllowsRequest`.
+
+A card added during the grace week pays from the day the trial ended, not
+from today: `subscribe.post.ts` anchors the billing cycle one period after
+the trial's end and charges the days already used as a one-off line
+(`graceBackdate`). Checkout cannot backdate a subscription itself.
+
 ## The audit trail covers a table only once it has a trigger
 
 Settings → Activity log (owners only) reads three append-only tables from

@@ -5,8 +5,8 @@ import { Bar, Doughnut, Line } from 'vue-chartjs'
 import { chartColor } from '../../utils/chartSetup'
 import { computePresetRange, rangeBounds, type DateRange } from '../../composables/useDateRangePresets'
 import { REPORT_DATA_KEY } from '../../composables/useReportData'
-import type { Compare, OwnPeriod, ReportBlock } from '../../utils/reportBlocks'
-import { comparisonRange, computeMetric, computePivot, formatDelta, formatMetric, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult, type PivotResult } from '../../utils/reportMetrics'
+import { clampRows, clampSpan, GRID_GAP_PX, ROW_PX, type Compare, type OwnPeriod, type ReportBlock, type Span } from '../../utils/reportBlocks'
+import { comparisonRange, computeMetric, computePivot, formatDelta, formatMetric, metricLabel, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult, type Need, type PivotResult } from '../../utils/reportMetrics'
 import { REPORT_VIEWER_KEY, type ReportViewer } from '../../utils/reportViewer'
 
 // One block of a report page: a metric, split some way, drawn some way, for
@@ -22,8 +22,20 @@ const props = defineProps<{
   /** The viewer sees only their own figures (reports_own_only). */
   ownOnly: boolean
   editing?: boolean
+  /** A height someone dragged it to, in px; the charts then fill it. Unset, it is as tall as its content. */
+  height?: number | null
 }>()
-const emit = defineEmits<{ edit: []; remove: []; duplicate: []; resize: [span: ReportBlock['span']]; move: [by: -1 | 1] }>()
+const emit = defineEmits<{
+  edit: []
+  remove: []
+  duplicate: []
+  resize: [span: Span]
+  /** A height in grid rows, or null for "as tall as its content". */
+  resizeRows: [rows: number | null]
+  /** A drag on one of its edges began; the page, which knows the grid, follows it. */
+  resizeStart: [e: PointerEvent, axis: 'x' | 'y' | 'xy']
+  move: [by: -1 | 1]
+}>()
 
 const t = useT()
 // The account store on the web; on the app, which has no store, the viewer
@@ -62,6 +74,28 @@ const clinic = computed(() => props.clinicId || props.block.config.filters?.clin
 // A clinic-wide figure under a practitioner filter shows the whole clinic, and says so.
 const wholeClinicDespiteFilter = computed(() => !!def.value?.clinicWide && !!practitioner.value)
 
+// Only the filters and numbers the metric says it reads: a block saved with a
+// filter its metric has since dropped must not narrow anything silently.
+const own = computed(() => {
+  const f = props.block.config.filters ?? {}
+  const p = props.block.config.params ?? {}
+  const honours = new Set(def.value?.filters ?? [])
+  const param = (key: 'visitNumber' | 'withinDays') => {
+    const spec = def.value?.params?.find((x) => x.key === key)
+    if (!spec) return null
+    const v = p[key] === undefined ? spec.default : p[key]
+    return v === null ? null : Math.min(spec.max, Math.max(spec.min, v))
+  }
+  return {
+    typeIds: honours.has('appointment_type') && f.typeIds?.length ? f.typeIds : null,
+    stages: honours.has('stage') && f.stages?.length ? f.stages : null,
+    referralSource: honours.has('referral_source') ? (f.referralSource ?? null) : null,
+    bookedVia: honours.has('booked_via') ? (f.bookedVia ?? null) : null,
+    visitNumber: param('visitNumber'),
+    withinDays: param('withinDays'),
+  }
+})
+
 function ctxFor(r: { from: Date; to: Date }): Ctx {
   return {
     from: r.from,
@@ -69,10 +103,12 @@ function ctxFor(r: { from: Date; to: Date }): Ctx {
     practitionerId: def.value?.clinicWide ? null : practitioner.value,
     clinicId: def.value?.clinicWide ? null : clinic.value,
     method: props.block.config.filters?.method ?? null,
+    ...own.value,
     now: new Date(),
     t,
   }
 }
+const label = computed(() => (def.value ? metricLabel(def.value, own.value, t) : ''))
 
 const previousPeriod = computed(() => {
   if (!def.value || def.value.snapshot || props.block.config.chart !== 'number') return null
@@ -85,7 +121,17 @@ let run = 0
 // Keyed on the dates, not the objects: the page setting the same period
 // again (as it does when its saved settings arrive) must not reload anything.
 const loadKey = computed(() =>
-  [def.value?.key, period.value.from.getTime(), period.value.to.getTime(), previousPeriod.value?.from.getTime(), previousPeriod.value?.to.getTime(), unavailable.value, hub.generation.value].join('|'),
+  [
+    def.value?.key,
+    period.value.from.getTime(),
+    period.value.to.getTime(),
+    previousPeriod.value?.from.getTime(),
+    previousPeriod.value?.to.getTime(),
+    own.value.referralSource,
+    own.value.withinDays,
+    unavailable.value,
+    hub.generation.value,
+  ].join('|'),
 )
 watch(
   loadKey,
@@ -98,7 +144,11 @@ watch(
     loading.value = true
     error.value = ''
     try {
-      await hub.ensure(def.value.needs, [period.value, ...(previousPeriod.value ? [previousPeriod.value] : [])])
+      const ranges = [period.value, ...(previousPeriod.value ? [previousPeriod.value] : [])]
+      const extra = def.value.extraRanges ? ranges.flatMap((r) => def.value!.extraRanges!(ctxFor(r))) : []
+      // Filtering by where patients came from reads the patients, whatever the metric.
+      const needs: Need[] = own.value.referralSource ? [...def.value.needs, 'patients'] : def.value.needs
+      await hub.ensure(needs, [...ranges, ...extra])
     } catch (e) {
       if (mine === run) error.value = (e as { message?: string })?.message ?? String(e)
     }
@@ -173,6 +223,8 @@ const chartOptions = computed(() => ({
 }))
 const donutOptions = { responsive: true, maintainAspectRatio: false, animation: false as const, cutout: '62%', plugins: { legend: { display: false }, tooltip } }
 const chartHeight = computed(() => (horizontal.value ? `${Math.max(160, rows.value.length * 30 + 40)}px` : '240px'))
+// With a height of its own, the chart takes whatever the title leaves.
+const sized = computed(() => !!props.height)
 
 const funnelMax = computed(() => Math.max(1, ...(result.value?.steps ?? []).map((s) => s.value)))
 
@@ -193,6 +245,19 @@ const periodTag = computed(() => {
 // the payments the total counts).
 const tableTotal = computed(() => (def.value?.reduce === undefined && !def.value?.value && props.block.config.split !== 'service' ? result.value?.value : null))
 
+// The edge handles, from the keyboard: arrows widen or heighten by one step.
+const root = ref<HTMLElement | null>(null)
+function currentRows() {
+  return props.block.rows ?? Math.round(((root.value?.offsetHeight ?? 160) + GRID_GAP_PX) / (ROW_PX + GRID_GAP_PX))
+}
+function nudge(e: KeyboardEvent, axis: 'x' | 'y' | 'xy') {
+  const dx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+  const dy = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+  if (axis !== 'y' && dx) emit('resize', clampSpan(props.block.span + dx))
+  if (axis !== 'x' && dy) emit('resizeRows', clampRows(currentRows() + dy))
+  if ((axis !== 'y' && dx) || (axis !== 'x' && dy)) e.preventDefault()
+}
+
 function closeMenuSoon() {
   setTimeout(() => (menuOpen.value = false), 150)
 }
@@ -200,8 +265,10 @@ function closeMenuSoon() {
 
 <template>
   <section
+    ref="root"
     class="relative flex min-h-[132px] flex-col gap-2.5 rounded-card border bg-surface p-4 shadow-card"
-    :class="editing ? 'border-dashed border-brand-tintBorder ring-2 ring-brand-tint' : 'border-line'"
+    :class="[editing ? 'border-dashed border-brand-tintBorder ring-2 ring-brand-tint' : 'border-line', sized && 'overflow-hidden lg:h-[var(--block-h)]']"
+    :style="sized ? { '--block-h': `${height}px` } : undefined"
     data-cy="report-block"
     :data-metric="block.config.metric"
     :data-pdf-block="chart === 'number' ? undefined : chart === 'table' ? 'table' : 'image'"
@@ -245,6 +312,15 @@ function closeMenuSoon() {
               {{ { 3: '¼', 4: '⅓', 6: '½', 8: '⅔', 12: '1' }[s] }}
             </button>
           </div>
+          <button
+            v-if="block.rows"
+            type="button"
+            class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle"
+            data-cy="report-block-auto-height"
+            @mousedown.prevent="emit('resizeRows', null); menuOpen = false"
+          >
+            {{ t('Fit height to content', 'Altura automática') }}
+          </button>
           <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" @mousedown.prevent="emit('move', -1); menuOpen = false">{{ t('Move earlier', 'Mover antes') }}</button>
           <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" @mousedown.prevent="emit('move', 1); menuOpen = false">{{ t('Move later', 'Mover después') }}</button>
           <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" @mousedown.prevent="emit('duplicate'); menuOpen = false">{{ t('Duplicate', 'Duplicar') }}</button>
@@ -286,9 +362,9 @@ function closeMenuSoon() {
 
     <p v-else-if="rows.length === 0" class="py-6 text-center text-[13px] text-ink-faint2">{{ t('Nothing in this period.', 'Nada en este periodo.') }}</p>
 
-    <div v-else-if="chart === 'bar'" :style="{ height: chartHeight }"><Bar :data="chartData" :options="chartOptions" /></div>
-    <div v-else-if="chart === 'line'" class="h-60"><Line :data="chartData" :options="chartOptions" /></div>
-    <div v-else-if="chart === 'donut'" class="flex flex-wrap items-center gap-5">
+    <div v-else-if="chart === 'bar'" class="h-[var(--chart-h)]" :class="sized && 'lg:h-auto lg:min-h-0 lg:flex-1'" :style="{ '--chart-h': chartHeight }"><Bar :data="chartData" :options="chartOptions" /></div>
+    <div v-else-if="chart === 'line'" :class="sized ? 'h-60 lg:h-auto lg:min-h-0 lg:flex-1' : 'h-60'"><Line :data="chartData" :options="chartOptions" /></div>
+    <div v-else-if="chart === 'donut'" class="flex flex-wrap items-center gap-5" :class="sized && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto'">
       <div class="h-40 w-40 shrink-0"><Doughnut :data="donutData" :options="donutOptions" /></div>
       <ul class="min-w-[160px] flex-1 space-y-1.5 text-[12.5px]">
         <li v-for="(r, i) in rows" :key="r.key" class="flex items-center gap-2">
@@ -298,7 +374,7 @@ function closeMenuSoon() {
         </li>
       </ul>
     </div>
-    <div v-else-if="pivot" class="-mx-4 -mb-4 overflow-x-auto" data-cy="report-block-pivot">
+    <div v-else-if="pivot" class="-mx-4 -mb-4 overflow-x-auto" :class="sized && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto'" data-cy="report-block-pivot">
       <table class="w-full text-[13px]">
         <thead class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           <tr>
@@ -321,12 +397,12 @@ function closeMenuSoon() {
         </tbody>
       </table>
     </div>
-    <div v-else class="-mx-4 -mb-4 overflow-x-auto">
+    <div v-else class="-mx-4 -mb-4 overflow-x-auto" :class="sized && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto'">
       <table class="w-full text-[13px]">
         <thead class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           <tr>
             <th class="px-4 py-1.5">{{ t(...SPLIT_LABELS[block.config.split]) }}</th>
-            <th class="px-4 py-1.5 text-right">{{ def ? t(...def.label) : '' }}</th>
+            <th class="px-4 py-1.5 text-right">{{ label }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-line-row">
@@ -341,5 +417,34 @@ function closeMenuSoon() {
         </tbody>
       </table>
     </div>
+
+    <!-- Resize: drag the right edge for width, the bottom for height, the
+    corner for both. Wide screens only: below lg every block is a full row.
+    draggable=false and a stopped dragstart keep the block's own drag-to-move
+    from taking over the gesture. -->
+    <template v-if="editing">
+      <button
+        v-for="h in ([
+          { axis: 'x', cls: 'right-0 top-3 bottom-5 w-2.5 cursor-ew-resize', label: t('Resize width (arrow keys)', 'Cambiar el ancho (flechas)') },
+          { axis: 'y', cls: 'bottom-0 left-3 right-5 h-2.5 cursor-ns-resize', label: t('Resize height (arrow keys)', 'Cambiar el alto (flechas)') },
+          { axis: 'xy', cls: 'bottom-0 right-0 h-5 w-5 cursor-nwse-resize', label: t('Resize (arrow keys)', 'Cambiar el tamaño (flechas)') },
+        ] as const)"
+        :key="h.axis"
+        type="button"
+        draggable="false"
+        class="group absolute z-10 hidden touch-none focus:outline-none lg:block"
+        :class="h.cls"
+        :aria-label="h.label"
+        :data-cy="`report-block-resize-${h.axis}`"
+        data-pdf-skip
+        @dragstart.prevent.stop
+        @pointerdown.prevent.stop="emit('resizeStart', $event, h.axis)"
+        @keydown="nudge($event, h.axis)"
+      >
+        <span v-if="h.axis === 'x'" class="absolute inset-y-0 right-0.5 my-auto h-8 w-1 rounded-full bg-line-control group-hover:bg-brand group-focus-visible:bg-brand" />
+        <span v-else-if="h.axis === 'y'" class="absolute inset-x-0 bottom-0.5 mx-auto h-1 w-8 rounded-full bg-line-control group-hover:bg-brand group-focus-visible:bg-brand" />
+        <svg v-else class="absolute bottom-1 right-1 h-3 w-3 text-ink-faint2 group-hover:text-brand group-focus-visible:text-brand" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M11 5 5 11M11 9 9 11" /></svg>
+      </button>
+    </template>
   </section>
 </template>

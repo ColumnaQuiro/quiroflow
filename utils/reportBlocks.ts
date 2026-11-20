@@ -41,15 +41,31 @@ export interface BlockConfig {
   columns?: SplitKey | null
   chart: ChartKind
   /** Narrower than the page, never wider: a block cannot show a practitioner the page's own-only scope hides. */
-  filters?: { practitionerId?: string | null; clinicId?: string | null; method?: string | null }
+  filters?: BlockFilters
+  /** The numbers the metric asks for (MetricDef.params): "conversion to visit 3", "within 60 days". */
+  params?: { visitNumber?: number | null; withinDays?: number | null }
   period?: BlockPeriod
+}
+
+export interface BlockFilters {
+  practitionerId?: string | null
+  clinicId?: string | null
+  method?: string | null
+  /** Appointment types, any of them. */
+  typeIds?: string[] | null
+  /** Stages (Appointment Types › stage), any of them. */
+  stages?: string[] | null
+  referralSource?: string | null
+  bookedVia?: 'staff' | 'patient' | null
 }
 
 export interface ReportBlock {
   id: string
   title: string
-  /** Width on the 12-column grid. */
-  span: 3 | 4 | 6 | 8 | 12
+  /** Width on the 12-column grid, 2 to 12 (dragged to any column; the menu offers ¼ ⅓ ½ ⅔ 1). */
+  span: Span
+  /** Height in grid rows of ROW_PX, when someone has dragged it; otherwise as tall as its content. */
+  rows?: number | null
   config: BlockConfig
   /** Where it came from, shown as a tag: a standard report's name, or 'saved'. */
   origin?: string | null
@@ -65,16 +81,54 @@ export interface PageSettings {
   compare?: Compare
 }
 
-export const SPANS: ReportBlock['span'][] = [3, 4, 6, 8, 12]
-export const NEXT_SPAN: Record<ReportBlock['span'], ReportBlock['span']> = { 3: 4, 4: 6, 6: 8, 8: 12, 12: 3 }
+export type Span = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+/** The widths the block menu offers, as fractions of the page. */
+export const SPANS: Span[] = [3, 4, 6, 8, 12]
+export const MIN_SPAN = 2
+/** One row of a dragged height. Blocks snap to it, gaps included. */
+export const ROW_PX = 40
+/** The page grid's gap (gap-3.5). */
+export const GRID_GAP_PX = 14
+export const MIN_ROWS = 3
+export const MAX_ROWS = 24
 
-/** Tailwind needs the whole class names written out. */
-export const SPAN_CLASS: Record<ReportBlock['span'], string> = {
+/**
+ * Tailwind needs the whole class names written out. Narrow blocks sit two to
+ * a row on a tablet; anything wider than a third takes the whole row there.
+ */
+export const SPAN_CLASS: Record<Span, string> = {
+  2: 'col-span-12 sm:col-span-6 lg:col-span-2',
   3: 'col-span-12 sm:col-span-6 lg:col-span-3',
   4: 'col-span-12 sm:col-span-6 lg:col-span-4',
+  5: 'col-span-12 lg:col-span-5',
   6: 'col-span-12 lg:col-span-6',
+  7: 'col-span-12 lg:col-span-7',
   8: 'col-span-12 lg:col-span-8',
+  9: 'col-span-12 lg:col-span-9',
+  10: 'col-span-12 lg:col-span-10',
+  11: 'col-span-12 lg:col-span-11',
   12: 'col-span-12',
+}
+
+export function clampSpan(n: unknown): Span {
+  const v = typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : 6
+  return Math.min(12, Math.max(MIN_SPAN, v)) as Span
+}
+export function clampRows(n: unknown): number | null {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  return Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.round(n)))
+}
+/** The pixel height of a block `rows` tall: the rows and the gaps between them. */
+export function rowsHeight(rows: number, gapPx: number) {
+  return rows * ROW_PX + (rows - 1) * gapPx
+}
+
+function normaliseParams(raw: unknown): BlockConfig['params'] {
+  if (!raw || typeof raw !== 'object') return undefined
+  const r = raw as Record<string, unknown>
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null)
+  const out = { visitNumber: num(r.visitNumber), withinDays: num(r.withinDays) }
+  return out.visitNumber === null && out.withinDays === null ? undefined : out
 }
 
 export function newBlockId() {
@@ -89,13 +143,15 @@ export function normaliseBlocks(raw: unknown): ReportBlock[] {
     .map((b) => ({
       id: typeof b.id === 'string' ? b.id : newBlockId(),
       title: typeof b.title === 'string' ? b.title : '',
-      span: SPANS.includes(b.span) ? b.span : 6,
+      span: clampSpan(b.span),
+      rows: clampRows(b.rows),
       config: {
         metric: b.config.metric,
         split: typeof b.config.split === 'string' ? b.config.split : 'none',
         columns: typeof b.config.columns === 'string' ? (b.config.columns as SplitKey) : null,
         chart: typeof b.config.chart === 'string' ? b.config.chart : 'number',
         filters: b.config.filters ?? undefined,
+        params: normaliseParams(b.config.params),
         period: b.config.period?.mode === 'own' ? { mode: 'own', preset: b.config.period.preset } : { mode: 'page' },
       },
       origin: typeof b.origin === 'string' ? b.origin : null,
@@ -111,7 +167,15 @@ export function normaliseBlocks(raw: unknown): ReportBlock[] {
 export function savedReportConfig(config: unknown): BlockConfig | null {
   const c = (config ?? {}) as Record<string, any>
   if (c.v === 2 && typeof c.metric === 'string') {
-    return { metric: c.metric, split: c.split ?? 'none', columns: typeof c.columns === 'string' ? (c.columns as SplitKey) : null, chart: c.chart ?? 'bar', filters: c.filters ?? undefined, period: c.period ?? { mode: 'page' } }
+    return {
+      metric: c.metric,
+      split: c.split ?? 'none',
+      columns: typeof c.columns === 'string' ? (c.columns as SplitKey) : null,
+      chart: c.chart ?? 'bar',
+      filters: c.filters ?? undefined,
+      params: normaliseParams(c.params),
+      period: c.period ?? { mode: 'page' },
+    }
   }
   const chart: ChartKind = c.chartType === 'line' ? 'line' : c.chartType === 'table' ? 'table' : 'bar'
   const groupBy: Record<string, SplitKey> = {
@@ -133,10 +197,10 @@ export function savedReportConfig(config: unknown): BlockConfig | null {
 }
 
 type Preset = Omit<ReportBlock, 'id'>
-const b = (title: string, span: ReportBlock['span'], metric: string, split: SplitKey, chart: ChartKind, origin: string | null, period?: BlockPeriod, columns?: SplitKey): Preset => ({
+const b = (title: string, span: Span, metric: string, split: SplitKey, chart: ChartKind, origin: string | null, period?: BlockPeriod, columns?: SplitKey, params?: BlockConfig['params']): Preset => ({
   title,
   span,
-  config: { metric, split, ...(columns ? { columns } : {}), chart, period: period ?? { mode: 'page' } },
+  config: { metric, split, ...(columns ? { columns } : {}), chart, ...(params ? { params } : {}), period: period ?? { mode: 'page' } },
   origin,
 })
 
@@ -163,7 +227,8 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
         b(t('First visits', 'Primeras visitas'), 3, 'first_visits', 'none', 'number', STATS),
         b(t('Completed visits', 'Visitas completadas'), 3, 'visits_completed', 'none', 'number', STATS),
         b(t('PVA (visits per new patient)', 'PVA (visitas por paciente nuevo)'), 3, 'pva', 'none', 'number', STATS),
-        b(t('Conversion to 3rd visit', 'Conversión a la 3.ª visita'), 3, 'conversion_third_visit', 'none', 'number', STATS),
+        b(t('Conversion report → adjustment', 'Conversión informe → ajuste'), 3, 'conversion_third_visit', 'none', 'number', STATS),
+        b(t('First visits with the offer', 'Primeras visitas con oferta'), 3, 'first_visit_offers', 'none', 'number', STATS),
         b(t('Retention post-revision', 'Retención tras revisión'), 3, 'retention_post_revision', 'none', 'number', STATS),
         b(t('Overall retention', 'Retención general'), 3, 'overall_retention', 'none', 'number', STATS),
         b(t('Visits by stage', 'Visitas por etapa'), 6, 'visits_completed', 'stage', 'bar', STATS),
@@ -175,6 +240,10 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
         // offer, reports, adjustments, maintenance -- one row each, a column
         // per stage, so they read side by side.
         b(t('Completed visits by practitioner and stage', 'Visitas completadas por profesional y etapa'), 12, 'visits_completed', 'practitioner', 'table', STATS, undefined, 'stage'),
+        // Does a first visit with the offer bring patients back as often as a
+        // full-price one? By the stage of the first visit.
+        b(t('Conversion to 3rd visit: offer or not', 'Conversión a la 3.ª visita: con o sin oferta'), 6, 'conversion_to_visit', 'stage', 'bar', STATS, undefined, undefined, { visitNumber: 3 }),
+        b(t('Conversion to 3rd visit by practitioner, offer or not', 'Conversión a la 3.ª visita por profesional, con o sin oferta'), 12, 'conversion_to_visit', 'practitioner', 'table', STATS, undefined, 'stage', { visitNumber: 3 }),
       ],
     },
     {
@@ -245,6 +314,9 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
         b(t('No-show rate', 'Tasa de no presentados'), 3, 'no_show_rate', 'none', 'number', DASH),
         b(t('Average income per visit', 'Ingreso medio por visita'), 3, 'income_per_visit', 'none', 'number', DASH),
         b(t('Recalls due', 'Seguimientos pendientes'), 3, 'recalls_due', 'none', 'number', DASH),
+        b(t('Patients seen', 'Pacientes atendidos'), 3, 'patients_seen', 'none', 'number', DASH),
+        b(t('Rebooking rate', 'Tasa de re-reserva'), 3, 'rebooking_rate', 'none', 'number', DASH),
+        b(t('Lost after the first visit', 'Perdidos tras la primera visita'), 3, 'first_visit_dropouts', 'none', 'number', DASH),
       ],
     },
   ]

@@ -15,7 +15,7 @@ import type { FrontMetrics, Points, PostureView, Pt, SideMetrics, StoredView, Vi
 // that is deleted or anonymised takes its comparisons with it.
 
 export type CompareKey =
-  | 'headWeight' | 'headForward' | 'shoulderForward' | 'hipForward' | 'kneeForward'
+  | 'headWeight' | 'headForward' | 'shoulderForward' | 'hipForward' | 'kneeForward' | 'heightLoss'
   | 'headTilt' | 'shoulderTilt' | 'hipTilt' | 'headShift' | 'shoulderShift' | 'hipShift' | 'knees'
 export type CompareGroup = 'head' | 'side' | 'front'
 export type CompareAudience = 'staff' | 'patient'
@@ -51,6 +51,7 @@ export const COMPARE_METRICS: CompareMetric[] = [
   { key: 'shoulderForward', group: 'side', unit: 'cm', ideal: 0, noise: 0.5, label: { es: 'Hombro fuera de la vertical', en: 'Shoulder off the vertical' }, plain: { es: 'Hombro respecto a la vertical', en: 'Shoulder against the vertical' } },
   { key: 'hipForward', group: 'side', unit: 'cm', ideal: 0, noise: 0.5, label: { es: 'Cadera fuera de la vertical', en: 'Hip off the vertical' }, plain: { es: 'Cadera respecto a la vertical', en: 'Hip against the vertical' } },
   { key: 'kneeForward', group: 'side', unit: 'cm', ideal: 0, noise: 0.5, label: { es: 'Rodilla fuera de la vertical', en: 'Knee off the vertical' }, plain: { es: 'Rodilla respecto a la vertical', en: 'Knee against the vertical' } },
+  { key: 'heightLoss', group: 'side', unit: 'cm', ideal: 0, noise: 0.5, label: { es: 'Altura que resta la postura', en: 'Height the posture takes' }, plain: { es: 'Altura que pierdes por la postura', en: 'Height your posture takes' } },
   { key: 'headTilt', group: 'front', unit: '°', ideal: 0, noise: 0.5, label: { es: 'Inclinación de la cabeza', en: 'Head tilt' }, plain: { es: 'Inclinación de la cabeza', en: 'Head tilt' } },
   { key: 'shoulderTilt', group: 'front', unit: '°', ideal: 0, noise: 0.5, label: { es: 'Inclinación de hombros', en: 'Shoulder tilt' }, plain: { es: 'Diferencia entre hombros', en: 'Difference between shoulders' } },
   { key: 'hipTilt', group: 'front', unit: '°', ideal: 0, noise: 0.5, label: { es: 'Inclinación de pelvis', en: 'Pelvic tilt' }, plain: { es: 'Diferencia entre caderas', en: 'Difference between hips' } },
@@ -88,6 +89,8 @@ export function compareValue(metrics: Metrics, key: CompareKey, views: { side: P
     case 'hipForward':
     case 'kneeForward':
       return s ? Math.abs(s[key]) : null
+    case 'heightLoss':
+      return s?.heightLoss ?? null
     case 'knees':
       return f?.kneeAngleR === undefined || f.kneeAngleL === undefined ? null : Math.max(Math.abs(f.kneeAngleR), Math.abs(f.kneeAngleL))
     default:

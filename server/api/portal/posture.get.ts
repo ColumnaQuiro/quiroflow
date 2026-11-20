@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
     patientIds = (own ?? []).map((p) => p.id)
   }
   const [{ data }, { data: sent }] = await Promise.all([
-    supabase.from('posture_assessments').select('id, taken_at, height_cm, views, metrics').eq('shared_with_patient', true).in('patient_id', patientIds).order('taken_at'),
+    supabase.from('posture_assessments').select('id, taken_at, height_cm, views, metrics').eq('shared_with_patient', true).eq('kind', 'posture').in('patient_id', patientIds).order('taken_at'),
     supabase.from('posture_comparisons').select('id, patient_id, before_assessment_id, after_assessment_id, note, created_by, updated_at').eq('shared_with_patient', true).in('patient_id', patientIds).order('updated_at', { ascending: false }),
   ])
   const rows = (data ?? []) as unknown as StoredRow[]

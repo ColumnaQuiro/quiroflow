@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   if (!assessmentId) throw createError({ statusCode: 400, statusMessage: 'Missing assessment id' })
 
   const { supabase } = await requireAuthedUser(event)
-  const { data: row } = await supabase.from('posture_assessments').select('id, account_id').eq('id', assessmentId).eq('shared_with_patient', true).maybeSingle()
+  const { data: row } = await supabase.from('posture_assessments').select('id, account_id').eq('id', assessmentId).eq('shared_with_patient', true).eq('kind', 'posture').maybeSingle()
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
 
   const service = serverSupabaseServiceRole<Database>(event)

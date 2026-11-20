@@ -103,6 +103,7 @@ export async function loadPostureCompareData(supabase: SupabaseClient<Database>,
     .select('id, patient_id, taken_at, height_cm, views, metrics')
     .in('id', [idA, idB])
     .eq('account_id', accountId)
+    .eq('kind', 'posture')
     .order('taken_at')
   const [b, a] = rows ?? []
   if (!a || !b || a.patient_id !== b.patient_id) return null

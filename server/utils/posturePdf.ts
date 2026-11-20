@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { POSTURE_GRID_COLOR, POSTURE_VIEWS, VIEW_POINTS, postureGrid, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
+import { POSTURE_GRID_COLOR, POSTURE_VIEWS, plumbLine, postureGrid, posturePointNames, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
 import { postureConclusion, postureEvolutionTable, postureProgressSentence, postureReportCopy, postureReportSections, viewTitle, type PostureHistoryEntry, type ReportLang } from '~/utils/postureReport'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendMetric, type TrendPoint } from '~/utils/postureTrend'
 
@@ -67,11 +67,13 @@ export function postureGridSvg(view: PostureView, p: Points, width: number, heig
  * assessment's points already placed on this photo (utils/postureCompare.ts),
  * drawn dashed white under these.
  */
-export function postureOverlaySvg(view: PostureView, p: Points, width: number, height: number, ghost: Points | null = null): string {
+export function postureOverlaySvg(view: PostureView, p: Points, width: number, height: number, ghost: Points | null = null, tilt: number | null = null): string {
   const paired = view === 'front' || view === 'back'
   const stroke = Math.max(2, Math.round(width / 300))
   const r = Math.max(6, Math.round(width / 90))
-  const plumbX = paired ? mid(p.ankleR!, p.ankleL!)[0] : p.ankle![0]
+  const base = paired ? mid(p.ankleR!, p.ankleL!) : p.ankle!
+  // The true vertical, which leans when the camera was not held straight.
+  const plumb = plumbLine(base[0], base[1], height, tilt)
   const joints = ['ear', 'shoulder', 'hip', 'knee', 'ankle']
   const chain = joints.map((k) => (paired ? mid(p[`${k}R`]!, p[`${k}L`]!) : p[k]!).join(',')).join(' ')
   const pairs = paired ? joints.map((k) => `<line x1="${p[`${k}R`]![0]}" y1="${p[`${k}R`]![1]}" x2="${p[`${k}L`]![0]}" y2="${p[`${k}L`]![1]}"/>`) : []
@@ -83,12 +85,17 @@ export function postureOverlaySvg(view: PostureView, p: Points, width: number, h
 <polyline points="${ghostChain}" fill="none" stroke="#fff" stroke-width="${stroke * 1.2}" stroke-linejoin="round" stroke-dasharray="${stroke * 3} ${stroke * 2.5}"/>
 <g fill="none" stroke="#fff" stroke-width="${stroke}">${ghostPts.map((g) => `<circle cx="${g![0].toFixed(1)}" cy="${g![1].toFixed(1)}" r="${(r * 0.6).toFixed(1)}"/>`).join('')}</g>`
     : ''
-  const dots = VIEW_POINTS[view].map((n) => `<circle cx="${p[n]![0]}" cy="${p[n]![1]}" r="${r}"/>`)
+  const dots = posturePointNames(view, p).map((n) => `<circle cx="${p[n]![0]}" cy="${p[n]![1]}" r="${r}"/>`)
+  // The Q-angle's lines, when its points were placed: spine to kneecap to tuberosity.
+  const qLines = view === 'front' && p.asisR && p.patellaR && p.tubR && p.asisL && p.patellaL && p.tubL
+    ? ['R', 'L'].map((s) => `<polyline points="${[p[`asis${s}`]!, p[`patella${s}`]!, p[`tub${s}`]!].map((q) => q.join(',')).join(' ')}"/>`).join('')
+    : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-<line x1="${plumbX}" y1="0" x2="${plumbX}" y2="${height}" stroke="#7CC4FF" stroke-width="${stroke}" stroke-dasharray="${stroke * 5} ${stroke * 4}"/>
+<line x1="${plumb.x1.toFixed(1)}" y1="0" x2="${plumb.x2.toFixed(1)}" y2="${height}" stroke="#7CC4FF" stroke-width="${stroke}" stroke-dasharray="${stroke * 5} ${stroke * 4}"/>
 ${ghostSvg}
 <g stroke="#FFB020" stroke-width="${stroke}">${pairs.join('')}</g>
 <polyline points="${chain}" fill="none" stroke="#FFB020" stroke-width="${stroke}" stroke-linejoin="round"/>
+<g fill="none" stroke="#5CD6A9" stroke-width="${stroke}" stroke-linejoin="round">${qLines}</g>
 <g fill="#FFB020" stroke="#fff" stroke-width="${stroke}">${dots.join('')}</g>
 </svg>`
 }
@@ -153,7 +160,7 @@ export async function loadPosturePhotos(supabase: SupabaseClient<Database>, view
           .resize(s.width, s.height, { fit: 'fill' })
           .composite([
             { input: Buffer.from(postureGridSvg(v, s.points, s.width, s.height)), top: 0, left: 0, blend: 'darken' },
-            { input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height, ghosts[v] ?? null)), top: 0, left: 0 },
+            { input: Buffer.from(postureOverlaySvg(v, s.points, s.width, s.height, ghosts[v] ?? null, s.tilt ?? null)), top: 0, left: 0 },
           ])
           .jpeg({ quality: 82 })
           .toBuffer()
@@ -181,6 +188,7 @@ export async function loadPostureReportData(supabase: SupabaseClient<Database>, 
     .select('id, patient_id, taken_at, height_cm, views, metrics')
     .eq('id', assessmentId)
     .eq('account_id', accountId)
+    .eq('kind', 'posture')
     .maybeSingle()
   if (!a) return null
   const views = a.views as unknown as StoredViews
@@ -192,7 +200,7 @@ export async function loadPostureReportData(supabase: SupabaseClient<Database>, 
     supabase.from('clinics').select('name, address, phone, email, timezone, logo_storage_path').eq('account_id', accountId).order('created_at').limit(1).maybeSingle(),
     // The evolution page: every assessment up to this one, not those after,
     // so a report reprinted later still says what it said then.
-    supabase.from('posture_assessments').select('taken_at, height_cm, views, metrics').eq('patient_id', a.patient_id).lt('taken_at', a.taken_at).order('taken_at'),
+    supabase.from('posture_assessments').select('taken_at, height_cm, views, metrics').eq('patient_id', a.patient_id).eq('kind', 'posture').lt('taken_at', a.taken_at).order('taken_at'),
   ])
   if (!patient) return null
 
@@ -321,8 +329,9 @@ export async function generatePostureReportPdf(data: PostureReportData): Promise
       doc.font('Helvetica').fontSize(9.5).fillColor(INK).text(copy.evolutionIntro, M, y, { width: W, lineGap: 2 })
       y = doc.y + 14
 
-      // The four that explain themselves; the knees stay in the table.
-      const charts = TREND_METRICS.filter((m) => m.key !== 'knees')
+      // The four that explain themselves; the knees and the alignment index
+      // stay in the table, which keeps the page to two rows of charts.
+      const charts = TREND_METRICS.filter((m) => m.key !== 'knees' && m.key !== 'alignment')
         .map((m) => ({ m, series: trendSeries(data.history, m.key) }))
         .filter((c) => c.series.length > 1)
       const gap = 12

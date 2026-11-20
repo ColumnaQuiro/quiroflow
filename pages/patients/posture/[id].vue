@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// A new posture assessment, on the web. The capture itself is
-// components/posture/Capture.vue, shared with the staff app.
+// A new posture assessment, on the web -- or a squat one, with ?kind=squat.
+// The capture itself is components/posture/Capture.vue, shared with the
+// staff app.
 const t = useT()
 const route = useRoute()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const patientId = route.params.id as string
+const kind = route.query.kind === 'squat' ? 'squat' : 'posture'
+const what = kind === 'squat' ? { en: 'Squat', es: 'Sentadilla' } : { en: 'Posture', es: 'Postura' }
 
 const patientName = ref('')
 onMounted(async () => {
@@ -17,7 +20,7 @@ onMounted(async () => {
 <template>
   <div class="flex h-full flex-col">
     <!-- "Postura · " with nothing after it until the name has loaded. -->
-    <PageHeader :title="patientName ? t(`Posture · ${patientName}`, `Postura · ${patientName}`) : t('Posture', 'Postura')" :meta="t('Estimates from photos, to document and explain — not a diagnosis.', 'Estimaciones a partir de fotos, para documentar y explicar — no para diagnosticar.')">
+    <PageHeader :title="patientName ? t(`${what.en} · ${patientName}`, `${what.es} · ${patientName}`) : t(what.en, what.es)" :meta="t('Estimates from photos, to document and explain — not a diagnosis.', 'Estimaciones a partir de fotos, para documentar y explicar — no para diagnosticar.')">
       <NuxtLink
         :to="`/patients/${patientId}?tab=progress`"
         class="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-ctl border border-transparent px-3.5 text-[13px] font-medium text-ink-muted2 outline-none hover:bg-surface-subtle focus-visible:shadow-focus touch:h-11"
@@ -32,6 +35,7 @@ onMounted(async () => {
           :patient-id="patientId"
           :account-id="store.accountId"
           :team-member-id="store.teamMember?.id ?? null"
+          :kind="kind"
           @saved="navigateTo(`/patients/${patientId}?tab=progress`)"
         />
       </div>

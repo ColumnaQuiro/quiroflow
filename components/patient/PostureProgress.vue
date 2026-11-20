@@ -54,8 +54,10 @@ const measured = computed(() =>
   })),
 )
 
-// The four that explain themselves; the knees stay with the clinic.
-const WORDS: Record<Exclude<TrendKey, 'knees'>, { short: [string, string]; label: [string, string]; ideal: [string, string]; help: [string, string] }> = {
+// The four that explain themselves; the knees and the alignment index (a
+// summary for the clinic to follow, not a number to explain) stay with it.
+type PatientKey = Exclude<TrendKey, 'knees' | 'alignment'>
+const WORDS: Record<PatientKey, { short: [string, string]; label: [string, string]; ideal: [string, string]; help: [string, string] }> = {
   headWeight: {
     short: ['Head weight', 'Peso de la cabeza'],
     label: ['What your neck holds', 'Peso que sostiene tu cuello'],
@@ -83,8 +85,8 @@ const WORDS: Record<Exclude<TrendKey, 'knees'>, { short: [string, string]; label
 }
 const word = (pair: [string, string]) => t(pair[0], pair[1])
 const metrics = computed(() =>
-  TREND_METRICS.filter((m) => m.key !== 'knees')
-    .map((m) => ({ ...m, words: WORDS[m.key as Exclude<TrendKey, 'knees'>], series: trendSeries(measured.value, m.key) }))
+  TREND_METRICS.filter((m) => m.key !== 'knees' && m.key !== 'alignment')
+    .map((m) => ({ ...m, words: WORDS[m.key as PatientKey], series: trendSeries(measured.value, m.key) }))
     .filter((m) => m.series.length > 0),
 )
 const key = ref<TrendKey>('headWeight')

@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const note = typeof body.note === 'string' ? body.note.trim().slice(0, 2000) : ''
 
   const { supabase, teamMember } = await requirePermission(event, 'visit_notes_access')
-  const { data: rows } = await supabase.from('posture_assessments').select('id, patient_id, taken_at').in('id', [body.beforeId, body.afterId]).eq('account_id', teamMember.account_id).order('taken_at')
+  const { data: rows } = await supabase.from('posture_assessments').select('id, patient_id, taken_at').in('id', [body.beforeId, body.afterId]).eq('account_id', teamMember.account_id).eq('kind', 'posture').order('taken_at')
   const [before, after] = rows ?? []
   if (!before || !after || before.patient_id !== after.patient_id) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
   const patientId = after.patient_id

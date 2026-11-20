@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifySupabaseFailure, classifySupabaseNetworkFailure, dataOrThrow, isRefusedWrite, scrubPostgrestMessage, watchSupabaseFailures } from '../../utils/supabaseFailures'
+import { classifySupabaseFailure, classifySupabaseNetworkFailure, dataOrThrow, isRefusedWrite, scrubPostgrestMessage, supabaseFailureFingerprint, watchSupabaseFailures } from '../../utils/supabaseFailures'
 
 // utils/supabaseFailures.ts: which Supabase responses count as a failed
 // query, what is said about them, and that nothing patient-shaped is.
@@ -180,5 +180,25 @@ describe('dataOrThrow', () => {
     expect(dataOrThrow({ data: null, error: null }), 'maybeSingle with no row').to.eq(null)
     const error = Object.assign(new Error('column x does not exist'), { code: '42703' })
     expect(() => dataOrThrow({ data: null, error })).to.throw('column x does not exist')
+  })
+})
+
+describe('supabaseFailureFingerprint', () => {
+  it('keeps one issue per broken query', () => {
+    const f = classify(400, { code: '42703', message: 'column payments.created_by does not exist' })!
+    expect(supabaseFailureFingerprint(f)).to.deep.eq(['supabase-failure', '42703', 'GET', 'payments', 'column payments.created_by does not exist'])
+    // A Postgres error behind a 500 is still about its query.
+    const timeout = classify(500, { code: '57014', message: 'canceling statement due to statement timeout' }, 'POST', rpc)!
+    expect(supabaseFailureFingerprint(timeout)).to.include('rpc/get_my_bootstrap')
+  })
+
+  it('makes a gateway outage one issue, whichever tables it caught', () => {
+    const a = classify(555, null, 'GET')!
+    const b = classify(555, null, 'POST', rpc)!
+    expect(supabaseFailureFingerprint(a)).to.deep.eq(['supabase-failure', 'gateway', 'http_555'])
+    expect(supabaseFailureFingerprint(b)).to.deep.eq(supabaseFailureFingerprint(a))
+    expect(supabaseFailureFingerprint(classify(502, null)!)).to.deep.eq(['supabase-failure', 'gateway', 'http_502'])
+    // A 4xx without a code is not an outage.
+    expect(supabaseFailureFingerprint(classify(400, null)!)).to.include('payments')
   })
 })

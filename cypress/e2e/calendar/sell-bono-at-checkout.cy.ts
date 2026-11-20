@@ -125,4 +125,64 @@ describe('Selling a bono at the visit checkout', () => {
       })
     })
   })
+
+  // The visit that uses up a bono is paid by that bono, so the checkout -- and
+  // its "Sell a bono" -- is gone by the time the patient asks for the next one.
+  // Reception had to leave the appointment to sell it (19 Nov).
+  it('sells the next bono once this visit has used up the last session, drawing nothing from it', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30, defaultPriceCents: 5500 })
+      cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono 12', sessionCount: 12, priceCents: 52800 })
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lena', lastName: 'Lastsession' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 10',
+          sessionsTotal: 10,
+          sessionsUsed: 9,
+          priceCents: 46000,
+        }).then((oldBono: any) => {
+          cy.login(account.email, account.password)
+          bookAndOpen('Lena Lastsession', 'Consultation')
+
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            // Not offered while the visit still has a bono session to draw.
+            cy.get('[data-cy=next-bono]').should('not.exist')
+            cy.get('[data-cy=visit-checkout]').within(() => {
+              cy.get('[data-cy=checkout-bono]').should('contain.text', '1 left, 0 after this visit')
+              cy.get('[data-cy=checkout-process]').click()
+            })
+            cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('not.exist')
+
+            cy.get('[data-cy=next-bono]', { timeout: 15000 }).within(() => {
+              cy.get('[data-cy=next-bono-open]').should('contain.text', 'Sell a new bono').click()
+              cy.get('[data-cy=next-bono-sell]').should('be.disabled')
+              chooseBono12()
+              cy.get('[data-cy=checkout-sell-amount]').should('have.value', '528.00')
+              cy.get('[data-cy=next-bono-sell]').should('contain.text', 'Sell Bono 12').click()
+              cy.get('[data-cy=next-bono-sold]', { timeout: 15000 }).should('contain.text', 'Bono 12 sold')
+            })
+          })
+
+          cy.task('db:packagePurchasesFor', { patientId: patient.id }).then((purchases: any) => {
+            expect(purchases, 'the old bono and the new one').to.have.length(2)
+            const fresh = purchases.find((p: any) => p.package_name === 'Bono 12')
+            expect(fresh, 'Bono 12 sold').to.exist
+            cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: fresh.id }).then((eff: any) => {
+              expect(eff.purchase.sessions_used, 'nothing drawn from the new bono').to.eq(0)
+            })
+            cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: oldBono.id }).then((eff: any) => {
+              expect(eff.purchase.sessions_used, "this visit was the old bono's last").to.eq(10)
+              expect(eff.sessions, 'one session for this visit').to.have.length(1)
+            })
+            cy.task('db:paymentsFor', { patientId: patient.id }).then((payments: any) => {
+              expect(payments, 'the new bono, paid in full').to.have.length(1)
+              expect(payments[0].amount_cents).to.eq(52800)
+              expect(payments[0].package_purchase_id).to.eq(fresh.id)
+            })
+          })
+        })
+      })
+    })
+  })
 })

@@ -110,7 +110,14 @@ onBeforeUnmount(() => observer?.disconnect())
 const pillText = computed(() => stageLabel(props.view.stage, props.view.arrivedAt))
 const owesText = computed(() => t(`Owes ${formatEur(props.view.owesCents)}`, `Debe ${formatEur(props.view.owesCents)}`))
 const formsText = computed(() => pendingFormsLabel(props.view.pendingForms, t))
-const bonoText = computed(() => (props.view.bono ? `Bono ${props.view.bono.remaining}/${props.view.bono.total}` : ''))
+// Two or more live bonos (their own and a family one shared with them): the
+// checkout asks which pays, so the block names none of them either.
+const severalBonos = computed(() => (props.view.bono?.choices ?? 0) > 1)
+const bonoText = computed(() => {
+  const bono = props.view.bono
+  if (!bono) return ''
+  return severalBonos.value ? t(`${bono.choices} bonos`, `${bono.choices} bonos`) : `Bono ${bono.remaining}/${bono.total}`
+})
 
 // "09:30" and its gap, at the 11.5px mono the time is set in.
 const LEAD_TIME_PX = 40
@@ -175,7 +182,7 @@ const boxClass = computed(() => {
   }
 })
 
-const lowBono = computed(() => !!props.view.bono && props.view.bono.remaining <= 1)
+const lowBono = computed(() => !!props.view.bono && !severalBonos.value && props.view.bono.remaining <= 1)
 const struck = computed(() => props.view.stage === 'noshow' || props.view.stage === 'cancelled')
 
 const metaText = computed(() => {

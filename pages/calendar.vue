@@ -669,11 +669,14 @@ async function loadAppointments(silent = false, keepClasses = false) {
   }
 }
 
+type RangePackage = { patient_id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean; purchased_at: string | null }
 // What calendar_range_details returns: the rows of the selects it replaced,
 // under the caller's own policies, each read below exactly as it was.
 interface RangeDetails {
   visit_payments: VisitPaymentRows
-  package_purchases: { patient_id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }[]
+  package_purchases: RangePackage[]
+  /** Live bonos shared with these patients (a family bono), from 20261120093315. */
+  shared_package_purchases: RangePackage[]
   reschedules: { appointment_id: string }[]
   balances: { patient_id: string | null; outstanding_cents: number | null }[]
   future_appointments: { id: string; patient_id: string }[]
@@ -800,7 +803,9 @@ function reloadAfterChange({ money = true }: { money?: boolean } = {}) {
 }
 
 const visitPaymentById = ref<Record<string, VisitPayment>>({})
-const activePackageByPatient = ref<Record<string, { package_name: string; sessions_total: number; sessions_used: number }>>({})
+// Every bono each patient can draw from, their own and those shared with
+// them; bonoForVisit picks out the live ones.
+const packagesByPatient = ref<Record<string, RangePackage[]>>({})
 const movedCountById = ref<Record<string, number>>({})
 interface WaitlistOffer {
   id: string
@@ -816,21 +821,17 @@ const waitlistOffers = ref<WaitlistOffer[]>([])
 // Second-rank detail -- how each visit was paid, the bono count, how often a
 // visit was moved, the waitlist offers standing on freed slots.
 function applyBlockDetails(appointmentIds: string[], details: Partial<RangeDetails>) {
-  // Packs arrive newest first.
-  const packages = details.package_purchases ?? []
+  const packages = [...(details.package_purchases ?? []), ...(details.shared_package_purchases ?? [])]
   const reschedules = details.reschedules ?? []
   const offers = details.waitlist_offers ?? []
 
   visitPaymentById.value = visitPaymentsFromRows(appointmentIds, details.visit_payments)
-  // Newest pack with sessions left, per patient -- the one tomorrow's visit
-  // will draw from (bonoForVisit). A bono PracticeHub has closed keeps the
-  // sessions that were on it and is not one of them.
-  const active: typeof activePackageByPatient.value = {}
-  for (const p of packages) {
-    if (active[p.patient_id] || p.is_closed || p.sessions_used >= p.sessions_total) continue
-    active[p.patient_id] = p
-  }
-  activePackageByPatient.value = active
+  // Per patient, the packs tomorrow's visit could draw from (bonoForVisit):
+  // a family bono shared with them counts as much as one of their own, and
+  // holding two means the checkout asks which.
+  const byPatient: typeof packagesByPatient.value = {}
+  for (const p of packages) (byPatient[p.patient_id] ??= []).push(p)
+  packagesByPatient.value = byPatient
   const moved: Record<string, number> = {}
   for (const r of reschedules) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
   movedCountById.value = moved
@@ -1467,7 +1468,7 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     typeColor: appt.appointment_types?.color ?? null,
     practitionerName: firstName(appt.team_members?.full_name),
     owesCents: owesCents(appt.patient_id),
-    bono: bonoForVisit(payment, activePackageByPatient.value[appt.patient_id]),
+    bono: bonoForVisit(payment, packagesByPatient.value[appt.patient_id]),
     hasNote: !!appt.patients?.sticky_note?.trim(),
     pendingForms: pendingFormsFlag(stage, appt.starts_at, appt.patients?.pending_forms, now.value),
     redFlags: appt.patients?.red_flags?.trim() || null,

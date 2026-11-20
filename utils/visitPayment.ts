@@ -19,6 +19,8 @@
 // browser or a seeded database -- the same reason utils/billing.ts is
 // separate from the screens that print money.
 
+import { bonoInUse, sortBonos, type OrderableBono } from './bonoOrder'
+
 export interface VisitPaymentInput {
   /**
    * A package_sessions row for this appointment, if the visit drew on a bono.
@@ -113,6 +115,14 @@ export interface VisitBono {
   total: number
   /** true once this visit has drawn its session; false while it is still to come. */
   drawn: boolean
+  /**
+   * How many live bonos a visit still to come could draw from: the patient's
+   * own and any shared with them. Two or more and the block and hover card
+   * name none of them -- which one pays is the front desk's choice at
+   * checkout -- and the fields above describe the first of them in
+   * sortBonos order, for a screen that still names one. 1 once drawn.
+   */
+  choices: number
 }
 
 /**
@@ -123,16 +133,21 @@ export interface VisitBono {
  * rightly says `none` -- but the front desk still wants to see "Bono 3/10" on
  * tomorrow's block, because that is the pack the visit is going to come out
  * of. So, and only while the visit is neither drawn nor charged, the
- * patient's active pack stands in. A visit that was charged instead is paid
- * the other way, and naming a bono beside it would say it was paid twice.
+ * patient's packs stand in: their own and those shared with them (a family
+ * bono), whichever are still live -- open, sessions left; a bono PracticeHub
+ * closed keeps the sessions on its counter and is not one of them. One is
+ * named; with two or more, `choices` says how many and the block names none. A visit that was charged
+ * instead is paid the other way, and naming a bono beside it would say it
+ * was paid twice.
  */
 export function bonoForVisit(
   payment: VisitPayment,
-  activePackage: { package_name: string; sessions_total: number; sessions_used: number } | null | undefined,
+  packages: readonly (OrderableBono & { package_name: string })[] | null | undefined,
 ): VisitBono | null {
-  if (payment.kind === 'bono') return { packageName: payment.packageName, remaining: payment.remaining, total: payment.total, drawn: true }
-  if (payment.kind !== 'none' || !activePackage) return null
-  const remaining = Math.max(0, activePackage.sessions_total - activePackage.sessions_used)
-  if (remaining === 0) return null
-  return { packageName: activePackage.package_name, remaining, total: activePackage.sessions_total, drawn: false }
+  if (payment.kind === 'bono') return { packageName: payment.packageName, remaining: payment.remaining, total: payment.total, drawn: true, choices: 1 }
+  if (payment.kind !== 'none') return null
+  const live = sortBonos((packages ?? []).filter(bonoInUse))
+  const first = live[0]
+  if (!first) return null
+  return { packageName: first.package_name, remaining: first.sessions_total - first.sessions_used, total: first.sessions_total, drawn: false, choices: live.length }
 }

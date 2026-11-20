@@ -379,18 +379,29 @@ describe('Hatching: when anybody works', () => {
 })
 
 describe('Bono on a block', () => {
-  const pack = { package_name: 'Bono 10', sessions_total: 10, sessions_used: 7 }
+  const pack = { package_name: 'Bono 10', sessions_total: 10, sessions_used: 7, is_closed: false, purchased_at: '2026-10-01T10:00:00Z' }
   it('uses the drawn session when there is one', () => {
-    expect(bonoForVisit({ kind: 'bono', packageName: 'Bono 12', remaining: 4, total: 12, reference: null }, pack)).to.deep.equal({ packageName: 'Bono 12', remaining: 4, total: 12, drawn: true })
+    expect(bonoForVisit({ kind: 'bono', packageName: 'Bono 12', remaining: 4, total: 12, reference: null }, [pack])).to.deep.equal({ packageName: 'Bono 12', remaining: 4, total: 12, drawn: true, choices: 1 })
   })
   it('names the pack a future visit will draw from', () => {
-    expect(bonoForVisit({ kind: 'none' }, pack)).to.deep.equal({ packageName: 'Bono 10', remaining: 3, total: 10, drawn: false })
+    expect(bonoForVisit({ kind: 'none' }, [pack])).to.deep.equal({ packageName: 'Bono 10', remaining: 3, total: 10, drawn: false, choices: 1 })
   })
   it('names no bono beside a visit that was charged instead', () => {
-    expect(bonoForVisit({ kind: 'unpaid', invoiceNumber: 'INV-1', totalCents: 4500 }, pack)).to.equal(null)
-    expect(bonoForVisit({ kind: 'settled', methods: ['card'], facturaNumber: null, invoiceNumber: 'INV-2' }, pack)).to.equal(null)
+    expect(bonoForVisit({ kind: 'unpaid', invoiceNumber: 'INV-1', totalCents: 4500 }, [pack])).to.equal(null)
+    expect(bonoForVisit({ kind: 'settled', methods: ['card'], facturaNumber: null, invoiceNumber: 'INV-2' }, [pack])).to.equal(null)
   })
-  it('ignores a used-up pack', () => {
-    expect(bonoForVisit({ kind: 'none' }, { ...pack, sessions_used: 10 })).to.equal(null)
+  it('ignores a used-up pack, and one PracticeHub closed with sessions on it', () => {
+    expect(bonoForVisit({ kind: 'none' }, [{ ...pack, sessions_used: 10 }])).to.equal(null)
+    expect(bonoForVisit({ kind: 'none' }, [{ ...pack, is_closed: true }])).to.equal(null)
+    expect(bonoForVisit({ kind: 'none' }, [])).to.equal(null)
+  })
+  it('counts every live pack, a shared family one as much as their own, and names the newest', () => {
+    const family = { ...pack, package_name: 'Bono Familia', sessions_used: 2, purchased_at: '2026-11-01T10:00:00Z' }
+    const closed = { ...pack, package_name: 'Bono Viejo', is_closed: true, purchased_at: '2026-11-10T10:00:00Z' }
+    expect(bonoForVisit({ kind: 'none' }, [pack, closed, family])).to.deep.equal({ packageName: 'Bono Familia', remaining: 8, total: 10, drawn: false, choices: 2 })
+  })
+  it('names the drawn one once the visit has drawn, however many are live', () => {
+    const family = { ...pack, package_name: 'Bono Familia' }
+    expect(bonoForVisit({ kind: 'bono', packageName: 'Bono 10', remaining: 2, total: 10, reference: null }, [pack, family])?.choices).to.equal(1)
   })
 })

@@ -121,13 +121,20 @@ export function stepTitle(t: Translate, step: DraftStep, lookup: NameLookup): st
   }
 }
 
-export function conditionText(t: Translate, cond: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string }, lookup: NameLookup): string {
+export function conditionText(t: Translate, cond: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string; answer_key?: string }, lookup: NameLookup): string {
   const def = conditionFieldDef(String(cond.field ?? ''))
   if (!def) return t('(no question)', '(sin pregunta)')
   const op = def.ops.find((o) => o.op === cond.op)
   if (def.value === 'doc_answer') {
     // The question itself reads better on the canvas than "Form answer".
     const question = lookup.docTemplates?.find((d) => d.id === cond.doc_template_id)?.fields.find((f) => f.id === cond.doc_field_id)?.label
+    const subject = question ? `«${question.length > 60 ? `${question.slice(0, 57)}…` : question}»` : say(t, def.label)
+    return [subject, op ? say(t, op.label) : '', String(cond.value ?? '')].filter(Boolean).join(' ')
+  }
+  if (def.value === 'lead_answer') {
+    // The key is the question folded to a token ("en_una_escala_del_1_al_10…"),
+    // which reads back well enough with its underscores turned into spaces.
+    const question = String(cond.answer_key ?? '').replace(/^answer_/, '').replace(/_/g, ' ').trim()
     const subject = question ? `«${question.length > 60 ? `${question.slice(0, 57)}…` : question}»` : say(t, def.label)
     return [subject, op ? say(t, op.label) : '', String(cond.value ?? '')].filter(Boolean).join(' ')
   }

@@ -25,7 +25,7 @@ const t = useT()
 const config = computed(() => b.stepsById.value.get(props.stepId)!.config)
 const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, patch)
 
-type Cond = { field: string; op: string; value?: unknown; doc_template_id?: string; doc_field_id?: string }
+type Cond = { field: string; op: string; value?: unknown; doc_template_id?: string; doc_field_id?: string; answer_key?: string }
 
 // ---- answers on a form
 // Blocks a person answers; headings and text blocks ask nothing, and a
@@ -68,6 +68,22 @@ function answerOps(c: Cond) {
   const ops = conditionFieldDef('doc_answer')!.ops
   return isNumeric(questionOf(c)) ? ops.filter((o) => o.op !== 'contains') : ops.filter((o) => o.op === 'is' || o.op === 'contains')
 }
+// ---- answers on the lead form they came in through
+// The questions leads have already answered, as {{answer_…}} keys. Free
+// text: "at least 7" reads a leading number, and an answer that is not one
+// ("in two weeks") goes down "No".
+const leadQuestionOptions = computed(() => b.leadQuestions.value)
+const leadNumberOp = (op: string) => op === 'gte' || op === 'lte'
+function setLeadQuestion(i: number, key: string) {
+  update(i, { ...conditions.value[i]!, answer_key: key })
+}
+function setLeadOp(i: number, op: string) {
+  const c = conditions.value[i]!
+  // A number compared as text, or the other way round, would never match.
+  const value = leadNumberOp(op) !== leadNumberOp(c.op) ? undefined : c.value
+  update(i, { ...c, op, value })
+}
+
 const conditions = computed<Cond[]>(() => (Array.isArray(config.value.conditions) ? config.value.conditions : []))
 const fields = computed(() =>
   BRANCH_FIELDS.filter((f) => (f.subject === 'lead' ? b.isLead.value : f.subject === 'patient' ? !b.isLead.value : true)).filter(
@@ -78,6 +94,7 @@ const fields = computed(() =>
 function defaultFor(def: ConditionFieldDef): Cond {
   const op = def.ops[0]!.op
   if (def.value === 'doc_answer') return answerCondition(formOptions.value[0]?.id)
+  if (def.value === 'lead_answer') return { field: def.field, op: 'gte', answer_key: leadQuestionOptions.value[0]?.key, value: 7 }
   if (def.value === 'balance') return { field: def.field, op: 'lt', value: 0 }
   if (def.value === 'multi') return { field: def.field, op, value: [] }
   if (def.value === 'channel') return { field: def.field, op, value: 'whatsapp' }
@@ -184,6 +201,28 @@ function setBalance(i: number, value: string) {
           <p v-if="questionOf(c)?.type === 'scale'" :class="HINT">{{ t('The scale goes from 0 to 10.', 'La escala va de 0 a 10.') }}</p>
           <p v-else-if="questionOf(c)?.type === 'rating'" :class="HINT">{{ t('Stars, from 1 to 5.', 'Estrellas, de 1 a 5.') }}</p>
         </template>
+        <template v-else-if="c.field === 'lead_answer'">
+          <select :class="FIELD" :value="c.answer_key ?? ''" :aria-label="t('Question on the lead form', 'Pregunta del formulario')" data-test="condition-lead-question" @change="setLeadQuestion(i, ($event.target as HTMLSelectElement).value)">
+            <option value="" disabled>{{ t('Choose a question…', 'Elige una pregunta…') }}</option>
+            <option v-for="q in leadQuestionOptions" :key="q.key" :value="q.key">{{ q.question }}</option>
+          </select>
+          <div class="flex flex-wrap gap-1.5">
+            <select :class="[FIELD, 'w-auto flex-none']" :value="c.op" :aria-label="t('Comparison', 'Comparación')" data-test="condition-op" @change="setLeadOp(i, ($event.target as HTMLSelectElement).value)">
+              <option v-for="o in conditionFieldDef('lead_answer')!.ops" :key="o.op" :value="o.op">{{ say(t, o.label) }}</option>
+            </select>
+            <input
+              v-if="leadNumberOp(c.op)"
+              type="number"
+              :class="FIELD_NUMBER"
+              :value="c.value as number"
+              data-test="condition-value"
+              @input="update(i, { ...c, value: ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value) })"
+            />
+            <input v-else :class="[FIELD, 'flex-1']" :value="(c.value as string) ?? ''" data-test="condition-value" @input="update(i, { ...c, value: ($event.target as HTMLInputElement).value })" />
+          </div>
+          <p v-if="!leadQuestionOptions.length" :class="HINT">{{ t('The questions appear once a lead has come in through a form.', 'Las preguntas aparecen cuando ha entrado algún lead por un formulario.') }}</p>
+          <p v-else-if="leadNumberOp(c.op)" :class="HINT">{{ t('Answers are free text: one that does not start with a number goes down "No".', 'Las respuestas son texto libre: si no empieza por un número, va por «No».') }}</p>
+        </template>
         <template v-else-if="conditionFieldDef(c.field)">
           <select v-if="conditionFieldDef(c.field)!.value === 'balance'" :class="FIELD" :value="balanceValue(c)" @change="setBalance(i, ($event.target as HTMLSelectElement).value)">
             <option v-for="o in BALANCE_OPTIONS" :key="o.value" :value="o.value">{{ say(t, o.label) }}</option>
@@ -225,7 +264,7 @@ function setBalance(i: number, value: string) {
       <span :class="SECTION">{{ t('You can ask about', 'Puedes preguntar por') }}</span>
       <p :class="HINT">
         {{ b.isLead.value
-          ? t('Lead stage, source and channel, whether they replied or opened the last email, whether they have a phone or email.', 'Etapa, origen y canal del lead, si respondió o abrió el último email, si tiene teléfono o email.')
+          ? t('Lead stage, source and channel, their answers on the lead form, whether they replied or opened the last email, whether they have a phone or email.', 'Etapa, origen y canal del lead, sus respuestas al formulario, si respondió o abrió el último email, si tiene teléfono o email.')
           : t('Future appointment, number of visits, tags, balance, active membership, the appointment type and practitioner, marketing consent, whether they replied or opened or clicked the email, and their answers on a form.', 'Cita futura, nº de visitas, etiquetas, saldo, membresía activa, tipo de cita y profesional, consentimiento de marketing, si respondió, abrió o hizo clic en el email, y sus respuestas a un formulario.') }}
       </p>
     </div>

@@ -560,16 +560,20 @@ function initialsOf(a: Appointment) {
     <!-- One back plane from the top of the screen to the lip: the header, the
          refresh disc and the day's figures share one grid, and scroll away
          with the day. The scroller's own background is the plane's colour at
-         the top, so pulling past the top shows the plane, never a dark band. -->
+         the top, so pulling past the top shows the plane, never a dark band.
+         That background is pinned to the viewport, not to the content, so
+         everything below the plane paints the sheet itself (and fills to the
+         bottom); otherwise the top half of the screen shows the plane's
+         colour behind whatever card scrolls up into it. -->
     <div
       ref="scroller"
-      class="min-h-0 flex-1 overflow-y-auto"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto"
       style="background: linear-gradient(rgb(var(--plane)) 50%, rgb(var(--color-surface-page)) 50%)"
       @touchstart="onTouchStart"
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
     >
-      <div class="qf-plane qf-lip px-3.5 lg:px-5">
+      <div class="qf-plane qf-lip shrink-0 px-3.5 lg:px-5">
         <AppPageHeader :title="t('My Day', 'Mi día')" :sub="dateLabel" lip="none" class="-mx-3.5 lg:-mx-5">
           <StaffHelpButton v-if="context" />
           <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" :class="privacy ? 'bg-brand text-brand-on' : 'bg-surface text-ink-900'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
@@ -659,7 +663,7 @@ function initialsOf(a: Appointment) {
            On an iPad (lg) the visits on the left and the rest on the right;
            the two wrappers are display:contents below lg, so their children
            fall back into this single column, kept in order by order-*. -->
-        <div class="flex flex-col gap-2.5 px-3.5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 lg:px-5 lg:py-4">
+        <div class="flex shrink-0 grow flex-col gap-2.5 bg-surface-page px-3.5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:content-start lg:items-start lg:gap-5 lg:px-5 lg:py-4">
         <!-- Registro de jornada: the clock, first thing (components/timeclock/ClockCard.vue). -->
         <TimeclockClockCard v-if="context" class="order-first lg:col-span-2" :account-id="context.accountId" :team-member-id="context.teamMemberId" :time-zone="timeZone" month-to="/jornada" />
         <PractitionerLowStock v-if="context?.isOwner" class="order-first lg:col-span-2" />

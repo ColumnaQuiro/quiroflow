@@ -1168,7 +1168,7 @@ watch([viewMode, anchorDate, practitionerFilter], () => {
   loadRange()
 })
 
-// A clinic with no rooms (Settings -> Calendar Resources) has one column a
+// A clinic with no rooms (Settings -> Rooms) has one column a
 // day, and it is not "Unassigned": there is nothing to assign a visit to.
 // Headed "Sin asignar", it read as "these visits are missing something" --
 // a clinic with two practitioners and no rooms then made a room per

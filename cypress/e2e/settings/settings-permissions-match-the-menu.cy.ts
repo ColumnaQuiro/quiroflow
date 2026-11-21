@@ -107,7 +107,7 @@ describe('Settings permissions match the menu', () => {
     })
   })
 
-  it('gates Online Booking, Scheduling Policies and New Patient Fields like the menu, and shows only the cards a role can open', () => {
+  it('gates Online Booking, Changes & cancellations and New Patient Fields like the menu, and shows only the cards a role can open', () => {
     cy.seedStaffAccount().then((account) => {
       member(account, { settings_access: true, clinic_config: false, billing_config: false, communication_config: true, dashboard_scope: 'all' }).then((email) => {
         cy.login(email, PASSWORD)
@@ -119,9 +119,12 @@ describe('Settings permissions match the menu', () => {
         cy.contains('a', 'Messages').should('have.attr', 'href', '/settings/messages')
         // The Settings cards, in the page itself: the sidebar has a "Team"
         // link of its own (team messages), open to everyone.
-        for (const hidden of ['Online Booking', 'Products & stock', 'Team', 'VeriFactu', 'API & Tokens']) {
-          cy.get('main').contains('a', hidden).should('not.exist')
+        // By address, not text: "Team" is also in "Team alerts", which this
+        // role does get.
+        for (const hidden of ['/settings/online-booking', '/settings/products', '/settings/team', '/settings/verifactu', '/settings/developers']) {
+          cy.get(`main a[href="${hidden}"]`).should('not.exist')
         }
+        cy.get('main a[href="/settings/team-alerts"]').should('exist')
       })
     })
   })

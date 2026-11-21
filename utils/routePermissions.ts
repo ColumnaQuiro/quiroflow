@@ -65,7 +65,7 @@ const rules: Rule[] = [
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {
-    test: (p) => ['/settings/messages', '/settings/communications-general', '/settings/whatsapp', '/settings/instagram', '/settings/webchat', '/settings/saved-replies', '/settings/docs', '/settings/letters', '/settings/leads', '/settings/recalls'].includes(p),
+    test: (p) => ['/settings/messages', '/settings/communications-general', '/settings/whatsapp', '/settings/instagram', '/settings/webchat', '/settings/saved-replies', '/settings/docs', '/settings/letters', '/settings/leads', '/settings/recalls', '/settings/team-alerts', '/settings/reviews'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'communication_config'),
   },
   // /campaigns and /growth/automations redirect here; the old prefix keeps its

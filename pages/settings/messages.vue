@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type { TablesUpdate } from '~/types/database.types'
-import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { clampReminderDays, MAX_REMINDER_DAYS, REMINDER_SEND_HOUR } from '~/utils/appointmentReminderDue'
 
 // Settings > Messages (was Communication > General, which still redirects
-// here): what patients are sent on their own around each appointment, and
-// the details those messages use. New-lead alerts moved to Settings > Leads,
-// next to the rest of how leads are handled.
+// here): what patients are sent on their own around each appointment.
+//
+// It also held two settings that were never about these messages, under
+// "Details messages use": the default phone country, now in Settings > New
+// Patient Fields beside the phone field it fills in, and the Google review
+// link, now Settings > Reviews. The alerts to staff about a new booking or
+// lead are in Settings > Team alerts.
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -30,19 +33,6 @@ function reminderDaysLabel(days: number) {
 const emailReminderSubject = ref('')
 const emailReminderBody = ref('')
 
-// Backs the {{google_review_link}} / "Google review link" merge field used
-// by the appointment.review_request campaign trigger (Campaigns), not by
-// the confirmation/reminder sends on this page -- kept here anyway since
-// this is the account's one general communications settings page.
-const googleReviewUrl = ref('')
-
-
-
-// Which country a phone number belongs to when nothing says otherwise --
-// the "add a number" field, the new-patient forms, the public booking page,
-// and an import's fallback. Chosen at onboarding; changed here.
-const defaultPhoneCountry = ref('ES')
-
 const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
@@ -52,7 +42,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_days_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_days_before, email_reminder_subject, email_reminder_body',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -65,8 +55,6 @@ async function load() {
   reminderDaysBefore.value = clampReminderDays(data?.appointment_reminder_days_before)
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
-  googleReviewUrl.value = data?.google_review_url ?? ''
-  defaultPhoneCountry.value = data?.default_phone_country ?? 'ES'
   loading.value = false
 }
 onMounted(load)
@@ -101,8 +89,6 @@ async function save() {
     appointment_reminder_days_before: clampReminderDays(reminderDaysBefore.value),
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
-    google_review_url: googleReviewUrl.value.trim() || null,
-    default_phone_country: defaultPhoneCountry.value,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -110,7 +96,6 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
-  store.defaultPhoneCountry = defaultPhoneCountry.value
   showToast(t('Saved', 'Guardado'))
 }
 
@@ -174,7 +159,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="messages-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('What patients are sent on their own around each appointment, and the details those messages use.', 'Lo que se envía solo a los pacientes en torno a cada cita, y los datos que usan esos mensajes.') }}
+            {{ t('What patients are sent on their own around each appointment.', 'Lo que se envía solo a los pacientes en torno a cada cita.') }}
           </p>
 
           <template v-if="loading">
@@ -282,35 +267,11 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               </template>
             </section>
 
-            <section aria-labelledby="h-details" class="overflow-hidden rounded-card border border-line bg-surface">
-              <h2 id="h-details" class="px-[18px] pb-2 pt-4 text-[16px] font-bold text-ink-900">{{ t('Details messages use', 'Datos que usan los mensajes') }}</h2>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="phone-country" class="text-[14.5px] font-bold text-ink-900">{{ t('Default phone country', 'País de teléfono por defecto') }}</label>
-                  <span class="text-[13px] leading-snug text-ink-500">
-                    {{ t('For a number typed without a prefix: at the desk, for a new patient, on the booking page, or in an import.', 'Para un número escrito sin prefijo: en recepción, para un paciente nuevo, en la página de reservas o en una importación.') }}
-                  </span>
-                </div>
-                <select id="phone-country" v-model="defaultPhoneCountry" data-cy="default-phone-country" :class="[inputClass, 'w-full sm:w-[280px]']">
-                  <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
-                </select>
-              </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="review-url" class="text-[14.5px] font-bold text-ink-900">{{ t('Google review link', 'Enlace de reseñas de Google') }}</label>
-                  <span class="text-[13px] leading-snug text-ink-500">
-                    {{ t('Where the review-request automation in', 'Adónde envía a los pacientes la solicitud de reseña de') }}
-                    <NuxtLink to="/automations" class="font-semibold text-brand-text hover:underline">{{ t('Automations', 'Automatizaciones') }}</NuxtLink>
-                    {{ t('sends patients.', '.') }}
-                  </span>
-                </div>
-                <input id="review-url" v-model="googleReviewUrl" type="url" placeholder="https://g.page/r/…/review" :class="[inputClass, 'w-full sm:w-[280px]']" />
-              </div>
-            </section>
-
-            <p class="flex gap-2.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
-              {{ t('New lead alerts moved to', 'Los avisos de nuevos leads están ahora en') }}
-              <NuxtLink to="/settings/leads" data-cy="messages-leads-link" class="font-semibold text-brand-text hover:underline">{{ t('Leads', 'Leads') }}</NuxtLink>{{ t(', next to the rest of how leads are handled.', ', junto al resto de cómo se gestionan los leads.') }}
+            <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="messages-moved">
+              {{ t('Alerts to the team about a new booking or lead are in', 'Los avisos al equipo de una reserva o un lead nuevos están en') }}
+              <NuxtLink to="/settings/team-alerts" data-cy="messages-team-alerts-link" class="font-semibold text-brand-text hover:underline">{{ t('Team alerts', 'Avisos al equipo') }}</NuxtLink>{{ t('; the default phone country in', '; el país de teléfono por defecto, en') }}
+              <NuxtLink to="/settings/new-patient-fields" data-cy="messages-phone-country-link" class="font-semibold text-brand-text hover:underline">{{ t('New Patient Fields', 'Campos de nuevo paciente') }}</NuxtLink>{{ t('; and the Google review link in', '; y el enlace de reseñas de Google, en') }}
+              <NuxtLink to="/settings/reviews" data-cy="messages-reviews-link" class="font-semibold text-brand-text hover:underline">{{ t('Reviews', 'Reseñas') }}</NuxtLink>.
             </p>
           </template>
         </div>

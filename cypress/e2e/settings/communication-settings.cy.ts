@@ -1,5 +1,6 @@
 // Settings > Messages (was Communication > General), Saved Replies, Docs and
-// Leads, redesigned together; the new-lead alerts moved from Messages to Leads.
+// Leads, redesigned together. The new-lead alerts moved from Messages to
+// Leads, and from there to Settings > Team alerts with the booking alert.
 
 describe('Communication settings', () => {
   it('renames General to Messages, and keeps the old address working', () => {
@@ -11,7 +12,7 @@ describe('Communication settings', () => {
       cy.get('nav').contains('a', 'Messages').should('have.attr', 'href', '/settings/messages')
       // The alerts are not here any more, and the page says where they went.
       cy.contains('Notify WhatsApp number').should('not.exist')
-      cy.get('[data-cy="messages-leads-link"]').should('have.attr', 'href', '/settings/leads')
+      cy.get('[data-cy="messages-team-alerts-link"]').should('have.attr', 'href', '/settings/team-alerts')
     })
   })
 
@@ -45,7 +46,7 @@ describe('Communication settings', () => {
     })
   })
 
-  it('keeps the new-lead alerts in Leads now', () => {
+  it('keeps the new-lead alerts in Team alerts now, linked from Leads', () => {
     cy.seedStaffAccount().then((account) => {
       cy.intercept('PATCH', '**/rest/v1/accounts*').as('saveAccount')
       cy.login(account.email, account.password)
@@ -53,9 +54,13 @@ describe('Communication settings', () => {
       cy.get('[data-cy="leads-settings"][data-ready="true"]')
 
       cy.get('[data-cy="lead-stages"] [data-stage="booked"]').should('contain', 'Automatic')
+      cy.get('[data-cy="lead-notify-email"]').should('not.exist')
+      cy.get('[data-cy="leads-team-alerts-link"]').click()
+      cy.location('pathname').should('eq', '/settings/team-alerts')
+      cy.get('[data-cy="team-alerts-settings"][data-ready="true"]')
       cy.get('[data-cy="lead-notify-email"]').type('recepcion@example.test')
       cy.get('[data-cy="lead-notify-whatsapp"]').type('+34600111222')
-      cy.get('[data-test="save-lead-settings"]').click()
+      cy.get('[data-cy="team-alerts-save"]').click()
       cy.wait('@saveAccount')
       cy.task<{ new_lead_notify_email: string; new_lead_notify_whatsapp: string }>('db:commsSettingsOf', { accountId: account.accountId }).then((row) => {
         expect(row.new_lead_notify_email).to.eq('recepcion@example.test')

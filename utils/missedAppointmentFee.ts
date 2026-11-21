@@ -1,5 +1,5 @@
 /**
- * The missed-appointment fee from Settings > Scheduling Policies, charged to
+ * The missed-appointment fee from Settings > Changes & cancellations, charged to
  * the patient's balance when a visit is marked a no-show.
  *
  * Shared by the web's appointment panel and the staff app's visit screen, so

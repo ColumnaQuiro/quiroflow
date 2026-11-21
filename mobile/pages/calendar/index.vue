@@ -10,12 +10,13 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 // - Whose diary, as the web's practitioner tabs: "Toda la clínica", one tab
 //   per practitioner, "Sin profesional". One column on iPhone; visits that
 //   overlap sit side by side.
-// - "Semana": on iPad a column per day (the scope's visits, overlaps side by
-//   side, hold and drag as in the day); on iPhone, seven columns do not fit,
-//   so the week is a list grouped by day. Tapping the date opens a picker to
-//   jump to any day.
-// - "3 días" (iPhone): the day and the two after it as columns, to see the
-//   gaps the week list cannot show; the arrows step three days.
+// - "Semana": a column per day (the scope's visits, overlaps side by side,
+//   hold and drag as in the day), on iPad and on iPhone alike. On an iPhone
+//   the columns are narrow, so the tiles fall back to the short name; days
+//   nobody works are left out to give the rest room. Tapping a day's head
+//   opens that day. Tapping the date opens a picker to jump to any day.
+// - "3 días" (iPhone): the day and the two after it as columns, wide enough
+//   for the full tile; the arrows step three days.
 // - iPad: a column per practitioner (the canvas's AppIpadAgenda), and at
 //   landscape width the selected visit on the right with Mover / Cancelar.
 // - Hold a free slot, or "+", to book (NewVisitSheet -> BookVisitSheet: the
@@ -121,6 +122,13 @@ const isWeek = computed(() => view.value === 'week')
 const isThree = computed(() => view.value === 'three' && !wide.value)
 // Columns by date rather than by practitioner.
 const multiDay = computed(() => isWeek.value || isThree.value)
+// The week on an iPhone: up to seven columns of ~50px, so the gutter, the
+// column heads and the tiles' margins are trimmed to leave the visits room.
+const narrowWeek = computed(() => isWeek.value && !wide.value)
+const dayHeadWeekday = (date: string) => capital(fmt(date, { weekday: 'short' })).replace('.', '')
+const dayHeadNumber = (date: string) => fmt(date, { day: 'numeric' })
+// Space either side of a tile in its column (px).
+const tileInset = computed(() => (narrowWeek.value ? 2 : 4))
 // Monday to Sunday around the day being looked at.
 const weekStart = computed(() => {
   const dow = new Date(`${day.value}T00:00:00Z`).getUTCDay()
@@ -538,12 +546,6 @@ watch([loading, day, view], async ([l]) => {
   scroller.value?.scrollTo({ top: Math.max(0, target - 80) })
 })
 
-const weekList = computed(() =>
-  weekDates.value.map((date) => ({
-    date,
-    items: shownAppointments.value.filter((a) => dateOfIso(a.starts_at) === date && inWho(a)),
-  })),
-)
 const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
 const { privacy, togglePrivacy, shown } = usePrivacyMode()
 const nameOf = (a: Appointment) => `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
@@ -563,12 +565,6 @@ function practitionerBadge(a: Appointment, c: Column): PractitionerBadgeView | n
   // say nobody is down for it.
   if (!p) return null
   return { initials: badgeLabels.value.get(p.id) ?? '?', color: p.color || null, name: p.full_name }
-}
-// The iPhone week list: one row per visit, no column to say whose it is.
-const listBadge = (a: Appointment) => practitionerBadge(a, { key: '', practitionerId: null, name: '', date: '' })
-function tint(color: string | null | undefined) {
-  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? color : '#4F46E5'
-  return { background: `${c}1F`, borderLeftColor: c }
 }
 
 // -- Selection (the side panel on a wide iPad) ---------------------------------
@@ -814,7 +810,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       </template>
     </div>
 
-    <div class="qf-plane qf-lip qf-fade flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5" :class="isWeek && !wide ? '' : 'qf-lip-surface'">
+    <div class="qf-plane qf-lip qf-lip-surface qf-fade flex shrink-0 items-center gap-2 px-3 pt-1 md:px-5">
       <!-- Whose diary, as the web calendar's practitioner tabs. -->
       <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
         <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-10 shrink-0 rounded-full px-3.5 text-[13.5px] font-semibold" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
@@ -829,10 +825,8 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         </button>
       </div>
       <div v-else class="flex-1" />
-      <!-- Side by side or one under the other. Not on the iPhone week, which
-           is a list already. -->
+      <!-- Side by side or one under the other. -->
       <button
-        v-if="!(isWeek && !wide)"
         type="button"
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
         :class="rowsMode ? 'bg-brand text-brand-on' : 'bg-chip-bg text-ink-muted'"
@@ -855,42 +849,23 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       <div class="flex min-w-0 flex-1 flex-col bg-surface">
         <AppSkeletonList v-if="contextLoading || loading" :rows="6" class="flex-1" />
         <p v-else-if="loadError" class="m-4 rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">{{ loadError }}</p>
-        <!-- iPhone week: the days as a list -->
-        <div v-else-if="isWeek && !wide" class="min-h-0 flex-1 overflow-y-auto bg-surface-page px-3 py-3" data-cy="agenda-week-list">
-          <section v-for="d in weekList" :key="d.date" class="mb-3" data-cy="agenda-week-day">
-            <button type="button" class="tap-target flex w-full items-center justify-between px-1 pb-1.5 text-left" :data-cy="`agenda-week-open-${d.date}`" @click="openDay(d.date)">
-              <span class="text-[13px] font-semibold" :class="d.date === todayDate ? 'text-brand-text' : 'text-ink-700'">{{ capital(fmt(d.date, { weekday: 'long', day: 'numeric', month: 'short' })) }}</span>
-              <span class="flex items-center gap-1 text-[12px] text-ink-muted">{{ d.items.length ? t(`${d.items.length} visits`, `${d.items.length} ${d.items.length === 1 ? 'cita' : 'citas'}`) : '' }}<AppChevron /></span>
-            </button>
-            <div v-if="d.items.length" class="divide-y divide-line-row overflow-hidden rounded-card border border-line bg-surface shadow-card">
-              <button v-for="a in d.items" :key="a.id" type="button" class="flex min-h-12 w-full items-center gap-3 px-3.5 py-2 text-left" :class="a.status === 'completed' || a.status === 'no_show' ? 'opacity-55' : ''" data-cy="agenda-item" :data-appt-id="a.id" @click="open(a)">
-                <span class="h-8 w-[3px] shrink-0 rounded-full" :style="{ background: tint(a.appointment_types?.color).borderLeftColor }" />
-                <span class="w-11 shrink-0 font-mono text-[12.5px] text-ink-700">{{ timeLabel(a.starts_at) }}</span>
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(a) }}</span>
-                  <span class="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-muted">
-                    <CalendarPractitionerBadge v-if="listBadge(a)" :initials="listBadge(a)!.initials" :color="listBadge(a)!.color" :name="listBadge(a)!.name" />
-                    <span class="truncate"><template v-if="a._class">{{ a._class.capacity - a._class.taken > 0 ? t(`${a._class.capacity - a._class.taken} places left`, `${a._class.capacity - a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template></span>
-                  </span>
-                </span>
-                <AppStagePill v-if="!a._class" :stage="stageOf(a)" :arrived-at="arrivedAt(a)" />
-              </button>
-            </div>
-            <p v-else class="px-1 text-[12.5px] text-ink-faint">{{ t('Nothing booked.', 'Sin citas.') }}</p>
-          </section>
-        </div>
         <template v-else>
-          <div v-if="showColumnHeads" class="flex shrink-0 border-b border-line pl-12">
+          <div v-if="showColumnHeads" class="flex shrink-0 border-b border-line" :class="narrowWeek ? 'pl-8' : 'pl-12'">
             <template v-for="c in columns" :key="c.key">
-              <button v-if="multiDay" type="button" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-left text-[12.5px] font-semibold" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">{{ c.name }}</button>
+              <!-- A phone's week: the weekday over the date, centred, as a phone calendar's week reads. -->
+              <button v-if="narrowWeek" type="button" class="flex min-w-0 flex-1 flex-col items-center border-l border-line-row px-0.5 py-1.5 leading-tight" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :aria-label="c.name" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">
+                <span class="max-w-full truncate text-[11px] font-medium" :class="c.date === todayDate ? '' : 'text-ink-muted'">{{ dayHeadWeekday(c.date) }}</span>
+                <span class="mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[13.5px] font-semibold" :class="c.date === todayDate ? 'bg-brand text-brand-on' : ''">{{ dayHeadNumber(c.date) }}</span>
+              </button>
+              <button v-else-if="multiDay" type="button" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-left text-[12.5px] font-semibold" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">{{ c.name }}</button>
               <div v-else class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-[12.5px] font-semibold text-ink-700">{{ c.name }}</div>
             </template>
           </div>
           <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" data-cy="agenda-timeline">
-            <div class="relative flex pl-12" :style="{ height: `${totalHeight + 24}px` }">
+            <div class="relative flex" :class="narrowWeek ? 'pl-8' : 'pl-12'" :style="{ height: `${totalHeight + 24}px` }">
               <!-- Hour lines -->
               <div v-for="h in hours" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-row" :style="{ top: `${yOf(h * 60)}px` }">
-                <span class="absolute left-2 top-1 font-mono text-[10.5px] text-ink-faint">{{ String(h).padStart(2, '0') }}:00</span>
+                <span class="absolute top-1 font-mono text-[10.5px] text-ink-faint" :class="narrowWeek ? 'left-1.5' : 'left-2'">{{ String(h).padStart(2, '0') }}<template v-if="!narrowWeek">:00</template></span>
               </div>
 
               <div
@@ -907,7 +882,8 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   v-for="x in blocksFor(c)"
                   :key="x.b.id"
                   data-block
-                  class="agenda-blocked absolute left-1 right-1 overflow-hidden rounded-[8px] border border-line px-2 py-1 text-[11.5px] text-ink-muted"
+                  class="agenda-blocked absolute overflow-hidden rounded-[8px] border border-line py-1 text-[11.5px] text-ink-muted"
+                  :class="narrowWeek ? 'left-0.5 right-0.5 truncate px-1' : 'left-1 right-1 px-2'"
                   :style="{ top: `${x.top + 1}px`, height: `${x.height - 2}px` }"
                   data-cy="agenda-blocked"
                 >
@@ -921,7 +897,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   data-appt
                   class="absolute text-left"
                   :class="[p.a._class ? 'flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2 py-1 text-[12px] leading-tight text-brand-on shadow-card' : '', p.a._class && selectedId === p.a.id ? 'ring-2 ring-brand ring-offset-2' : '', drag?.a.id === p.a.id ? 'opacity-30' : '']"
-                  :style="{ top: `${p.top + 1}px`, height: `${p.height - 2}px`, left: `calc(${(p.lane / p.lanes) * 100}% + 4px)`, width: `calc(${100 / p.lanes}% - 8px)` }"
+                  :style="{ top: `${p.top + 1}px`, height: `${p.height - 2}px`, left: `calc(${(p.lane / p.lanes) * 100}% + ${tileInset}px)`, width: `calc(${100 / p.lanes}% - ${tileInset * 2}px)` }"
                   data-cy="agenda-item"
                   :data-appt-id="p.a.id"
                   @pointerdown.stop="onApptDown($event, p.a, c)"
@@ -938,13 +914,13 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 <!-- Now, in today's column of the week -->
                 <div v-if="multiDay && nowTop !== null && c.date === todayDate" class="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now" />
                 <!-- Where a held slot will book -->
-                <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 flex items-center rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint px-2 text-[12px] font-semibold text-brand-text" :style="{ top: `${ghost.top + 1}px`, height: `${ghost.height - 2}px` }">
-                  + {{ t('New visit at', 'Nueva cita a las') }} {{ ghost.label }}
+                <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute flex items-center overflow-hidden rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint text-[12px] font-semibold text-brand-text" :class="narrowWeek ? 'left-0.5 right-0.5 px-1' : 'left-1 right-1 px-2'" :style="{ top: `${ghost.top + 1}px`, height: `${ghost.height - 2}px` }">
+                  <span class="truncate">+ <template v-if="!narrowWeek">{{ t('New visit at', 'Nueva cita a las') }} </template>{{ ghost.label }}</span>
                 </div>
                 <!-- Where a dragged visit will land -->
-                <div v-if="drag && drag.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 rounded-[8px] border-[1.5px] border-brand bg-surface px-2 py-1 shadow-popover" :style="{ top: `${yOf(drag.minute) + 1}px`, height: `${yOf(drag.minute + drag.duration) - yOf(drag.minute) - 2}px` }" data-cy="agenda-drag">
+                <div v-if="drag && drag.columnKey === c.key" class="pointer-events-none absolute overflow-hidden rounded-[8px] border-[1.5px] border-brand bg-surface py-1 shadow-popover" :class="narrowWeek ? 'left-0.5 right-0.5 px-1' : 'left-1 right-1 px-2'" :style="{ top: `${yOf(drag.minute) + 1}px`, height: `${yOf(drag.minute + drag.duration) - yOf(drag.minute) - 2}px` }" data-cy="agenda-drag">
                   <span class="block truncate text-[12.5px] font-semibold text-ink-900">{{ shown(nameOf(drag.a)) }}</span>
-                  <span class="block font-mono text-[11.5px] text-brand-text">{{ hhmm(drag.minute) }}–{{ hhmm(drag.minute + drag.duration) }}</span>
+                  <span class="block truncate font-mono text-[11.5px] text-brand-text">{{ hhmm(drag.minute) }}<template v-if="!narrowWeek">–{{ hhmm(drag.minute + drag.duration) }}</template></span>
                 </div>
               </div>
 

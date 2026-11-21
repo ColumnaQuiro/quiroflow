@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { NO_REPLY } from './receptionistAutoReply'
-import { baseBehaviourSection, escalationSection } from './receptionistBaseRules'
+import { baseBehaviourSection } from './receptionistBaseRules'
 import { clinicDetailsSection, teamSection, type PromptClinic } from './receptionistClinic'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE } from './receptionistHistory'
 
@@ -60,8 +60,6 @@ export function clinicPromptPart(opts: {
   knowledge: { title: string; lines: string[] }[]
   /** What stands in for the knowledge when the clinic has written none ('' for nothing). */
   noKnowledge: string
-  escalationRules: { rule: string; action: string }[]
-  neverSays: string | null | undefined
   sendsItself: boolean
 }): string {
   const knowledge = opts.knowledge
@@ -94,8 +92,6 @@ export function clinicPromptPart(opts: {
     STATED_LIMITS_LINE,
     CARD_ANSWERS_LINE,
     NOT_CHIROPRACTIC_SYMPTOM_LINE,
-    escalationSection(opts.escalationRules, opts.sendsItself),
-    opts.neverSays ? `# Never\n\n${opts.neverSays}` : '',
   ].filter(Boolean).join('\n\n')
 }
 

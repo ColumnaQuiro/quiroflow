@@ -27,6 +27,26 @@ import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UN
 /** Tool rounds before the model has to answer with what it has. */
 const MAX_TOOL_ROUNDS = 4
 
+/**
+ * The models the receptionist may run on, the default first. Which one is
+ * NUXT_RECEPTIONIST_MODEL's, so moving between them is an environment change
+ * and so is going back. Anything else falls back to the default rather than
+ * sending a model id nobody has tried with these prompts.
+ *
+ * Sonnet 5 is the default. Haiku 5.5 is about a twentieth of the price and,
+ * on 21 Nov 2026, did as well on tests/evals/receptionist (5 runs of each of
+ * 18 cases) -- better on English and on handing over a worsening symptom.
+ * On 14 Oct it did worse on 24 real replies; the three ways it failed are
+ * eval cases now, and it passed them.
+ */
+export const RECEPTIONIST_MODELS = ['claude-sonnet-5', 'claude-haiku-5-5'] as const
+
+/** The model the receptionist runs on now (RECEPTIONIST_MODELS). */
+export function receptionistModelName(): string {
+  const configured = String(useRuntimeConfig().receptionistModel ?? '').trim()
+  return (RECEPTIONIST_MODELS as readonly string[]).includes(configured) ? configured : RECEPTIONIST_MODELS[0]
+}
+
 const FIND_FREE_TIMES: Anthropic.Tool = {
   name: 'find_free_times',
   description:
@@ -309,6 +329,9 @@ export async function runReceptionistModel(
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.
+    // Cut off at maxTokens: what is there is sent, but the trace says so.
+    if (message.stop_reason === 'max_tokens') checks.push('max_tokens')
+
     if (message.stop_reason === 'refusal') {
       checks.push('model_refused')
       return run('', true)

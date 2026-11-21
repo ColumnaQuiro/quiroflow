@@ -27,14 +27,15 @@ const AD_LEAD = { channel: 'facebook', source: 'Meta Ads', externalSource: 'face
 const called = (r: EvalResult, name: string) => r.tools.filter((t) => t.name === name)
 const okCalls = (r: EvalResult, name: string) => called(r, name).filter((t) => t.ok)
 
-const spent = { replies: 0, rounds: 0, dollars: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+const spent = { replies: 0, rounds: 0, dollars: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cutOff: 0 }
 afterAll(() => {
   if (!spent.replies) return
-  console.log(`\n[cost] ${MODEL}: ${spent.replies} replies, ${spent.rounds} rounds, $${spent.dollars.toFixed(4)} -- $${(spent.dollars / spent.replies).toFixed(4)} a reply. Tokens: ${spent.input} input, ${spent.cacheRead} cache read, ${spent.cacheWrite} cache write, ${spent.output} output.`)
+  console.log(`\n[cost] ${MODEL}: ${spent.replies} replies, ${spent.rounds} rounds, $${spent.dollars.toFixed(4)} -- $${(spent.dollars / spent.replies).toFixed(4)} a reply. Tokens: ${spent.input} input, ${spent.cacheRead} cache read, ${spent.cacheWrite} cache write, ${spent.output} output. Cut off at max_tokens: ${spent.cutOff}.`)
 })
 
 function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => void) {
   it(name, async () => {
+    const failed: unknown[] = []
     for (let i = 0; i < RUNS; i++) {
       const result = await runScenario(scenario, key!).catch((err) => {
         if ((err as { status?: number })?.status === 401) throw new Error('The eval key was refused (401). Put a working non-production key in ~/.quiroflow-eval-anthropic-key, or pass ANTHROPIC_API_KEY.')
@@ -48,13 +49,18 @@ function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => vo
       spent.output += usage.outputTokens
       spent.cacheRead += usage.cacheReadTokens
       spent.cacheWrite += usage.cacheWriteTokens
+      if (result.run.checks.includes('max_tokens')) spent.cutOff++
       try {
         check(result)
       } catch (err) {
         console.error(`\n[${name}] run ${i + 1}\ntext: ${result.text}\ntools: ${JSON.stringify(result.tools)}\nhanded over: ${result.handedOver}\nchecks: ${result.run.checks.join(', ')}`)
-        throw err
+        failed.push(err)
       }
     }
+    // Every run, then the count: "2 of 5" says more about a model or a prompt
+    // than stopping at the first miss does.
+    console.log(`[pass] ${RUNS - failed.length}/${RUNS} ${name}`)
+    if (failed.length) throw new Error(`${failed.length} of ${RUNS} runs failed. The first: ${(failed[0] as Error)?.message ?? failed[0]}`)
   })
 }
 

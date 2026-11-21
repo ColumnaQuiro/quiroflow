@@ -12,7 +12,7 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistModelName, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
@@ -33,10 +33,9 @@ import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisit
 // that does not mention it. Only the free times are read with the service
 // role, for the reason loadReceptionistCalendar gives.
 
-// Sonnet, as for leads (see receptionistDraft.ts): short, briefed writing
-// that a person reads before it goes.
-const MODEL = 'claude-sonnet-5'
-const MAX_TOKENS = 1024
+// The same model as for leads (receptionistModelName, and see
+// receptionistDraft.ts): short, briefed writing.
+const MAX_TOKENS = 2048
 const HISTORY_TURNS = 24
 
 /** Why a reply to a minor's record went to a person. */
@@ -315,7 +314,7 @@ export async function draftPatientReply(
   // the tick's replies: one a person asked for in the Inbox is theirs.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
     opts.store || opts.send
-      ? recordReply(service, { accountId, conversationKey: patientId, kind: 'patient', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
+      ? recordReply(service, { accountId, conversationKey: patientId, kind: 'patient', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: receptionistModelName(), startedAt, ...extra })
       : Promise.resolve()
 
   // A voice note since the clinic last wrote that could not be transcribed:
@@ -405,7 +404,7 @@ export async function draftPatientReply(
   if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
-    model: MODEL,
+    model: receptionistModelName(),
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),
     // With the day each message was sent (withDayMarks): "mañana jueves" in

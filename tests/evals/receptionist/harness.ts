@@ -36,8 +36,8 @@ const PRICES: Record<string, { input: number; output: number }> = {
 export function replyCost(usage: ReceptionistRun['usage'], model = MODEL): number | null {
   const price = PRICES[model]
   if (!price) return null
-  const write5m = usage.cacheWriteTokens - usage.cacheWrite1hTokens
-  return (usage.inputTokens * price.input + usage.cacheReadTokens * price.input * 0.1 + write5m * price.input * 1.25 + usage.cacheWrite1hTokens * price.input * 2 + usage.outputTokens * price.output) / 1e6
+  const write5m = usage.cacheWriteTokens - (usage.cacheWrite1hTokens ?? usage.cacheWriteTokens)
+  return (usage.inputTokens * price.input + usage.cacheReadTokens * price.input * 0.1 + write5m * price.input * 1.25 + (usage.cacheWrite1hTokens ?? usage.cacheWriteTokens) * price.input * 2 + usage.outputTokens * price.output) / 1e6
 }
 
 /**
@@ -199,7 +199,7 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
   const client = injected ?? new Anthropic({ apiKey, baseURL: process.env.EVAL_ANTHROPIC_BASE_URL || 'https://api.anthropic.com' })
   const run = await runReceptionistModel(client, {
     model: MODEL,
-    maxTokens: 1024,
+    maxTokens: 2048,
     system,
     messages,
     handOver: true,

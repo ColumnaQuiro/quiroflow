@@ -2,6 +2,7 @@ import { appStoreUrl, playStoreUrl } from './appLinks'
 import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
+import { escalationSection } from './receptionistBaseRules'
 import type { PromptClinic } from './receptionistClinic'
 import { earlierVisitPromptSection } from './earlierVisitOffer'
 import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, phoneSharersSection, type PhoneSharer, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, repeatChangeSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
@@ -364,8 +365,6 @@ export function buildPatientReplyPrompt(
     team: opts.team ?? [],
     knowledge: config.knowledge,
     noKnowledge: '',
-    escalationRules: config.escalationRules,
-    neverSays: config.neverSays,
     sendsItself: Boolean(opts.sendsItself),
   })
   // What only a patient's conversation has, after the clinic part (see
@@ -379,6 +378,10 @@ export function buildPatientReplyPrompt(
     `Never ask a patient for their name, email or phone number: the clinic has them.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
     `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts under "What you already know about this patient": say their practitioner will answer that.`,
+    // Here rather than in the clinic part, so they come after everything
+    // above, as they always did (see buildSystemPrompt).
+    escalationSection(config.escalationRules, Boolean(opts.sendsItself)),
+    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.sendsItself
       ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague. To cancel a visit they already have, call cancel_appointment with visit_on.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
       : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,

@@ -68,9 +68,12 @@ describe('The cached part of the receptionist briefing', () => {
   })
 
   it('holds the clinic and leaves the person, the clock and the free times to the rest', () => {
-    const { clinic, conversation } = buildPatientReplyPrompt(config, another)
+    const { clinic, role, conversation } = buildPatientReplyPrompt(config, another)
     expect(clinic).toContain('Primera visita: 50 €')
-    expect(clinic).toContain('Quiere cancelar una cita')
+    // The hand-over rules are cached too, in the role: they must come after
+    // the lead's condition section (buildSystemPrompt), as they always did.
+    expect(role).toContain('Quiere cancelar una cita')
+    expect(clinic).not.toContain('# Stop and hand over to a person when')
     for (const varying of ['Luis', 'Plan lumbar', '2026-10-22', '09:30']) {
       expect(clinic).not.toContain(varying)
       expect(conversation).toContain(varying)

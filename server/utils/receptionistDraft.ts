@@ -11,7 +11,7 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { cameFromAd, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -45,9 +45,12 @@ async function leadHasNoFollowUps(): Promise<{ content: string; isError: boolean
 // euro add-on and a busy clinic can draft well over a thousand replies a
 // month, so the model choice is what decides whether the add-on is
 // profitable at all. The support assistant has run on Sonnet since it
-// shipped for the same reason.
-const MODEL = 'claude-sonnet-5'
-const MAX_TOKENS = 1024
+// shipped for the same reason. Which model is receptionistModelName's.
+//
+// 2048 output tokens, thinking included: Haiku thinks more than Sonnet and
+// was cut off at 1024 in 2 of 90 eval replies (21 Nov 2026); only what is
+// written is paid for, and Sonnet never came near it.
+const MAX_TOKENS = 2048
 
 /**
  * How much conversation the model is given.
@@ -281,7 +284,7 @@ export async function draftLeadReply(
   const sends = mayAutoSend && hold === null
   // Its record (receptionist_reply_traces), at whichever exit it leaves by.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
-    recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
+    recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: receptionistModelName(), startedAt, ...extra })
 
   // A voice note since the clinic last wrote that could not be transcribed:
   // always a person's, decided here rather than by the model
@@ -370,7 +373,7 @@ export async function draftLeadReply(
   if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
-    model: MODEL,
+    model: receptionistModelName(),
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
     // With the day each message was sent (withDayMarks): "mañana jueves" in

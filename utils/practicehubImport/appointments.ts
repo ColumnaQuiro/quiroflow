@@ -16,9 +16,10 @@ import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } fr
 //
 // The browser screen asks two things the server cannot: which team member
 // each PracticeHub practitioner is, and which appointment type each type name
-// is. The server takes what the screen pre-selects -- a team member or type
-// whose name is the same, ignoring case and outer spaces -- and for a name
-// with no match, what the screen leaves selected: the practitioner's name
+// is. The server takes a team member whose name is the same, ignoring case
+// and outer spaces, and the type practiceHubTypeMatches gives: the one that
+// type's visits already have here, else the same name. For a name with no
+// match it takes what the screen leaves selected: the practitioner's name
 // only (practitioner_name, no team member) and no type. The Appointment types
 // step runs after this one and creates the missing types and points these
 // visits at them, so nothing is lost by not creating them here.
@@ -111,6 +112,66 @@ export function byExactName<T>(items: readonly T[], nameOf: (item: T) => string 
   }
 }
 
+/**
+ * Which type here each PracticeHub appointment type is, by PracticeHub's type
+ * id. Pure.
+ *
+ * First the type its visits already have here: the one more than half of
+ * them point at. Only a PracticeHub type with no such majority -- none of its
+ * visits here yet, or spread between types -- falls back to the same name
+ * (byExactName). A type renamed here keeps its visits that way: matched by
+ * name alone, the next sync found no "Primera visita" once the clinic had
+ * called it "Consulta inicial", created a second one and moved every visit
+ * back to it. The same holds for two types merged here: the visits moved to
+ * the survivor say which one it is.
+ *
+ * Both steps call this with the same inputs, and they must: the Appointments
+ * step runs first in a full sync, and by name alone it would already have
+ * cleared the type off those visits before the Appointment types step looked.
+ */
+export function practiceHubTypeMatches<T extends { id: string; name: string }>(input: {
+  phTypes: readonly { id: number | string; name?: string | null }[]
+  phAppointments: readonly { id: number | string; appointment_type_id?: number | string | null }[]
+  /** In the order byExactName needs: a twin name resolves to the first. */
+  typesHere: readonly T[]
+  visitsHere: readonly { external_reference: string | null; appointment_type_id: string | null }[]
+}): Map<string, T | undefined> {
+  const typeById = new Map(input.typesHere.map((ty) => [ty.id, ty]))
+  const typeNamed = byExactName(input.typesHere, (ty) => ty.name)
+
+  // Ids arrive as numbers from one list and strings from another, so they
+  // are compared as text.
+  const typesOfRef = new Map<string, string[]>()
+  for (const v of input.visitsHere) {
+    if (!v.external_reference || !v.appointment_type_id || !typeById.has(v.appointment_type_id)) continue
+    const list = typesOfRef.get(v.external_reference)
+    if (list) list.push(v.appointment_type_id)
+    else typesOfRef.set(v.external_reference, [v.appointment_type_id])
+  }
+  const tally = new Map<string, Map<string, number>>()
+  for (const appt of input.phAppointments) {
+    const phTypeId = appt.appointment_type_id == null ? '' : String(appt.appointment_type_id)
+    const ours = phTypeId ? typesOfRef.get(String(appt.id)) : undefined
+    if (!ours) continue
+    const counts = tally.get(phTypeId) ?? new Map<string, number>()
+    for (const id of ours) counts.set(id, (counts.get(id) ?? 0) + 1)
+    tally.set(phTypeId, counts)
+  }
+
+  const matches = new Map<string, T | undefined>()
+  for (const phType of input.phTypes) {
+    const phTypeId = String(phType.id)
+    const counts = tally.get(phTypeId)
+    let leader: string | undefined
+    if (counts) {
+      const total = [...counts.values()].reduce((sum, n) => sum + n, 0)
+      for (const [id, n] of counts) if (n * 2 > total) leader = id
+    }
+    matches.set(phTypeId, leader ? typeById.get(leader) : typeNamed(phType.name))
+  }
+  return matches
+}
+
 // --- the plan, without the database ----------------------------------------------
 
 /** A visit already here, as the step reads it. */
@@ -160,7 +221,8 @@ export function planPracticeHubAppointmentRows(input: {
   clinicId: string
   timeZone: string
   practitionerIdFor: (name: string) => string | null
-  typeIdFor: (name: string) => string | null
+  /** The type for a row's type name; `ref` is its PracticeHub appointment id. */
+  typeIdFor: (name: string, ref: string) => string | null
   shown?: (field: string, value: unknown) => string
 }): AppointmentRowsPlan {
   const { rows, patientByRef, accountId, clinicId, timeZone } = input
@@ -237,7 +299,7 @@ export function planPracticeHubAppointmentRows(input: {
           patient_id: patientId!,
           practitioner_id: (practName && input.practitionerIdFor(practName)) || null,
           practitioner_name: practName || null,
-          appointment_type_id: (typeName && input.typeIdFor(typeName)) || null,
+          appointment_type_id: (typeName && input.typeIdFor(typeName, extRef)) || null,
           starts_at: start.toISOString(),
           ends_at: end.toISOString(),
           status,
@@ -253,7 +315,7 @@ export function planPracticeHubAppointmentRows(input: {
       status,
       practitioner_id: (practName && input.practitionerIdFor(practName)) || null,
       practitioner_name: practName || null,
-      appointment_type_id: (typeName && input.typeIdFor(typeName)) || null,
+      appointment_type_id: (typeName && input.typeIdFor(typeName, extRef)) || null,
     }
     let { updates, diff } = appointmentFieldUpdate(existing, incomingFields, shown)
     const keptReason = quiroflowKeeps(
@@ -376,7 +438,20 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
   // Someone on the team now wins a shared name over someone who has left.
   const team = [...(teamRes.data ?? [])].sort((a, b) => Number(!!a.deleted_at) - Number(!!b.deleted_at))
   const memberNamed = byExactName(team, (m) => m.full_name)
+  // By PracticeHub's type id, the same answer the Appointment types step gets,
+  // so a type renamed or merged here is not cleared off its visits.
+  const typeMatches = practiceHubTypeMatches({
+    phTypes: practiceHubList<PHNamed>(snapshot, '/appointment_types'),
+    phAppointments,
+    typesHere: typeRows,
+    visitsHere: existing,
+  })
+  const phTypeOfRef = new Map(phAppointments.map((a) => [String(a.id), a.appointment_type_id == null ? '' : String(a.appointment_type_id)]))
   const typeNamed = byExactName(typeRows, (ty) => ty.name)
+  const typeFor = (name: string, ref: string) => {
+    const phTypeId = phTypeOfRef.get(ref)
+    return phTypeId && typeMatches.has(phTypeId) ? typeMatches.get(phTypeId) : typeNamed(name)
+  }
   const teamName = new Map(team.map((m) => [m.id, m.full_name]))
   const typeName = new Map(typeRows.map((ty) => [ty.id, ty.name]))
   const patientByRef = new Map(patients.map((p) => [p.external_reference, p.id]))
@@ -420,7 +495,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     clinicId: clinicId ?? '',
     timeZone: zone,
     practitionerIdFor: (name) => memberNamed(name)?.id ?? null,
-    typeIdFor: (name) => typeNamed(name)?.id ?? null,
+    typeIdFor: (name, ref) => typeFor(name, ref)?.id ?? null,
     shown,
   })
 
@@ -445,7 +520,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     const p = r['Practitioner']?.trim()
     if (p && !memberNamed(p)) count(unlinkedPractitioners, p)
     const ty = r['Appointment Type']?.trim()
-    if (ty && !typeNamed(ty)) count(untypedNames, ty)
+    if (ty && !typeFor(ty, r['Internal Appt ID']?.trim() || '')) count(untypedNames, ty)
   }
 
   const adopted = plan.updates.filter((u) => u.adopted).length

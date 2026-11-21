@@ -68,7 +68,8 @@ export interface ReceptionistRun {
   choices: 'cancellation_reason' | 'times' | null
   /** The times offer_times was last called with, when the reply books nothing. */
   offeredSlots: OfferedSlot[]
-  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
+  /** cacheWriteTokens is both kinds of write; cacheWrite1hTokens the hour-long ones (clinic and role), which cost 2x input rather than 1.25x. */
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; rounds: number }
 }
 
 /** One tool call the model made while writing a reply. */
@@ -238,7 +239,7 @@ export async function runReceptionistModel(
   // What the checks in code did to this reply, and what it cost, for its
   // record (receptionist_reply_traces).
   const checks: string[] = []
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, rounds: 0 }
   let choices: ReceptionistRun['choices'] = null
   let offeredSlots: OfferedSlot[] = []
   const offerTimes = opts.offerTimes ? opts.offerTimes((slots) => { offeredSlots = slots }) : null
@@ -304,6 +305,7 @@ export async function runReceptionistModel(
     usage.outputTokens += message.usage?.output_tokens ?? 0
     usage.cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0
     usage.cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0
+    usage.cacheWrite1hTokens += message.usage?.cache_creation?.ephemeral_1h_input_tokens ?? 0
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.

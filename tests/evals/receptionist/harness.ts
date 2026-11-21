@@ -24,6 +24,23 @@ import { ALL_TYPES, BOOKED, CLINIC, CLINIC_DETAILS, KNOWLEDGE, NOW, PACKAGES, PR
 export const MODEL = process.env.EVAL_MODEL || 'claude-sonnet-5'
 
 /**
+ * Dollars per million tokens: input and output. Cache reads and writes are
+ * multiples of input (0.1 a read, 1.25 a 5-minute write, 2 an hour-long one).
+ */
+const PRICES: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-5': { input: 2, output: 10 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5 },
+}
+
+/** What one reply cost, in dollars, at the model's list price; null for a model not priced here. */
+export function replyCost(usage: ReceptionistRun['usage'], model = MODEL): number | null {
+  const price = PRICES[model]
+  if (!price) return null
+  const write5m = usage.cacheWriteTokens - usage.cacheWrite1hTokens
+  return (usage.inputTokens * price.input + usage.cacheReadTokens * price.input * 0.1 + write5m * price.input * 1.25 + usage.cacheWrite1hTokens * price.input * 2 + usage.outputTokens * price.output) / 1e6
+}
+
+/**
  * The key: ANTHROPIC_API_KEY, or the one kept for evals in
  * ~/.quiroflow-eval-anthropic-key. Never the production key -- these calls
  * are tests, and their cost should not show as the clinics'.

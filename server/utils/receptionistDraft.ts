@@ -17,6 +17,11 @@ import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor
 import { internalNotes } from '~/utils/receptionistGuard'
 import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 
+/** stop_follow_ups, for a lead: there is nothing of theirs to stop. */
+async function leadHasNoFollowUps(): Promise<{ content: string; isError: boolean }> {
+  return { content: 'They are not one of the clinic\'s patients yet, so they have no follow-ups to stop. Do not call it again: just answer them.', isError: true }
+}
+
 // Writing a receptionist reply for one lead.
 //
 // Extracted so the two callers cannot drift: the button in the Inbox
@@ -346,6 +351,11 @@ export async function draftLeadReply(
   const offerTimes = actions ? (onOffered: Parameters<typeof offerTimesTool>[1]) => offerTimesTool(actions, onOffered) : null
   const writeBack = actions ? writeBackTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
+  // A lead has no follow-ups of a patient's to stop, but is offered the tool
+  // all the same, refused, so that its tools are a patient's and the two
+  // share one cached prompt (utils/receptionistPrompt.ts); its prompt says
+  // not to call it.
+  const stopFollowUps = actions ? leadHasNoFollowUps : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
@@ -374,6 +384,7 @@ export async function draftLeadReply(
     askWhyCancelled,
     cancellationReason,
     give,
+    stopFollowUps,
     stopEarlier,
     offerTimes,
     writeBack,

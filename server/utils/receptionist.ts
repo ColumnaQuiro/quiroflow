@@ -1,14 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { baseBehaviourSection, escalationSection } from '~/utils/receptionistBaseRules'
 import type { Database } from '~/types/database.types'
-import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
+import type { PromptClinic } from '~/utils/receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, matchChiropractor, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, repeatChangeSection, changesWithoutComing, REPEAT_CHANGE_WINDOW_DAYS, type DiaryChange, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
-import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
+import { WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadFormSection, leadOriginSection, type LeadFormAnswer, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
-import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { readInstallmentOptions } from '~/utils/bonoInstallments'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
-import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
+import { clinicPromptPart, ROLE_HEADING, type ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import {
   hasFreeTimes,
   receptionistBookingSection,
@@ -954,10 +952,6 @@ export function buildSystemPrompt(
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
   const adOnly = opts.adOnlyTypes ?? []
-  const knowledge = config.knowledge
-    .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
-    .join('\n\n')
-
   const questions = config.qualificationQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
   // Only when there are types to offer: with none, the types section already
   // says booking goes to a colleague, and a list would contradict it.
@@ -969,41 +963,29 @@ export function buildSystemPrompt(
   // is about this person and this moment after it: see utils/receptionistPrompt.ts.
   // Sections that refer to one another ("the Booking list below", "Stop and
   // hand over to a person when") still read in the right direction.
-  const clinic = [
-    `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
-    `Tone: ${TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief}`,
+  // The clinic part is a patient's too, byte for byte, so the two share one
+  // cache entry: see utils/receptionistPrompt.ts.
+  const clinic = clinicPromptPart({
+    personaName: config.personaName,
+    toneLine: TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief!,
+    languages: config.languages,
+    clinicDetails: opts.clinicDetails ?? [],
+    team: opts.team ?? [],
+    knowledge: config.knowledge,
+    noKnowledge: `# What you know about this clinic\n\nNothing ${opts.clinicDetails?.length ? 'else ' : ''}has been configured yet. For anything ${opts.clinicDetails?.length ? 'not under "The clinic"' : 'about the clinic'}, say you will check with your colleague rather than guessing.`,
+    escalationRules: config.escalationRules,
+    neverSays: config.neverSays,
+    sendsItself: Boolean(opts.sendsItself),
+  })
+  // What only a lead's conversation has, after it.
+  const role = [
+    `${ROLE_HEADING}\nYou answer enquiries from prospective patients.`,
     // Whatever the tone, an opener like "¡Perfecto!" is what makes a reply
     // read as a bot, and it is the first thing an owner trying Alba notices.
     `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro!", "¡Claro que sí!", "¡Por supuesto!", "Great!", "Perfect!"), do not use emojis -- not even to answer one of theirs -- and do not greet with an exclamation ("¡Hola, María!", "¡Buenas tardes!"), and do not praise the patient's question. Start with the substance.`,
-    // "Un compañero" is how a call centre talks about whoever is next in the
-    // queue; a receptionist hands you to someone she works with.
-    `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
-    // Dates come to the model as "Monday 2026-10-20", which it otherwise
-    // copies out as "20/10" -- correct, and the least human way to say it.
-    `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
-    replyLanguageLine(config.languages),
-    clinicDetailsSection(opts.clinicDetails ?? []),
-    teamSection(opts.team ?? []),
-    baseBehaviourSection(),
-    knowledge
-      ? `# What you know about this clinic\n\n${knowledge}`
-      : `# What you know about this clinic\n\nNothing ${opts.clinicDetails?.length ? 'else ' : ''}has been configured yet. For anything ${opts.clinicDetails?.length ? 'not under "The clinic"' : 'about the clinic'}, say you will check with your colleague rather than guessing.`,
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
-    // Not every message wants an answer: a "Confirmar" tapped on the reminder,
-    // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
-    `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
-    historyMarkersSection(Boolean(opts.sendsItself)),
-    INFORMAL_ADDRESS_LINE,
-    NO_INVENTION_LINE,
-    PART_OF_DAY_ANSWER_LINE,
-    SENT_FILES_LINE,
-    LATER_ANSWER_LINE,
-    REPLY_DETAILS_LINE,
-    STATED_LIMITS_LINE,
-    CARD_ANSWERS_LINE,
-    NOT_CHIROPRACTIC_SYMPTOM_LINE,
     // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos
     // en la primera visita" gives the patient no reason to come to it. A line
     // on how chiropractic is used for that, honest about what it is not,
@@ -1012,8 +994,9 @@ export function buildSystemPrompt(
     questions
       ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
-    escalationSection(config.escalationRules, Boolean(opts.sendsItself)),
-    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
+    // Offered to a lead too, refused there (receptionistDraft.ts), only so
+    // that a lead's tools are a patient's and the two share one cache entry.
+    opts.sendsItself && opts.canBook ? `stop_follow_ups is for the clinic's own patients: never call it in this conversation.` : '',
     opts.testMode
       ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
       : '',
@@ -1078,7 +1061,7 @@ export function buildSystemPrompt(
     CONFIDENTIALITY_SECTION,
   ]
 
-  return { clinic: clinic.filter(Boolean).join('\n\n'), conversation: conversation.filter(Boolean).join('\n\n') }
+  return { clinic, role: role.filter(Boolean).join('\n\n'), conversation: conversation.filter(Boolean).join('\n\n') }
 }
 
 /**

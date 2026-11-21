@@ -7,7 +7,7 @@ import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
-import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
+import { receptionistSystemBlocks, withTailBreakpoint, type ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON } from '~/server/utils/receptionistBooking'
 import type { OfferedSlot } from '~/utils/receptionistConversion'
 import { findTypeByName } from '~/utils/receptionistTypes'
@@ -251,22 +251,13 @@ export async function runReceptionistModel(
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
   const toolUses: ReceptionistToolUse[] = []
-  // The clinic's part is cached for an hour (utils/receptionistPrompt.ts
-  // says why it is split). It is the same for every conversation at the
-  // clinic, and a clinic's replies are minutes apart in the day but rarely
-  // five -- the 5-minute default would expire between most of them. A read
-  // refreshes the hour, so a busy day writes it a handful of times. The tools
-  // render before it and are cached with it; they differ only between
-  // drafting and sending, which makes two entries, not a miss.
-  //
-  // The rest of the request is deliberately not cached. Tried and measured
-  // on 24 real replies: writing it costs 25% extra on every call, and only
-  // about one reply in six makes a second call (find_free_times, a rewrite)
-  // that would read it back -- it added ~$0.0015 a reply and saved less.
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: opts.system.clinic, cache_control: { type: 'ephemeral', ttl: '1h' } },
-    { type: 'text', text: opts.system.conversation },
-  ]
+  // The clinic's part and the role after it are cached for an hour, and each
+  // round's messages for five minutes (utils/receptionistPrompt.ts says why).
+  // The tools render before them and are cached with them, so they must be
+  // the same list for a lead and a patient: the callers offer both the same
+  // ones, and a tool one of them cannot use is refused by its handler rather
+  // than left out. Drafting has its own list, which makes two entries.
+  const system = receptionistSystemBlocks(opts.system)
   const tools: Anthropic.Tool[] = [
     ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
     ...(opts.handOver ? [HAND_OVER] : []),
@@ -305,7 +296,7 @@ export async function runReceptionistModel(
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
       system,
-      messages,
+      messages: withTailBreakpoint(messages),
       ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })
     usage.rounds++

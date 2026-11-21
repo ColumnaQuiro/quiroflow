@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { receptionistIncludedBy, requireReceptionist } from '~/server/utils/requireGrowth'
 import { loadReceptionistActivity } from '~/server/utils/receptionistActivity'
 import { loadReceptionistConfig, loadTypeChoices } from '~/server/utils/receptionist'
-import { repliesThisMonth } from '~/server/utils/receptionistUsage'
+import { repliesThisMonth, trialAllowance } from '~/server/utils/receptionistUsage'
 
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember, subscription } = await requireReceptionist(event)
@@ -67,6 +67,9 @@ export default defineEventHandler(async (event) => {
     includedBy: receptionistIncludedBy(subscription),
     // This month's replies, for the usage card and its warnings.
     repliesThisMonth: await repliesThisMonth(supabase, teamMember.account_id),
+    // A trial that has bought nothing: its replies so far of the trial's
+    // allowance, or null. With the service role, as the drafting reads it.
+    trialAllowance: await trialAllowance(serverSupabaseServiceRole(event), teamMember.account_id),
     // What it has done, for the Overview (server/utils/receptionistActivity.ts).
     // In this response rather than a route of its own: one more file under
     // server/api tips Nitro's typed route map into TS2589 ("excessively

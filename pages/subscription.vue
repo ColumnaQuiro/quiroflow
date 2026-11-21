@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
+import { receptionistOnTrialAllowance } from '~/utils/receptionistAllowance'
 import { clinicAllowance, planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
 
@@ -181,17 +182,17 @@ const growthBilled = computed(() => !!subscription.value?.growth_addon && !curre
 const receptionistBilled = computed(() => !!subscription.value?.receptionist_addon && !subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
 /**
  * Why the account has the AI receptionist, for its card -- or null when it
- * does not: the server's receptionistIncludedBy. A trial alone does not give
- * it; a trialing account that has bought it is 'trial', and like a
- * complimentary one is never charged for its replies.
+ * does not: the server's receptionistIncludedBy. Every trial is 'trial', and
+ * like a complimentary one is never charged for its replies; one that has
+ * bought nothing is held to the trial's allowance (receptionistTrialReplies).
  */
 const receptionistIncludedBy = computed<'comped' | 'trial' | 'growth' | 'addon' | null>(() => {
   const sub = subscription.value
   if (!sub) return null
   if (comped.value) return 'comped'
   if (sub.status === 'locked' || sub.status === 'canceled') return null
-  if (!sub.growth_addon && !currentPlanIncludesGrowth.value && !sub.receptionist_addon) return null
   if (sub.status === 'trialing') return 'trial'
+  if (!sub.growth_addon && !currentPlanIncludesGrowth.value && !sub.receptionist_addon) return null
   return sub.growth_addon || currentPlanIncludesGrowth.value ? 'growth' : 'addon'
 })
 // This calendar month's replies (receptionist_replies_this_month), counted
@@ -202,6 +203,22 @@ async function loadReceptionistReplies() {
   const { data } = await supabase.rpc('receptionist_replies_this_month', { p_account_id: store.accountId })
   receptionistReplies.value = typeof data === 'number' ? data : Number(data ?? 0)
 }
+// A trial that has bought nothing: its replies since the trial began, of the
+// trial's allowance -- counted as server/utils/receptionistUsage.ts counts
+// them. Null otherwise. Read once the subscription is, since it decides.
+const receptionistTrialReplies = ref<number | null>(null)
+const onTrialAllowance = computed(() => receptionistOnTrialAllowance(subscription.value))
+async function loadReceptionistTrialReplies() {
+  if (!store.accountId || !onTrialAllowance.value) {
+    receptionistTrialReplies.value = null
+    return
+  }
+  let query = supabase.from('receptionist_replies').select('id', { count: 'exact', head: true }).eq('account_id', store.accountId)
+  if (subscription.value?.created_at) query = query.gte('created_at', subscription.value.created_at)
+  const { count } = await query
+  receptionistTrialReplies.value = count ?? 0
+}
+watch(onTrialAllowance, loadReceptionistTrialReplies)
 
 /** Locations bought on top of the plan's; none on a plan that does not sell them. */
 const extraClinicsBilled = computed(() =>
@@ -742,8 +759,8 @@ async function addPaymentMethod() {
 
             <SubscriptionReceptionistCard
               :included-by="receptionistIncludedBy"
-              :trialing="subscription.status === 'trialing'"
               :replies="receptionistReplies"
+              :trial-replies="onTrialAllowance ? receptionistTrialReplies : undefined"
               :monthly-price-cents="receptionistAddon?.monthly_price_cents ?? null"
               :can-manage="store.isOwner"
               @add="addReceptionist"

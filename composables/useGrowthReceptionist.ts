@@ -77,6 +77,8 @@ interface ConfigResponse extends TypeChoices {
   channels: ReceptionistChannel[]
   testModelAvailable: boolean
   repliesThisMonth: number
+  /** A trial that has bought nothing: replies used of the trial's allowance. */
+  trialAllowance?: { used: number; limit: number } | null
   includedBy?: ReceptionistIncludedBy
   activity?: ReceptionistActivity
 }
@@ -86,6 +88,7 @@ export function useGrowthReceptionist() {
   const channels = ref<ReceptionistChannel[]>([])
   const testModelAvailable = ref(false)
   const repliesThisMonth = ref(0)
+  const trialAllowance = ref<{ used: number; limit: number } | null>(null)
   const includedBy = ref<ReceptionistIncludedBy>(null)
   const activity = ref<ReceptionistActivity | null>(null)
   const appointmentTypes = ref<ReceptionistType[]>([])
@@ -112,6 +115,7 @@ export function useGrowthReceptionist() {
       channels.value = data.channels
       testModelAvailable.value = data.testModelAvailable
       repliesThisMonth.value = data.repliesThisMonth ?? 0
+      trialAllowance.value = data.trialAllowance ?? null
       includedBy.value = data.includedBy ?? null
       activity.value = data.activity ?? null
     } catch (e) {
@@ -164,5 +168,5 @@ export function useGrowthReceptionist() {
 
   const liveChannelCount = computed(() => channels.value.filter((c) => c.status === 'connected').length)
 
-  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, notIncluded, save, reload: load, liveChannelCount }
+  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, trialAllowance, includedBy, activity, loading, saving, error, notIncluded, save, reload: load, liveChannelCount }
 }

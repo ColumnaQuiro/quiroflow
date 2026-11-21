@@ -16,6 +16,12 @@ import {
 const props = defineProps<{
   replies: number
   limit: number | null
+  /**
+   * A trial that has bought nothing: its replies so far of the trial's
+   * allowance (RECEPTIONIST_TRIAL_REPLIES), which is what stops it then --
+   * nothing is charged in a trial, so the month's included 1,000 say nothing.
+   */
+  trial?: { used: number; limit: number } | null
   saving: boolean
   save: (limit: number | null) => Promise<boolean>
 }>()
@@ -27,6 +33,8 @@ const pct = computed(() => Math.min(100, Math.round((props.replies / RECEPTIONIS
 const barTone = computed(() => (level.value === 'over' ? 'bg-danger-text' : level.value === 'near' ? 'bg-warning-accent' : 'bg-brand'))
 const blocks = computed(() => receptionistExtraBlocks(props.replies))
 const stopped = computed(() => receptionistLimitReached(props.replies, props.limit))
+const trialPct = computed(() => (props.trial ? Math.min(100, Math.round((props.trial.used / props.trial.limit) * 100)) : 0))
+const trialUsedUp = computed(() => !!props.trial && props.trial.used >= props.trial.limit)
 const included = RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')
 const blockPrice = formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)
 // The block size written the same way as the allowance beside it. The
@@ -45,8 +53,33 @@ function saveLimit() {
 </script>
 
 <template>
-  <GrowthSettingCard :title="t('Replies this month', 'Respuestas este mes')">
-    <div data-test="receptionist-usage">
+  <GrowthSettingCard :title="trial ? t('Replies in your trial', 'Respuestas de la prueba') : t('Replies this month', 'Respuestas este mes')">
+    <div v-if="trial" data-test="receptionist-trial-usage">
+      <div class="flex items-baseline justify-between gap-3">
+        <p class="text-[13.5px] font-semibold text-ink-900">
+          <span data-test="trial-usage-count">{{ trial.used.toLocaleString('es-ES') }}</span>
+          <span class="text-[11.5px] font-normal text-ink-muted"> {{ t(`of ${trial.limit} in the free trial`, `de ${trial.limit} en la prueba gratuita`) }}</span>
+        </p>
+        <span class="text-[11px] text-ink-faint">{{ trialPct }}%</span>
+      </div>
+      <div class="mt-2 h-1.5 overflow-hidden rounded-pill bg-surface-subtle">
+        <div class="h-full rounded-pill transition-all" :class="trialUsedUp ? 'bg-danger-text' : trialPct >= 80 ? 'bg-warning-accent' : 'bg-brand'" :style="{ width: `${trialPct}%` }" />
+      </div>
+      <p v-if="trialUsedUp" class="mt-2 rounded-ctl border border-danger-border bg-danger-bg px-2.5 py-1.5 text-[11.5px] text-danger-text" data-test="trial-usage-over">
+        {{ t(
+          `The trial's ${trial.limit} replies are used, so it is not drafting or answering. Add it under Subscription and it carries on.`,
+          `Se han usado las ${trial.limit} respuestas de la prueba, así que no redacta ni contesta. Añádela en Suscripción y sigue.`,
+        ) }}
+      </p>
+      <p v-else class="mt-2 text-[11px] leading-[1.5] text-ink-muted">
+        {{ t(
+          `The free trial includes ${trial.limit} replies, sent or left as drafts. Once you add it under Subscription, it has ${included} a month, and this month's replies count toward them.`,
+          `La prueba gratuita incluye ${trial.limit} respuestas, enviadas o como borrador. Cuando la añadas en Suscripción, tendrá ${included} al mes, y las de este mes cuentan para ellas.`,
+        ) }}
+      </p>
+      <NuxtLink to="/subscription" class="mt-2 inline-flex text-[11.5px] font-semibold text-brand-text hover:text-brand-hover">{{ t('Add it under Subscription →', 'Añadirla en Suscripción →') }}</NuxtLink>
+    </div>
+    <div v-else data-test="receptionist-usage">
       <div class="flex items-baseline justify-between gap-3">
         <p class="text-[13.5px] font-semibold text-ink-900">
           <span data-test="usage-count">{{ replies.toLocaleString('es-ES') }}</span>

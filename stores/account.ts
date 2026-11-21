@@ -101,12 +101,12 @@ export const useAccountStore = defineStore('account', {
       state.subscriptionStatus === 'trialing' ||
       ((state.growthAddon || planIncludesGrowth(state.planId))
         && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
-    // hasReceptionist() on the server: Growth includes the receptionist, and
-    // it is also sold on its own -- but the trial alone does not give it,
-    // although it gives Growth.
+    // hasReceptionist() on the server: Growth includes the receptionist, it
+    // is also sold on its own, and the trial has it on an allowance
+    // (RECEPTIONIST_TRIAL_REPLIES) until it buys it.
     hasReceptionist: (state) =>
       state.comped ||
-      ((state.growthAddon || planIncludesGrowth(state.planId) || state.receptionistAddon)
+      ((state.subscriptionStatus === 'trialing' || state.growthAddon || planIncludesGrowth(state.planId) || state.receptionistAddon)
         && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
     // Personal (staff files, documents, the gestoría pack, profitability):
     // Practice and Clinic, a trial, or comped -- staffSectionIncluded, which

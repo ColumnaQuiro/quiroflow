@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RECEPTIONIST_TRIAL_REPLIES } from '../../utils/receptionistAllowance'
 // Who is answering this conversation, and the one control that changes it.
 // Sits directly under the thread header so it is read before the messages
 // are -- for a lead's thread and a patient's alike, from one state shape.
@@ -26,7 +27,7 @@ const props = withDefaults(defineProps<{
    * or at its monthly limit. Said in the thread, because the only other sign
    * is drafts quietly not arriving.
    */
-  quiet?: 'off' | 'limit' | null
+  quiet?: 'off' | 'limit' | 'trial' | null
   /**
    * Whether to offer the way to the settings that fix a blocked channel or a
    * quiet receptionist. Off in the staff app, which has neither page: a link
@@ -40,6 +41,7 @@ const t = useT()
 
 const quietText = computed(() => {
   if (props.quiet === 'limit') return t('The receptionist has reached its monthly reply limit, so it is not drafting or answering until the 1st.', 'La recepcionista ha llegado a su límite mensual de respuestas, así que no redacta ni contesta hasta el día 1.')
+  if (props.quiet === 'trial') return t(`The receptionist has used the free trial's ${RECEPTIONIST_TRIAL_REPLIES} replies. Add it under Subscription to keep it answering.`, `La recepcionista ha usado las ${RECEPTIONIST_TRIAL_REPLIES} respuestas de la prueba. Añádela en Suscripción para que siga respondiendo.`)
   if (props.quiet === 'off') return t('The receptionist is switched off, so nothing is drafted here.', 'La recepcionista está desactivada, así que aquí no se redacta nada.')
   return ''
 })

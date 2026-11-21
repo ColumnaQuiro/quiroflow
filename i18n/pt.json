@@ -1490,7 +1490,13 @@
   "{0}–{1} is free": "{0}–{1} está livre",
   "· ends {0}": "· termina a {0}",
   "“Has” includes up to {0} unused days carried over from last year.": "“Tem” inclui até {0} dias não usados transitados do ano passado.",
-  "“{0}” is now a type, with {1} patients": "«{0}» já é um tipo, com {1} pacientes"
+  "“{0}” is now a type, with {1} patients": "«{0}» já é um tipo, com {1} pacientes",
+  "of {0} in the free trial": "de {0} no teste gratuito",
+  "The trial's {0} replies are used, so it is not drafting or answering. Add it under Subscription and it carries on.": "As {0} respostas do teste foram usadas, por isso não redige nem responde. Adicione-a em Subscrição e continua.",
+  "The free trial includes {0} replies, sent or left as drafts. Once you add it under Subscription, it has {1} a month, and this month's replies count toward them.": "O teste gratuito inclui {0} respostas, enviadas ou como rascunho. Quando a adicionar em Subscrição, terá {1} por mês, e as respostas deste mês contam para elas.",
+  "The receptionist has used the free trial's {0} replies. Add it under Subscription to keep it answering.": "A rececionista usou as {0} respostas do teste gratuito. Adicione-a em Subscrição para que continue a responder.",
+  "of {0} replies in the free trial": "de {0} respostas no teste gratuito",
+  "The free trial includes {0} replies; past them it stops until you add it. Add it and it has {1} a month, with this month's replies counting toward them.": "O teste gratuito inclui {0} respostas; depois disso para até a adicionar. Ao adicioná-la terá {1} por mês, e as respostas deste mês contam para elas."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10365,6 +10371,8 @@
   "✓ Added": "✓ Adicionado",
   "✓ Done today": "✓ Feito hoje",
   "✓ In library": "✓ Na biblioteca",
-  "VeriFactu is included in your subscription at no extra cost.": "O VeriFactu está incluído na sua assinatura, sem custo adicional."
+  "VeriFactu is included in your subscription at no extra cost.": "O VeriFactu está incluído na sua assinatura, sem custo adicional.",
+  "Replies in your trial": "Respostas do período de teste",
+  "Add it under Subscription →": "Adicioná-la em Subscrição →"
  }
 }

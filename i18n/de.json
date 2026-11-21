@@ -1490,7 +1490,13 @@
   "{0}–{1} is free": "{0}–{1} ist frei",
   "· ends {0}": "· endet am {0}",
   "“Has” includes up to {0} unused days carried over from last year.": "„Hat“ enthält bis zu {0} nicht genutzte, aus dem Vorjahr übertragene Tage.",
-  "“{0}” is now a type, with {1} patients": "„{0}“ ist jetzt ein Typ mit {1} Patienten"
+  "“{0}” is now a type, with {1} patients": "„{0}“ ist jetzt ein Typ mit {1} Patienten",
+  "of {0} in the free trial": "von {0} im kostenlosen Test",
+  "The trial's {0} replies are used, so it is not drafting or answering. Add it under Subscription and it carries on.": "Die {0} Antworten des Tests sind aufgebraucht, daher entwirft und beantwortet er nichts. Fügen Sie ihn unter Abonnement hinzu, dann macht er weiter.",
+  "The free trial includes {0} replies, sent or left as drafts. Once you add it under Subscription, it has {1} a month, and this month's replies count toward them.": "Der kostenlose Test umfasst {0} Antworten, gesendet oder als Entwurf. Sobald Sie ihn unter Abonnement hinzufügen, hat er {1} im Monat, und die Antworten dieses Monats zählen dazu.",
+  "The receptionist has used the free trial's {0} replies. Add it under Subscription to keep it answering.": "Der KI-Empfang hat die {0} Antworten des kostenlosen Tests aufgebraucht. Fügen Sie ihn unter Abonnement hinzu, damit er weiter antwortet.",
+  "of {0} replies in the free trial": "von {0} Antworten im kostenlosen Test",
+  "The free trial includes {0} replies; past them it stops until you add it. Add it and it has {1} a month, with this month's replies counting toward them.": "Der kostenlose Test umfasst {0} Antworten; danach pausiert er, bis Sie ihn hinzufügen. Dann hat er {1} im Monat, und die Antworten dieses Monats zählen dazu."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10365,6 +10371,8 @@
   "✓ Added": "✓ Hinzugefügt",
   "✓ Done today": "✓ Heute erledigt",
   "✓ In library": "✓ In der Bibliothek",
-  "VeriFactu is included in your subscription at no extra cost.": "VeriFactu ist ohne Aufpreis in Ihrem Abonnement enthalten."
+  "VeriFactu is included in your subscription at no extra cost.": "VeriFactu ist ohne Aufpreis in Ihrem Abonnement enthalten.",
+  "Replies in your trial": "Antworten im Testzeitraum",
+  "Add it under Subscription →": "Unter Abonnement hinzufügen →"
  }
 }

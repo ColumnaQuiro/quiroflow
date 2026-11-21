@@ -22,11 +22,7 @@ import type { ReceptionistIncludedBy } from '~/composables/useGrowthReceptionist
 const t = useT()
 const { can } = usePermission()
 const { hasReceptionist, resolved } = useGrowthTier()
-// A trial gives Growth but not the receptionist, so "get it with Growth" is
-// not what to tell someone who is already trying Growth.
-const store = useAccountStore()
-const trialing = computed(() => store.subscriptionStatus === 'trialing')
-const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, notIncluded, save, reload, liveChannelCount } = useGrowthReceptionist()
+const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, trialAllowance, includedBy, activity, loading, saving, error, notIncluded, save, reload, liveChannelCount } = useGrowthReceptionist()
 const route = useRoute()
 const router = useRouter()
 
@@ -118,7 +114,7 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
     <div class="p-4 sm:p-6">
       <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
-      <GrowthReceptionistLocked v-else-if="(resolved && !hasReceptionist) || notIncluded" :trialing="trialing" />
+      <GrowthReceptionistLocked v-else-if="(resolved && !hasReceptionist) || notIncluded" />
 
       <GrowthPageNotice v-else-if="error" kind="error" :title="error" data-test="receptionist-error" @retry="reload" />
 
@@ -158,6 +154,7 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
             <GrowthReceptionistActivity :activity="activity" @reload="reload" />
             <GrowthReceptionistUsage
               :replies="repliesThisMonth"
+              :trial="trialAllowance"
               :limit="config.monthlyReplyLimit"
               :saving="saving"
               :save="(limit: number | null) => save({ monthlyReplyLimit: limit })"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, receptionistExtraBlocks } from '~/utils/receptionistAllowance'
+import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, RECEPTIONIST_TRIAL_REPLIES, receptionistExtraBlocks } from '~/utils/receptionistAllowance'
 
 // The AI receptionist on the Subscription page: whether the account has it
 // and why, this month's replies against the 1,000 included, and what the
@@ -11,9 +11,9 @@ import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, receptio
 //
 // The numbers are utils/receptionistAllowance.ts's, the same the monthly
 // charge (receptionist-overage-cron) reads; and who is not charged is that
-// cron's rule: complimentary, trialing, or no card to charge. The trial on
-// its own does not include it (hasReceptionist); 'trial' is a trialing
-// account that has bought it.
+// cron's rule: complimentary, trialing, or no card to charge. Every trial is
+// 'trial'; one that has bought nothing is held to the trial's allowance
+// (RECEPTIONIST_TRIAL_REPLIES), which is what the card then measures.
 const props = defineProps<{
   /** Why it is included, or null when the account does not have it. */
   includedBy: 'comped' | 'trial' | 'growth' | 'addon' | null
@@ -21,15 +21,22 @@ const props = defineProps<{
   replies: number | null
   monthlyPriceCents: number | null
   canManage: boolean
-  /** Still in the trial, which does not include it. */
-  trialing?: boolean
+  /**
+   * A trial that has bought nothing: its replies since the trial began, of
+   * RECEPTIONIST_TRIAL_REPLIES (null until read). Undefined otherwise.
+   */
+  trialReplies?: number | null
 }>()
 const emit = defineEmits<{ add: [] }>()
 const t = useT()
 
 const included = RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')
 const blockPrice = formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)
-const percent = computed(() => (props.replies === null ? 0 : Math.min(100, Math.round((props.replies / RECEPTIONIST_INCLUDED_REPLIES) * 100))))
+const onTrialAllowance = computed(() => props.trialReplies !== undefined)
+const trialLimit = RECEPTIONIST_TRIAL_REPLIES
+const shownReplies = computed(() => (onTrialAllowance.value ? (props.trialReplies ?? null) : props.replies))
+const shownOf = computed(() => (onTrialAllowance.value ? trialLimit : RECEPTIONIST_INCLUDED_REPLIES))
+const percent = computed(() => (shownReplies.value === null ? 0 : Math.min(100, Math.round((shownReplies.value / shownOf.value) * 100))))
 const blocks = computed(() => receptionistExtraBlocks(props.replies ?? 0))
 const charged = computed(() => props.includedBy === 'growth' || props.includedBy === 'addon')
 
@@ -38,7 +45,6 @@ const pill = computed(() => {
   if (props.includedBy === 'trial') return { label: t('In your trial', 'En tu prueba'), cls: 'bg-brand-tint text-brand-text' }
   if (props.includedBy === 'growth') return { label: t('Included in Growth', 'Incluida en Growth'), cls: 'bg-success-bg text-success-text' }
   if (props.includedBy === 'addon') return { label: t('Add-on', 'Complemento'), cls: 'bg-success-bg text-success-text' }
-  if (props.trialing) return { label: t('Not in the trial', 'No incluida en la prueba'), cls: 'bg-chip-bg text-chip-text' }
   return { label: t('Not on this plan', 'No contratada'), cls: 'bg-chip-bg text-chip-text' }
 })
 </script>
@@ -54,8 +60,10 @@ const pill = computed(() => {
       <template v-if="includedBy">
         <div class="mt-3 flex items-baseline justify-between gap-3">
           <p class="text-[22px] font-semibold text-ink-900">
-            <span data-cy="subscription-receptionist-replies">{{ replies === null ? '—' : replies.toLocaleString('es-ES') }}</span>
-            <span class="ml-1 text-[13px] font-normal text-ink-muted">{{ t(`of ${included} replies included this month`, `de ${included} respuestas incluidas este mes`) }}</span>
+            <span data-cy="subscription-receptionist-replies">{{ shownReplies === null ? '—' : shownReplies.toLocaleString('es-ES') }}</span>
+            <span class="ml-1 text-[13px] font-normal text-ink-muted">{{ onTrialAllowance
+              ? t(`of ${trialLimit} replies in the free trial`, `de ${trialLimit} respuestas en la prueba gratuita`)
+              : t(`of ${included} replies included this month`, `de ${included} respuestas incluidas este mes`) }}</span>
           </p>
           <span class="text-[12px] text-ink-faint">{{ percent }}%</span>
         </div>
@@ -64,7 +72,9 @@ const pill = computed(() => {
           <template v-if="!charged">
             {{ includedBy === 'comped'
               ? t('This account pays nothing for it, the replies past the included ones neither. They are counted all the same, so you can see what a paying clinic would use.', 'Esta cuenta no paga nada por ella, tampoco las respuestas de más. Se cuentan igual, para ver lo que usaría una clínica que paga.')
-              : t('Included while the trial lasts, with no charge for replies past the included ones.', 'Incluida mientras dure la prueba, sin cargo por las respuestas de más.') }}
+              : onTrialAllowance
+                ? t(`The free trial includes ${trialLimit} replies; past them it stops until you add it. Add it and it has ${included} a month, with this month's replies counting toward them.`, `La prueba gratuita incluye ${trialLimit} respuestas; pasadas, se detiene hasta que la añadas. Al añadirla tendrá ${included} al mes, y las de este mes cuentan para ellas.`)
+                : t('Included while the trial lasts, with no charge for replies past the included ones.', 'Incluida mientras dure la prueba, sin cargo por las respuestas de más.') }}
           </template>
           <template v-else>
             {{ t(`Past the ${included} included, each further 1,000 (or part of one) is ${blockPrice} + IVA, charged at the start of the next month.`, `Pasadas las ${included} incluidas, cada 1.000 más (o parte) son ${blockPrice} + IVA, cobrados a principios del mes siguiente.`) }}

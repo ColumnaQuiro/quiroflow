@@ -104,23 +104,30 @@ describe('The Growth add-on', () => {
     get('/api/growth/dashboard').its('status').should('eq', 200)
   })
 
-  it('leaves the AI receptionist out of the trial', () => {
+  it('gives the AI receptionist to a trial, on 200 replies', () => {
     // Every reply is a paid model call and a trial is charged for none of
-    // them, so the trial gives the rest of Growth but not this.
+    // them, so a trial that has bought nothing has it on an allowance.
     cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
     cy.setSubscriptionStatus(account.accountId, 'trialing')
-    get('/api/growth/receptionist/config').its('status').should('eq', 402)
-    cy.request({ method: 'POST', url: '/api/growth/receptionist/test-chat', body: { messages: [{ role: 'user', content: 'Hola' }] }, failOnStatusCode: false })
-      .its('status').should('eq', 402)
+    get('/api/growth/receptionist/config').then((res) => {
+      expect(res.status).to.eq(200)
+      expect(res.body.includedBy).to.eq('trial')
+      expect(res.body.trialAllowance).to.deep.eq({ used: 0, limit: 200 })
+    })
+    cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 200 })
+    get('/api/growth/receptionist/config').its('body.trialAllowance').should('deep.eq', { used: 200, limit: 200 })
   })
 
-  it('gives the receptionist to a trial that bought it', () => {
+  it('lifts the trial allowance once the receptionist is bought', () => {
     // Bought through Checkout, with a card: from then on it is theirs, trial
-    // or not.
+    // or not, and what it wrote in the trial counts toward the month.
     cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
     cy.task('db:setReceptionistAddon', { accountId: account.accountId, enabled: true })
     cy.setSubscriptionStatus(account.accountId, 'trialing')
-    get('/api/growth/receptionist/config').its('status').should('eq', 200)
+    get('/api/growth/receptionist/config').then((res) => {
+      expect(res.status).to.eq(200)
+      expect(res.body.trialAllowance).to.eq(null)
+    })
   })
 
   it('stops when the trial ends and nothing was bought', () => {

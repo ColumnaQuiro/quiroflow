@@ -167,6 +167,24 @@ const sources = computed<Source[]>(() => [
     ],
   },
   {
+    key: 'stripe',
+    label: 'Stripe',
+    sub: t('Memberships charged as Stripe subscriptions', 'Membresías cobradas como suscripciones de Stripe'),
+    groups: [
+      {
+        key: 'money',
+        label: t('Memberships', 'Membresías'),
+        steps: [
+          {
+            key: 'subscriptions',
+            label: t('Stripe subscriptions', 'Suscripciones de Stripe'),
+            hint: t('Pairs each subscription in your Stripe account with its patient and membership, and keeps them in step from then on. Needs Stripe connected in Settings › Payments.', 'Empareja cada suscripción de tu cuenta de Stripe con su paciente y su membresía, y las mantiene al día a partir de entonces. Requiere Stripe conectado en Ajustes › Pagos.'),
+          },
+        ],
+      },
+    ],
+  },
+  {
     key: 'other',
     label: t('Another system', 'Otro sistema'),
     sub: t('Patients from a CSV or Excel file', 'Pacientes desde un archivo CSV o Excel'),
@@ -466,6 +484,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportQuirocitasRead v-else-if="activeStep.key === 'read'" />
                 <ImportQuirocitasStep v-else :kind="activeStep.key as QuirocitasStepKind" />
               </template>
+              <ImportStripeSubscriptions v-else-if="sourceKey === 'stripe'" />
               <ImportGenericCsvPatientsImporter v-else />
               <div v-if="previousStep || nextStep" class="flex flex-wrap items-center justify-between gap-3 border-t border-line-divider pt-4" data-cy="import-step-nav">
                 <button v-if="previousStep" type="button" class="text-[13px] font-medium text-ink-600 hover:underline" data-cy="import-previous-step" @click="stepKey = previousStep.key">

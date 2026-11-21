@@ -158,8 +158,8 @@ describe('Posture assessment', () => {
     })
   })
 
-  // Front and back stand in for each other (utils/posture.ts postureMissing):
-  // one of the two is enough, and the screens say which one was left out.
+  // Any one photo is enough (utils/posture.ts postureCanSave): front and back
+  // stand in for each other, and a plane left out is said, not just absent.
   it('saves with the back alone when the front is skipped, and says the front was not taken', () => {
     const side = { photo: 'none/right.jpg', width: 1000, height: 1800, facing: 'right', points: { ear: [540, 100], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, 1691] } }
     const front = { photo: 'none/front.jpg', width: 1000, height: 1800, facing: null, points: { earR: [470, 100], earL: [530, 100], shoulderR: [400, 310], shoulderL: [600, 300], hipR: [450, 900], hipL: [550, 900], kneeR: [460, 1300], kneeL: [540, 1300], ankleR: [450, 1691], ankleL: [550, 1691] } }
@@ -173,34 +173,25 @@ describe('Posture assessment', () => {
         cy.login(account.email, account.password)
         visitCapture(patient.id)
         cy.get('[data-cy=posture-height]').clear().type('168')
-        cy.get('[data-cy=posture-views-hint]').should('contain', 'One photo from the front or the back is enough')
-        cy.get('[data-cy=posture-step-front]').should('contain', '(or back)')
-        cy.get('[data-cy=posture-step-back]').should('contain', '(or front)')
+        cy.get('[data-cy=posture-views-hint]').should('contain', 'Any one photo is enough')
         cy.get('[data-cy=posture-step-result]').should('be.disabled')
 
         // No front: on to the side.
-        cy.get('[data-cy=posture-skip-view]').click()
+        cy.get('[data-cy=posture-skip-view]').should('contain', 'Skip this view').click()
         cy.get('[data-cy=posture-capture]').should('have.attr', 'data-step', 'right')
         photo()
         cy.get('[data-cy=posture-overlay] circle', { timeout: 20000 }).should('have.length', 5)
         cy.get('[data-cy=posture-next]').click()
-
-        // The back is now the one photo from the front or the back: nothing to skip to yet.
         cy.get('[data-cy=posture-capture]').should('have.attr', 'data-step', 'back')
-        cy.get('[data-cy=posture-skip]').should('not.exist')
-        cy.get('[data-cy=posture-step-result]').should('be.disabled')
-        cy.get('[data-cy=posture-step-left]').click()
-        cy.get('[data-cy=posture-missing]').should('contain', 'a photo from the front or the back')
-        cy.get('[data-cy=posture-step-back]').click()
         photo()
         cy.get('[data-cy=posture-overlay] circle', { timeout: 20000 }).should('have.length', 10)
         cy.get('[data-cy=posture-live-shoulders]').invoke('text').should('match', /^-?\d+(,\d)? °$/)
-        cy.get('[data-cy=posture-missing]').should('not.exist')
         cy.get('[data-cy=posture-skip]').click()
 
         cy.get('[data-cy=posture-result]').should('be.visible')
-        cy.get('[data-cy=posture-view-missing-front]').should('contain', 'Not taken')
-        cy.get('[data-cy=posture-view-missing-back]').should('not.exist')
+        // Both planes are there: nothing missing, only the front's own Q-angle.
+        cy.get('[data-cy^=posture-view-missing]').should('not.exist')
+        cy.get('[data-cy=posture-no-index-note]').should('not.exist')
         cy.get('[data-cy=posture-no-front-note]').should('contain', 'no Q-angle')
         cy.get('[data-cy=posture-save]').should('not.be.disabled').click()
 
@@ -224,10 +215,54 @@ describe('Posture assessment', () => {
         // frontal rows are not there.
         cy.get('[data-cy=posture-row]').first().should('contain', 'from the back, no front')
         cy.get('[data-cy=posture-kpi-shoulders]').invoke('text').should('match', /°/)
+        cy.get('[data-cy=posture-kpi-missing]').should('not.exist')
         cy.get('[data-cy=posture-comparison-row-headWeight]').should('exist')
         cy.get('[data-cy=posture-comparison-row-shoulderTilt]').should('not.exist')
         cy.get('[data-cy=posture-comparison-uncompared-front]').should('contain', 'not compared').and('contain', 'the front photo').and('contain', 'the back photo')
         cy.get('[data-cy=posture-comparison-uncompared-side]').should('not.exist')
+      })
+    })
+  })
+
+  it('saves a side photo alone, and says what it cannot measure', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lado', lastName: 'Solo' }).then((patient) => {
+        cy.login(account.email, account.password)
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-height]').clear().type('168')
+        // Nothing yet: the last step says the result needs a photo.
+        cy.get('[data-cy=posture-step-left]').click()
+        cy.get('[data-cy=posture-skip]').should('not.exist')
+        cy.get('[data-cy=posture-missing]').should('contain', 'at least one photo')
+
+        cy.get('[data-cy=posture-step-right]').click()
+        photo()
+        cy.get('[data-cy=posture-overlay] circle', { timeout: 20000 }).should('have.length', 5)
+        cy.get('[data-cy=posture-live-weight]').invoke('text').should('match', /kg$/)
+        cy.get('[data-cy=posture-skip]').click()
+
+        cy.get('[data-cy=posture-result]').should('be.visible')
+        cy.get('[data-cy=posture-view-missing-frontal]').should('contain', 'Not taken').and('contain', 'Front or back')
+        cy.get('[data-cy=posture-view-missing-side]').should('not.exist')
+        cy.get('[data-cy=posture-no-frontal-note]').should('contain', 'no shoulder or pelvis tilt')
+        cy.get('[data-cy=posture-no-index-note]').should('contain', 'alignment index needs')
+        cy.get('[data-cy=posture-save]').should('not.be.disabled').click()
+
+        cy.location('search', { timeout: 20000 }).should('contain', 'tab=progress')
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        cy.task<{ views: Record<string, unknown>; metrics: Record<string, unknown> }[]>('db:selectRows', {
+          table: 'posture_assessments',
+          columns: 'views, metrics',
+          match: { patient_id: patient.id },
+        }).then(([a]) => {
+          expect(Object.keys(a!.views)).to.deep.eq(['right'])
+          expect(Object.keys(a!.metrics)).to.deep.eq(['right'])
+        })
+        cy.get('[data-cy=posture-row]').first().should('contain', 'side only')
+        cy.get('[data-cy=posture-kpi-weight]').should('contain', 'kg')
+        cy.get('[data-cy=posture-kpi-shoulders]').should('not.exist')
+        cy.get('[data-cy=posture-kpi-alignment]').should('not.exist')
+        cy.get('[data-cy=posture-kpi-missing]').should('contain', 'no front or back photo')
       })
     })
   })

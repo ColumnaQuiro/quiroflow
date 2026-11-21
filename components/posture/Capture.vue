@@ -8,6 +8,7 @@ import {
   measureAll,
   measureView,
   pointsFromLandmarks,
+  postureCanSave,
   postureMissing,
   postureCallouts,
   POSTURE_VIEWS,
@@ -40,7 +41,8 @@ import {
 
 // A new posture or squat assessment for one patient (posture_assessments,
 // `kind`). Posture: a photo per view -- front, right side, back, and the left
-// side if wanted; the front OR the back is enough, and a side (postureMissing). Squat (utils/squat.ts): the patient standing and at the
+// side if wanted. Any one of them is enough (postureCanSave); a plane left
+// out takes its measurements with it, and the result says which. Squat (utils/squat.ts): the patient standing and at the
 // lowest point of a squat, from the front, the side or both. Either way the
 // points are placed by the pose model running here in the browser
 // (usePoseModel), dragged into place by the practitioner, and the
@@ -86,9 +88,6 @@ const angles = ref<SquatAngles>('both')
 const steps = computed<PhotoView[]>(() => (isSquat ? squatViewsFor(angles.value) : POSTURE_VIEWS))
 const label = (v: PhotoView) => (isSquatView(v) ? t(SQUAT_VIEW_LABELS[v].en, SQUAT_VIEW_LABELS[v].es) : VIEW_LABELS[v])
 const optional = (v: PhotoView) => v === 'left'
-// Front and back stand in for each other (postureMissing): one of the two is
-// needed, either will do, and the tab says which half of the pair it is.
-const eitherOf = (v: PhotoView) => !isSquat && (v === 'front' || v === 'back')
 
 // A photo is kept both ways when the person could be cut out: as taken, and
 // on white. White is what is shown and saved unless the practitioner turns it
@@ -291,18 +290,12 @@ const next = computed<PhotoView | 'result'>(() => {
   return steps.value[i + 1] ?? 'result'
 })
 const taken = computed(() => steps.value.filter((v) => shots[v]))
-const notTaken = computed(() => (isSquat ? [] : POSTURE_VIEWS.filter((v) => eitherOf(v) && !shots[v])))
+// Planes with no photo (postureMissing), each said on the result with what it takes away.
 const missing = computed(() => (isSquat ? [] : postureMissing(shots)))
-const canFinish = computed(() => heightOk.value && (isSquat ? steps.value.every((v) => shots[v]) : !missing.value.length))
-// What is still needed before the result, in words, once the steps run out.
-const missingText = computed(() =>
-  missing.value
-    .map((m) => (m === 'frontal' ? t('a photo from the front or the back', 'una foto de frente o de espalda') : t('a photo of the right or the left side', 'una foto del lado derecho o del izquierdo')))
-    .join(t(' and ', ' y ')),
-)
-// The front can be left for the back: skipping it moves on, and the back
-// step then becomes the one that cannot be skipped.
-const canSkipView = computed(() => step.value === 'front' && !isSquat && !shots.front)
+const canFinish = computed(() => heightOk.value && (isSquat ? steps.value.every((v) => shots[v]) : postureCanSave(shots)))
+// Any view can be left out: skipping moves on to the next one.
+const canSkipView = computed(() => !isSquat && step.value !== 'result' && !shots[step.value] && next.value !== 'result')
+const planeLabel = (p: 'frontal' | 'side') => (p === 'frontal' ? t('Front or back', 'Frente o espalda') : t('Side', 'Lado'))
 
 // The measurements written on the photo beside their points, when asked for.
 const showValues = ref(false)
@@ -385,7 +378,7 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
           :data-cy="`posture-step-${v}`"
           @click="step = v"
         >
-          {{ shots[v] ? '✓ ' : '' }}{{ label(v) }}{{ optional(v) ? t(' (optional)', ' (opcional)') : eitherOf(v) ? (v === 'front' ? t(' (or back)', ' (o espalda)') : t(' (or front)', ' (o frente)')) : '' }}
+          {{ shots[v] ? '✓ ' : '' }}{{ label(v) }}{{ optional(v) ? t(' (optional)', ' (opcional)') : '' }}
         </button>
         <button type="button" role="tab" :aria-selected="step === 'result'" :disabled="!canFinish" class="h-9 rounded-pill border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700 disabled:opacity-50 touch:h-11" data-cy="posture-step-result" @click="step = 'result'">{{ t('Result', 'Resultado') }}</button>
         <span class="flex-1" />
@@ -401,7 +394,7 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
           cm
         </label>
       </div>
-      <p v-if="!isSquat" class="text-[12.5px] text-ink-muted" data-cy="posture-views-hint">{{ t('One photo from the front or the back is enough, and one side. Without the front there is no Q-angle; everything else from the front is measured from the back.', 'Basta una foto de frente o de espalda, y un lado. Sin la de frente no hay ángulo Q; lo demás de frente se mide desde la espalda.') }}</p>
+      <p v-if="!isSquat" class="text-[12.5px] text-ink-muted" data-cy="posture-views-hint">{{ t('Any one photo is enough. The side gives the head and the vertical; the front or the back gives tilts, shifts and knees (the Q-angle only from the front). The alignment index needs both.', 'Basta con una foto. La de lado da la cabeza y la vertical; la de frente o espalda, inclinaciones, desplazamientos y rodillas (el ángulo Q, solo la de frente). El índice de alineación necesita las dos.') }}</p>
       <p v-if="!heightOk" class="text-[12.5px] text-warning-text">{{ t("The patient's height turns pixels into centimetres.", 'La altura del paciente es lo que pasa los píxeles a centímetros.') }}</p>
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
       <input ref="input" type="file" accept="image/*" class="hidden" data-cy="posture-file" @change="onPhoto" />
@@ -434,9 +427,9 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
             <UiBtn v-if="touch" variant="primary" data-cy="posture-camera" @click="openCamera">{{ t('Take photo', 'Hacer foto') }}</UiBtn>
             <UiBtn :variant="touch ? undefined : 'primary'" data-cy="posture-take" @click="openGallery">{{ touch ? t('Choose from gallery', 'Elegir de la galería') : t('Choose photo', 'Elegir foto') }}</UiBtn>
           </div>
-          <button v-if="canSkipView" type="button" class="text-[13px] font-semibold text-ink-muted" data-cy="posture-skip-view" @click="step = next">{{ t('No front photo: take the back instead', 'Sin foto de frente: haré la de espalda') }}</button>
-          <button v-if="(step === 'back' || step === 'left') && canFinish" type="button" class="text-[13px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>
-          <p v-else-if="step === 'left' && heightOk && missingText" class="text-[12.5px] text-warning-text" data-cy="posture-missing">{{ t(`Still needed for the result: ${missingText}.`, `Para ver el resultado hace falta ${missingText}.`) }}</p>
+          <button v-if="canSkipView" type="button" class="text-[13px] font-semibold text-ink-muted" data-cy="posture-skip-view" @click="step = next">{{ t('Skip this view', 'Saltar esta vista') }}</button>
+          <button v-if="!isSquat && canFinish" type="button" class="text-[13px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>
+          <p v-else-if="!isSquat && step === 'left' && heightOk" class="text-[12.5px] text-warning-text" data-cy="posture-missing">{{ t('The result needs at least one photo.', 'Para ver el resultado hace falta al menos una foto.') }}</p>
         </div>
         <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
           <div class="mx-auto w-full max-w-[560px]">
@@ -525,8 +518,7 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
               <UiBtn v-if="touch" class="flex-1" :disabled="busy" data-cy="posture-regallery" @click="openGallery">{{ t('Gallery', 'Galería') }}</UiBtn>
               <UiBtn class="flex-1" variant="primary" :disabled="next === 'result' && !canFinish" data-cy="posture-next" @click="step = next">{{ next === 'result' ? t('See result', 'Ver resultado') : t(`Next: ${label(next).toLowerCase()}`, `Siguiente: ${label(next).toLowerCase()}`) }}</UiBtn>
             </div>
-            <button v-if="(step === 'back' || step === 'left') && canFinish" type="button" class="text-[12.5px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>
-            <p v-else-if="next === 'result' && heightOk && missingText" class="text-[12.5px] text-warning-text" data-cy="posture-missing">{{ t(`Still needed for the result: ${missingText}.`, `Para ver el resultado hace falta ${missingText}.`) }}</p>
+            <button v-if="!isSquat && canFinish && next !== 'result'" type="button" class="text-[12.5px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>
           </aside>
         </div>
       </template>
@@ -537,20 +529,25 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
             <PostureOverlay :src="shown(shots[v]!).url" :width="shots[v]!.width" :height="shots[v]!.height" :view="v" :points="shots[v]!.points" :tilt="shots[v]!.tilt || null" :labels="false" />
             <span class="text-center text-[12.5px] font-semibold text-ink-700">{{ label(v) }}</span>
           </div>
-          <!-- The front or back left out: said, not just absent. -->
-          <div v-for="v in notTaken" :key="v" class="flex flex-col gap-1" :data-cy="`posture-view-missing-${v}`">
+          <!-- A plane left out: said, not just absent. -->
+          <div v-for="p in missing" :key="p" class="flex flex-col gap-1" :data-cy="`posture-view-missing-${p}`">
             <div class="flex aspect-[3/5] items-center justify-center rounded-ctl border border-dashed border-line-control bg-surface-subtle px-3 text-center text-[12.5px] text-ink-muted">{{ t('Not taken', 'No tomada') }}</div>
-            <span class="text-center text-[12.5px] font-semibold text-ink-muted">{{ label(v) }}</span>
+            <span class="text-center text-[12.5px] font-semibold text-ink-muted">{{ planeLabel(p) }}</span>
           </div>
         </div>
-        <p v-if="!isSquat && !shots.front && shots.back" class="text-[12.5px] text-ink-muted" data-cy="posture-no-front-note">{{ t('No front photo: the frontal measurements come from the back, and there is no Q-angle.', 'Sin foto de frente: las medidas frontales salen de la espalda y no hay ángulo Q.') }}</p>
+        <ul v-if="!isSquat && (missing.length || (!shots.front && shots.back))" class="flex list-disc flex-col gap-1 pl-5 text-[12.5px] text-ink-muted" data-cy="posture-unavailable">
+          <li v-if="missing.includes('frontal')" data-cy="posture-no-frontal-note">{{ t('No front or back photo: no shoulder or pelvis tilt, no sideways shift, no knees and no right–left weight split.', 'Sin foto de frente ni de espalda: no hay inclinación de hombros ni de pelvis, desplazamiento lateral, rodillas ni reparto de peso derecha–izquierda.') }}</li>
+          <li v-if="missing.includes('side')" data-cy="posture-no-side-note">{{ t('No side photo: no head-forward measurement, head weight or distances from the vertical.', 'Sin foto de lado: no hay cabeza adelantada, peso de la cabeza ni distancias a la vertical.') }}</li>
+          <li v-if="missing.length" data-cy="posture-no-index-note">{{ t('The alignment index needs a side photo and a front or back one.', 'El índice de alineación necesita una foto de lado y una de frente o de espalda.') }}</li>
+          <li v-if="!shots.front && shots.back" data-cy="posture-no-front-note">{{ t('No front photo: the frontal measurements come from the back, and there is no Q-angle.', 'Sin foto de frente: las medidas frontales salen de la espalda y no hay ángulo Q.') }}</li>
+        </ul>
         <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t('Notes (optional)', 'Notas (opcional)') }}
           <textarea v-model="notes" rows="2" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] font-normal" data-cy="posture-notes" />
         </label>
         <div class="flex gap-2">
           <UiBtn variant="primary" :disabled="saving || !canFinish" data-cy="posture-save" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save assessment', 'Guardar valoración') }}</UiBtn>
-          <span class="self-center text-[12.5px] text-ink-muted">{{ t(`${taken.length} photos`, `${taken.length} fotos`) }}</span>
+          <span class="self-center text-[12.5px] text-ink-muted">{{ (taken.length === 1 ? t('1 photo', '1 foto') : t(`${taken.length} photos`, `${taken.length} fotos`)) }}</span>
         </div>
       </section>
     </div>

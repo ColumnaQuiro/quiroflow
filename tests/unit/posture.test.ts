@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alignmentIndex, cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureBalance, postureGrid, postureHeadline, postureMissing, pxPerCm, type Points, type StoredView } from '../../utils/posture'
+import { alignmentIndex, cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureBalance, postureGrid, postureHeadline, postureCanSave, postureMissing, pxPerCm, type Points, type StoredView } from '../../utils/posture'
 import { postureConclusion, postureReportSections } from '../../utils/postureReport'
 
 // A 170 cm patient photographed so that ear-to-ankle is 1591.2 px: exactly
@@ -136,7 +136,7 @@ describe('cutoutVerdict', () => {
   })
 })
 
-describe('front or back, either one', () => {
+describe('any one photo', () => {
   const front: Points = {
     earR: [470, EAR_Y], earL: [490, EAR_Y],
     shoulderR: [400, 300], shoulderL: [600, 290],
@@ -149,12 +149,33 @@ describe('front or back, either one', () => {
   const side: Points = { ear: [560, EAR_Y], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, ANKLE_Y] }
   const view = (points: Points, facing: 'right' | null = null): StoredView => ({ photo: 'x.jpg', width: 1000, height: 1800, points, facing })
 
-  it('needs one of front and back and one side, and nothing more', () => {
+  it('says which plane has no photo, and saves with any one photo', () => {
     expect(postureMissing({})).toEqual(['frontal', 'side'])
     expect(postureMissing({ front: 1, right: 1 })).toEqual([])
     expect(postureMissing({ back: 1, left: 1 })).toEqual([])
     expect(postureMissing({ back: 1 })).toEqual(['side'])
     expect(postureMissing({ right: 1, left: 1 })).toEqual(['frontal'])
+    expect(postureCanSave({})).toBe(false)
+    for (const v of ['front', 'right', 'back', 'left']) expect(postureCanSave({ [v]: 1 }), v).toBe(true)
+  })
+
+  it('from the side alone: the head and the vertical, no tilts, no index, and the report says so', () => {
+    const metrics = measureAll({ right: view(side, 'right') }, H)
+    const h = postureHeadline(metrics)
+    expect(h.headWeight).toBeTypeOf('number')
+    expect(h.shoulderTilt).toBeNull()
+    expect(alignmentIndex(metrics)).toBeNull()
+    expect(postureBalance({ right: view(side, 'right') }, H).rightShare).toBeNull()
+    const conclusion = postureConclusion(metrics, 'es')
+    expect(conclusion).toContain('Sin foto de frente ni de espalda, no se mide la inclinación de hombros ni de pelvis.')
+    expect(JSON.stringify(postureReportSections(metrics, 'es')) + conclusion).not.toMatch(/NaN|undefined/)
+  })
+
+  it('from the front alone: the report does not claim the head was measured', () => {
+    const metrics = measureAll({ front: view(front) }, H)
+    expect(postureHeadline(metrics).headWeight).toBeNull()
+    expect(alignmentIndex(metrics)).toBeNull()
+    expect(postureConclusion(metrics, 'en')).toContain('With no side photo, where the head sits over the shoulder is not measured.')
   })
 
   it('measures from the back alone exactly what it measures from the front alone', () => {

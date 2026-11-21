@@ -348,19 +348,24 @@ export interface StoredView { photo: string; width: number; height: number; poin
 export type StoredViews = Partial<Record<PostureView, StoredView>>
 
 /**
- * What a posture assessment still lacks before it can be saved: a photo from
- * the front OR the back ('frontal'), and one from the right OR the left side
- * ('side'). Either of each pair is enough. The front and the back are
+ * Which planes a posture assessment has no photo of: 'frontal' without a
+ * front or a back photo, 'side' without a right or a left one. Any one photo
+ * is enough to save (postureCanSave); each plane missing takes its own
+ * measurements with it, and the screens say which. The front and the back are
  * measured the same way, in the patient's own right and left (measureView),
- * so every frontal number comes from whichever was taken; only the Q-angle
- * needs the front. Nothing is measured from two views at once.
+ * so either gives every frontal number but the Q-angle, which needs the
+ * front. Nothing is measured from two views at once except the alignment
+ * index (alignmentIndex), which needs both planes.
  */
-export function postureMissing(views: Partial<Record<PostureView, unknown>>): ('frontal' | 'side')[] {
-  const out: ('frontal' | 'side')[] = []
+export type PosturePlane = 'frontal' | 'side'
+export function postureMissing(views: Partial<Record<PostureView, unknown>>): PosturePlane[] {
+  const out: PosturePlane[] = []
   if (!views.front && !views.back) out.push('frontal')
   if (!views.right && !views.left) out.push('side')
   return out
 }
+/** At least one photo, of any view. */
+export const postureCanSave = (views: Partial<Record<PostureView, unknown>>) => postureMissing(views).length < 2
 
 /** Every view's measurements, as stored on the assessment. */
 export function measureAll(views: StoredViews, heightCm: number): Partial<Record<PostureView, ViewMetrics>> {

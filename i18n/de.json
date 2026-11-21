@@ -1523,7 +1523,6 @@
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "Der Link einer Schaltfläche hat seine Variable an einer Stelle, die QuiroFlow nicht bearbeiten kann. {0}",
   "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Sie hat oben ein {0}, das QuiroFlow nicht bearbeiten kann. {1}",
   "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Kein Preis in PracticeHub für: {0}. Die API von PracticeHub gibt nicht an, mit welcher Leistung jede Terminart abgerechnet wird, und keine ihrer aktiven Leistungen trägt diese Namen, daher bleiben sie bei 0. Lege sie unter Einstellungen › Terminarten fest; eine spätere Synchronisierung ersetzt sie nie.",
-  "Still needed for the result: {0}.": "Für das Ergebnis fehlt noch: {0}.",
   "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, nicht verglichen: {1} hat {2} und {3} {4}. Verglichen werden nur Fotos derselben Ansicht."
  },
  "s": {
@@ -10436,19 +10435,25 @@
   "WhatsApp allows one copy-code button.": "WhatsApp erlaubt nur eine Code-kopieren-Schaltfläche.",
   "A template can open one form.": "Eine Vorlage kann nur ein Formular öffnen.",
   "Put the quick replies together, before or after the other buttons.": "Stellen Sie die Schnellantworten zusammen, vor oder nach die anderen Schaltflächen.",
-  " (or back)": " (oder hinten)",
-  " (or front)": " (oder vorne)",
-  "No front photo: take the back instead": "Kein Foto von vorne: stattdessen von hinten",
   "No front photo: the frontal measurements come from the back, and there is no Q-angle.": "Kein Foto von vorne: Die frontalen Messwerte stammen von hinten, und es gibt keinen Q-Winkel.",
   "Not taken": "Nicht aufgenommen",
-  "One photo from the front or the back is enough, and one side. Without the front there is no Q-angle; everything else from the front is measured from the back.": "Ein Foto von vorne oder von hinten genügt, dazu eine Seite. Ohne das Foto von vorne gibt es keinen Q-Winkel; alles andere der Frontalebene wird von hinten gemessen.",
-  "a photo from the front or the back": "ein Foto von vorne oder von hinten",
-  "a photo of the right or the left side": "ein Foto der rechten oder der linken Seite",
   "from the back, no front": "von hinten, ohne vorne",
   "no photo from there": "kein Foto von dort",
   "the back photo": "das Foto von hinten",
   "the front photo": "das Foto von vorne",
   "the left side": "die linke Seite",
-  "the right side": "die rechte Seite"
+  "the right side": "die rechte Seite",
+  "Front or back": "Vorne oder hinten",
+  "Any one photo is enough. The side gives the head and the vertical; the front or the back gives tilts, shifts and knees (the Q-angle only from the front). The alignment index needs both.": "Ein Foto genügt. Die Seite liefert den Kopf und die Senkrechte; vorne oder hinten liefert Neigungen, Verschiebungen und Knie (den Q-Winkel nur von vorne). Der Ausrichtungsindex braucht beide.",
+  "Skip this view": "Diese Ansicht überspringen",
+  "The result needs at least one photo.": "Für das Ergebnis braucht es mindestens ein Foto.",
+  "No front or back photo: no shoulder or pelvis tilt, no sideways shift, no knees and no right–left weight split.": "Kein Foto von vorne oder hinten: keine Schulter- oder Beckenneigung, keine seitliche Verschiebung, keine Knie und keine Gewichtsverteilung rechts–links.",
+  "No side photo: no head-forward measurement, head weight or distances from the vertical.": "Kein Seitenfoto: keine Kopfvorlage, kein Kopfgewicht und keine Abstände zur Senkrechten.",
+  "The alignment index needs a side photo and a front or back one.": "Der Ausrichtungsindex braucht ein Seitenfoto und eines von vorne oder hinten.",
+  "side only": "nur seitlich",
+  "no side photo": "kein Seitenfoto",
+  "This assessment has no front or back photo: no shoulder or pelvis tilt, and no alignment index.": "Diese Bewertung hat kein Foto von vorne oder hinten: keine Schulter- oder Beckenneigung und kein Ausrichtungsindex.",
+  "This assessment has no side photo: no head weight, no head-forward measurement, and no alignment index.": "Diese Bewertung hat kein Seitenfoto: kein Kopfgewicht, keine Kopfvorlage und kein Ausrichtungsindex.",
+  "1 photo": "1 Foto"
  }
 }

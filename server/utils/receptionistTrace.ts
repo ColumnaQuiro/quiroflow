@@ -44,7 +44,7 @@ export interface ReplyRecord {
  * hand-over's reason names them; none of that belongs in a log, and the
  * conversation already holds it.
  */
-const KEPT_INPUTS = ['date', 'time', 'times', 'appointment_type', 'move_visit_on', 'visit_on', 'from_date', 'to_date', 'any_chiropractor', 'child_age', 'preference']
+const KEPT_INPUTS = ['date', 'time', 'times', 'appointment_type', 'move_visit_on', 'visit_on', 'from_date', 'to_date', 'any_chiropractor', 'chiropractor', 'part_of_day', 'child_age', 'preference']
 
 export function traceToolUses(uses: ReceptionistToolUse[]): { name: string; ok: boolean; input: Record<string, unknown> }[] {
   return uses.map((use) => ({

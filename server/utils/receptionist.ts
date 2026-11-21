@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { baseBehaviourSection, escalationSection } from '~/utils/receptionistBaseRules'
 import type { Database } from '~/types/database.types'
 import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
-import { CONFIRM_BEFORE_BOOKING, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, repeatChangeSection, changesWithoutComing, REPEAT_CHANGE_WINDOW_DAYS, type DiaryChange, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, matchChiropractor, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, repeatChangeSection, changesWithoutComing, REPEAT_CHANGE_WINDOW_DAYS, type DiaryChange, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadFormSection, leadOriginSection, type LeadFormAnswer, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -211,6 +211,28 @@ export async function loadTeamNames(supabase: SupabaseClient<Database>, accountI
     return []
   }
   return ((data ?? []) as { full_name: string | null }[]).map((m) => m.full_name ?? '').filter(Boolean)
+}
+
+/**
+ * The chiropractor someone asked for by name, among those loadTeamNames
+ * lists (matchChiropractor): their id, or what to tell the model when the
+ * name is nobody's or more than one person's.
+ */
+export async function findChiropractor(supabase: SupabaseClient<Database>, accountId: string, name: string): Promise<{ id: string; fullName: string } | { error: string }> {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('id, full_name')
+    .eq('account_id', accountId)
+    .eq('is_practitioner', true)
+    .eq('online_booking_enabled', true)
+    .is('deleted_at', null)
+    .order('created_at')
+  if (error) return { error: 'The team could not be read. Do not say who a time is with: offer times without a name, and if they want one chiropractor in particular say your colleague will confirm it.' }
+  const team = ((data ?? []) as { id: string; full_name: string | null }[]).filter((m) => m.full_name).map((m) => ({ id: m.id, fullName: m.full_name! }))
+  const found = matchChiropractor(team, name)
+  if (found === 'ambiguous') return { error: `"${name}" fits more than one chiropractor (${team.map((m) => m.fullName).join(', ')}). Ask which one they mean.` }
+  if (!found) return { error: `No chiropractor of the clinic is called "${name}". The team: ${team.map((m) => m.fullName).join(', ') || 'unknown'}.` }
+  return found
 }
 
 /** The clinic's bonos and their prices (Settings > Bonos), for laterPricesSection. */

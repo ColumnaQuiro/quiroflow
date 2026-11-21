@@ -84,19 +84,24 @@ describe('Settings take effect where they are used', () => {
     })
   })
 
-  it('new-lead alerts saved in Leads are what a new lead notifies', () => {
-    // The alert fields moved from Communication > General to Leads; the
-    // notifier (server/utils/leadNotifications) reads the same columns.
+  it('new-lead alerts saved in Team alerts are what a new lead notifies', () => {
+    // The alert fields moved from Communication > General to Leads, and then
+    // to Team alerts; the notifier (server/utils/leadNotifications) reads the
+    // same columns.
     cy.seedStaffAccount().then((account) => {
       cy.intercept('PATCH', '**/rest/v1/accounts*').as('saveAccount')
       cy.login(account.email, account.password)
-      cy.visit('/settings/leads')
-      cy.get('[data-cy="leads-settings"][data-ready="true"]')
+      cy.visit('/settings/team-alerts')
+      cy.get('[data-cy="team-alerts-settings"][data-ready="true"]')
       cy.get('[data-cy="lead-notify-email"]').type('avisos@example.test')
-      cy.get('[data-test="save-lead-settings"]').click()
+      cy.get('[data-cy="team-alerts-save"]').click()
       cy.wait('@saveAccount')
 
-      // And Messages, where they used to be, neither shows nor clears them.
+      // Nor do Leads and Messages, where they used to be, clear them.
+      cy.visit('/settings/leads')
+      cy.get('[data-cy="leads-settings"][data-ready="true"]')
+      cy.get('[data-test="save-lead-settings"]').click()
+      cy.wait('@saveAccount')
       cy.visit('/settings/messages')
       cy.get('[data-cy="messages-settings"][data-ready="true"]')
       cy.get('[data-cy="messages-save"]').click()

@@ -667,7 +667,7 @@ const history = computed(() => {
 })
 
 // --- Footer actions ---------------------------------------------------------------
-// The missed-appointment fee from Settings > Scheduling Policies, offered once
+// The missed-appointment fee from Settings > Changes & cancellations, offered once
 // the visit is marked a no-show, as the cancel step offers its own: nothing,
 // onto the balance, or charged to the card on file (which online booking can
 // ask for). Both go through /api/appointments/cancellation-fee (kind

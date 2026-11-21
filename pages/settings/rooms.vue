@@ -151,7 +151,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Calendar Resources', 'Recursos del Calendario')">
+    <PageHeader :title="t('Rooms', 'Salas')">
       <UiBtn variant="primary" data-cy="room-add" @click="startAddCurrent">{{ t('New room', 'Nueva sala') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">

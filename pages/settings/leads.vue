@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { centsToInput, parseEurosToCents } from '~/utils/appointmentTypes'
-import { normalizeNotifyEmail, normalizeNotifyWhatsapp } from '~/utils/notifyContacts'
 import type { TablesUpdate } from '~/types/database.types'
 
 // How the Growth › Leads board moves and what it is worth.
@@ -10,6 +9,9 @@ import type { TablesUpdate } from '~/types/database.types'
 // what makes a patient -- a number of attended visits, of one appointment type
 // or any. The default value is what a lead with no figure of its own counts
 // as on the board and the dashboard, which is every lead a Meta form sends.
+//
+// Who is told when a lead arrives is in Settings > Team alerts, beside the
+// same alert for an online booking; this page links to it.
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -19,11 +21,6 @@ const { showToast } = useToast()
 const INPUT = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 
 const defaultValue = ref('')
-// Who is told when a lead arrives. Moved here from Communication > General
-// (now Messages): it is only about leads. The matching WhatsApp template is
-// the new-lead alert in Settings > WhatsApp.
-const notifyEmail = ref('')
-const notifyWhatsapp = ref('')
 const autoConvert = ref(false)
 const convertAfter = ref(1)
 const convertTypeId = ref('')
@@ -35,15 +32,13 @@ const saving = ref(false)
 async function load() {
   loading.value = true
   const [{ data }, { data: types }] = await Promise.all([
-    supabase.from('accounts').select('lead_default_value_cents, lead_convert_after_visits, lead_convert_appointment_type_id, new_lead_notify_email, new_lead_notify_whatsapp').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('lead_default_value_cents, lead_convert_after_visits, lead_convert_appointment_type_id').eq('id', store.accountId!).maybeSingle(),
     supabase.from('appointment_types').select('id, name, archived_at').order('name'),
   ])
   defaultValue.value = centsToInput(data?.lead_default_value_cents)
   autoConvert.value = data?.lead_convert_after_visits != null
   convertAfter.value = data?.lead_convert_after_visits ?? 1
   convertTypeId.value = data?.lead_convert_appointment_type_id ?? ''
-  notifyEmail.value = data?.new_lead_notify_email ?? ''
-  notifyWhatsapp.value = data?.new_lead_notify_whatsapp ?? ''
   appointmentTypes.value = (types ?? []) as typeof appointmentTypes.value
   loading.value = false
 }
@@ -66,25 +61,11 @@ async function save() {
     showToast(t('The number of visits has to be between 1 and 50.', 'El número de visitas tiene que estar entre 1 y 50.'), 'error')
     return
   }
-  const notifyEmailValue = normalizeNotifyEmail(notifyEmail.value)
-  const notifyWhatsappValue = normalizeNotifyWhatsapp(notifyWhatsapp.value, store.defaultPhoneCountry)
-  if (notifyEmailValue === undefined) {
-    showToast(t('The alert email is not an email address.', 'El correo de aviso no es una dirección de correo.'), 'error')
-    return
-  }
-  if (notifyWhatsappValue === undefined) {
-    showToast(t('The alert WhatsApp is not a phone number.', 'El WhatsApp de aviso no es un número de teléfono.'), 'error')
-    return
-  }
-  notifyEmail.value = notifyEmailValue ?? ''
-  notifyWhatsapp.value = notifyWhatsappValue ?? ''
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     lead_default_value_cents: cents,
     lead_convert_after_visits: autoConvert.value ? visits : null,
     lead_convert_appointment_type_id: autoConvert.value && convertTypeId.value ? convertTypeId.value : null,
-    new_lead_notify_email: notifyEmailValue,
-    new_lead_notify_whatsapp: notifyWhatsappValue,
   }
   const { error } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -122,7 +103,7 @@ const STAGES = computed(() => [
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="leads-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('How enquiries move along Growth › Leads, what each is worth, and who is told when one arrives.', 'Cómo avanzan las solicitudes en Crecimiento › Leads, cuánto vale cada una y a quién se avisa cuando llega.') }}
+            {{ t('How enquiries move along Growth › Leads, what each is worth, and the ads they come from.', 'Cómo avanzan las solicitudes en Crecimiento › Leads, cuánto vale cada una y los anuncios de los que llegan.') }}
           </p>
 
           <template v-if="loading">
@@ -197,29 +178,10 @@ const STAGES = computed(() => [
               </label>
             </section>
 
-            <!-- Alerts, moved here from Communication › General -->
-            <section aria-labelledby="h-alert" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="lead-alerts">
-              <div class="px-[18px] pb-2 pt-4">
-                <h2 id="h-alert" class="text-[16px] font-bold text-ink-900">{{ t('Tell the team when a lead arrives', 'Avisar al equipo cuando llega un lead') }}</h2>
-                <p class="mt-1 text-[13px] leading-snug text-ink-muted">
-                  {{ t('From a Meta lead ad, the API or anywhere else. The automations answer the lead straight away; this is so a person follows up.', 'De un anuncio de Meta, la API o cualquier otro sitio. Las automatizaciones responden al lead al momento; esto es para que una persona haga el seguimiento.') }}
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <label for="lead-notify-email" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('By email', 'Por correo') }}</label>
-                <input id="lead-notify-email" v-model="notifyEmail" type="email" placeholder="recepcion@clinica.es" data-cy="lead-notify-email" :class="[INPUT, 'w-full sm:w-[300px]']" />
-              </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="lead-notify-whatsapp" class="text-[14.5px] font-bold text-ink-900">{{ t('By WhatsApp', 'Por WhatsApp') }}</label>
-                  <span class="text-[13px] leading-snug text-ink-500">
-                    {{ t('In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers the new-lead alert template set in', 'En formato +34… Si ese número no ha escrito a la clínica en 24 h, WhatsApp solo entrega la plantilla de aviso de lead configurada en') }}
-                    <NuxtLink to="/settings/whatsapp" class="font-semibold text-brand-text hover:underline">WhatsApp</NuxtLink>.
-                  </span>
-                </div>
-                <input id="lead-notify-whatsapp" v-model="notifyWhatsapp" type="tel" placeholder="+34600000000" data-cy="lead-notify-whatsapp" :class="[INPUT, 'w-full sm:w-[300px]']" />
-              </div>
-            </section>
+            <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="lead-alerts-moved">
+              {{ t('Who is told when a lead arrives is in', 'A quién se avisa cuando llega un lead está en') }}
+              <NuxtLink to="/settings/team-alerts" data-cy="leads-team-alerts-link" class="font-semibold text-brand-text hover:underline">{{ t('Team alerts', 'Avisos al equipo') }}</NuxtLink>{{ t(', beside the alert for an online booking.', ', junto al aviso de una reserva online.') }}
+            </p>
           </template>
         </div>
       </div>

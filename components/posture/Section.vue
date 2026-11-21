@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { alignmentIndex, postureBalance, postureCallouts, postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { postureSuggestions } from '../../utils/postureSuggestions'
 import { ghostPoints } from '../../utils/postureCompare'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
 
@@ -15,6 +16,10 @@ import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type 
 // web account store: usePermission() calls useAccountStore(), which the app
 // does not even import, so calling it there threw in setup and the whole
 // section silently never rendered on any patient. Only the web calls it.
+//
+// "Postura | Sentadilla" switches the section to the patient's squat
+// assessments (components/posture/Squat.vue), which share the table, the
+// capture screen and the photo drawing, and nothing else here.
 const props = defineProps<{ patientId: string; can?: (permission: string) => boolean }>()
 
 const t = useT()
@@ -22,6 +27,7 @@ const supabase = useSupabaseClient()
 const webPermission = props.can ? null : usePermission()
 const can = (permission: string) => (props.can ? props.can(permission) : webPermission!.can(permission as never))
 const { showToast } = useToast()
+const mode = ref<'posture' | 'squat'>('posture')
 
 interface Assessment {
   id: string
@@ -43,6 +49,7 @@ async function load() {
     .from('posture_assessments')
     .select('id, taken_at, height_cm, views, metrics, notes, shared_with_patient, team_members(full_name)')
     .eq('patient_id', props.patientId)
+    .eq('kind', 'posture')
     .order('taken_at')
   list.value = (data as unknown as Assessment[] | null) ?? []
   const paths = list.value.flatMap((a) => Object.values(a.views).map((v) => v!.photo))
@@ -89,15 +96,40 @@ const ghost = computed(() => {
 const first = computed(() => (pair.value[0] ? postureHeadline(pair.value[0].metrics) : null))
 const last = computed(() => (pair.value.length > 1 ? postureHeadline(pair.value[pair.value.length - 1]!.metrics) : first.value))
 const delta = (a: number | null | undefined, b: number | null | undefined) => (a === null || a === undefined || b === null || b === undefined || pair.value.length < 2 ? null : Math.round((b - a) * 10) / 10)
+const again = (a: Assessment) => remeasure({ takenAt: a.taken_at, heightCm: Number(a.height_cm), views: a.views, metrics: a.metrics })
+// The alignment index (utils/posture.ts) from each one's points, so older
+// assessments have it too; null without a side and a front-or-back photo.
+const indexThen = computed(() => (pair.value[0] ? alignmentIndex(again(pair.value[0])) : null))
+const indexNow = computed(() => (pair.value.length ? alignmentIndex(again(pair.value[pair.value.length - 1]!)) : null))
 const kpis = computed(() => {
   if (!first.value || !last.value) return []
   return [
+    { key: 'alignment', label: t('Alignment index', 'Índice de alineación'), unit: '/100', now: indexNow.value, then: indexThen.value, higherBetter: true },
     { key: 'weight', label: t('Effective head weight', 'Peso efectivo de la cabeza'), unit: 'kg', now: last.value.headWeight, then: first.value.headWeight },
     { key: 'forward', label: t('Head ahead of shoulder', 'Cabeza por delante del hombro'), unit: 'cm', now: last.value.headForward, then: first.value.headForward },
     { key: 'shoulders', label: t('Shoulder tilt', 'Inclinación de hombros'), unit: '°', now: last.value.shoulderTilt, then: first.value.shoulderTilt },
     { key: 'pelvis', label: t('Pelvic tilt', 'Inclinación de pelvis'), unit: '°', now: last.value.hipTilt, then: first.value.hipTilt },
   ].filter((k) => k.now !== null)
 })
+// Whether a change in a KPI is towards aligned: lower for every one but the index.
+const kpiClass = (k: { now: number | null; then: number | null; higherBetter?: boolean }) => {
+  const d = delta(k.then, k.now)
+  if (d === null || Math.abs(d) < 0.05) return ''
+  const better = k.higherBetter ? k.now! > k.then! : Math.abs(k.now!) < Math.abs(k.then!)
+  return better ? 'text-success-text' : 'text-warning-text'
+}
+
+// The latest of the two picked (or the one): where its weight falls over the
+// feet, and the exercises its measurements suggest.
+const newest = computed(() => pair.value[pair.value.length - 1] ?? null)
+const balance = computed(() => (newest.value ? postureBalance(newest.value.views, Number(newest.value.height_cm)) : null))
+const suggestions = computed(() => (newest.value ? postureSuggestions(again(newest.value)) : []))
+// The measurements beside their points on the photos compared.
+const showValues = ref(false)
+const calloutsOf = (a: Assessment) => {
+  const sv = a.views[view.value]
+  return showValues.value && sv ? postureCallouts(view.value, sv.points, Number(a.height_cm), sv.facing, sv.tilt ?? null) : null
+}
 
 // Evolución: any one of the headline numbers across every assessment, as
 // its distance from aligned (utils/postureTrend.ts), so lower is better and
@@ -272,23 +304,30 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
 <template>
   <section class="flex flex-col gap-3" data-cy="posture-section" :data-ready="loading ? undefined : 'true'">
     <div class="flex flex-wrap items-center gap-3" data-pdf-skip>
-      <h3 class="text-[15px] font-bold text-ink-900">{{ t('Posture', 'Postura') }}</h3>
+      <h3 class="text-[15px] font-bold text-ink-900">{{ mode === 'squat' ? t('Squat', 'Sentadilla') : t('Posture', 'Postura') }}</h3>
+      <div class="inline-flex overflow-hidden rounded-ctl border border-line-control" role="group" :aria-label="t('Assessment', 'Valoración')">
+        <button type="button" class="h-8 px-3 text-[12.5px] font-semibold touch:h-11" :class="mode === 'posture' ? 'bg-brand-tint text-brand-text' : 'bg-surface text-ink-700'" :aria-pressed="mode === 'posture'" data-cy="posture-mode-posture" @click="mode = 'posture'">{{ t('Posture', 'Postura') }}</button>
+        <button type="button" class="h-8 px-3 text-[12.5px] font-semibold touch:h-11" :class="mode === 'squat' ? 'bg-brand-tint text-brand-text' : 'bg-surface text-ink-700'" :aria-pressed="mode === 'squat'" data-cy="posture-mode-squat" @click="mode = 'squat'">{{ t('Squat', 'Sentadilla') }}</button>
+      </div>
       <span class="text-[12.5px] text-ink-muted">{{ t('Estimates from photos, to document and explain', 'Estimaciones a partir de fotos, para documentar y explicar') }}</span>
       <span class="flex-1" />
-      <NuxtLink v-if="can('visit_notes_access')" :to="`/patients/posture/${patientId}`" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on" data-cy="posture-new">{{ t('New assessment', 'Nueva valoración') }}</NuxtLink>
+      <NuxtLink v-if="can('visit_notes_access')" :to="mode === 'squat' ? `/patients/posture/${patientId}?kind=squat` : `/patients/posture/${patientId}`" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on touch:h-11" :data-cy="mode === 'squat' ? 'squat-new' : 'posture-new'">{{ mode === 'squat' ? t('New squat', 'Nueva sentadilla') : t('New assessment', 'Nueva valoración') }}</NuxtLink>
     </div>
 
+    <PostureSquat v-if="mode === 'squat'" :patient-id="patientId" :can="can" />
+
+    <template v-else>
     <p v-if="!loading && !list.length" class="rounded-card border border-dashed border-line-control p-6 text-center text-[13.5px] text-ink-muted" data-cy="posture-empty">
       {{ t('No posture assessments yet: three photos, the points placed for you, and the measurements at once.', 'Aún no hay valoraciones de postura: tres fotos, los puntos se colocan solos y las medidas salen al momento.') }}
     </p>
 
     <template v-else-if="list.length">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-4" data-pdf-block="kpis">
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-pdf-block="kpis">
         <div v-for="k in kpis" :key="k.key" class="rounded-card border border-line bg-surface p-3.5 shadow-card" data-pdf-kpi :data-cy="`posture-kpi-${k.key}`">
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ k.label }}</p>
           <p class="mt-1 font-mono text-[22px] font-semibold text-ink-900" data-pdf-value>{{ num(k.now) }}<span class="ml-1 text-[12.5px] font-normal text-ink-muted">{{ k.unit }}</span></p>
           <p class="text-[12px] text-ink-muted" data-pdf-note>
-            <template v-if="delta(k.then, k.now) !== null">{{ t(`${day(pair[0]!.taken_at)}: ${num(k.then)} ${k.unit}`, `${day(pair[0]!.taken_at)}: ${num(k.then)} ${k.unit}`) }} · <span :class="Math.abs(delta(k.then, k.now)!) < Math.abs(0.05) ? '' : Math.abs(k.now!) < Math.abs(k.then!) ? 'text-success-text' : 'text-warning-text'">{{ delta(k.then, k.now)! > 0 ? '+' : '' }}{{ num(delta(k.then, k.now)) }}</span></template>
+            <template v-if="delta(k.then, k.now) !== null">{{ t(`${day(pair[0]!.taken_at)}: ${num(k.then)} ${k.unit}`, `${day(pair[0]!.taken_at)}: ${num(k.then)} ${k.unit}`) }} · <span :class="kpiClass(k)">{{ delta(k.then, k.now)! > 0 ? '+' : '' }}{{ num(delta(k.then, k.now)) }}</span></template>
             <template v-else>{{ day(pair[pair.length - 1]?.taken_at ?? list[list.length - 1]!.taken_at) }}</template>
           </p>
         </div>
@@ -312,13 +351,14 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-[13.5px] font-semibold text-ink-900">{{ pair.map((a) => day(a.taken_at)).join(t(' vs ', ' frente a ')) }}</p>
             <span class="flex-1" />
+            <label class="flex items-center gap-1.5 text-[12.5px] text-ink-700"><input v-model="showValues" type="checkbox" data-cy="posture-values" />{{ t('Values on the photo', 'Valores en la foto') }}</label>
             <div class="inline-flex overflow-hidden rounded-ctl border border-line-control" role="group" :aria-label="t('View', 'Vista')">
               <button v-for="v in views" :key="v" type="button" class="h-8 px-3 text-[12.5px] font-semibold" :class="view === v ? 'bg-brand-tint text-brand-text' : 'bg-surface text-ink-700'" :aria-pressed="view === v" :data-cy="`posture-compare-${v}`" @click="view = v">{{ VIEW_LABELS[v] }}</button>
             </div>
           </div>
           <div class="grid gap-3" :class="pair.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-[360px]'">
             <figure v-for="(a, i) in pair" :key="a.id" class="m-0 flex flex-col gap-1" data-cy="posture-compare-photo">
-              <PostureOverlay v-if="a.views[view] && urls[a.views[view]!.photo]" :src="urls[a.views[view]!.photo]!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :labels="false" :ghost="i === 1 ? ghost : null" />
+              <PostureOverlay v-if="a.views[view] && urls[a.views[view]!.photo]" :src="urls[a.views[view]!.photo]!" :width="a.views[view]!.width" :height="a.views[view]!.height" :view="view" :points="a.views[view]!.points" :tilt="a.views[view]!.tilt ?? null" :callouts="calloutsOf(a)" :labels="false" :ghost="i === 1 ? ghost : null" />
               <figcaption class="text-center text-[12px] text-ink-muted">{{ day(a.taken_at) }}</figcaption>
             </figure>
           </div>
@@ -340,6 +380,13 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
           <p v-else-if="list.length > 1" class="text-[12.5px] text-ink-muted">{{ t('Tick two assessments in the list to compare them measure by measure.', 'Marca dos valoraciones en la lista para compararlas medida a medida.') }}</p>
         </div>
       </div>
+
+      <section v-if="balance && (balance.rightShare !== null || balance.forwardCm !== null)" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip>
+        <h4 class="mb-2 text-[14px] font-semibold text-ink-900">{{ t(`Where the weight falls · ${day(newest!.taken_at)}`, `Dónde cae el peso · ${day(newest!.taken_at)}`) }}</h4>
+        <PostureBalance :right-share="balance.rightShare" :forward-cm="balance.forwardCm" from="ankle" />
+      </section>
+
+      <PostureSuggestions :patient-id="patientId" :suggestions="suggestions" />
 
       <section v-if="sent.length" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip data-cy="posture-sent">
         <div class="flex flex-wrap items-baseline gap-2">
@@ -425,7 +472,9 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
       </section>
     </template>
 
-    <section v-if="xrays.length" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip data-cy="posture-xrays">
+    </template>
+
+    <section v-if="xrays.length && mode === 'posture'" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip data-cy="posture-xrays">
       <div class="flex flex-wrap items-center gap-2">
         <h4 class="text-[13.5px] font-semibold text-ink-900">{{ t('X-rays', 'Radiografías') }}</h4>
         <span class="text-[12px] text-ink-muted">{{ t('Marked in Attachments · pick two', 'Marcadas en Adjuntos · elige dos') }}</span>

@@ -8688,6 +8688,7 @@ export type Database = {
           created_at: string
           height_cm: number
           id: string
+          kind: string
           metrics: Json
           notes: string | null
           patient_id: string
@@ -8702,6 +8703,7 @@ export type Database = {
           created_at?: string
           height_cm: number
           id?: string
+          kind?: string
           metrics?: Json
           notes?: string | null
           patient_id: string
@@ -8716,6 +8718,7 @@ export type Database = {
           created_at?: string
           height_cm?: number
           id?: string
+          kind?: string
           metrics?: Json
           notes?: string | null
           patient_id?: string

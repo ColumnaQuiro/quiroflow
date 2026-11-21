@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { POINT_LABELS, POSTURE_GRID_COLOR, VIEW_POINTS, postureGrid, type Points, type PostureView, type Pt } from '../../utils/posture'
+import { plumbLine, POINT_LABELS, POSTURE_GRID_COLOR, postureGrid, type PhotoCallout, type Points, type Pt } from '../../utils/posture'
+import { isPairedView, isSquatView, photoPointNames, type PhotoView } from '../../utils/squat'
 
 // One posture photo with what is measured on it: a squared grid behind the
 // person (utils/posture.ts postureGrid), the vertical from the ankle (or
@@ -7,15 +8,24 @@ import { POINT_LABELS, POSTURE_GRID_COLOR, VIEW_POINTS, postureGrid, type Points
 // the capture screen the points can be dragged (mouse, finger or pencil);
 // everywhere else it only shows. Drawn in the photo's own pixels, so the
 // points sit where they were placed at any size. Shared with mobile/.
+//
+// The same drawing serves a squat's photos (utils/squat.ts): from the front
+// each leg is drawn hip-knee-ankle-foot, which is where a knee caving in
+// shows; from the side the foot is drawn heel to toe. `tilt` leans the
+// vertical by however far the camera was off straight, so it is the room's
+// vertical, not the photo's edge. `callouts` writes the measurements beside
+// their points; the point names give way to them.
 const props = withDefaults(
   defineProps<{
     src: string
     width: number
     height: number
-    view: PostureView
+    view: PhotoView
     points: Points
     editable?: boolean
     labels?: boolean
+    tilt?: number | null
+    callouts?: PhotoCallout[] | null
     /**
      * Another assessment's points already placed on THIS photo
      * (utils/postureCompare.ts ghostPoints): drawn as a dashed white figure
@@ -23,7 +33,7 @@ const props = withDefaults(
      */
     ghost?: Points | null
   }>(),
-  { editable: false, labels: true, ghost: null },
+  { editable: false, labels: true, ghost: null, tilt: null, callouts: null },
 )
 const emit = defineEmits<{ 'update:points': [Points] }>()
 
@@ -33,7 +43,7 @@ const emit = defineEmits<{ 'update:points': [Points] }>()
 // for a moment. So a new photo is decoded first, and until it is the previous
 // photo stays up with its own points; then both change in the same frame.
 // While the photo is the same, the points follow the props live (dragging).
-interface Frame { src: string; width: number; height: number; view: PostureView; points: Points }
+interface Frame { src: string; width: number; height: number; view: PhotoView; points: Points }
 const settled = shallowRef<Frame | null>(null)
 watch(
   () => props.src,
@@ -51,14 +61,36 @@ const f = computed<Frame | null>(() =>
 )
 
 const svg = ref<SVGSVGElement | null>(null)
-const paired = computed(() => f.value?.view === 'front' || f.value?.view === 'back')
+const paired = computed(() => !!f.value && isPairedView(f.value.view))
+const squat = computed(() => !!f.value && isSquatView(f.value.view))
+const names = computed(() => (f.value ? photoPointNames(f.value.view, f.value.points) : []))
 const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-const plumbX = computed(() => (!f.value ? 0 : paired.value ? mid(f.value.points.ankleR!, f.value.points.ankleL!)[0] : f.value.points.ankle![0]))
+const base = computed<Pt>(() => (!f.value ? [0, 0] : paired.value ? mid(f.value.points.ankleR!, f.value.points.ankleL!) : f.value.points.ankle!))
+const plumbX = computed(() => base.value[0])
+const plumb = computed(() => plumbLine(base.value[0], base.value[1], f.value?.height ?? props.height, props.tilt))
 const chain = computed(() => {
   const p = f.value?.points
   if (!p) return ''
   if (!paired.value) return ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => p[k]!.join(',')).join(' ')
+  // A squat from the front: each leg on its own (legChains), not the middle.
+  if (squat.value) return ''
   return ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => mid(p[`${k}R`]!, p[`${k}L`]!).join(',')).join(' ')
+})
+// Extra lines: a squat's legs from the front and its foot from the side, and
+// the Q-angle's spine-kneecap-tuberosity on a front posture photo.
+const legChains = computed(() => {
+  const p = f.value?.points
+  if (!p) return []
+  const line = (ks: string[]) => (ks.every((k) => p[k]) ? ks.map((k) => p[k]!.join(',')).join(' ') : '')
+  // The foot is drawn heel to toe (no two-string array here: the i18n
+  // extractor would read it as a translation pair).
+  if (squat.value) return paired.value ? [line(['hipR', 'kneeR', 'ankleR', 'toeR']), line(['hipL', 'kneeL', 'ankleL', 'toeL'])].filter(Boolean) : p.heel && p.toe ? [`${p.heel.join(',')} ${p.toe.join(',')}`] : []
+  return []
+})
+const qChains = computed(() => {
+  const p = f.value?.points
+  if (!p || f.value?.view !== 'front' || !p.asisR) return []
+  return ['R', 'L'].map((s) => [p[`asis${s}`], p[`patella${s}`], p[`tub${s}`]]).filter((q) => q.every(Boolean)).map((q) => q.map((pt) => pt!.join(',')).join(' '))
 })
 // The ghost belongs to the photo in the props, so it waits for that photo.
 const ghostChain = computed(() => {
@@ -69,11 +101,28 @@ const ghostChain = computed(() => {
   return pts.every(Boolean) ? pts.map((p) => p!.join(',')).join(' ') : ''
 })
 const grid = computed(() => (f.value ? postureGrid(f.value.width, f.value.height, plumbX.value) : { xs: [], ys: [] }))
-const pairs = computed(() => (paired.value && f.value ? ['ear', 'shoulder', 'hip', 'knee', 'ankle'].map((k) => [f.value!.points[`${k}R`]!, f.value!.points[`${k}L`]!] as [Pt, Pt]) : []))
+const pairs = computed(() => (paired.value && f.value ? (squat.value ? ['ear', 'shoulder', 'hip'] : ['ear', 'shoulder', 'hip', 'knee', 'ankle']).map((k) => [f.value!.points[`${k}R`]!, f.value!.points[`${k}L`]!] as [Pt, Pt]) : []))
 const drawnWidth = computed(() => f.value?.width ?? props.width)
 const stroke = computed(() => Math.max(2, Math.round(drawnWidth.value / 300)))
 const radius = computed(() => Math.max(6, Math.round(drawnWidth.value / 90)))
 const fontSize = computed(() => Math.max(14, Math.round(drawnWidth.value / 55)))
+
+// The measurements beside their points, as small white tags. Their width is
+// estimated from the text, which is close enough for a tag behind it.
+const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
+const tags = computed(() => {
+  if (!props.callouts?.length || !f.value || f.value.src !== props.src) return []
+  const fs = fontSize.value * 0.92
+  return props.callouts.map((c) => {
+    const text = `${t(c.label.en, c.label.es)} ${(Math.round(c.value * 10) / 10 || 0).toLocaleString(locale.value)}${c.unit === '°' ? '°' : ` ${c.unit}`}`
+    const w = text.length * fs * 0.56 + fs * 0.9
+    const h = fs * 1.5
+    const gap = radius.value * 2.2
+    const x = c.side === 'left' ? Math.max(0, c.at[0] - gap - w) : Math.min(f.value!.width - w, c.at[0] + gap)
+    return { key: c.key, text, x, y: c.at[1] - h / 2, w, h, fs }
+  })
+})
 
 // Dragging: pointer position → photo pixels through the SVG's own transform.
 // The point keeps where it was grabbed relative to the finger, so touching
@@ -106,7 +155,7 @@ function down(e: PointerEvent) {
   const reach = Math.max(radius.value * 1.6, (e.pointerType === 'mouse' ? REACH_MOUSE : REACH_TOUCH) * k)
   let name: string | null = null
   let best = reach
-  for (const n of VIEW_POINTS[f.value.view]) {
+  for (const n of names.value) {
     const p = props.points[n]!
     const d = Math.hypot(p[0] - at[0], p[1] - at[1])
     if (d <= best) {
@@ -205,15 +254,17 @@ const loupe = computed(() => {
           <line v-for="y in grid.ys" :key="`y${y}`" x1="0" :y1="y" :x2="f.width" :y2="y" />
           <line v-for="x in grid.xs" :key="`x${x}`" :x1="x" y1="0" :x2="x" :y2="f.height" />
         </g>
-        <line :x1="plumbX" y1="0" :x2="plumbX" :y2="f.height" stroke="#7CC4FF" :stroke-width="stroke" :stroke-dasharray="`${stroke * 5} ${stroke * 4}`" />
+        <line :x1="plumb.x1" y1="0" :x2="plumb.x2" :y2="f.height" stroke="#7CC4FF" :stroke-width="stroke" :stroke-dasharray="`${stroke * 5} ${stroke * 4}`" data-cy="posture-plumb" />
         <g v-if="ghostChain" data-cy="posture-ghost">
           <polyline :points="ghostChain" fill="none" stroke="rgba(0,0,0,.45)" :stroke-width="stroke * 2.2" stroke-linejoin="round" />
           <polyline :points="ghostChain" fill="none" stroke="#fff" :stroke-width="stroke * 1.2" stroke-linejoin="round" :stroke-dasharray="`${stroke * 3} ${stroke * 2.5}`" />
           <circle v-for="(pt, i) in ghostChain.split(' ')" :key="i" :cx="pt.split(',')[0]" :cy="pt.split(',')[1]" :r="radius * 0.6" fill="none" stroke="#fff" :stroke-width="stroke" />
         </g>
         <line v-for="(p, i) in pairs" :key="i" :x1="p[0][0]" :y1="p[0][1]" :x2="p[1][0]" :y2="p[1][1]" stroke="#FFB020" :stroke-width="stroke" />
-        <polyline :points="chain" fill="none" stroke="#FFB020" :stroke-width="stroke" stroke-linejoin="round" />
-        <g v-for="name in VIEW_POINTS[f.view]" :key="name">
+        <polyline v-if="chain" :points="chain" fill="none" stroke="#FFB020" :stroke-width="stroke" stroke-linejoin="round" />
+        <polyline v-for="(c, i) in legChains" :key="`leg${i}`" :points="c" fill="none" stroke="#FFB020" :stroke-width="stroke" stroke-linejoin="round" />
+        <polyline v-for="(c, i) in qChains" :key="`q${i}`" :points="c" fill="none" stroke="#5CD6A9" :stroke-width="stroke" stroke-linejoin="round" data-cy="posture-q-line" />
+        <g v-for="name in names" :key="name">
           <circle
             :cx="f.points[name]![0]"
             :cy="f.points[name]![1]"
@@ -224,7 +275,11 @@ const loupe = computed(() => {
             :class="editable ? 'cursor-grab' : ''"
             :data-cy="`posture-point-${name}`"
           />
-          <text v-if="labels" class="pointer-events-none select-none" :x="f.points[name]![0] + radius * 2.2" :y="f.points[name]![1] + fontSize / 3" :font-size="fontSize" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.55)" :stroke-width="fontSize / 6" paint-order="stroke">{{ POINT_LABELS[name] }}</text>
+          <text v-if="labels && !tags.length" class="pointer-events-none select-none" :x="f.points[name]![0] + radius * 2.2" :y="f.points[name]![1] + fontSize / 3" :font-size="fontSize" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.55)" :stroke-width="fontSize / 6" paint-order="stroke">{{ POINT_LABELS[name] }}</text>
+        </g>
+        <g v-for="g in tags" :key="g.key" class="pointer-events-none select-none" :data-cy="`posture-callout-${g.key}`">
+          <rect :x="g.x" :y="g.y" :width="g.w" :height="g.h" :rx="g.h / 3" fill="#fff" fill-opacity="0.94" stroke="rgba(0,0,0,.25)" :stroke-width="Math.max(1, stroke / 2)" />
+          <text :x="g.x + g.w / 2" :y="g.y + g.h * 0.68" text-anchor="middle" :font-size="g.fs" font-weight="650" fill="#15171E">{{ g.text }}</text>
         </g>
       </template>
     </svg>
@@ -238,10 +293,11 @@ const loupe = computed(() => {
       :data-point="loupe.name"
     >
       <image :href="f.src" x="0" y="0" :width="f.width" :height="f.height" preserveAspectRatio="none" />
-      <line :x1="plumbX" y1="0" :x2="plumbX" :y2="f.height" stroke="#7CC4FF" :stroke-width="loupe.u * 1.5" :stroke-dasharray="`${loupe.u * 8} ${loupe.u * 6}`" />
+      <line :x1="plumb.x1" y1="0" :x2="plumb.x2" :y2="f.height" stroke="#7CC4FF" :stroke-width="loupe.u * 1.5" :stroke-dasharray="`${loupe.u * 8} ${loupe.u * 6}`" />
       <line v-for="(p, i) in pairs" :key="i" :x1="p[0][0]" :y1="p[0][1]" :x2="p[1][0]" :y2="p[1][1]" stroke="#FFB020" :stroke-width="loupe.u * 1.5" />
-      <polyline :points="chain" fill="none" stroke="#FFB020" :stroke-width="loupe.u * 1.5" stroke-linejoin="round" />
-      <circle v-for="name in VIEW_POINTS[f.view].filter((n) => n !== loupe!.name)" :key="name" :cx="f.points[name]![0]" :cy="f.points[name]![1]" :r="loupe.u * 4" fill="#FFB020" stroke="#fff" :stroke-width="loupe.u" />
+      <polyline v-if="chain" :points="chain" fill="none" stroke="#FFB020" :stroke-width="loupe.u * 1.5" stroke-linejoin="round" />
+      <polyline v-for="(c, i) in [...legChains, ...qChains]" :key="i" :points="c" fill="none" stroke="#FFB020" :stroke-width="loupe.u * 1.5" stroke-linejoin="round" />
+      <circle v-for="name in names.filter((n) => n !== loupe!.name)" :key="name" :cx="f.points[name]![0]" :cy="f.points[name]![1]" :r="loupe.u * 4" fill="#FFB020" stroke="#fff" :stroke-width="loupe.u" />
       <g :transform="`translate(${loupe.px} ${loupe.py})`" stroke-linecap="round">
         <path :d="`M${-loupe.u * 16} 0H${-loupe.u * 4}M${loupe.u * 4} 0H${loupe.u * 16}M0 ${-loupe.u * 16}V${-loupe.u * 4}M0 ${loupe.u * 4}V${loupe.u * 16}`" stroke="rgba(0,0,0,.6)" :stroke-width="loupe.u * 3.5" />
         <path :d="`M${-loupe.u * 16} 0H${-loupe.u * 4}M${loupe.u * 4} 0H${loupe.u * 16}M0 ${-loupe.u * 16}V${-loupe.u * 4}M0 ${loupe.u * 4}V${loupe.u * 16}`" stroke="#fff" :stroke-width="loupe.u * 1.5" />

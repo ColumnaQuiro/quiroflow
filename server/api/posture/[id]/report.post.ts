@@ -18,6 +18,8 @@ export default defineEventHandler(async (event) => {
     .select('patient_id')
     .eq('id', assessmentId)
     .eq('account_id', teamMember.account_id)
+    // The report is a posture report; a squat has its own screens.
+    .eq('kind', 'posture')
     .maybeSingle()
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
   await requirePatientAccess(event, row.patient_id)

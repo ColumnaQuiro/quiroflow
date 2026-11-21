@@ -66,6 +66,9 @@ const T = {
     headWeight: 'Peso efectivo de la cabeza',
     headWeightNote: (x: string) => `Erguida pesa unos 5 kg. Así, el cuello sostiene unas ${x} veces ese peso.`,
     headWeightUpright: 'Erguida pesa unos 5 kg: el cuello la sostiene sin carga añadida.',
+    qAngle: 'Ángulo Q',
+    qLine: (r: string, l: string) => `derecho ${r}° · izquierdo ${l}°`,
+    heightLoss: 'Altura que resta la postura',
   },
   en: {
     front: 'Front view',
@@ -99,6 +102,9 @@ const T = {
     headWeight: 'Effective head weight',
     headWeightNote: (x: string) => `Upright it weighs about 5 kg, so the neck is holding about ${x} times that.`,
     headWeightUpright: 'Upright it weighs about 5 kg: the neck holds it with no added load.',
+    qAngle: 'Q-angle',
+    qLine: (r: string, l: string) => `right ${r}° · left ${l}°`,
+    heightLoss: 'Height the posture takes',
   },
 } as const
 
@@ -123,6 +129,8 @@ function frontSection(view: PostureView, m: FrontMetrics, lang: ReportLang): Rep
       { label: t.shoulders, text: line(m.shoulderShift, m.shoulderTilt, true) },
       { label: t.pelvis, text: line(m.hipShift, m.hipTilt) },
       ...(m.kneeAngleR !== undefined && m.kneeAngleL !== undefined ? [{ label: t.knees, text: Math.abs(m.kneeAngleR) < STRAIGHT_KNEE_DEG && Math.abs(m.kneeAngleL) < STRAIGHT_KNEE_DEG ? t.kneesStraight : t.kneeLine(knee(m.kneeAngleR), knee(m.kneeAngleL)) }] : []),
+      // Only when the practitioner placed its points on the front photo.
+      ...(m.qAngleR !== undefined && m.qAngleL !== undefined ? [{ label: t.qAngle, text: t.qLine(num(m.qAngleR, lang), num(m.qAngleL, lang)) }] : []),
     ],
     totals: [
       { label: t.totalShifts, value: `${num(shifts, lang)} cm` },
@@ -146,7 +154,11 @@ function sideSection(view: PostureView, m: SideMetrics, lang: ReportLang): Repor
       { label: t.hip, text: fwd(m.hipForward) },
       { label: t.knee, text: fwd(m.kneeForward) },
     ],
-    totals: [{ label: t.totalShifts, value: `${num(shifts, lang)} cm` }],
+    totals: [
+      { label: t.totalShifts, value: `${num(shifts, lang)} cm` },
+      // Half a centimetre is the photo, not the posture.
+      ...(m.heightLoss !== undefined && m.heightLoss >= 0.5 ? [{ label: t.heightLoss, value: `≈ ${num(m.heightLoss, lang)} cm` }] : []),
+    ],
     headWeight: {
       label: t.headWeight,
       value: `${num(m.headWeight, lang)} kg`,
@@ -211,7 +223,9 @@ export interface PostureEvolutionRow { key: TrendKey; label: string; values: (st
 export function postureEvolutionTable(history: PostureHistoryEntry[], lang: ReportLang): { columns: string[]; rows: PostureEvolutionRow[] } {
   const sorted = [...history].sort((a, b) => a.takenAt.localeCompare(b.takenAt))
   const picks = sorted.length >= 3 ? [sorted[0]!, sorted[sorted.length - 2]!, sorted[sorted.length - 1]!] : sorted
-  const rows = TREND_METRICS.flatMap((m): PostureEvolutionRow[] => {
+  // The alignment index is the clinic's summary (Section.vue); the patient's
+  // report keeps to the numbers it explains, as their app does.
+  const rows = TREND_METRICS.filter((m) => m.key !== 'alignment').flatMap((m): PostureEvolutionRow[] => {
     const values = picks.map((a) => trendValue(a.metrics, m.key))
     const first = values[0]
     const last = values[values.length - 1]

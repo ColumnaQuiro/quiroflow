@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   // Clinical, like the report: the permission that opens the visit notes,
   // and then this patient specifically.
   const { supabase, teamMember } = await requirePermission(event, 'visit_notes_access')
-  const { data: rows } = await supabase.from('posture_assessments').select('id, patient_id').in('id', [assessmentId, withId]).eq('account_id', teamMember.account_id)
+  const { data: rows } = await supabase.from('posture_assessments').select('id, patient_id').in('id', [assessmentId, withId]).eq('account_id', teamMember.account_id).eq('kind', 'posture')
   if (rows?.length !== 2 || rows[0]!.patient_id !== rows[1]!.patient_id) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
   const patientId = rows[0]!.patient_id
   await requirePatientAccess(event, patientId)

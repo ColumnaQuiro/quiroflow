@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   if (!assessmentId || typeof withId !== 'string' || !withId) throw createError({ statusCode: 400, statusMessage: 'Two assessments are needed' })
 
   const { supabase } = await requireAuthedUser(event)
-  const { data: rows } = await supabase.from('posture_assessments').select('id, account_id, patient_id').in('id', [assessmentId, withId]).eq('shared_with_patient', true)
+  const { data: rows } = await supabase.from('posture_assessments').select('id, account_id, patient_id').in('id', [assessmentId, withId]).eq('shared_with_patient', true).eq('kind', 'posture')
   if (rows?.length !== 2 || rows[0]!.patient_id !== rows[1]!.patient_id || rows[0]!.account_id !== rows[1]!.account_id) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
 
   const service = serverSupabaseServiceRole<Database>(event)

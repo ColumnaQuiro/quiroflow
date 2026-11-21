@@ -1,4 +1,4 @@
-import { measureAll, postureHeadline, type FrontMetrics, type PostureView, type StoredViews, type ViewMetrics } from './posture'
+import { alignmentIndex, measureAll, postureHeadline, type FrontMetrics, type PostureView, type StoredViews, type ViewMetrics } from './posture'
 
 // One posture number across every assessment: what the Progreso chart and
 // the report's evolution page plot. Pure, so the screen (an SVG in
@@ -10,20 +10,32 @@ import { measureAll, postureHeadline, type FrontMetrics, type PostureView, type 
 // is plotted without its side (a shoulder that drops 2° to the left after
 // 2° to the right has not improved), and the knees as whichever bends more.
 
-export type TrendKey = 'headWeight' | 'headForward' | 'shoulderTilt' | 'hipTilt' | 'knees'
+export type TrendKey = 'alignment' | 'headWeight' | 'headForward' | 'shoulderTilt' | 'hipTilt' | 'knees'
 
 export interface TrendMetric {
   key: TrendKey
   label: { es: string; en: string }
   short: { es: string; en: string }
-  unit: 'kg' | 'cm' | '°'
-  /** Where aligned sits: the head's weight upright, else 0. */
+  unit: 'kg' | 'cm' | '°' | 'pts'
+  /** Where aligned sits: the head's weight upright, 100 for the index, else 0. */
   ideal: number
   idealLabel: { es: string; en: string }
   help: { es: string; en: string }
 }
 
 export const TREND_METRICS: TrendMetric[] = [
+  {
+    key: 'alignment',
+    label: { es: 'Índice de alineación', en: 'Alignment index' },
+    short: { es: 'Índice', en: 'Index' },
+    unit: 'pts',
+    ideal: 100,
+    idealLabel: { es: '100 = alineado en todo', en: '100 = aligned in everything' },
+    help: {
+      es: 'Un resumen de 0 a 100 de todo lo que se mide de frente y de lado: cada medida resta en proporción a lo que se aparta de lo alineado. Es una cifra propia de QuiroFlow para seguir la evolución, no una escala clínica.',
+      en: 'A 0-100 summary of everything measured from the front and the side: each measure takes off in proportion to how far it is from aligned. QuiroFlow’s own figure for following progress, not a clinical scale.',
+    },
+  },
   {
     key: 'headWeight',
     label: { es: 'Peso efectivo de la cabeza', en: 'Effective head weight' },
@@ -91,6 +103,8 @@ export function trendValue(metrics: Partial<Record<PostureView, ViewMetrics>>, k
   const h = postureHeadline(metrics)
   const abs = (n: number | null) => (n === null ? null : Math.abs(n))
   switch (key) {
+    case 'alignment':
+      return alignmentIndex(metrics)
     case 'headWeight':
       return h.headWeight
     case 'headForward':

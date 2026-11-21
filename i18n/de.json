@@ -67,6 +67,7 @@
   "All {0} notes": "Alle {0} Notizen",
   "All {0} periods": "Alle {0} Zeiträume",
   "All · {0}": "Alle · {0}",
+  "Already here as \"{0}\"": "Bereits vorhanden als „{0}“",
   "Already imported, so skipped: {0} invoices, {1} payments.": "Bereits importiert, daher übersprungen: {0} Rechnungen, {1} Zahlungen.",
   "Already paid: {0} on {1}. That money goes towards the bono, and the visit is charged at the bono rate instead.": "Bereits bezahlt: {0} auf {1|its receipt=dem zugehörigen Beleg}. Das Geld geht auf das Paket, und die Behandlung wird stattdessen zum Paketpreis berechnet.",
   "Also removes the {0} step(s) in its paths.": "Entfernt auch die {0} Schritt(e) in seinen Zweigen.",

@@ -67,6 +67,7 @@
   "All {0} notes": "Todas as {0} notas",
   "All {0} periods": "Todos os {0} períodos",
   "All · {0}": "Todas · {0}",
+  "Already here as \"{0}\"": "Já existe como \"{0}\"",
   "Already imported, so skipped: {0} invoices, {1} payments.": "Já importados, por isso ignorados: {0} faturas, {1} pagamentos.",
   "Already paid: {0} on {1}. That money goes towards the bono, and the visit is charged at the bono rate instead.": "Já paga: {0} em {1|its receipt=o seu recibo}. Esse dinheiro passa para o pack e a consulta é cobrada ao preço do pack.",
   "Also removes the {0} step(s) in its paths.": "Também remove os {0} passo(s) nos seus ramos.",
@@ -1523,7 +1524,8 @@
   "It has a {0} button, which QuiroFlow cannot edit. {1}": "Tem um botão do tipo {0}, que o QuiroFlow não sabe editar. {1}",
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "A ligação de um botão tem a variável num sítio que o QuiroFlow não sabe editar. {0}",
   "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Tem um {0} no topo, que o QuiroFlow não sabe editar. {1}",
-  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Sem preço no PracticeHub para: {0}. A API do PracticeHub não indica com que serviço cada tipo é cobrado, e nenhum dos seus serviços ativos tem estes nomes, por isso ficam a 0. Defina-os em Definições › Tipos de consulta; uma sincronização posterior nunca os substitui."
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Sem preço no PracticeHub para: {0}. A API do PracticeHub não indica com que serviço cada tipo é cobrado, e nenhum dos seus serviços ativos tem estes nomes, por isso ficam a 0. Defina-os em Definições › Tipos de consulta; uma sincronização posterior nunca os substitui.",
+  "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, sem comparar: a de {1} tem {2} e a de {3}, {4}. Só se comparam fotos da mesma vista."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10436,6 +10438,26 @@
   "WhatsApp allows one call button.": "O WhatsApp permite um só botão de chamada.",
   "WhatsApp allows one copy-code button.": "O WhatsApp permite um só botão de copiar código.",
   "A template can open one form.": "Um modelo pode abrir um só formulário.",
-  "Put the quick replies together, before or after the other buttons.": "Junte as respostas rápidas, antes ou depois dos outros botões."
+  "Put the quick replies together, before or after the other buttons.": "Junte as respostas rápidas, antes ou depois dos outros botões.",
+  "No front photo: the frontal measurements come from the back, and there is no Q-angle.": "Sem foto de frente: as medidas frontais vêm das costas e não há ângulo Q.",
+  "Not taken": "Não tirada",
+  "from the back, no front": "de costas, sem frente",
+  "no photo from there": "nenhuma foto desse lado",
+  "the back photo": "a foto de costas",
+  "the front photo": "a foto de frente",
+  "the left side": "a do lado esquerdo",
+  "the right side": "a do lado direito",
+  "Front or back": "Frente ou costas",
+  "Any one photo is enough. The side gives the head and the vertical; the front or the back gives tilts, shifts and knees (the Q-angle only from the front). The alignment index needs both.": "Basta uma foto. A de lado dá a cabeça e a vertical; a de frente ou de costas, inclinações, desvios e joelhos (o ângulo Q, só a de frente). O índice de alinhamento precisa das duas.",
+  "Skip this view": "Saltar esta vista",
+  "The result needs at least one photo.": "Para ver o resultado é preciso pelo menos uma foto.",
+  "No front or back photo: no shoulder or pelvis tilt, no sideways shift, no knees and no right–left weight split.": "Sem foto de frente nem de costas: não há inclinação dos ombros nem da pélvis, desvio lateral, joelhos nem distribuição do peso direita–esquerda.",
+  "No side photo: no head-forward measurement, head weight or distances from the vertical.": "Sem foto de lado: não há cabeça adiantada, peso da cabeça nem distâncias à vertical.",
+  "The alignment index needs a side photo and a front or back one.": "O índice de alinhamento precisa de uma foto de lado e de uma de frente ou de costas.",
+  "side only": "só de lado",
+  "no side photo": "sem foto de lado",
+  "This assessment has no front or back photo: no shoulder or pelvis tilt, and no alignment index.": "Esta avaliação não tem foto de frente nem de costas: sem inclinação dos ombros nem da pélvis, nem índice de alinhamento.",
+  "This assessment has no side photo: no head weight, no head-forward measurement, and no alignment index.": "Esta avaliação não tem foto de lado: sem peso da cabeça, cabeça adiantada nem índice de alinhamento.",
+  "1 photo": "1 foto"
  }
 }

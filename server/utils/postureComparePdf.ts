@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { POSTURE_VIEWS, type Points, type PostureView, type StoredViews, type ViewMetrics } from '~/utils/posture'
-import { COMPARE_GROUPS, compareBar, compareHeadline, comparePosture, compareSentence, ghostPoints, withCompareUnit, type CompareGroup, type CompareRow, type PostureComparison } from '~/utils/postureCompare'
+import { COMPARE_GROUPS, compareBar, compareHeadline, comparePosture, compareSentence, ghostPoints, uncomparedPlanes, uncomparedSentence, withCompareUnit, type CompareGroup, type CompareRow, type PostureComparison, type UncomparedPlane } from '~/utils/postureCompare'
 import { viewTitle, type ReportLang } from '~/utils/postureReport'
 import { remeasure } from '~/utils/postureTrend'
 import { loadPostureLogo, loadPosturePhotos, type PosturePhoto } from './posturePdf'
@@ -29,6 +29,8 @@ export interface PostureCompareData {
   timeZone: string
   lang: ReportLang
   comparison: PostureComparison
+  /** Planes the two share no view of (a front and a back, say), each said in a line under the table. */
+  uncompared?: UncomparedPlane[]
   /** What the practitioner wrote when they sent this pair to the patient, and who they are; null when it was never sent. */
   note: { text: string; by: string | null } | null
   /** The views both have, in the order they are taken, each with its two photos. */
@@ -139,6 +141,7 @@ export async function loadPostureCompareData(supabase: SupabaseClient<Database>,
     timeZone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
     lang,
     comparison: comparePosture(measure(b), measure(a), lang),
+    uncompared: uncomparedPlanes(measure(b), measure(a)),
     note: noteText ? { text: noteText, by: (sent!.team_members as unknown as { full_name: string } | null)?.full_name ?? null } : null,
     views: common.flatMap((v) => {
       const before = beforePhotos.find((p) => p.view === v)
@@ -283,6 +286,12 @@ export async function generatePostureComparePdf(data: PostureCompareData): Promi
       }
       ensure(14)
       doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(copy.barLegend, M, y + 2, { width: W })
+      y = doc.y + 4
+    }
+    for (const u of data.uncompared ?? []) {
+      ensure(24)
+      doc.font('Helvetica').fontSize(9).fillColor(INK).text(uncomparedSentence(u, shortDay(data.beforeAt), shortDay(data.afterAt), data.lang), M, y + 4, { width: W })
+      y = doc.y + 2
     }
 
     // Each view both have, a page each: before on the left, now on the right.

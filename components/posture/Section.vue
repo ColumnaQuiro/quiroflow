@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { alignmentIndex, postureBalance, postureCallouts, postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { alignmentIndex, postureBalance, postureCallouts, postureHeadline, postureMissing, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
 import { postureSuggestions } from '../../utils/postureSuggestions'
 import { ghostPoints } from '../../utils/postureCompare'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
@@ -111,6 +111,15 @@ const kpis = computed(() => {
     { key: 'pelvis', label: t('Pelvic tilt', 'Inclinación de pelvis'), unit: '°', now: last.value.hipTilt, then: first.value.hipTilt },
   ].filter((k) => k.now !== null)
 })
+// An assessment can be a single photo (postureMissing): its row and the
+// numbers above say which plane it lacks, rather than leave them out silently.
+const viewsNote = (a: Assessment) => {
+  const m = postureMissing(a.views)
+  if (m.includes('frontal')) return t('side only', 'solo de lado')
+  if (m.includes('side')) return t('no side photo', 'sin foto de lado')
+  return !a.views.front && a.views.back ? t('from the back, no front', 'de espalda, sin frente') : null
+}
+const newestMissing = computed(() => (pair.value.length ? postureMissing(pair.value[pair.value.length - 1]!.views) : []))
 // Whether a change in a KPI is towards aligned: lower for every one but the index.
 const kpiClass = (k: { now: number | null; then: number | null; higherBetter?: boolean }) => {
   const d = delta(k.then, k.now)
@@ -332,6 +341,11 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
           </p>
         </div>
       </div>
+      <p v-if="newestMissing.length" class="-mt-1 text-[12.5px] text-ink-muted" data-cy="posture-kpi-missing">
+        {{ newestMissing.includes('frontal')
+          ? t('This assessment has no front or back photo: no shoulder or pelvis tilt, and no alignment index.', 'Esta valoración no tiene foto de frente ni de espalda: sin inclinación de hombros ni de pelvis, ni índice de alineación.')
+          : t('This assessment has no side photo: no head weight, no head-forward measurement, and no alignment index.', 'Esta valoración no tiene foto de lado: sin peso de la cabeza, cabeza adelantada ni índice de alineación.') }}
+      </p>
 
       <div class="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]" data-pdf-skip>
         <ul class="flex flex-col divide-y divide-line-row overflow-hidden rounded-card border border-line bg-surface">
@@ -339,7 +353,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             <input type="checkbox" class="mt-1" :checked="picked.includes(a.id)" :aria-label="t(`Compare ${day(a.taken_at)}`, `Comparar ${day(a.taken_at)}`)" @change="toggle(a.id)" />
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
-              <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)].filter(Boolean).join(' · ') }}</p>
+              <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, (Object.keys(a.views).length === 1 ? t('1 photo', '1 foto') : t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)), viewsNote(a)].filter(Boolean).join(' · ') }}</p>
               <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
               <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
             </div>

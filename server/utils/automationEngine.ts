@@ -32,7 +32,7 @@ import type { DocField } from '~/utils/docFields'
 import { asAudienceRef, asAudienceRefs, respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
 import { audienceMemberIds } from '~/server/utils/audienceMembers'
 import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
-import { answerKey, automationFieldValue, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue, findLeadAnswer, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
@@ -1343,7 +1343,7 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
       const answers = leadAnswersFromEvents(events ?? [])
       for (const c of config.conditions ?? []) {
         if (c.field !== 'lead_answer' || !c.answer_key) continue
-        facts[factKey(c)] = answers.filter((a) => answerKey(a.question) === c.answer_key).pop()?.answer
+        facts[factKey(c)] = findLeadAnswer(answers, c.answer_key)
       }
     }
   }

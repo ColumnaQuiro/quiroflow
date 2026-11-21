@@ -87,15 +87,17 @@ export function factKey(c: Pick<Condition, 'field' | 'doc_template_id' | 'doc_fi
 
 /**
  * A fact as a number, for at least / at most. A lead form's answers are free
- * text, so "8", " 8 " and "8/10" all read as 8; "Dentro de 2 semanas" is not
- * a number and fails every comparison, as does a blank answer (Number('') is
- * 0, which would have put somebody who wrote nothing at the bottom of the
- * scale rather than nowhere on it).
+ * text, so "8", " 8 " and "8/10" all read as 8, and a multiple-choice option
+ * like "10: lo antes posible" or "10 (Lo antes posible)" as 10. "Dentro de 2
+ * semanas" is not a number and fails every comparison, as does a range
+ * option ("4-6: sin prisa" -- which end would it be?) and a blank answer
+ * (Number('') is 0, which would have put somebody who wrote nothing at the
+ * bottom of the scale rather than nowhere on it).
  */
 function asNumber(v: unknown): number {
   if (typeof v === 'number') return v
   if (typeof v !== 'string') return Number(v)
-  const m = v.trim().match(/^-?\d+(?:[.,]\d+)?(?=$|[\s/])/)
+  const m = v.trim().match(/^-?\d+(?:[.,]\d+)?(?=$|[\s/:(])/)
   return m ? Number(m[0].replace(',', '.')) : Number.NaN
 }
 

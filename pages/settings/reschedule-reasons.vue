@@ -2,7 +2,7 @@
 import { parseEurosToCents } from '~/utils/appointmentTypes'
 import type { Tables } from '~/types/database.types'
 
-// Settings > Scheduling Policies: what a patient can be charged when an
+// Settings > Changes & cancellations: what a patient can be charged when an
 // appointment changes, and the reasons staff give when they move one.
 //
 // Each fee is offered, never charged by itself: the cancel step
@@ -166,7 +166,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Scheduling Policies', 'Políticas de programación')" />
+    <PageHeader :title="t('Changes & cancellations', 'Cambios y cancelaciones')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />

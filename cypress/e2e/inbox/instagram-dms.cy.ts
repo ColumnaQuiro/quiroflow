@@ -309,6 +309,13 @@ describe('Instagram DMs in the Inbox', () => {
       const out = rows.filter((r) => r.direction === 'outbound')
       expect(out, 'recorded only once Meta accepted it').to.have.length(1)
       expect(out[0].body_preview).to.eq('Sí, a las 10:00')
+      // Addressed by IGSID alone, as the Inbox composers do, the reply is
+      // still filed under the lead the DM made. Stored with no lead it showed
+      // as a second chat beside the lead's own, and the lead's thread -- read
+      // by lead_id -- never showed the answer at all.
+      const inbound = rows.find((r) => r.direction === 'inbound' && r.external_contact_id === 'igsid-reply')
+      expect(inbound?.lead_id, 'the DM made a lead').to.be.a('string')
+      expect(out[0].lead_id, 'the reply sits in the same conversation').to.eq(inbound!.lead_id)
     })
     cy.task('db:stopMetaGraphStub')
   })

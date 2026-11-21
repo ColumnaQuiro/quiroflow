@@ -15,7 +15,7 @@ import { clearLeadHandover } from '~/server/utils/inboxSend'
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ recipientId?: string; leadId?: string; text?: string }>(event)
 
-  const leadId = body?.leadId?.trim()
+  let leadId = body?.leadId?.trim()
   let recipientId = body?.recipientId?.trim()
   const text = body?.text?.trim()
   if (!recipientId && !leadId) throw createError({ statusCode: 400, statusMessage: 'recipientId or leadId is required' })
@@ -42,6 +42,27 @@ export default defineEventHandler(async (event) => {
     recipientId = lead.external_id
   }
   if (!recipientId) throw createError({ statusCode: 400, statusMessage: 'recipientId is required' })
+
+  // The other way round: addressed by IGSID alone, as the Inbox composers
+  // did, the reply still belongs to the lead every inbound DM from that IGSID
+  // is filed under (instagramWebhook.ts -> leadForInstagramSender). Without
+  // it the row has no lead_id, the lead's thread -- which reads by lead_id --
+  // never shows it, and the Inbox draws it as a second, separate "Instagram
+  // user" chat beside the real one. That is what happened on 21 Nov 2026: a
+  // practitioner answered a lead from Instagram and the answer landed in a
+  // chat of its own. Resolved here rather than only in the callers because
+  // installed app builds keep sending recipientId alone until they update.
+  if (!leadId) {
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('account_id', teamMember.account_id)
+      .eq('external_source', 'instagram')
+      .eq('external_id', recipientId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    leadId = lead?.id
+  }
 
   const { data: account } = await supabase
     .from('accounts')

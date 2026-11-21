@@ -1522,7 +1522,8 @@
   "{0}: the code cannot have spaces.": "{0}: o código não pode ter espaços.",
   "It has a {0} button, which QuiroFlow cannot edit. {1}": "Tem um botão do tipo {0}, que o QuiroFlow não sabe editar. {1}",
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "A ligação de um botão tem a variável num sítio que o QuiroFlow não sabe editar. {0}",
-  "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Tem um {0} no topo, que o QuiroFlow não sabe editar. {1}"
+  "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Tem um {0} no topo, que o QuiroFlow não sabe editar. {1}",
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Sem preço no PracticeHub para: {0}. A API do PracticeHub não indica com que serviço cada tipo é cobrado, e nenhum dos seus serviços ativos tem estes nomes, por isso ficam a 0. Defina-os em Definições › Tipos de consulta; uma sincronização posterior nunca os substitui."
  },
  "s": {
   " (half day)": " (meio dia)",

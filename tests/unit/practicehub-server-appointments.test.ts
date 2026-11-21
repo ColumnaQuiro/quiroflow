@@ -382,6 +382,42 @@ describe('planAppointmentTypes', () => {
     expect(second.total).to.equal(0)
   })
 
+  // The shape QuiroBalance's PracticeHub returned on 20 Nov 2026: its types
+  // and services do not share names, and the one service that does share a
+  // name ("Ajuste ") is retired at an old price. The sync before this wrote
+  // that 30 € to the type, and left the rest at 0 without a word.
+  it('never prices a type from a retired service, and names the types it cannot price', async () => {
+    const tables = clinicTables()
+    tables.appointment_types!.push(
+      { id: 'type-ajuste', account_id: ACCOUNT, name: 'Ajuste', default_price_cents: 0 },
+      { id: 'type-primera', account_id: ACCOUNT, name: 'Primera visita', default_price_cents: 0 },
+      // Priced by the clinic here: kept, and not reported as missing.
+      { id: 'type-informe', account_id: ACCOUNT, name: 'Informe', default_price_cents: 5000 },
+    )
+    const snap = snapshot([], {
+      '/appointment_types': [{ id: 1, name: 'Ajuste', active: 1 }, { id: 2, name: 'Primera visita', active: 1 }, { id: 3, name: 'Informe', active: 1 }, { id: 4, name: 'Reevaluación', active: 1 }],
+      '/billable_items': [
+        { id: 1, description: 'Chequeo quiropráctico y ajuste 2025', amount: '50.00', active: null },
+        { id: 2, description: 'Primera visita', amount: '70.00', active: null },
+        { id: 11, description: 'Ajuste ', amount: '30.00', active: false },
+        { id: 17, description: 'Chequeo quiropráctico', amount: '0.00', active: true },
+      ],
+    })
+    const plan = await planAppointmentTypes(ctxFor(tables), snap)
+    const unpriced = plan.warnings.find((w) => w.startsWith('No price in PracticeHub for:'))
+    expect(unpriced).to.contain('Ajuste, Reevaluación.')
+    expect(unpriced).not.to.contain('Informe')
+    expect(unpriced).not.to.contain('Primera visita')
+
+    const res = await plan.apply(noop, never)
+    expect(res.errors).to.deep.equal([])
+    const price = (id: string) => tables.appointment_types!.find((ty) => ty.id === id)!.default_price_cents
+    expect(price('type-ajuste')).to.equal(0)
+    expect(price('type-primera')).to.equal(7000)
+    expect(price('type-informe')).to.equal(5000)
+    expect(tables.appointment_types!.find((ty) => ty.name === 'Reevaluación')).to.not.have.property('default_price_cents')
+  })
+
   it('says when the copy has no prices to bring', async () => {
     const p = await planAppointmentTypes(ctxFor(clinicTables()), snapshot([{ id: 9500, appointment_type_id: 10 }]))
     expect(p.warnings.some((w) => w.includes('2.0 API'))).to.equal(true)

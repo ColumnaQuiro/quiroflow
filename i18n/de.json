@@ -1522,7 +1522,8 @@
   "{0}: the code cannot have spaces.": "{0}: Der Code darf keine Leerzeichen enthalten.",
   "It has a {0} button, which QuiroFlow cannot edit. {1}": "Sie hat eine Schaltfläche vom Typ {0}, die QuiroFlow nicht bearbeiten kann. {1}",
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "Der Link einer Schaltfläche hat seine Variable an einer Stelle, die QuiroFlow nicht bearbeiten kann. {0}",
-  "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Sie hat oben ein {0}, das QuiroFlow nicht bearbeiten kann. {1}"
+  "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Sie hat oben ein {0}, das QuiroFlow nicht bearbeiten kann. {1}",
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Kein Preis in PracticeHub für: {0}. Die API von PracticeHub gibt nicht an, mit welcher Leistung jede Terminart abgerechnet wird, und keine ihrer aktiven Leistungen trägt diese Namen, daher bleiben sie bei 0. Lege sie unter Einstellungen › Terminarten fest; eine spätere Synchronisierung ersetzt sie nie."
  },
  "s": {
   " (half day)": " (halber Tag)",

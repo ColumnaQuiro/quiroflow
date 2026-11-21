@@ -1,16 +1,21 @@
 import {
   HEADER_FILES,
   FORM_BUTTON_PATH,
+  draftFormId,
   headerFileProblem,
   isFormButton,
+  isMediaHeader,
   mimeTypeFromFilename,
+  normaliseDraft,
   safeFileName,
+  sendValuesFromDraft,
   templateComponents,
   templateEditBlocker,
   templateHeaderKind,
   templateMediaPath,
   type TemplateDraft,
 } from '~/utils/whatsappTemplateDraft'
+import { saveTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 import { withMessagingTokens } from '~/server/utils/accountSecrets'
 import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
 import { isOwnForm, saveTemplateForm } from '~/server/utils/whatsappTemplateForms'
@@ -57,25 +62,13 @@ interface HeaderFile {
 export async function readTemplateSubmission(event: any): Promise<{ draft: TemplateDraft; file: HeaderFile | null; origin: string }> {
   const form = await readMultipartFormData(event)
   const raw = form?.find((part) => part.name === 'draft')?.data?.toString()
-  let parsed: Partial<TemplateDraft>
+  let parsed: unknown
   try {
     parsed = raw ? JSON.parse(raw) : {}
   } catch {
     throw createError({ statusCode: 400, statusMessage: 'The template could not be read.' })
   }
-  const draft: TemplateDraft = {
-    name: String(parsed.name ?? '').trim(),
-    language: String(parsed.language ?? ''),
-    category: parsed.category === 'MARKETING' ? 'MARKETING' : 'UTILITY',
-    header: (['image', 'video', 'document'] as const).find((k) => k === parsed.header) ?? 'none',
-    body: String(parsed.body ?? ''),
-    examples: Array.isArray(parsed.examples) ? parsed.examples.map((e) => String(e ?? '')) : [],
-    footer: String(parsed.footer ?? ''),
-    formButton:
-      parsed.formButton && typeof parsed.formButton === 'object'
-        ? { text: String(parsed.formButton.text ?? ''), docTemplateId: String(parsed.formButton.docTemplateId ?? '') }
-        : null,
-  }
+  const draft = normaliseDraft(parsed)
   const filePart = form?.find((part) => part.name === 'file' && part.filename)
   const file = filePart?.data ? { data: filePart.data, type: filePart.type ?? '', filename: filePart.filename ?? 'archivo' } : null
   return { draft, file, origin: getRequestURL(event).origin }
@@ -83,7 +76,8 @@ export async function readTemplateSubmission(event: any): Promise<{ draft: Templ
 
 /** Refuses a form button that opens a form this clinic does not have, before Meta is asked. */
 async function checkForm(supabase: any, accountId: string, draft: TemplateDraft) {
-  if (draft.formButton && !(await isOwnForm(supabase, accountId, draft.formButton.docTemplateId))) {
+  const formId = draftFormId(draft)
+  if (formId && !(await isOwnForm(supabase, accountId, formId))) {
     throw new TemplateCreateError('That form is not one of this clinic\'s forms. Choose it again.', 400)
   }
 }
@@ -165,7 +159,7 @@ async function connection(supabase: any, accountId: string): Promise<Connection>
  * so a refusal leaves nothing behind.
  */
 async function keepFile(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile) {
-  if (draft.header === 'none' || !HEADER_FILES[draft.header].mimeTypes.includes(file.type)) {
+  if (!isMediaHeader(draft.header) || !HEADER_FILES[draft.header].mimeTypes.includes(file.type)) {
     throw new TemplateCreateError('That file type cannot go at the top of this template.', 400)
   }
   const storagePath = templateMediaPath(accountId, draft.name, draft.language, file.filename)
@@ -187,10 +181,10 @@ async function keepFile(supabase: any, accountId: string, draft: TemplateDraft, 
 export async function createWhatsAppTemplate(supabase: any, accountId: string, draft: TemplateDraft, file: HeaderFile | null, origin: string): Promise<CreatedTemplate> {
   const { graph, token, wabaId } = await connection(supabase, accountId)
   await checkForm(supabase, accountId, draft)
-  const kept = draft.header !== 'none' && file ? await keepFile(supabase, accountId, draft, file) : null
+  const kept = isMediaHeader(draft.header) && file ? await keepFile(supabase, accountId, draft, file) : null
 
   try {
-    const handle = draft.header !== 'none' && file ? await uploadSample(graph, token, file) : null
+    const handle = isMediaHeader(draft.header) && file ? await uploadSample(graph, token, file) : null
     let created: { id: string; status?: string; category?: string }
     try {
       created = await $fetch<{ id: string; status?: string; category?: string }>(`${graph}/${wabaId}/message_templates`, {
@@ -209,8 +203,9 @@ export async function createWhatsAppTemplate(supabase: any, accountId: string, d
     }
     // After Meta accepted it: a refused template leaves no row behind. Always
     // written, so a template made again under a name an earlier one had does
-    // not inherit that one's form.
-    await saveTemplateForm(supabase, accountId, draft.name, draft.language, draft.formButton?.docTemplateId ?? null)
+    // not inherit that one's form, or what filled its blanks.
+    await saveTemplateForm(supabase, accountId, draft.name, draft.language, draftFormId(draft))
+    await saveTemplateSendValues(supabase, accountId, draft.name, draft.language, sendValuesFromDraft(draft))
     return { id: String(created.id), status: created.status ?? 'PENDING', category: created.category ?? draft.category, storagePath: kept?.storagePath ?? null }
   } catch (err) {
     await kept?.forget()
@@ -262,7 +257,7 @@ export async function editWhatsAppTemplate(
 
   // The sample Meta reviews the edit with: the new file, or the one already kept.
   let sample: HeaderFile | null = null
-  if (draft.header !== 'none') {
+  if (isMediaHeader(draft.header)) {
     if (file) sample = file
     else if (previous && templateHeaderKind(existing) === draft.header) {
       const { data: blob, error } = await supabase.storage.from('whatsapp-media').download(previous.path)
@@ -275,7 +270,7 @@ export async function editWhatsAppTemplate(
     }
   }
 
-  const kept = draft.header !== 'none' && file ? await keepFile(supabase, accountId, draft, file) : null
+  const kept = isMediaHeader(draft.header) && file ? await keepFile(supabase, accountId, draft, file) : null
   try {
     const handle = sample ? await uploadSample(graph, token, sample) : null
     // Meta does not let an approved template's category change, so for one
@@ -295,9 +290,10 @@ export async function editWhatsAppTemplate(
     await kept?.forget()
     throw err
   }
-  await saveTemplateForm(supabase, accountId, existing.name, existing.language, draft.formButton?.docTemplateId ?? null)
+  await saveTemplateForm(supabase, accountId, existing.name, existing.language, draftFormId(draft))
+  await saveTemplateSendValues(supabase, accountId, existing.name, existing.language, sendValuesFromDraft(draft))
 
-  const headerMedia = kept && draft.header !== 'none' ? { type: draft.header, storage_path: kept.storagePath, filename: safeFileName(file!.filename) } : null
+  const headerMedia = kept && isMediaHeader(draft.header) ? { type: draft.header, storage_path: kept.storagePath, filename: safeFileName(file!.filename) } : null
   await moveAutomationSteps(supabase, accountId, existing, draft, previous?.path ?? null, headerMedia)
   return { header: draft.header, headerMedia, previousStoragePath: previous?.path ?? null }
 }
@@ -319,7 +315,7 @@ async function moveAutomationSteps(
   previousPath: string | null,
   headerMedia: EditedTemplate['headerMedia'],
 ) {
-  if (!headerMedia && draft.header !== 'none') return
+  if (!headerMedia && isMediaHeader(draft.header)) return
   const { data: steps } = await supabase
     .from('automation_actions')
     .select('id, config')
@@ -330,8 +326,10 @@ async function moveAutomationSteps(
     const config = step.config ?? {}
     if ((config.template_language || 'es') !== existing.language || !config.header) continue
     const usedTemplateFile = previousPath && config.header.storage_path === previousPath
+    // A step's own place stays while the template still has a place at the top.
+    if (config.header.type === 'location' && draft.header === 'location') continue
     let header: Record<string, unknown> | undefined
-    if (draft.header === 'none') header = undefined
+    if (!isMediaHeader(draft.header)) header = undefined
     else if (usedTemplateFile) header = { ...headerMedia }
     else continue
     const { header: _old, ...rest } = config

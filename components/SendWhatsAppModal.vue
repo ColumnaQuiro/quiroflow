@@ -10,6 +10,8 @@ interface Template {
   mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION' | null
   /** The file the template was created with in QuiroFlow, when it was. */
   headerMedia?: { filename: string }
+  /** What QuiroFlow fills it with, when it was created here: its place among them. */
+  sendValues?: { location?: { latitude: number; longitude: number; name: string; address: string } | null } | null
 }
 
 // The attachment choice that means "the template's own file" rather than one
@@ -117,10 +119,12 @@ function selectTemplate(key: string) {
   const count = t?.variableCount ?? 0
   variables.value = Array.from({ length: count }, (_, i) => guesses.value[i] ?? '')
   attachmentFileId.value = t?.headerMedia ? TEMPLATE_FILE : ''
-  locationLatitude.value = ''
-  locationLongitude.value = ''
-  locationName.value = accountStore.currentClinic?.name ?? ''
-  locationAddress.value = accountStore.currentClinic?.address ?? ''
+  // A template made in QuiroFlow brings the place it was made with.
+  const kept = t?.sendValues?.location
+  locationLatitude.value = kept ? String(kept.latitude) : ''
+  locationLongitude.value = kept ? String(kept.longitude) : ''
+  locationName.value = kept?.name || accountStore.currentClinic?.name || ''
+  locationAddress.value = kept?.address || accountStore.currentClinic?.address || ''
 }
 
 const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')

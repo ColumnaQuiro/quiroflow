@@ -5,6 +5,9 @@ import { findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/what
 import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
 import { templateForm } from '~/server/utils/whatsappTemplateForms'
 import { generateDocLink } from '~/server/utils/runAutomationActions'
+import { resolveTemplateVariant } from '~/server/utils/appointmentNotifications'
+import { fillTemplateComponents } from '~/server/utils/whatsappTemplateFill'
+import { formButtonIndex } from '~/utils/whatsappTemplateSend'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
 // messages like recalls and confirmations require a pre-approved template
@@ -48,7 +51,7 @@ export default defineEventHandler(async (event) => {
   const { data: account } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name, default_phone_country',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name, default_phone_country',
     )
     .eq('id', teamMember.account_id)
     .maybeSingle()
@@ -64,8 +67,10 @@ export default defineEventHandler(async (event) => {
   // inboxSend -- without it the template was filed under nobody, and showed
   // as a conversation of its own with just the number.
   let ownerPatientId: string | null = null
+  // For a heading or a link the template fills with their name.
+  let firstName: string | null = null
   if (body.patientId) {
-    const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
+    const { data: patient } = await supabase.from('patients').select('id, first_name, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
     if (!patient) {
       throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
     }
@@ -78,6 +83,7 @@ export default defineEventHandler(async (event) => {
     if (patient.is_minor || (patient.do_not_contact && !body.personal)) {
       throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
     }
+    firstName = patient.first_name ?? null
 
     const { data: numbers } = await supabase
       .from('patient_contact_numbers')
@@ -102,7 +108,7 @@ export default defineEventHandler(async (event) => {
     // lead: stored as international digits with no "+", hence Loose.
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, phone, patient_id')
+      .select('id, phone, patient_id, full_name')
       .eq('id', body.leadId)
       .eq('account_id', teamMember.account_id)
       .is('deleted_at', null)
@@ -112,6 +118,7 @@ export default defineEventHandler(async (event) => {
     to = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
     if (!to) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
     ownerPatientId = lead.patient_id
+    firstName = (lead.full_name ?? '').trim().split(/\s+/)[0] || null
   } else {
     // Meta takes digits; the message is recorded under the number exactly as
     // the conversation has it (below), so it lands in the same thread.
@@ -123,7 +130,16 @@ export default defineEventHandler(async (event) => {
     ownerPatientId = await pickInboundPatientId(admin, teamMember.account_id, to, owners)
   }
 
-  const components: Record<string, unknown>[] = []
+  let components: Record<string, unknown>[] = []
+
+  // The template as Meta has it, to fill whatever this send does not name
+  // (fillTemplateComponents) and to find the form button by its place.
+  // Best-effort: with Meta unreachable the send goes as built, as before.
+  const live = account.whatsapp_business_account_id
+    ? await resolveTemplateVariant(account.whatsapp_business_account_id, account.whatsapp_access_token, body.templateName, body.templateLanguage, body.templateLanguage)
+        .then((v) => (v && v.language === body.templateLanguage ? v.template : null))
+        .catch(() => null)
+    : null
 
   if (body.headerFormat === 'LOCATION' && body.location) {
     components.push({
@@ -176,12 +192,6 @@ export default defineEventHandler(async (event) => {
   if (emptySlot !== -1) {
     throw createError({ statusCode: 400, statusMessage: `Fill in {{${emptySlot + 1}}} before sending: WhatsApp refuses a template with an empty variable.` })
   }
-  if (body.headerFormat === 'LOCATION' && !body.location) {
-    throw createError({ statusCode: 400, statusMessage: 'This template needs a location.' })
-  }
-  if (body.headerFormat && body.headerFormat !== 'LOCATION' && !components.some((c) => c.type === 'header')) {
-    throw createError({ statusCode: 400, statusMessage: `This template needs a ${body.headerFormat.toLowerCase()} attached.` })
-  }
 
   if (body.variables?.length) {
     components.push({ type: 'body', parameters: body.variables.map((v) => ({ type: 'text', text: v })) })
@@ -206,8 +216,30 @@ export default defineEventHandler(async (event) => {
       .maybeSingle()
     formToken = formPatient ? await generateDocLink(admin, teamMember.account_id, formPatient, formId) : null
     if (!formToken) throw createError({ statusCode: 400, statusMessage: 'The form this template opens could not be prepared for this patient.' })
-    // The creator makes a form button the template's only button: index 0.
-    components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: formToken }] })
+    // Where the form button sits among the template's buttons; an older
+    // template made with the form button alone has it first.
+    const index = Math.max(0, formButtonIndex(live))
+    components.push({ type: 'button', sub_type: 'url', index: String(index), parameters: [{ type: 'text', text: formToken }] })
+  }
+
+  // Whatever else the template needs -- a heading, its file or place, a
+  // link's end, a code -- from what the creator kept with it.
+  const filled = await fillTemplateComponents(admin, teamMember.account_id, live, components, { firstName, phone: to })
+  components = filled.components
+  const discardForm = async () => {
+    if (formToken) await admin.from('patient_docs').delete().eq('public_token', formToken).eq('account_id', teamMember.account_id)
+  }
+  if (!components.some((c) => c.type === 'header') && (filled.missing.some((m) => m.startsWith('header')) || (!live && body.headerFormat))) {
+    await discardForm()
+    const format = (live?.components?.find((c: any) => c.type === 'HEADER')?.format ?? body.headerFormat ?? '').toUpperCase()
+    throw createError({
+      statusCode: 400,
+      statusMessage: format === 'LOCATION' ? 'This template needs a location.' : format === 'TEXT' ? 'This template needs its heading filled.' : `This template needs a ${format.toLowerCase()} attached.`,
+    })
+  }
+  if (filled.missing.length) {
+    await discardForm()
+    throw createError({ statusCode: 400, statusMessage: `This template has a part QuiroFlow cannot fill (${filled.missing.join(', ')}). Edit it in Settings > WhatsApp.` })
   }
 
   const url: string = `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_phone_number_id}/messages`
@@ -229,7 +261,7 @@ export default defineEventHandler(async (event) => {
   } catch (err: any) {
     // The copy made for a send that never went out would sit on their record
     // as a form they were sent.
-    if (formToken) await admin.from('patient_docs').delete().eq('public_token', formToken).eq('account_id', teamMember.account_id)
+    await discardForm()
     // error_data.details is where Meta says WHICH parameter; the message
     // alone is a category ("Required parameter is missing").
     const metaMessage = err?.data?.error?.message

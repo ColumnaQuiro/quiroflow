@@ -82,15 +82,17 @@ describe('Platform billing: trial banner, subscription page, and read-only', () 
     })
   })
 
-  it('says the AI receptionist is not in the trial', () => {
+  it("says a trial has the AI receptionist on the trial's 200 replies", () => {
     cy.seedStaffAccount().then((account) => {
       // seedStaffAccount buys Growth; a trial as it starts has nothing.
       cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+      cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 37 })
       cy.login(account.email, account.password)
       cy.visit('/subscription')
-      cy.get('[data-cy=subscription-receptionist-state]', { timeout: 20000 }).should('have.text', 'Not in the trial')
-      cy.get('[data-cy=subscription-receptionist-replies]').should('not.exist')
-      cy.get('[data-cy=subscription-addon-receptionist-state]').should('have.text', 'Not in the trial')
+      cy.get('[data-cy=subscription-receptionist-state]', { timeout: 20000 }).should('have.text', 'In your trial')
+      cy.get('[data-cy=subscription-receptionist-replies]').should('have.text', '37')
+      cy.get('[data-cy=subscription-receptionist]').should('contain', 'of 200 replies in the free trial')
+      cy.get('[data-cy=subscription-addon-receptionist-state]').should('have.text', 'In your trial')
       cy.get('[data-cy=subscription-addon-growth-state]').should('have.text', 'In your trial')
     })
   })

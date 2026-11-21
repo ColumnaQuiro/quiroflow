@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { hasGrowth, hasReceptionist } from '~/server/utils/requireGrowth'
-import { overMonthlyLimit } from '~/server/utils/receptionistUsage'
+import { TRIAL_ALLOWANCE_COLUMNS, overMonthlyLimit, trialAllowanceUsedUp } from '~/server/utils/receptionistUsage'
 import { TYPING_PAUSE_SECONDS, stillTyping } from '~/utils/receptionistAutoReply'
 import { accountsAnsweringNow } from '~/server/utils/receptionistHeld'
 
@@ -65,7 +65,7 @@ export default defineEventHandler(async (event) => {
   // is exactly where that would go unnoticed.
   const { data: subscriptions } = await supabase
     .from('subscriptions')
-    .select('account_id, plan_id, growth_addon, receptionist_addon, status, comped')
+    .select(`account_id, ${TRIAL_ALLOWANCE_COLUMNS}` as const)
     .in('account_id', accountIds)
 
   const entitled = new Set(
@@ -78,6 +78,10 @@ export default defineEventHandler(async (event) => {
   // every waiting conversation to be refused -- every minute, all month.
   for (const c of enabledConfigs ?? []) {
     if (entitled.has(c.account_id) && (await overMonthlyLimit(supabase, c.account_id, c.monthly_reply_limit))) entitled.delete(c.account_id)
+  }
+  // And a trial that has used its allowance, until it buys the receptionist.
+  for (const s of subscriptions ?? []) {
+    if (entitled.has(s.account_id) && (await trialAllowanceUsedUp(supabase, s.account_id, s))) entitled.delete(s.account_id)
   }
   if (entitled.size === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 

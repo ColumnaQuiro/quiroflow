@@ -21,6 +21,7 @@ import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils
 import { practitionerHoursAt, type BusinessHours } from '~/utils/businessHours'
 import { patientAge } from '~/utils/patientAge'
 import { hasReceptionist } from '~/server/utils/requireGrowth'
+import { TRIAL_ALLOWANCE_COLUMNS, trialAllowanceUsedUp } from '~/server/utils/receptionistUsage'
 
 export type { LeadOrigin }
 
@@ -1092,15 +1093,16 @@ export async function receptionistHandlesNewLeads(supabase: any, accountId: stri
     .eq('account_id', accountId)
     .maybeSingle()
   if (!data?.enabled) return false
-  // Switched on is not enough: a trial clinic can have switched it on, and
-  // the trial does not include it. A lead marked as the AI's that nothing
+  // Switched on is not enough: the subscription may not include it, or be a
+  // trial that has used its allowance. A lead marked as the AI's that nothing
   // drafts for is a question nobody reads.
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('plan_id, growth_addon, receptionist_addon, status, comped')
+    .select(TRIAL_ALLOWANCE_COLUMNS)
     .eq('account_id', accountId)
     .maybeSingle()
-  return hasReceptionist(subscription)
+  if (!hasReceptionist(subscription)) return false
+  return !(await trialAllowanceUsedUp(supabase, accountId, subscription))
 }
 
 /**

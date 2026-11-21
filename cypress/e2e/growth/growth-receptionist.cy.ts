@@ -304,14 +304,19 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="test-chat"]').should('not.exist')
   })
 
-  it('tells a trial that the receptionist is not part of it', () => {
-    // The trial gives Growth, so "get it with Growth" would be no answer.
+  it("gives a trial the receptionist, and counts the trial's 200 replies", () => {
+    // A trial that has bought nothing has it on an allowance
+    // (RECEPTIONIST_TRIAL_REPLIES), so the usage card measures that rather
+    // than the paid month's included 1,000.
     cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
     cy.setSubscriptionStatus(account.accountId, 'trialing')
+    cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 40 })
     cy.visit('/growth/receptionist')
 
-    cy.get('[data-test="receptionist-locked"]', { timeout: 20000 }).should('contain', 'not part of the free trial')
-    cy.get('[data-test="test-chat"]').should('not.exist')
+    cy.get('[data-test="receptionist-trial-usage"]', { timeout: 20000 }).scrollIntoView().should('contain', 'of 200 in the free trial')
+    cy.get('[data-test="trial-usage-count"]').should('have.text', '40')
+    cy.get('[data-test="receptionist-included-by"]').should('contain', 'In your trial')
+    cy.get('[data-test="receptionist-locked"]').should('not.exist')
   })
 
   it('says how the clinic comes to have it', () => {

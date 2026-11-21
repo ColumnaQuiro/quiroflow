@@ -895,4 +895,17 @@ describe('Handovers and the receptionist in the Inbox', () => {
       cy.get('[data-test="ai-quiet"] a').should('have.attr', 'href', '/growth/receptionist')
     })
   })
+
+  it("says in the thread when a trial has used its 200 replies", () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Trial Lead', 'none').then(() => {
+      cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+      cy.setSubscriptionStatus(account.accountId, 'trialing')
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+      cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 200 })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Trial Lead').click()
+      cy.get('[data-test="ai-quiet"][data-why="trial"]').should('contain', "free trial's 200 replies")
+    })
+  })
 })

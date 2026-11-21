@@ -99,11 +99,12 @@ const rows = computed(() => [
     : []),
 ])
 
-// The trial includes Growth but not the receptionist (hasReceptionist), so
-// "In your trial" is only true of the Growth row, and adding the receptionist
-// during a trial gives it now rather than keeping it for later.
+// The trial includes Growth, and the receptionist on an allowance
+// (RECEPTIONIST_TRIAL_REPLIES), but not the branding, so "In your trial" is
+// true of the first two rows only, and adding the branding during a trial
+// gives it now rather than keeping it for later.
 function pillOf(row: { key: AddonKey; state: RowState }) {
-  if (row.key !== 'growth' && row.state === 'off' && props.trialing) return { tone: 'chip' as const, label: t('Not in the trial', 'No incluida en la prueba') }
+  if (row.key === 'branding' && row.state === 'off' && props.trialing) return { tone: 'chip' as const, label: t('Not in the trial', 'No incluida en la prueba') }
   return STATE_PILL.value[row.state]
 }
 
@@ -214,7 +215,7 @@ defineExpose({ start })
                 :data-cy="`subscription-addon-${row.key}-add`"
                 @click="start(row.key, true)"
               >
-                {{ trialing && row.key === 'growth' ? t('Keep after the trial', 'Mantener tras la prueba') : t('Add', 'Añadir') }}
+                {{ trialing && row.key !== 'branding' ? t('Keep after the trial', 'Mantener tras la prueba') : t('Add', 'Añadir') }}
               </UiBtn>
               <UiBtn
                 v-else-if="row.state === 'on'"

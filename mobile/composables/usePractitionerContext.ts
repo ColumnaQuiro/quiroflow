@@ -51,13 +51,14 @@ type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean |
 
 // The server's rule (server/utils/requireGrowth.ts, hasReceptionist), which
 // the web's account store repeats and this repeats again, since neither is
-// importable here: comped, or the add-on, Growth or a plan that includes it
-// while not locked or cancelled. A trial alone does not give it, although it
-// gives Growth.
+// importable here: comped, trialing (on the trial's allowance until it buys
+// it), or the add-on, Growth or a plan that includes it while not locked or
+// cancelled.
 function receptionistFrom(subscription: BootstrapSubscription | null | undefined): boolean {
   if (!subscription) return false
   if (subscription.comped) return true
   if (subscription.status === 'locked' || subscription.status === 'canceled') return false
+  if (subscription.status === 'trialing') return true
   return !!(subscription.growth_addon || planIncludesGrowth(subscription.plan_id) || subscription.receptionist_addon)
 }
 // stores/account.ts's hasGrowthAddon (server/utils/requireGrowth.ts's rule):

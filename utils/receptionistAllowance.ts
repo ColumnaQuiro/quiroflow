@@ -1,3 +1,7 @@
+// Relative, not `~`: the staff app auto-imports this directory too, and
+// there `~` is mobile/.
+import { planIncludesGrowth } from './growthPlans'
+
 // What the receptionist's price includes, and what it costs past that.
 //
 // Priced on measured cost (20261014184755_receptionist_addon.sql): a reply is
@@ -13,6 +17,33 @@ export const RECEPTIONIST_INCLUDED_REPLIES = 1000
 export const RECEPTIONIST_BLOCK_REPLIES = 1000
 /** Per block past the allowance, ex-IVA. */
 export const RECEPTIONIST_BLOCK_PRICE_CENTS = 1500
+
+/**
+ * What the free trial gets before anything is bought: enough replies to see
+ * it answer and book (a first visit takes 5-8), not a month's worth for
+ * nothing -- the trial is charged for none of them. Counted over the whole
+ * trial, not per calendar month, so a trial that crosses the 1st does not get
+ * it twice. Buying it (the add-on, Growth, or a plan with Growth) lifts it;
+ * the replies already written still count toward that month's included 1,000.
+ */
+export const RECEPTIONIST_TRIAL_REPLIES = 200
+
+type TrialAllowanceSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null }
+
+/** Bought something that includes the receptionist: the add-on, Growth, or a plan with Growth. */
+export function receptionistPurchased(subscription: TrialAllowanceSubscription | null | undefined): boolean {
+  return !!(subscription && (subscription.growth_addon || planIncludesGrowth(subscription.plan_id) || subscription.receptionist_addon))
+}
+
+/**
+ * Whether this account's receptionist runs on the trial's allowance
+ * (RECEPTIONIST_TRIAL_REPLIES) rather than the paid month: trialing, not
+ * complimentary, and nothing bought that includes it.
+ */
+export function receptionistOnTrialAllowance(subscription: TrialAllowanceSubscription | null | undefined): boolean {
+  if (!subscription || subscription.comped) return false
+  return subscription.status === 'trialing' && !receptionistPurchased(subscription)
+}
 
 /** Blocks of 1,000 past the allowance -- a part block counts as a whole one. */
 export function receptionistExtraBlocks(replies: number): number {

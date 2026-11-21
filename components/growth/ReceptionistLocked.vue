@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // What Growth > AI receptionist shows a clinic whose subscription does not
-// include it -- most often one on the free trial, which gives Growth but not
-// the receptionist.
+// include it. Not a trial: the trial has it, on an allowance
+// (RECEPTIONIST_TRIAL_REPLIES).
 //
 // It was one grey sentence and two buttons, and before that, for a trial
 // reaching the page with the store's word and the server's disagreeing, a red
@@ -11,8 +11,6 @@
 //
 // The patient and practitioner are the vetted demo names from
 // components/onboarding/previewFixtures.ts.
-defineProps<{ trialing: boolean }>()
-
 const t = useT()
 </script>
 
@@ -20,22 +18,17 @@ const t = useT()
   <div class="mx-auto grid max-w-[920px] items-center gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:gap-12 lg:py-12" data-test="receptionist-locked">
     <div class="order-2 lg:order-1">
       <span class="inline-flex rounded-pill border border-brand-tintBorder bg-brand-tint px-[9px] py-[3px] text-[11px] font-bold uppercase tracking-[.08em] text-brand-text">
-        {{ trialing ? t('Not in the free trial', 'No incluida en la prueba') : t('Add-on', 'Complemento') }}
+        {{ t('Add-on', 'Complemento') }}
       </span>
       <h2 class="mt-3 text-[22px] font-semibold leading-[1.25] tracking-tightTitle text-ink-900">
         {{ t('An AI receptionist that answers and books while you treat', 'Una recepcionista IA que responde y reserva mientras tú tratas') }}
       </h2>
       <p class="mt-2.5 text-[13.5px] leading-[1.6] text-ink-muted">
         {{
-          trialing
-            ? t(
-                'It is not part of the free trial. Upgrade to add it on its own, or with Growth, and it starts answering WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.',
-                'No está incluida en la prueba gratuita. Mejora tu plan para añadirla por sí sola, o con Growth, y empezará a responder WhatsApp, Instagram, Messenger y el chat de tu web en nombre de tu clínica, reservando directamente en tu agenda.',
-              )
-            : t(
-                'Add the AI receptionist on its own, or get it with Growth. It answers WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.',
-                'Añade la recepcionista IA por sí sola, o consíguela con Growth. Responde WhatsApp, Instagram, Messenger y el chat de tu web en nombre de tu clínica, reservando directamente en tu agenda.',
-              )
+          t(
+            'Add the AI receptionist on its own, or get it with Growth. It answers WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.',
+            'Añade la recepcionista IA por sí sola, o consíguela con Growth. Responde WhatsApp, Instagram, Messenger y el chat de tu web en nombre de tu clínica, reservando directamente en tu agenda.',
+          )
         }}
       </p>
       <ul class="mt-4 flex flex-col gap-1.5">
@@ -52,7 +45,7 @@ const t = useT()
       </ul>
       <div class="mt-5 flex flex-wrap gap-2">
         <NuxtLink to="/subscription" class="inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-test="receptionist-upgrade">
-          {{ trialing ? t('Upgrade to add it', 'Mejorar para añadirla') : t('Add the receptionist', 'Añadir la recepcionista') }}
+          {{ t('Add the receptionist', 'Añadir la recepcionista') }}
         </NuxtLink>
         <NuxtLink to="/growth" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:border-line-controlHover touch:h-11">
           {{ t('See what Growth adds', 'Ver qué añade Growth') }}

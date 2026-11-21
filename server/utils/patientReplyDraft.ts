@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
+import { overMonthlyLimit, overTrialAllowance, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist, tellHandedOver, replyChoices } from '~/server/utils/receptionistSend'
 import { scheduleNudgeAfterOffer } from '~/server/utils/receptionistFollowUps'
 import { askWhyCancelledTool, bookingTool, cancellationReasonTool, cancelTool, giveVisitTool, offerTimesTool, stopEarlierTimeOffersTool, stopFollowUpsTool, waitlistTool, writeBackTool, type BookingContext } from '~/server/utils/receptionistBooking'
@@ -51,6 +51,8 @@ export type PatientDraftOutcome =
   | { status: 'not_found' }
   /** The clinic's monthly ceiling is reached (receptionist_config.monthly_reply_limit). */
   | { status: 'limit_reached' }
+  /** A trial that has bought nothing has used its allowance (RECEPTIONIST_TRIAL_REPLIES). */
+  | { status: 'trial_limit_reached' }
 
 interface Turn extends StoredImage { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean; transcript?: string | null }
 
@@ -402,6 +404,8 @@ export async function draftPatientReply(
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
+  // And the trial's, for a trial that has bought nothing.
+  if (await overTrialAllowance(service, accountId)) return { status: 'trial_limit_reached' }
 
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: receptionistModelName(),

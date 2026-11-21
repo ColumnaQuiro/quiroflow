@@ -76,6 +76,42 @@ export function commonViews(before: Metrics, after: Metrics): { side: PostureVie
   return { side: both('right', 'left'), front: both('front', 'back') }
 }
 
+/**
+ * The planes the two cannot be compared on, and why: what each has from that
+ * plane (front or back; right or left side), or null when it has neither.
+ * Front and back are optional one for the other (utils/posture.ts
+ * postureMissing), so an assessment from the front and a later one from the
+ * back say nothing to each other from the front -- the screens and the PDF
+ * say so rather than leave the rows out in silence.
+ */
+export interface UncomparedPlane { plane: 'front' | 'side'; before: PostureView | null; after: PostureView | null }
+export function uncomparedPlanes(before: Metrics, after: Metrics): UncomparedPlane[] {
+  const views = commonViews(before, after)
+  const has = (m: Metrics, a: PostureView, b: PostureView): PostureView | null => (m[a] ? a : m[b] ? b : null)
+  const out: UncomparedPlane[] = []
+  if (!views.front) out.push({ plane: 'front', before: has(before, 'front', 'back'), after: has(after, 'front', 'back') })
+  if (!views.side) out.push({ plane: 'side', before: has(before, 'right', 'left'), after: has(after, 'right', 'left') })
+  // Neither has anything from that plane: nothing was left out.
+  return out.filter((u) => u.before || u.after)
+}
+
+const VIEW_WORDS: Record<PostureView, { es: string; en: string }> = {
+  front: { es: 'la foto de frente', en: 'the front photo' },
+  back: { es: 'la foto de espalda', en: 'the back photo' },
+  right: { es: 'la del lado derecho', en: 'the right side' },
+  left: { es: 'la del lado izquierdo', en: 'the left side' },
+}
+
+/** One plane left out of a comparison, in a sentence (the PDF's; Compare.vue says it through t()). */
+export function uncomparedSentence(u: UncomparedPlane, beforeDay: string, afterDay: string, lang: CompareLang): string {
+  const es = lang === 'es'
+  const plane = u.plane === 'front' ? (es ? 'De frente' : 'From the front') : es ? 'De lado' : 'From the side'
+  const what = (v: PostureView | null) => (v ? VIEW_WORDS[v][lang] : es ? 'ninguna foto de ese lado' : 'no photo from there')
+  return es
+    ? `${plane}, sin comparar: el ${beforeDay} tiene ${what(u.before)} y el ${afterDay}, ${what(u.after)}. Solo se comparan fotos de la misma vista.`
+    : `${plane}, not compared: ${beforeDay} has ${what(u.before)} and ${afterDay} ${what(u.after)}. Only photos of the same view are compared.`
+}
+
 /** One measure in one assessment, as distance from aligned; null when that view was not taken. */
 export function compareValue(metrics: Metrics, key: CompareKey, views: { side: PostureView | null; front: PostureView | null }): number | null {
   const s = (views.side ? metrics[views.side] : undefined) as SideMetrics | undefined

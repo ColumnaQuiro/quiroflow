@@ -297,7 +297,6 @@
   "Forms in PracticeHub that are not imported here, so there was nothing to file them with: {0}. Run Form responses and start again.": "Formulários do PracticeHub que não estão importados aqui, pelo que não havia onde os guardar: {0}. Execute Respostas a formulários e inicie de novo.",
   "Forms whose original could not be fetched: {0}. Start again to retry them.": "Formulários cujo original não foi possível trazer: {0}. Inicie de novo para tentar outra vez.",
   "Forms {0}-{1} were not saved: {2}": "Os formulários {0}-{1} não foram guardados: {2}",
-  "From that day VeriFactu costs {0} + IVA per location per month, added to your subscription ({1} {2}: {3} a month).": "A partir desse dia, o VeriFactu custa {0} + IVA por local e por mês, acrescentado à sua subscrição ({1} {2|location=local|locations=locais}: {3} por mês).",
   "From the last 30 days, not booked · {0} never contacted": "Dos últimos 30 dias, sem marcação · {0} nunca contactados",
   "From the type {0}": "Do tipo {0}",
   "From visit {0}": "A partir da consulta {0}",
@@ -10238,6 +10237,7 @@
   "★ Suggested for their reason for visit.": "★ Sugeridos pelo motivo da consulta.",
   "✓ Added": "✓ Adicionado",
   "✓ Done today": "✓ Feito hoje",
-  "✓ In library": "✓ Na biblioteca"
+  "✓ In library": "✓ Na biblioteca",
+  "VeriFactu is included in your subscription at no extra cost.": "O VeriFactu está incluído na sua assinatura, sem custo adicional."
  }
 }

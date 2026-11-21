@@ -40,7 +40,6 @@ interface Settings {
   sender: Sender
   platform: { nif: string | null; legalName: string | null } | null
   isPlatform: boolean
-  fee: { monthlyCentsPerLocation: number; locations: number; billedLocations: number } | null
   delegation: Delegation | null
   activity: {
     waiting: number
@@ -73,20 +72,13 @@ function madridDay(iso: string) {
 }
 const todayDay = madridDay(new Date().toISOString())
 
-function euros(cents: number) {
-  return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
-}
-// "7,50 € + IVA per location per month -- 2 locations: 15,00 € a month."
-const feeText = computed(() => {
-  const fee = settings.value?.fee
-  if (!fee) return null
-  const each = euros(fee.monthlyCentsPerLocation)
-  const total = euros(fee.monthlyCentsPerLocation * fee.locations)
-  return t(
-    `From that day VeriFactu costs ${each} + IVA per location per month, added to your subscription (${fee.locations} ${fee.locations === 1 ? 'location' : 'locations'}: ${total} a month).`,
-    `Desde ese día VeriFactu cuesta ${each} + IVA por centro y mes, que se añade a tu suscripción (${fee.locations} ${fee.locations === 1 ? 'centro' : 'centros'}: ${total} al mes).`,
-  )
-})
+// VeriFactu used to cost 7,50 EUR a month per location from the live date;
+// it is free now (20261120203755_verifactu_free.sql), and saying so where the
+// owner picks the date answers the question before it is asked.
+const freeText = t(
+  'VeriFactu is included in your subscription at no extra cost.',
+  'VeriFactu va incluido en tu suscripción, sin coste añadido.',
+)
 
 async function load() {
   try {
@@ -486,8 +478,7 @@ const facts = computed(() => {
                 <span v-if="settings.locked" data-cy="verifactu-locked" class="flex-1 text-[13px] text-ink-500">
                   {{ t(`Live since ${liveDay}. The AEAT holds this clinic’s real chain, so the date is fixed and VeriFactu stays on.`, `En producción desde el ${liveDay}. La AEAT tiene la cadena real de esta clínica, así que la fecha es fija y VeriFactu permanece activo.`) }}
                 </span>
-                <span v-else-if="feeText" data-cy="verifactu-fee" class="flex-1 text-[13px] text-ink-500">{{ feeText }}</span>
-                <span v-else class="flex-1" />
+                <span v-else data-cy="verifactu-fee" class="flex-1 text-[13px] text-ink-500">{{ freeText }}</span>
                 <UiBtn v-if="!settings.locked" variant="primary" data-cy="verifactu-save" :disabled="!changed || saving" @click="save">
                   {{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
                 </UiBtn>
@@ -758,7 +749,7 @@ const facts = computed(() => {
       <div class="space-y-2 text-[14px] leading-snug text-ink-700" data-cy="verifactu-go-live-dialog">
         <p>{{ t('From midnight that day (Madrid), every factura is sent to the AEAT’s real service.', 'Desde la medianoche de ese día (Madrid), cada factura se envía al servicio real de la AEAT.') }}</p>
         <p class="font-semibold text-ink-900">{{ t('Once the first one has gone, the date cannot change and VeriFactu cannot be switched off.', 'Una vez enviada la primera, la fecha no se puede cambiar y VeriFactu no se puede desactivar.') }}</p>
-        <p v-if="feeText">{{ feeText }}</p>
+        <p>{{ freeText }}</p>
       </div>
     </UiConfirmDialog>
 

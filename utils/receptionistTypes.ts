@@ -465,6 +465,30 @@ export function matchReferrer<T extends { firstName: string; lastName: string | 
   return fits.length ? 'need_surname' : null
 }
 
+/**
+ * The chiropractor someone asked for by name ("con Natacha", "Natacha
+ * Félix"), among the team: every word they wrote has to be a word of that
+ * person's full name, accents and case aside. null when it is nobody,
+ * 'ambiguous' when it fits more than one.
+ *
+ * A new person who asked for a first visit "con Natacha" was offered two
+ * times "con Natacha" from a list merged across the team, and the booking
+ * went to whoever was free first by date of joining, with "Natacha no tenía
+ * hueco" said afterwards (20 Nov 2026). Naming her is what keeps the times
+ * and the booking hers.
+ */
+export function matchChiropractor<T extends { fullName: string }>(team: T[], name: string): T | 'ambiguous' | null {
+  const words = (s: string) => fold(s).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
+  const given = words(name)
+  if (!given.length) return null
+  const hits = team.filter((member) => {
+    const own = words(member.fullName)
+    return given.every((word) => own.includes(word))
+  })
+  if (hits.length > 1) return 'ambiguous'
+  return hits[0] ?? null
+}
+
 const foldTypeName = (name: string) => fold(name).replace(/[^a-z0-9]+/g, ' ').trim()
 
 /**
@@ -572,7 +596,7 @@ export function checkBookableIds(value: unknown, types: Pick<OfferableType, 'id'
  * "vale" to several, a day or time that was not offered.
  */
 export const CONFIRM_BEFORE_BOOKING =
-  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21", "el 21" or "perdón, sí, el 21" mean 16:00 and you book it without asking again. A correction of an earlier answer counts the same way: what they choose last is their answer. If it could be more than one time (you offered two times that day, they said "vale" to several options, or a day or time you did not offer), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
+  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21", "el 21" or "perdón, sí, el 21" mean 16:00 and you book it without asking again. A correction of an earlier answer counts the same way: what they choose last is their answer. A time they ask for in their own words on a day they name ("pásamela sobre las 15h" about their Wednesday visit) is named by them too: when exactly that time is free, book or move it without asking again. If it could be more than one time (you offered two times that day, they said "vale" to several options, or they gave a day without a time, or a time without a day), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
 
 /** A visit the person already has booked, as the reschedule section names it. */
 export interface BookedVisit {

@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
+import { findChiropractor, loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
@@ -45,6 +45,10 @@ const FIND_FREE_TIMES: Anthropic.Tool = {
       any_chiropractor: {
         type: 'boolean',
         description: 'true to look at the whole team instead of their own chiropractor -- only when they are in a hurry and their own has nothing in the days they asked for. Leave out otherwise.',
+      },
+      chiropractor: {
+        type: 'string',
+        description: 'When they asked for one chiropractor by name ("con Natacha"): that name. The times are then only that chiropractor\'s; book them with the same chiropractor. Leave out otherwise.',
       },
     },
     required: ['from_date'],
@@ -119,9 +123,23 @@ export function freeTimesLookup(
     }
 
     const named = query.typeName ? findTypeByName(whose.types, query.typeName) : null
-    const chosen = query.typeName ? (named ? [named] : []) : whose.types
+    let chosen = query.typeName ? (named ? [named] : []) : whose.types
     if (chosen.length === 0) {
       return { content: `"${query.typeName}" is not a type you can offer${forName ? ` ${forName}` : ''}. Use one of: ${whose.types.map((type) => type.name).join(', ')}.`, isError: true }
+    }
+
+    // One chiropractor they asked for by name: only her times, and only the
+    // types she does (20 Nov 2026, matchChiropractor).
+    const asked = typeof (input as { chiropractor?: unknown } | null)?.chiropractor === 'string' ? ((input as { chiropractor: string }).chiropractor).replace(/\s+/g, ' ').trim().slice(0, 80) : ''
+    let withWhom: string | null = null
+    if (asked && !forName) {
+      const found = await findChiropractor(calendarClient, accountId, asked)
+      if ('error' in found) return { content: found.error, isError: true }
+      const hers = chosen.filter((type) => !type.practitionerIds?.length || type.practitionerIds.includes(found.id))
+      if (!hers.length) return { content: `${found.fullName} does not do ${chosen.map((type) => type.name).join(' or ')}. Tell them, and ask whether another chiropractor would do.`, isError: true }
+      chosen = hers
+      whose = { ...whose, practitionerIds: [found.id] }
+      withWhom = found.fullName
     }
 
     const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, chosen, now, {
@@ -134,7 +152,7 @@ export function freeTimesLookup(
     }
     const span = `the ${query.days} day${query.days === 1 ? '' : 's'} from ${query.from}`
     return {
-      content: [`Free start times${forName ? ` for ${forName}` : ''} for ${span}, in the clinic's local time. A day not listed has nothing free.`, ...availabilityLists(calendar.availability, `in ${span}`)].join('\n\n'),
+      content: [`Free start times${forName ? ` for ${forName}` : ''}${withWhom ? ` with ${withWhom} only` : ''} for ${span}, in the clinic's local time. A day not listed has nothing free.${withWhom ? ` Book any of them with chiropractor "${withWhom}".` : ''}`, ...availabilityLists(calendar.availability, `in ${span}`)].join('\n\n'),
       isError: false,
     }
   }

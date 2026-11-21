@@ -3,7 +3,7 @@ import type { H3Event } from 'h3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { randomUUID } from 'node:crypto'
-import { loadReceptionistCalendar, type BookedAppointment, type FamilyAdult, type OfferedType, type ReceptionistConfig, type TutorChild } from '~/server/utils/receptionist'
+import { findChiropractor, loadReceptionistCalendar, type BookedAppointment, type FamilyAdult, type OfferedType, type ReceptionistConfig, type TutorChild } from '~/server/utils/receptionist'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { automationEvent } from '~/server/utils/automationEngine'
@@ -83,6 +83,7 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       other_person_relation: { type: 'string', enum: [...BROUGHT_RELATIONS], description: 'With other_person_name, if they said it: what that person is to them.' },
       referred_by: { type: 'string', description: 'When booking someone new as referred by a patient (see "Referred by a patient"): the first name and surname of the patient who referred them, exactly as they gave it.' },
       any_chiropractor: { type: 'boolean', description: 'true when the time is one find_free_times gave with any_chiropractor: a new visit for the person writing with whoever of the team is free, because they are in a hurry and their own chiropractor has nothing. Never to move a visit.' },
+      chiropractor: { type: 'string', description: 'When they asked for one chiropractor by name, or you offered the time as with one by name: that name. The visit is then booked only with that chiropractor; when the time is not free with them it is not booked with anyone else. Leave out otherwise.' },
     },
     required: ['date', 'time'],
     additionalProperties: false,
@@ -199,6 +200,7 @@ export const WRITE_BACK_ON: Anthropic.Tool = {
     type: 'object',
     properties: {
       date: { type: 'string', description: 'The day to write to them, as YYYY-MM-DD: after today, and a day the clinic sees patients when you can.' },
+      part_of_day: { type: 'string', enum: ['morning', 'afternoon'], description: 'afternoon when they said they will only know later that day ("hasta mañana por la tarde no lo sé", "te digo por la tarde"); morning otherwise.' },
     },
     required: ['date'],
     additionalProperties: false,
@@ -339,7 +341,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   const used = new Set<string>()
   return async (input) => {
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown; any_chiropractor?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown; any_chiropractor?: unknown; chiropractor?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     // A time listed as "10:00*" (next to a visit, receptionistSlots.ts) is 10:00.
     const time = typeof value.time === 'string' ? value.time.trim().replace(/\*+$/, '') : ''
@@ -484,6 +486,23 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // came from find_free_times with any_chiropractor.
     if (value.any_chiropractor === true && !moving && !relative && !child && !brought) own = null
     if (moving?.practitionerId) own = [moving.practitionerId]
+    // One they asked for by name, or offered the time as theirs: only them.
+    // Falling through to whoever was free first booked a first visit offered
+    // "con Natacha" with Jordana (20 Nov 2026).
+    const askedFor = typeof value.chiropractor === 'string' ? value.chiropractor.replace(/\s+/g, ' ').trim().slice(0, 80) : ''
+    let named: { id: string; fullName: string } | null = null
+    if (askedFor) {
+      const found = await findChiropractor(ctx.service, ctx.accountId, askedFor)
+      if ('error' in found) return { content: `${found.error} Do not say anything is booked.`, isError: true }
+      if (moving?.practitionerId && moving.practitionerId !== found.id) {
+        return { content: `That visit is with another chiropractor, and a move stays with them. If they want ${found.fullName} instead, call hand_over_to_colleague saying so; do not say anything is moved.`, isError: true }
+      }
+      if (type.practitionerIds?.length && !type.practitionerIds.includes(found.id)) {
+        return { content: `${found.fullName} does not do ${type.name}. Tell them, and ask whether another chiropractor would do; do not say anything is booked.`, isError: true }
+      }
+      named = found
+      own = [found.id]
+    }
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))
@@ -496,7 +515,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       const day = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1 }, own)
       const free = [...new Set(day.availability?.groups.flatMap((g) => g.days.filter((d) => d.date === date).flatMap((d) => d.times)) ?? [])].sort()
       return {
-        content: `${time} on ${date} is not free for ${type.name}. ${free.length ? `Free that day: ${free.join(', ')}.` : 'Nothing is free that day.'} Offer one of those or another day; do not say it is booked.`,
+        content: named
+          ? `${time} on ${date} is not free with ${named.fullName}. ${free.length ? `Free with ${named.fullName} that day: ${free.join(', ')}.` : `${named.fullName} has nothing free that day.`} Tell them, offer one of those or another day with ${named.fullName}, and ask whether another chiropractor would do before you book with anyone else; do not say it is booked.`
+          : `${time} on ${date} is not free for ${type.name}. ${free.length ? `Free that day: ${free.join(', ')}.` : 'Nothing is free that day.'} Offer one of those or another day; do not say it is booked.`,
         isError: true,
       }
     }
@@ -1212,7 +1233,8 @@ export function offerTimesTool(ctx: BookingContext, onOffered: (slots: OfferedSl
 export function writeBackTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   return async (input) => {
     if (!ctx.conversation) return { content: 'You cannot arrange that here. Tell them they can write whenever they know.', isError: true }
-    const due = agreedDueAt((input as { date?: unknown } | null)?.date, new Date(), ctx.timeZone)
+    const partOfDay = (input as { part_of_day?: unknown } | null)?.part_of_day === 'afternoon' ? 'afternoon' : 'morning'
+    const due = agreedDueAt((input as { date?: unknown } | null)?.date, new Date(), ctx.timeZone, 120, partOfDay)
     if (!due) return { content: 'date must be a day after today, within the next four months, as YYYY-MM-DD. Agree a day with them first, then call it again; do not promise to write yet.', isError: true }
     const writer = receptionistServiceClient(ctx.event) as any
     const key = { account_id: ctx.accountId, conversation_key: ctx.conversation.key, kind: 'agreed' }
@@ -1225,11 +1247,11 @@ export function writeBackTool(ctx: BookingContext): (input: unknown) => Promise<
     }
     const when = due.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ctx.timeZone })
     try {
-      await ctx.onBooked(`Le escribiré el ${due.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ctx.timeZone })} por la mañana para buscarle cita, como hemos quedado.`)
+      await ctx.onBooked(`Le escribiré el ${due.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ctx.timeZone })} por la ${partOfDay === 'afternoon' ? 'tarde' : 'mañana'} para buscarle cita, como hemos quedado.`)
     } catch (err) {
       console.error('[receptionist] after agreeing a day to write:', (err as Error)?.message ?? err)
     }
-    return { content: `Done: the clinic will write to them on ${when}, in the morning. Tell them so in one sentence, with the day in words, and that they can also write before if they know sooner. Do not offer times now.`, isError: false }
+    return { content: `Done: the clinic will write to them on ${when}, in the ${partOfDay}. Tell them so in one sentence, with the day in words, and that they can also write before if they know sooner. Do not offer times now.`, isError: false }
   }
 }
 

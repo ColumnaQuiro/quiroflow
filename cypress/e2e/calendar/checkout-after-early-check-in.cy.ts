@@ -28,8 +28,12 @@ describe('Checking a patient in before their slot', () => {
           // Not here yet, and the slot is tomorrow: nothing to charge.
           cy.get('[data-cy=visit-checkout]').should('not.exist')
           cy.get('[data-cy=advance-stage]').should('have.attr', 'data-next', 'checkin').click()
-          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).should('be.visible')
-          cy.contains('[data-cy=checkout-process]', '55,00 €').should('be.visible')
+          // Scrolled to first: the block appears at the top of a panel the
+          // click scrolled down to the stage button, under the panel's header,
+          // and Cypress calls what is covered not visible
+          // (visit-checkout-first-screen.cy.ts does the same).
+          cy.get('[data-cy=visit-checkout]', { timeout: 15000 }).scrollIntoView().should('be.visible')
+          cy.contains('[data-cy=checkout-process]', '55,00 €').should('exist')
         })
       })
     })

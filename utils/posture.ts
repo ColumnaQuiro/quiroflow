@@ -347,6 +347,26 @@ export function cutoutVerdict(mask: { width: number; height: number; data: Array
 export interface StoredView { photo: string; width: number; height: number; points: Points; facing: 'right' | 'left' | null; tilt?: number | null }
 export type StoredViews = Partial<Record<PostureView, StoredView>>
 
+/**
+ * Which planes a posture assessment has no photo of: 'frontal' without a
+ * front or a back photo, 'side' without a right or a left one. Any one photo
+ * is enough to save (postureCanSave); each plane missing takes its own
+ * measurements with it, and the screens say which. The front and the back are
+ * measured the same way, in the patient's own right and left (measureView),
+ * so either gives every frontal number but the Q-angle, which needs the
+ * front. Nothing is measured from two views at once except the alignment
+ * index (alignmentIndex), which needs both planes.
+ */
+export type PosturePlane = 'frontal' | 'side'
+export function postureMissing(views: Partial<Record<PostureView, unknown>>): PosturePlane[] {
+  const out: PosturePlane[] = []
+  if (!views.front && !views.back) out.push('frontal')
+  if (!views.right && !views.left) out.push('side')
+  return out
+}
+/** At least one photo, of any view. */
+export const postureCanSave = (views: Partial<Record<PostureView, unknown>>) => postureMissing(views).length < 2
+
 /** Every view's measurements, as stored on the assessment. */
 export function measureAll(views: StoredViews, heightCm: number): Partial<Record<PostureView, ViewMetrics>> {
   const out: Partial<Record<PostureView, ViewMetrics>> = {}

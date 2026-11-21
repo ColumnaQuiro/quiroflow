@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureGrid, postureHeadline, pxPerCm, type Points } from '../../utils/posture'
+import { alignmentIndex, cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureBalance, postureGrid, postureHeadline, postureCanSave, postureMissing, pxPerCm, type Points, type StoredView } from '../../utils/posture'
+import { postureConclusion, postureReportSections } from '../../utils/postureReport'
 
 // A 170 cm patient photographed so that ear-to-ankle is 1591.2 px: exactly
 // 10 px per cm, so every number below can be checked by hand.
@@ -132,5 +133,68 @@ describe('cutoutVerdict', () => {
   it('refuses an outline smaller than its own size says', () => {
     expect(cutoutVerdict({ width: 10, height: 10, data: new Float32Array(50) })).toEqual({ verdict: 'bad-size', share: null })
     expect(cutoutVerdict({ width: 0, height: 0, data: new Float32Array(0) })).toEqual({ verdict: 'bad-size', share: null })
+  })
+})
+
+describe('any one photo', () => {
+  const front: Points = {
+    earR: [470, EAR_Y], earL: [490, EAR_Y],
+    shoulderR: [400, 300], shoulderL: [600, 290],
+    hipR: [450, 900], hipL: [560, 905],
+    kneeR: [460, 1300], kneeL: [540, 1300],
+    ankleR: [460, ANKLE_Y], ankleL: [540, ANKLE_Y],
+  }
+  // The same person from behind: mirrored, so the patient's right is on the viewer's right.
+  const back = Object.fromEntries(Object.entries(front).map(([k, [x, y]]) => [k, [1000 - x, y]])) as Points
+  const side: Points = { ear: [560, EAR_Y], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, ANKLE_Y] }
+  const view = (points: Points, facing: 'right' | null = null): StoredView => ({ photo: 'x.jpg', width: 1000, height: 1800, points, facing })
+
+  it('says which plane has no photo, and saves with any one photo', () => {
+    expect(postureMissing({})).toEqual(['frontal', 'side'])
+    expect(postureMissing({ front: 1, right: 1 })).toEqual([])
+    expect(postureMissing({ back: 1, left: 1 })).toEqual([])
+    expect(postureMissing({ back: 1 })).toEqual(['side'])
+    expect(postureMissing({ right: 1, left: 1 })).toEqual(['frontal'])
+    expect(postureCanSave({})).toBe(false)
+    for (const v of ['front', 'right', 'back', 'left']) expect(postureCanSave({ [v]: 1 }), v).toBe(true)
+  })
+
+  it('from the side alone: the head and the vertical, no tilts, no index, and the report says so', () => {
+    const metrics = measureAll({ right: view(side, 'right') }, H)
+    const h = postureHeadline(metrics)
+    expect(h.headWeight).toBeTypeOf('number')
+    expect(h.shoulderTilt).toBeNull()
+    expect(alignmentIndex(metrics)).toBeNull()
+    expect(postureBalance({ right: view(side, 'right') }, H).rightShare).toBeNull()
+    const conclusion = postureConclusion(metrics, 'es')
+    expect(conclusion).toContain('Sin foto de frente ni de espalda, no se mide la inclinación de hombros ni de pelvis.')
+    expect(JSON.stringify(postureReportSections(metrics, 'es')) + conclusion).not.toMatch(/NaN|undefined/)
+  })
+
+  it('from the front alone: the report does not claim the head was measured', () => {
+    const metrics = measureAll({ front: view(front) }, H)
+    expect(postureHeadline(metrics).headWeight).toBeNull()
+    expect(alignmentIndex(metrics)).toBeNull()
+    expect(postureConclusion(metrics, 'en')).toContain('With no side photo, where the head sits over the shoulder is not measured.')
+  })
+
+  it('measures from the back alone exactly what it measures from the front alone', () => {
+    const fromFront = measureAll({ front: view(front), right: view(side, 'right') }, H)
+    const fromBack = measureAll({ back: view(back), right: view(side, 'right') }, H)
+    expect(Object.keys(fromBack).sort()).toEqual(['back', 'right'])
+    expect(postureHeadline(fromBack)).toEqual(postureHeadline(fromFront))
+    expect(alignmentIndex(fromBack)).toBe(alignmentIndex(fromFront))
+    expect(alignmentIndex(fromBack)).not.toBeNull()
+    expect(postureBalance({ back: view(back), right: view(side, 'right') }, H)).toEqual(postureBalance({ front: view(front), right: view(side, 'right') }, H))
+  })
+
+  it('writes no empty number and no NaN into the report from the back alone', () => {
+    const metrics = measureAll({ back: view(back), right: view(side, 'right') }, H)
+    const sections = postureReportSections(metrics, 'es')
+    expect(sections.map((s) => s.view)).toEqual(['right', 'back'])
+    const text = JSON.stringify(sections) + postureConclusion(metrics, 'es')
+    expect(text).not.toMatch(/NaN|undefined|null °/)
+    // The Q-angle is the front's alone.
+    expect(sections.find((s) => s.view === 'back')!.findings.map((f) => f.label)).not.toContain('Ángulo Q')
   })
 })

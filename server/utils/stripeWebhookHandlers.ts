@@ -168,10 +168,20 @@ export async function handleStripeEvent(
     // A subscription made outside QuiroFlow whose created event has not been
     // seen (or arrived before its plan was mapped): its first paid invoice
     // pairs it, when the pairing is safe, and is then booked like any other.
+    // One of ours whose subscription id had not been filled in yet is found
+    // the same way (the sync fills it from the Subscription Schedule).
     if (!schedule && subscriptionId && stripeEvent.type === 'invoice.paid' && clinicStripe) {
-      const sub = await clinicStripe.stripe.subscriptions.retrieve(subscriptionId, { expand: ['customer'] }, clinicStripe.options)
-      const synced = await syncStripeSubscription(supabase, accountId, sub, { mode: 'auto' })
-      if (synced.outcome === 'linked' || synced.outcome === 'updated') schedule = await findSchedule(subscriptionId)
+      let sub: Stripe.Subscription | null = null
+      try {
+        sub = await clinicStripe.stripe.subscriptions.retrieve(subscriptionId, { expand: ['customer'] }, clinicStripe.options)
+      } catch (err) {
+        // Not readable: nothing is paired, exactly as before this existed.
+        console.error('[stripe webhook] could not read the subscription of a paid invoice', subscriptionId, (err as Error).message)
+      }
+      if (sub) {
+        const synced = await syncStripeSubscription(supabase, accountId, sub, { mode: 'auto' })
+        if (synced.outcome !== 'pending') schedule = await findSchedule(subscriptionId)
+      }
     }
 
     // An imported subscription books what it charges from when it was paired

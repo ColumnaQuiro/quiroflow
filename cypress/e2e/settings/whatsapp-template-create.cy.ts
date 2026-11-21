@@ -26,7 +26,7 @@ function writeGuide(title: string, file: ReturnType<typeof pdf>) {
   cy.get('[data-cy="whatsapp-template-create"]').should('not.be.disabled').click()
   cy.get('[data-cy="template-dialog"]').within(() => {
     cy.get('[data-cy="template-title"]').type(title)
-    // A new template starts as text only.
+    // A new template starts with nothing at the top.
     cy.get('[data-cy="template-header-none"]').should('have.attr', 'aria-checked', 'true')
     cy.get('[data-cy="template-header-document"]').click()
     cy.get('[data-cy="template-file"]').selectFile(file)
@@ -125,9 +125,11 @@ describe('Creating a WhatsApp template with a PDF', () => {
           cy.get('[data-cy="template-body"]').type('Hola ')
           cy.get('[data-cy="template-add-variable"]').click()
           cy.get('[data-cy="template-body"]').type(', antes de tu primera visita rellena este formulario. ¡Gracias!')
-          // Off until chosen; on, it needs a form before Meta is asked.
-          cy.get('[data-cy="template-button-none"]').should('have.attr', 'aria-checked', 'true')
-          cy.get('[data-cy="template-button-form"]').click()
+          // None until one is added; a form button needs a form before Meta is asked.
+          cy.get('[data-cy="template-buttons-empty"]').should('be.visible')
+          cy.get('[data-cy="template-add-button-form"]').click()
+          // One form per template.
+          cy.get('[data-cy="template-add-button-form"]').should('be.disabled')
           cy.get('[data-cy="template-submit"]').click()
           cy.get('[data-cy="template-problems"]').should('contain', 'Choose the form the button opens')
           // The dropdown lists the clinic's own forms.

@@ -4,7 +4,8 @@
 // Meta's edit replaces every component with the ones sent, so the two things
 // worth proving are what goes up -- the whole template, the kept file again
 // as its sample, no category for an approved one -- and what is refused
-// rather than cut down: a template with buttons is left to WhatsApp Manager.
+// rather than cut down: a template with a button QuiroFlow cannot make (a
+// Flow, say) is left to WhatsApp Manager.
 // A new file also has to reach the automations, which copy the template's
 // file into each step when it is chosen. Meta is the local Graph stub
 // (db:startMetaGraphStub). The staff UI runs in English here.
@@ -135,22 +136,22 @@ describe('Editing a WhatsApp template', () => {
     })
   })
 
-  it('fixes a rejected template from WhatsApp Manager, and leaves one with buttons alone', () => {
+  it('fixes a rejected template from WhatsApp Manager, and leaves one with a Flow button alone', () => {
     cy.seedStaffAccount().then((account: Account) => {
       cy.task('db:startMetaGraphStub', {
         templates: [
           { name: 'oferta_bono', language: 'es', status: 'REJECTED', rejectedReason: 'TAG_CONTENT_MISMATCH', header: 'DOCUMENT', body: 'Hola {{1}}, este mes tienes un 20% en bonos.', examples: ['Ana'] },
-          { name: 'bienvenida', language: 'es', status: 'APPROVED', body: 'Hola {{1}}, reserva tu primera visita aquí.', examples: ['Ana'], buttons: [{ type: 'URL', text: 'Reservar', url: 'https://example.com/{{1}}' }] },
+          { name: 'bienvenida', language: 'es', status: 'APPROVED', body: 'Hola {{1}}, reserva tu primera visita aquí.', examples: ['Ana'], buttons: [{ type: 'FLOW', text: 'Reservar' }] },
         ],
       })
       connect(account)
       cy.login(account.email, account.password)
       cy.visit('/settings/whatsapp')
 
-      // Buttons would not survive an edit from here, so it is not offered.
+      // A Flow would not survive an edit from here, so it is not offered.
       openApprovedList()
       cy.get('[data-template-row="bienvenida"]').within(() => {
-        cy.get('[data-cy="whatsapp-template-edit-blocked"]').should('contain', 'It has buttons').and('contain', 'WhatsApp Manager')
+        cy.get('[data-cy="whatsapp-template-edit-blocked"]').should('contain', 'flow button').and('contain', 'WhatsApp Manager')
         cy.get('[data-cy="whatsapp-template-edit"]').should('not.exist')
       })
 

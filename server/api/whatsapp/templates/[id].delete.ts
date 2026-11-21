@@ -3,6 +3,7 @@ import { requirePermission } from '~/server/utils/requirePermission'
 import { TemplateCreateError, deleteWhatsAppTemplate, whatsAppTemplateUses } from '~/server/utils/whatsappTemplateCreate'
 import { WhatsAppTemplatesError, fetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
 import { saveTemplateForm } from '~/server/utils/whatsappTemplateForms'
+import { saveTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 
 // Deletes a WhatsApp template at Meta -- one name in one language -- from
 // Settings > WhatsApp, beside Edit.
@@ -38,6 +39,7 @@ export default defineEventHandler(async (event) => {
   try {
     await deleteWhatsAppTemplate(admin, teamMember.account_id, existing)
     await saveTemplateForm(admin, teamMember.account_id, existing.name, existing.language, null)
+    await saveTemplateSendValues(admin, teamMember.account_id, existing.name, existing.language, null)
   } catch (err) {
     if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })
     throw err

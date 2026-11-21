@@ -1,4 +1,5 @@
 import { toE164Loose } from '~/utils/phone'
+import { readableAnswer } from '~/utils/automationFields'
 import { loose } from '~/server/utils/publicApiHandlers'
 import { fileLead, humanise, isQuestionKey, accountHasGrowth, type Answer, type FiledLead, type LeadToFile } from '~/server/utils/leadIngest'
 
@@ -124,7 +125,13 @@ export function leadFromMeta(lead: MetaLead, formName: string | null, page: Page
   const answers: Answer[] = []
   for (const field of lead.field_data ?? []) {
     if (!isQuestionKey(field.name)) continue
-    const value = (field.values ?? []).filter((v) => v !== null && v !== undefined && v !== '').join(', ').trim()
+    // Each value on its own: a multiple-choice option comes as its key
+    // (`10:_lo_antes_posible`), and a multi-select is several of them.
+    const value = (field.values ?? [])
+      .filter((v) => v !== null && v !== undefined && v !== '')
+      .map((v) => readableAnswer(String(v)))
+      .join(', ')
+      .trim()
     if (!value) continue
     answers.push({ question: humanise(field.name).slice(0, 500), answer: value.slice(0, 2000) })
   }

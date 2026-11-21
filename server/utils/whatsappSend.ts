@@ -35,10 +35,17 @@ export async function sendWhatsAppTemplate(
   templateLanguage: string,
   variables: string[],
   headerComponent?: Record<string, unknown>,
+  /**
+   * Adds whatever else the template needs (fillTemplateComponents): a
+   * heading, a file or a place, a link's or a code's value. Without it the
+   * components go exactly as built here.
+   */
+  complete?: (components: Record<string, unknown>[]) => Promise<Record<string, unknown>[]>,
 ) {
-  const components: Record<string, unknown>[] = []
+  let components: Record<string, unknown>[] = []
   if (headerComponent) components.push(headerComponent)
   if (variables.length > 0) components.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
+  if (complete) components = await complete(components)
   return metaSend(account, { to, type: 'template', template: { name: templateName, language: { code: templateLanguage }, components } })
 }
 

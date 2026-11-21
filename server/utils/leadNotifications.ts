@@ -1,4 +1,5 @@
 import { resolveTemplateVariant } from './appointmentNotifications'
+import { fillTemplateComponents } from './whatsappTemplateFill'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 
@@ -65,6 +66,7 @@ export async function notifyStaffOfNewLead(supabase: any, accountId: string, lea
       if (account.new_lead_notify_whatsapp_template_name) {
         const templateLanguage = account.new_lead_notify_whatsapp_template_language ?? 'es'
         let bodyText = ''
+        let template: Awaited<ReturnType<typeof resolveTemplateVariant>> = null
         try {
           const variant = await resolveTemplateVariant(
             account.whatsapp_business_account_id ?? '',
@@ -74,6 +76,7 @@ export async function notifyStaffOfNewLead(supabase: any, accountId: string, lea
             null,
           )
           if (variant) bodyText = variant.bodyText
+          template = variant
         } catch {
           // bodyText stays '', so no {{n}} slots are found and the template
           // sends with no body variables -- same fallback as the booking one.
@@ -84,6 +87,8 @@ export async function notifyStaffOfNewLead(supabase: any, accountId: string, lea
           account.new_lead_notify_whatsapp_template_name,
           templateLanguage,
           resolveLeadNotifyVariables(bodyText, { name, phone: lead.phone, email: lead.email, source: lead.source, reference: lead.reference }),
+          undefined,
+          async (components) => (await fillTemplateComponents(supabase, accountId, template?.template, components, { firstName: name, phone: lead.phone })).components,
         )
       } else {
         await sendWhatsAppText(whatsappAccount, account.new_lead_notify_whatsapp, summary)

@@ -3,6 +3,7 @@ import { onlineBookingAlert } from '~/utils/onlineBookingAlert'
 import { templateDateParts } from '~/utils/templateDate'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
+import { fillTemplateComponents } from './whatsappTemplateFill'
 import { sendPushToPatients } from './pushNotifications'
 import { contactableTutor, tutorEmailNote } from './minorTutor'
 
@@ -125,6 +126,7 @@ function mergeText(template: string, ctx: AppointmentContext, escape = false): s
 
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
+  format?: string
   text?: string
 }
 interface MetaTemplate {
@@ -150,7 +152,7 @@ export async function resolveTemplateVariant(
   templateName: string,
   accountDefaultLanguage: string,
   patientPreferredLanguage: string | null,
-): Promise<{ language: string; bodyText: string } | null> {
+): Promise<{ language: string; bodyText: string; template: MetaTemplate } | null> {
   // Every page, and APPROVED only. The first 100 templates were all it read,
   // and a variant's status was never asked: with the patient's language
   // preferred (and 'es' the default for everyone), a REJECTED or PAUSED 'es'
@@ -179,7 +181,7 @@ export async function resolveTemplateVariant(
     candidates.find((t: MetaTemplate) => t.language === accountDefaultLanguage) ||
     candidates[0]
 
-  return { language: match.language, bodyText: match.components.find((c: MetaTemplateComponent) => c.type === 'BODY')?.text ?? '' }
+  return { language: match.language, bodyText: match.components.find((c: MetaTemplateComponent) => c.type === 'BODY')?.text ?? '', template: match }
 }
 
 // Meta template variables are positional ({{1}}, {{2}}...), not named merge
@@ -243,17 +245,26 @@ async function sendWhatsApp(
 
   let resolvedLanguage = templateLanguage
   let bodyText = ''
+  let template: MetaTemplate | null = null
   try {
     const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, templateName, templateLanguage, recipient.preferredLanguage)
     if (variant) {
       resolvedLanguage = variant.language
       bodyText = variant.bodyText
+      template = variant.template
     }
   } catch {
     // Best-effort: fall back to the account's stored default language/variable
     // count (1 slot, first_name) rather than failing the send outright.
   }
   const variables = resolveWhatsAppVariables(bodyText, ctx, resolvedLanguage)
+  // The body is what this has always sent. Anything else the template has
+  // (a heading, the clinic's place, a link, a code) comes from what the
+  // creator kept with it; a template with only a body gains nothing here.
+  const { components } = await fillTemplateComponents(supabase, ctx.accountId, template, [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }], {
+    firstName: ctx.patientFirstName,
+    phone: to,
+  }).catch(() => ({ components: [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }] }))
 
   let wamid: string | null = null
   let status = 'sent'
@@ -266,7 +277,7 @@ async function sendWhatsApp(
         messaging_product: 'whatsapp',
         to,
         type: 'template',
-        template: { name: templateName, language: { code: resolvedLanguage }, components: [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }] },
+        template: { name: templateName, language: { code: resolvedLanguage }, components },
       },
     })
     wamid = response?.messages?.[0]?.id ?? null
@@ -570,17 +581,27 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
         // has messaged the WhatsApp business number recently.
         let templateLanguage = account.online_booking_notify_whatsapp_template_language ?? 'es'
         let bodyText = ''
+        let template: MetaTemplate | null = null
         try {
           const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, account.online_booking_notify_whatsapp_template_name, templateLanguage, null)
           if (variant) {
             bodyText = variant.bodyText
             templateLanguage = variant.language
+            template = variant.template
           }
         } catch {
           // Best-effort: bodyText stays '', so no {{n}} placeholders are
           // detected below and the template sends with no body variables.
         }
-        await sendWhatsAppTemplate(whatsappAccount, account.online_booking_notify_whatsapp, account.online_booking_notify_whatsapp_template_name, templateLanguage, resolveStaffNotifyVariables(bodyText, ctx, patientName, templateLanguage))
+        await sendWhatsAppTemplate(
+          whatsappAccount,
+          account.online_booking_notify_whatsapp,
+          account.online_booking_notify_whatsapp_template_name,
+          templateLanguage,
+          resolveStaffNotifyVariables(bodyText, ctx, patientName, templateLanguage),
+          undefined,
+          async (components) => (await fillTemplateComponents(supabase, accountId, template, components, { firstName: patientName, phone: account.online_booking_notify_whatsapp })).components,
+        )
       } else {
         await sendWhatsAppText(whatsappAccount, account.online_booking_notify_whatsapp, summary)
       }

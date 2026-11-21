@@ -32,6 +32,10 @@ const testError = ref('')
 
 const connectError = ref(typeof route.query.stripe_error === 'string' ? route.query.stripe_error : '')
 const justConnected = ref(route.query.stripe_connected === '1')
+// "Connect with Stripe" opens Stripe in a new tab, so the OAuth callback lands
+// in THAT tab. This flag is what tells the page it is the tab that came back
+// from Stripe, which the person can close, rather than the one they started in.
+const returnedFromStripe = route.query.stripe_connected === '1'
 
 const webhookUrl = ref('')
 onMounted(() => {
@@ -41,6 +45,42 @@ onMounted(() => {
   if (route.query.stripe_error || route.query.stripe_connected) {
     navigateTo({ path: route.path }, { replace: true })
   }
+})
+
+// The tab the person started in stays open on "not connected" while they go
+// through Stripe in the other one. Re-read the connection when they come back
+// to it, so it does not keep offering a connection that already exists.
+let refreshing = false
+async function refreshConnection() {
+  if (refreshing || loading.value || connectAccountId.value || !store.accountId) return
+  refreshing = true
+  try {
+    const { data } = await supabase
+      .from('accounts')
+      .select('stripe_connect_account_id, stripe_publishable_key, stripe_app_payments_enabled')
+      .eq('id', store.accountId)
+      .maybeSingle()
+    if (!data?.stripe_connect_account_id) return
+    connectAccountId.value = data.stripe_connect_account_id
+    appPayments.value = data.stripe_app_payments_enabled ?? false
+    publishableKey.value = data.stripe_publishable_key ?? ''
+    showLegacyForm.value = false
+    connectError.value = ''
+    justConnected.value = true
+  } finally {
+    refreshing = false
+  }
+}
+function onReturnToTab() {
+  if (document.visibilityState === 'visible') refreshConnection()
+}
+onMounted(() => {
+  document.addEventListener('visibilitychange', onReturnToTab)
+  window.addEventListener('focus', onReturnToTab)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onReturnToTab)
+  window.removeEventListener('focus', onReturnToTab)
 })
 
 async function load() {
@@ -364,8 +404,11 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
               </div>
             </div>
 
-            <div v-if="justConnected" class="mx-[18px] mb-3 rounded-ctl border border-success-border bg-success-bg px-3 py-2.5 text-[13px] text-success-deep">
+            <div v-if="justConnected" data-cy="stripe-connected-banner" class="mx-[18px] mb-3 rounded-ctl border border-success-border bg-success-bg px-3 py-2.5 text-[13px] text-success-deep">
               {{ t('Stripe account connected.', 'Cuenta de Stripe conectada.') }}
+              <template v-if="returnedFromStripe">
+                {{ t('You can close this tab: the one you started from is up to date.', 'Puedes cerrar esta pestaña: la que dejaste abierta ya está actualizada.') }}
+              </template>
             </div>
             <div v-if="connectError" class="mx-[18px] mb-3 rounded-ctl border border-danger-border bg-danger-bg px-3 py-2.5 text-[13px] text-danger-text">{{ connectError }}</div>
 
@@ -392,7 +435,10 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
               </div>
               <div v-else class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3">
                 <span class="flex-1 text-[13.5px] text-ink-700">{{ t('Connect your Stripe account in one click. No API keys to copy.', 'Conecta tu cuenta de Stripe con un clic. Sin claves de API que copiar.') }}</span>
-                <a href="/api/stripe/connect/start" data-cy="stripe-connect" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover">
+                <!-- A new tab, so this page and anything unsaved on it stay
+                     where they are while the clinic goes through Stripe's
+                     onboarding. refreshConnection() catches up on return. -->
+                <a href="/api/stripe/connect/start" target="_blank" rel="noopener" data-cy="stripe-connect" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover">
                   {{ t('Connect with Stripe', 'Conectar con Stripe') }}
                 </a>
               </div>

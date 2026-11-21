@@ -3475,12 +3475,15 @@ async function startMetaGraphStub(opts: {
     status: string
     body: string
     category?: 'UTILITY' | 'MARKETING'
-    header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO'
+    header?: 'DOCUMENT' | 'IMAGE' | 'VIDEO' | 'LOCATION' | 'TEXT'
+    /** A TEXT header's words, and the sample for its {{1}}. */
+    headerText?: string
+    headerExample?: string
     rejectedReason?: string
     /** The samples Meta reviewed the body's {{n}} with. */
     examples?: string[]
     footer?: string
-    buttons?: { type: string; text: string; url?: string }[]
+    buttons?: { type: string; text?: string; url?: string; phone_number?: string; example?: string[] | string }[]
   }[]
   /** Refuse a template submission or edit, with the sentence Meta writes for a person. */
   refuseTemplate?: string
@@ -3614,7 +3617,13 @@ async function startMetaGraphStub(opts: {
             status: t.status,
             ...(t.rejectedReason ? { rejected_reason: t.rejectedReason } : {}),
             components: [
-              ...(t.header ? [{ type: 'HEADER', format: t.header }] : []),
+              ...(t.header
+                ? [
+                    t.header === 'TEXT'
+                      ? { type: 'HEADER', format: 'TEXT', text: t.headerText ?? '', ...(t.headerExample ? { example: { header_text: [t.headerExample] } } : {}) }
+                      : { type: 'HEADER', format: t.header },
+                  ]
+                : []),
               { type: 'BODY', text: t.body, ...(t.examples ? { example: { body_text: [t.examples] } } : {}) },
               ...(t.footer ? [{ type: 'FOOTER', text: t.footer }] : []),
               ...(t.buttons ? [{ type: 'BUTTONS', buttons: t.buttons }] : []),

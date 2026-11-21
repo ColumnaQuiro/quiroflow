@@ -339,7 +339,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             <input type="checkbox" class="mt-1" :checked="picked.includes(a.id)" :aria-label="t(`Compare ${day(a.taken_at)}`, `Comparar ${day(a.taken_at)}`)" @change="toggle(a.id)" />
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
-              <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)].filter(Boolean).join(' · ') }}</p>
+              <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`), !a.views.front && a.views.back ? t('from the back, no front', 'de espalda, sin frente') : null].filter(Boolean).join(' · ') }}</p>
               <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
               <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
             </div>

@@ -158,6 +158,80 @@ describe('Posture assessment', () => {
     })
   })
 
+  // Front and back stand in for each other (utils/posture.ts postureMissing):
+  // one of the two is enough, and the screens say which one was left out.
+  it('saves with the back alone when the front is skipped, and says the front was not taken', () => {
+    const side = { photo: 'none/right.jpg', width: 1000, height: 1800, facing: 'right', points: { ear: [540, 100], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, 1691] } }
+    const front = { photo: 'none/front.jpg', width: 1000, height: 1800, facing: null, points: { earR: [470, 100], earL: [530, 100], shoulderR: [400, 310], shoulderL: [600, 300], hipR: [450, 900], hipL: [550, 900], kneeR: [460, 1300], kneeL: [540, 1300], ankleR: [450, 1691], ankleL: [550, 1691] } }
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Espalda', lastName: 'Sola' }).then((patient) => {
+        // An earlier one from the front, so the comparison has a front not to set against the back.
+        cy.task('db:insertRows', {
+          table: 'posture_assessments',
+          rows: [{ account_id: account.accountId, patient_id: patient.id, taken_at: '2026-06-02T09:00:00Z', height_cm: 168, views: { right: side, front }, metrics: {} }],
+        })
+        cy.login(account.email, account.password)
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-height]').clear().type('168')
+        cy.get('[data-cy=posture-views-hint]').should('contain', 'One photo from the front or the back is enough')
+        cy.get('[data-cy=posture-step-front]').should('contain', '(or back)')
+        cy.get('[data-cy=posture-step-back]').should('contain', '(or front)')
+        cy.get('[data-cy=posture-step-result]').should('be.disabled')
+
+        // No front: on to the side.
+        cy.get('[data-cy=posture-skip-view]').click()
+        cy.get('[data-cy=posture-capture]').should('have.attr', 'data-step', 'right')
+        photo()
+        cy.get('[data-cy=posture-overlay] circle', { timeout: 20000 }).should('have.length', 5)
+        cy.get('[data-cy=posture-next]').click()
+
+        // The back is now the one photo from the front or the back: nothing to skip to yet.
+        cy.get('[data-cy=posture-capture]').should('have.attr', 'data-step', 'back')
+        cy.get('[data-cy=posture-skip]').should('not.exist')
+        cy.get('[data-cy=posture-step-result]').should('be.disabled')
+        cy.get('[data-cy=posture-step-left]').click()
+        cy.get('[data-cy=posture-missing]').should('contain', 'a photo from the front or the back')
+        cy.get('[data-cy=posture-step-back]').click()
+        photo()
+        cy.get('[data-cy=posture-overlay] circle', { timeout: 20000 }).should('have.length', 10)
+        cy.get('[data-cy=posture-live-shoulders]').invoke('text').should('match', /^-?\d+(,\d)? °$/)
+        cy.get('[data-cy=posture-missing]').should('not.exist')
+        cy.get('[data-cy=posture-skip]').click()
+
+        cy.get('[data-cy=posture-result]').should('be.visible')
+        cy.get('[data-cy=posture-view-missing-front]').should('contain', 'Not taken')
+        cy.get('[data-cy=posture-view-missing-back]').should('not.exist')
+        cy.get('[data-cy=posture-no-front-note]').should('contain', 'no Q-angle')
+        cy.get('[data-cy=posture-save]').should('not.be.disabled').click()
+
+        cy.location('search', { timeout: 20000 }).should('contain', 'tab=progress')
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        cy.task<{ taken_at: string; views: Record<string, unknown>; metrics: Record<string, Record<string, number>> }[]>('db:selectRows', {
+          table: 'posture_assessments',
+          columns: 'taken_at, views, metrics',
+          match: { patient_id: patient.id },
+        }).then((rows) => {
+          const saved = rows.find((r) => !r.taken_at.startsWith('2026-06-02'))!
+          expect(Object.keys(saved.views).sort()).to.deep.eq(['back', 'right'])
+          expect(Object.keys(saved.metrics).sort()).to.deep.eq(['back', 'right'])
+          // Every frontal number measured, from the back, and none of them empty.
+          for (const k of ['headTilt', 'shoulderTilt', 'hipTilt', 'headShift', 'shoulderShift', 'hipShift', 'kneeAngleR', 'kneeAngleL']) expect(saved.metrics.back![k], k).to.be.a('number').and.not.be.NaN
+          expect(saved.metrics.back).not.to.have.property('qAngleR')
+        })
+
+        // The record: the new one says it has no front, its tilts come from
+        // the back, and the comparison with the earlier front says why the
+        // frontal rows are not there.
+        cy.get('[data-cy=posture-row]').first().should('contain', 'from the back, no front')
+        cy.get('[data-cy=posture-kpi-shoulders]').invoke('text').should('match', /°/)
+        cy.get('[data-cy=posture-comparison-row-headWeight]').should('exist')
+        cy.get('[data-cy=posture-comparison-row-shoulderTilt]').should('not.exist')
+        cy.get('[data-cy=posture-comparison-uncompared-front]').should('contain', 'not compared').and('contain', 'the front photo').and('contain', 'the back photo')
+        cy.get('[data-cy=posture-comparison-uncompared-side]').should('not.exist')
+      })
+    })
+  })
+
   // Evolución: any headline number across every assessment, measured again
   // from the points (so these rows, saved with no metrics, still plot).
   it('charts each number across the assessments and says whether it got better', () => {

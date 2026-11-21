@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commonViews, compareBar, compareHeadline, comparePosture, compareSentence, ghostPoints, orderByTaken } from '../../utils/postureCompare'
+import { commonViews, compareBar, compareHeadline, comparePosture, compareSentence, ghostPoints, orderByTaken, uncomparedPlanes, uncomparedSentence } from '../../utils/postureCompare'
 import type { FrontMetrics, SideMetrics } from '../../utils/posture'
 
 const front = (m: Partial<FrontMetrics> = {}): FrontMetrics => ({ headTilt: 0, shoulderTilt: 0, hipTilt: 0, headShift: 0, shoulderShift: 0, hipShift: 0, ...m })
@@ -89,5 +89,23 @@ describe('ghostPoints', () => {
 describe('orderByTaken', () => {
   it('puts the earlier first however they were picked', () => {
     expect(orderByTaken({ takenAt: '2026-09-08' }, { takenAt: '2026-06-02' }).map((a) => a.takenAt)).toEqual(['2026-06-02', '2026-09-08'])
+  })
+})
+
+describe('uncomparedPlanes', () => {
+  it('says which plane is left out when one was taken from the front and the other from the back', () => {
+    const before = { right: side(), front: front({ shoulderTilt: 3 }) }
+    const after = { right: side(), back: front({ shoulderTilt: 1 }) }
+    const c = comparePosture(before, after, 'es')
+    // No frontal row: a front is not set against a back.
+    expect(c.rows.some((r) => r.group === 'front')).toBe(false)
+    expect(c.rows.some((r) => r.key === 'headWeight')).toBe(true)
+    const u = uncomparedPlanes(before, after)
+    expect(u).toEqual([{ plane: 'front', before: 'front', after: 'back' }])
+    expect(uncomparedSentence(u[0]!, '2 jun', '8 sept', 'es')).toBe('De frente, sin comparar: el 2 jun tiene la foto de frente y el 8 sept, la foto de espalda. Solo se comparan fotos de la misma vista.')
+  })
+  it('leaves nothing out when both share a view, or when neither has that plane', () => {
+    expect(uncomparedPlanes({ right: side(), back: front() }, { right: side(), back: front(), front: front() })).toEqual([])
+    expect(uncomparedPlanes({ right: side() }, { right: side() })).toEqual([])
   })
 })

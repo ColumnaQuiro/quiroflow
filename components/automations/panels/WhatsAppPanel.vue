@@ -3,7 +3,7 @@ import { BUTTON_PARAM_SOURCES, VARIABLE_SOURCES, say } from '~/utils/automationC
 import { ANSWER_PREFIX, DEFAULT_ANSWER_FALLBACK } from '~/utils/automationFields'
 import { FIELD, HINT, LABEL, LINK_BTN, NOTE, REMOVE_BTN, SECTION, WARN } from '~/utils/automationUi'
 import { serverMessage } from '~/utils/serverMessage'
-import type { EditedTemplateResult } from '~/utils/whatsappTemplateDraft'
+import { isFormButton, type EditedTemplateResult } from '~/utils/whatsappTemplateDraft'
 
 // A WhatsApp step: an approved Meta template, what fills each {{n}}, the
 // header it declares (a file, or a location), and what each dynamic URL
@@ -26,6 +26,12 @@ const currentKey = computed(() => (current.value ? key(current.value.name, curre
 // Every language Meta has approved this template in.
 const languages = computed(() => (current.value ? b.templates.value.filter((x) => x.name === current.value!.name).map((x) => x.language) : []))
 
+/** Which dynamic link a template's form button is, counting only dynamic ones; the first when the buttons are not listed. */
+function formSlot(tpl: { buttons?: { type: string; url?: string | null; dynamic: boolean }[] }): number {
+  const slot = (tpl.buttons ?? []).filter((x) => x.dynamic).findIndex((x) => isFormButton(x))
+  return slot === -1 ? 0 : slot
+}
+
 function selectTemplate(value: string) {
   const tpl = b.templates.value.find((x) => key(x.name, x.language) === value)
   if (!tpl) return
@@ -36,7 +42,9 @@ function selectTemplate(value: string) {
     // One document slot per dynamic URL button, or a single one (sent as the
     // last body variable) for a template with none.
     // A template made with a form button brings the form it opens.
-    doc_template_ids: Array.from({ length: Math.max(tpl.urlButtonCount, 1) }, (_, i) => (i === 0 && tpl.urlButtonCount > 0 ? (tpl.form?.docTemplateId ?? null) : null)),
+    // Its slot is the form button's place among the dynamic links, which
+    // need not be the first now that a template can have another beside it.
+    doc_template_ids: Array.from({ length: Math.max(tpl.urlButtonCount, 1) }, (_, i) => (tpl.urlButtonCount > 0 && i === formSlot(tpl) ? (tpl.form?.docTemplateId ?? null) : null)),
     button_params: undefined,
     // A template made in QuiroFlow brings the file it was made with, so the
     // guide or picture goes out without being uploaded a second time. It is

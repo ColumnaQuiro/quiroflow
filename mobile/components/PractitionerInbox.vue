@@ -1415,8 +1415,16 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
       // in-app used to go there, which meant /api/instagram/send existed and
       // shipped and was never once called -- an Instagram reply was posted to
       // WhatsApp with no number and failed.
-      if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
-      await authedFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
+      //
+      // Addressed by lead when there is one, as Messenger is below: the route
+      // files the reply under that lead, so it lands in the conversation it
+      // was written in. By IGSID alone it was stored with no lead and showed
+      // up as a separate chat beside the lead's own (21 Nov 2026).
+      if (!target.leadId && !target.externalContactId) throw new Error('This Instagram conversation has no sender id')
+      await authedFetch('/api/instagram/send', {
+        method: 'POST',
+        body: { leadId: target.leadId ?? undefined, recipientId: target.leadId ? undefined : target.externalContactId, text },
+      })
     } else if (channel === 'messenger' || channel === 'webchat') {
       // No phone either: addressed by lead, or by the id they wrote from.
       if (!target.leadId && !target.externalContactId) throw new Error('This conversation has no sender id')

@@ -65,8 +65,15 @@ async function load() {
       'id, appointment_id, body, created_at, appointments!inner(starts_at, patient_id, appointment_types(name), team_members(full_name), practitioner_name)',
     )
     .eq('appointments.patient_id', props.patientId)
-    .order('created_at', { ascending: false })
-  notes.value = (data as unknown as VisitNoteRow[]) ?? []
+  // Newest VISIT first, as the Clinical tab orders them. Ordering by the
+  // note's own created_at put a back-dated or late-written note above more
+  // recent visits -- and it is the visit's date each card shows, and the
+  // newest card that opens in full, so the two must agree.
+  notes.value = ((data as unknown as VisitNoteRow[]) ?? []).slice().sort((a, b) => {
+    const at = a.appointments?.starts_at ?? a.created_at
+    const bt = b.appointments?.starts_at ?? b.created_at
+    return bt.localeCompare(at) || b.created_at.localeCompare(a.created_at)
+  })
   // Each visit's listing beside its note -- unless the note already carries
   // it, as one charted on My Day does in its "Ajustado: …" line.
   const ids = [...new Set(notes.value.map((n) => n.appointment_id))]

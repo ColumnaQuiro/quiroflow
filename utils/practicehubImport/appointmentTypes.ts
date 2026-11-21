@@ -1,6 +1,6 @@
 import { TYPE_STAGES } from '~/utils/appointmentTypes'
 import { formatEur } from '~/utils/billing'
-import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
+import { practiceHubPriceToWrite, practiceHubTypePrice, practiceHubUnpricedTypesWarning, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
 import { byExactName, practiceHubTypesHere, readAllForAccount } from '~/utils/practicehubImport/appointments'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
@@ -56,6 +56,12 @@ export interface TypeCandidate {
   ourPriceCents: number | null
   /** What the import writes as the type's price: PracticeHub's, and only over a 0. */
   priceToWrite: number | null
+  /**
+   * Left at 0 with nothing to fill it from: no price here, and no live
+   * PracticeHub service of its name. Never set for a retired type, or when
+   * the copy has no services at all (that has its own warning).
+   */
+  unpriced: boolean
   funnelStage: string | null
   /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
@@ -124,6 +130,7 @@ export function practiceHubTypeCandidates(input: {
         ourTypeId: ours?.id ?? null,
         ourPriceCents,
         priceToWrite: practiceHubPriceToWrite(ourPriceCents, phPrice?.priceCents),
+        unpriced: input.services !== null && !ourPriceCents && phPrice === null && !(phType.active === 0 || phType.active === false),
         funnelStage: STAGE_BY_NAME[key] ?? null,
         appointmentRefs,
         relinkIds,
@@ -202,6 +209,7 @@ export const planAppointmentTypes: PracticeHubStepPlanner = async (ctx, snapshot
         relink: nf.format(c.relinkIds.length),
       })),
     warnings: [
+      ...[practiceHubUnpricedTypesWarning(candidates.filter((c) => c.unpriced).map((c) => c.name), t)].filter((w): w is string => w !== null),
       ...(!services ? [t(
         'Prices are not brought across: PracticeHub only gives them through its 2.0 API, and this copy has none. Add the phk_ key under Connection and sync again; it fills in every price still at 0.',
         'Los precios no se traen: PracticeHub solo los da por su API 2.0 y esta copia no los tiene. Añade la clave phk_ en Conexión y vuelve a sincronizar; completará los precios que sigan a 0.',

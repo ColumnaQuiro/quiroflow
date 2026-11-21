@@ -1496,7 +1496,8 @@
   "The free trial includes {0} replies, sent or left as drafts. Once you add it under Subscription, it has {1} a month, and this month's replies count toward them.": "Der kostenlose Test umfasst {0} Antworten, gesendet oder als Entwurf. Sobald Sie ihn unter Abonnement hinzufügen, hat er {1} im Monat, und die Antworten dieses Monats zählen dazu.",
   "The receptionist has used the free trial's {0} replies. Add it under Subscription to keep it answering.": "Der KI-Empfang hat die {0} Antworten des kostenlosen Tests aufgebraucht. Fügen Sie ihn unter Abonnement hinzu, damit er weiter antwortet.",
   "of {0} replies in the free trial": "von {0} Antworten im kostenlosen Test",
-  "The free trial includes {0} replies; past them it stops until you add it. Add it and it has {1} a month, with this month's replies counting toward them.": "Der kostenlose Test umfasst {0} Antworten; danach pausiert er, bis Sie ihn hinzufügen. Dann hat er {1} im Monat, und die Antworten dieses Monats zählen dazu."
+  "The free trial includes {0} replies; past them it stops until you add it. Add it and it has {1} a month, with this month's replies counting toward them.": "Der kostenlose Test umfasst {0} Antworten; danach pausiert er, bis Sie ihn hinzufügen. Dann hat er {1} im Monat, und die Antworten dieses Monats zählen dazu.",
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Kein Preis in PracticeHub für: {0}. Die API von PracticeHub gibt nicht an, mit welcher Leistung jede Terminart abgerechnet wird, und keine ihrer aktiven Leistungen trägt diese Namen, daher bleiben sie bei 0. Lege sie unter Einstellungen › Terminarten fest; eine spätere Synchronisierung ersetzt sie nie."
  },
  "s": {
   " (half day)": " (halber Tag)",

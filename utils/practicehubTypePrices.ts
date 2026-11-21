@@ -17,6 +17,21 @@
 // adjustment item, so three of nine types came out with another type's price.
 // A type with no same-named service, or two same-named services at different
 // prices, gets no price rather than a guess; the clinic sets it here.
+//
+// Only a LIVE service prices a type. QuiroBalance (20 Nov 2026) showed why:
+// its "Ajuste" type is billed with "Chequeo quiropráctico y ajuste 2025" at
+// 50.00, and the only service actually named "Ajuste " was retired at 30.00,
+// so the import wrote 30 € -- wrong, and over a 0, so nothing flagged it.
+// Its other types ("Informe", "Reevaluación", "Ajuste 30") share a name with
+// no service at all. That is the common case outside Columnaquiro, so a type
+// left without a price is named in the step's warnings rather than passed
+// over in silence.
+//
+// Invoice history was measured again on 21 Nov across four clinics and is
+// still no substitute. The highest amount billed regularly for a type got
+// QuiroBalance right, but put 800 € on an Elevate adjustment (packages sold
+// at the visit) and 70 € on Columnaquiro's 50 € first-visit offer. The most
+// common amount picks the discounted rate (40 € for a 50 € adjustment).
 
 export interface PracticeHubBillableItem {
   id: number
@@ -51,22 +66,36 @@ export function practiceHubServiceCents(amount: string | null | undefined): numb
 }
 
 /**
- * The price PracticeHub has for an appointment type: the amount of the
- * billable item with the same name. Null when no item has that name, or when
- * same-named items disagree on the price (preferring the ones not marked
- * inactive, since PracticeHub leaves `active` empty on items in daily use).
+ * The price PracticeHub has for an appointment type: the amount of the live
+ * billable item with the same name. Null when no live item has that name, or
+ * when same-named live items disagree on the price. "Live" is anything not
+ * marked inactive, since PracticeHub leaves `active` empty on items in daily
+ * use; a retired item never prices a type, even when it is the only one of
+ * that name -- its amount is an old price.
  */
 export function practiceHubTypePrice(typeName: string, items: PracticeHubBillableItem[]): PracticeHubTypePrice | null {
   const key = practiceHubPriceNameKey(typeName)
   if (!key) return null
-  const named = items.filter((item) => item.description && practiceHubPriceNameKey(item.description) === key && practiceHubServiceCents(item.amount) !== null)
-  if (named.length === 0) return null
-  const live = named.filter((item) => item.active !== false)
-  const pool = live.length > 0 ? live : named
-  const prices = new Set(pool.map((item) => practiceHubServiceCents(item.amount)))
+  const live = items.filter((item) => item.active !== false && item.description && practiceHubPriceNameKey(item.description) === key && practiceHubServiceCents(item.amount) !== null)
+  if (live.length === 0) return null
+  const prices = new Set(live.map((item) => practiceHubServiceCents(item.amount)))
   if (prices.size !== 1) return null
-  const [first] = pool
+  const [first] = live
   return { billableItemId: first!.id, serviceName: first!.description!.trim(), priceCents: [...prices][0]! }
+}
+
+/**
+ * The warning for types the import leaves at 0: in use or bookable, no price
+ * here, and none PracticeHub's API can give. Null when there are none.
+ */
+export function practiceHubUnpricedTypesWarning(names: string[], t: (en: string, es: string) => string): string | null {
+  const unique = [...new Set(names.map((name) => name.trim()).filter(Boolean))]
+  if (unique.length === 0) return null
+  const list = unique.join(', ')
+  return t(
+    `No price in PracticeHub for: ${list}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.`,
+    `Sin precio en PracticeHub para: ${list}. La API de PracticeHub no dice con qué servicio se cobra cada tipo, y ninguno de sus servicios activos se llama así, así que se quedan a 0. Ponlos en Ajustes › Tipos de cita; una sincronización posterior nunca los sustituye.`,
+  )
 }
 
 /**

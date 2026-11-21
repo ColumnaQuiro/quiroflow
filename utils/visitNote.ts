@@ -91,3 +91,22 @@ export function visitNotePreview(body: string | null, maxLength = 120): string {
   const flat = source.replace(/\s+/g, ' ').trim()
   return flat.length > maxLength ? `${flat.slice(0, maxLength - 1)}…` : flat
 }
+
+/**
+ * A note's four boxes for correcting it section by section (the pencil in My
+ * Day's history). Anything written before the first label is kept at the top
+ * of Subjective, as the charting pane does when it reopens a note -- so
+ * nothing in the note is lost by editing it this way.
+ */
+export function visitNoteEditSections(body: string | null): Record<NoteSection, string> {
+  const parsed = parseVisitNote(body)
+  const out = { Subjective: '', Objective: '', Action: '', Plan: '' } as Record<NoteSection, string>
+  for (const s of parsed.sections) out[s.label] = s.text
+  if (parsed.preamble) out.Subjective = [parsed.preamble, out.Subjective].filter(Boolean).join('\n\n')
+  return out
+}
+
+/** The four sections back into one body, in the shape the charting pane writes. */
+export function composeVisitNote(sections: Record<NoteSection, string>): string {
+  return NOTE_SECTIONS.map((s) => `${s}: ${sections[s] ?? ''}`).join('\n\n')
+}

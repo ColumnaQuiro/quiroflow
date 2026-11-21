@@ -66,15 +66,21 @@ export async function fillTemplateComponents(
   who: Pick<TemplateSendInputs, 'firstName' | 'phone' | 'location'>,
 ): Promise<{ components: SendComponent[]; missing: string[] }> {
   if (!template?.components?.length) return { components, missing: [] }
-  const values = await templateSendValues(admin, accountId, template.name, template.language).catch(() => null)
+  // Never the reason a send does not go: whatever goes wrong here, the
+  // caller's components go as they did before this existed.
+  try {
+    const values = await templateSendValues(admin, accountId, template.name, template.language).catch(() => null)
 
-  let headerMedia: TemplateSendInputs['headerMedia'] = null
-  if (templateMediaFormat(template) && !components.some((c) => c.type === 'header')) {
-    const file = await templateMediaFile(admin, accountId, template.name, template.language).catch(() => null)
-    if (file) {
-      const { data } = await admin.storage.from('whatsapp-media').createSignedUrl(file.path, SIGNED_URL_SECONDS)
-      if (data?.signedUrl) headerMedia = { link: data.signedUrl, filename: file.filename }
+    let headerMedia: TemplateSendInputs['headerMedia'] = null
+    if (templateMediaFormat(template) && !components.some((c) => c.type === 'header')) {
+      const file = await templateMediaFile(admin, accountId, template.name, template.language).catch(() => null)
+      if (file) {
+        const { data } = await admin.storage.from('whatsapp-media').createSignedUrl(file.path, SIGNED_URL_SECONDS)
+        if (data?.signedUrl) headerMedia = { link: data.signedUrl, filename: file.filename }
+      }
     }
+    return completeTemplateComponents(template, components, { ...who, values, headerMedia })
+  } catch {
+    return { components, missing: [] }
   }
-  return completeTemplateComponents(template, components, { ...who, values, headerMedia })
 }

@@ -2,6 +2,9 @@ import { logRunEvent, stopRun } from '~/server/utils/leadSequences'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { tryFetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
+import { templateMediaFiles } from '~/server/utils/whatsappTemplateMedia'
+import { allTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
+import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { EXIT_EVENTS, isLeadTrigger, triggerDef } from '~/utils/automationCatalog'
 import { asAudienceRef, asAudienceRefs, type AudienceRef } from '~/utils/automationAudience'
 import { audienceExists } from '~/server/utils/audienceMembers'
@@ -134,10 +137,22 @@ export function sanitizeSteps(body: unknown): DraftStep[] {
 
 // ------------------------------------------------------------------ problems
 
+/** The templates, each with the file it was made with and the values QuiroFlow fills it with. Read with the service role: the file bucket has no browser access. */
+async function withTemplateFills<T extends { name: string; language: string; mediaHeaderFormat: string | null }>(accountId: string, templates: T[]) {
+  if (!templates.some((t) => t.mediaHeaderFormat)) return templates
+  const admin = serviceSupabase()
+  if (!admin) return templates
+  const [media, values] = await Promise.all([templateMediaFiles(admin, accountId).catch(() => new Map()), allTemplateSendValues(admin, accountId).catch(() => new Map())])
+  return templates.map((t) => ({ ...t, headerMedia: media.get(`${t.name}.${t.language}`), sendValues: values.get(`${t.name}.${t.language}`) ?? null }))
+}
+
 /** Everything missing before the rule can run, including the plan and the WhatsApp templates. */
 export async function ruleProblems(supabase: any, accountId: string, rule: DraftRule, steps: DraftStep[]): Promise<Problem[]> {
   const needsTemplates = steps.some((s) => s.action_type === 'whatsapp_template' && s.config?.template_name)
-  const templates = needsTemplates ? await tryFetchWhatsAppTemplates(supabase, accountId) : null
+  const listed = needsTemplates ? await tryFetchWhatsAppTemplates(supabase, accountId) : null
+  // With what QuiroFlow fills each one with, so a step on a template that
+  // brings its own file or place is not told it is missing one.
+  const templates = listed ? await withTemplateFills(accountId, listed) : null
   const problems = findProblems(rule, steps, templates)
   if (isLeadTrigger(rule.trigger_event) || steps.some((s) => s.action_type === 'lead_stage' || s.action_type === 'lead_assign')) {
     const { data: subscription } = await supabase.from('subscriptions').select('plan_id, growth_addon, status, comped').eq('account_id', accountId).maybeSingle()

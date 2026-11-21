@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { requirePermission } from '~/server/utils/requirePermission'
 import { TemplateCreateError, createWhatsAppTemplate, readTemplateSubmission } from '~/server/utils/whatsappTemplateCreate'
-import { headerFileProblem, templateDraftProblems } from '~/utils/whatsappTemplateDraft'
+import { headerFileProblem, isMediaHeader, templateDraftProblems } from '~/utils/whatsappTemplateDraft'
 
 // Creates a WhatsApp message template and submits it to Meta for review --
 // the "Create template" dialog in Settings > WhatsApp and the automation
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (problem) throw createError({ statusCode: 400, statusMessage: problem.en })
 
   try {
-    const created = await createWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, draft, draft.header === 'none' ? null : file, origin)
+    const created = await createWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, draft, isMediaHeader(draft.header) ? file : null, origin)
     return { id: created.id, name: draft.name, language: draft.language, status: created.status, category: created.category }
   } catch (err) {
     if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })

@@ -9,6 +9,9 @@ interface MetaTemplateButton {
   type: string
   text?: string
   url?: string
+  phone_number?: string
+  /** A dynamic URL button's sample link, or a copy-code button's sample code (Meta lists either shape). */
+  example?: string[] | string
 }
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
@@ -42,8 +45,10 @@ export interface WhatsAppTemplateSummary {
   variableCount: number
   urlButtonCount: number
   mediaHeaderFormat: string | null
+  /** Meta's sample for the heading's {{1}}, when it has a text heading with one. */
+  headerExample: string | null
   /** Every button, in order; `dynamic` marks a URL button that takes a per-recipient parameter. */
-  buttons: { type: string; text: string; dynamic: boolean; url: string | null }[]
+  buttons: { type: string; text: string; dynamic: boolean; url: string | null; phoneNumber: string | null; example: string | null }[]
   /** Meta's reason when it REJECTED the template ("INVALID_FORMAT", "TAG_CONTENT_MISMATCH"...); null otherwise. */
   rejectedReason: string | null
 }
@@ -79,10 +84,18 @@ function summarise(t: MetaTemplate): WhatsAppTemplateSummary {
     bodyExamples: (body?.example?.body_text?.[0] ?? []).map((e) => String(e ?? '')),
     footerText: footer?.text ?? null,
     headerText: header?.format === 'TEXT' ? (header.text ?? null) : null,
+    headerExample: header?.format === 'TEXT' ? (header.example?.header_text?.[0] ?? null) : null,
     variableCount,
     urlButtonCount: buttons.filter(isDynamic).length,
     mediaHeaderFormat: header?.format && header.format !== 'TEXT' ? header.format : null,
-    buttons: buttons.map((b) => ({ type: b.type, text: b.text ?? '', dynamic: isDynamic(b), url: b.url ?? null })),
+    buttons: buttons.map((b) => ({
+      type: b.type,
+      text: b.text ?? '',
+      dynamic: isDynamic(b),
+      url: b.url ?? null,
+      phoneNumber: b.phone_number ?? null,
+      example: (Array.isArray(b.example) ? b.example[0] : b.example) ?? null,
+    })),
     rejectedReason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null,
   }
 }

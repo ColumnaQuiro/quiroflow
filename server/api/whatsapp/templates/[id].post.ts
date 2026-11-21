@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { requirePermission } from '~/server/utils/requirePermission'
 import { TemplateCreateError, editWhatsAppTemplate, readTemplateSubmission } from '~/server/utils/whatsappTemplateCreate'
 import { WhatsAppTemplatesError, fetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
-import { headerFileProblem, templateDraftProblems } from '~/utils/whatsappTemplateDraft'
+import { headerFileProblem, isMediaHeader, templateDraftProblems } from '~/utils/whatsappTemplateDraft'
 
 // Changes a WhatsApp template that already exists at Meta and sends the change
 // for review -- the same dialog as creating one, opened on a template from
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'That template is not on this WhatsApp account any more. Refresh from Meta.' })
 
   try {
-    const edited = await editWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, existing, draft, draft.header === 'none' ? null : file, origin)
+    const edited = await editWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, existing, draft, isMediaHeader(draft.header) ? file : null, origin)
     return { id, name: existing.name, language: existing.language, ...edited }
   } catch (err) {
     if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })

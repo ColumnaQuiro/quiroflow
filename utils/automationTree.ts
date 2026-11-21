@@ -53,6 +53,10 @@ export interface TemplateInfo {
   variableCount: number
   urlButtonCount: number
   mediaHeaderFormat: string | null
+  /** The file it was made with in QuiroFlow, which a step without one of its own sends. */
+  headerMedia?: unknown
+  /** What QuiroFlow fills it with; a kept place goes out from a step that sets none. */
+  sendValues?: { location?: unknown } | null
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -269,7 +273,12 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         }
         if (tpl?.mediaHeaderFormat) {
           const h = c.header ?? {}
-          const ok = tpl.mediaHeaderFormat === 'LOCATION' ? Number.isFinite(Number(h.latitude)) && Number.isFinite(Number(h.longitude)) && h.latitude !== undefined : Boolean(h.storage_path)
+          // The step's own, or the one the template was made with in QuiroFlow
+          // (fillTemplateComponents sends that when the step has none).
+          const ok =
+            tpl.mediaHeaderFormat === 'LOCATION'
+              ? (Number.isFinite(Number(h.latitude)) && Number.isFinite(Number(h.longitude)) && h.latitude !== undefined) || !!tpl.sendValues?.location
+              : Boolean(h.storage_path) || !!tpl.headerMedia
           if (!ok) add(step.id, `${en} needs its ${tpl.mediaHeaderFormat.toLowerCase()} header.`, `${es} necesita su cabecera (${tpl.mediaHeaderFormat.toLowerCase()}).`)
         }
         break

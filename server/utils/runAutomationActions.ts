@@ -8,6 +8,7 @@ import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
 import { isFormButton } from '~/utils/whatsappTemplateDraft'
 import { templateForm } from '~/server/utils/whatsappTemplateForms'
+import { fillTemplateComponents, templateSendValues } from '~/server/utils/whatsappTemplateFill'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
 import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignTokens, type EmailTheme } from '~/utils/emailDesign'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
@@ -917,6 +918,10 @@ async function runWhatsAppAction(
   // only which template. Null when the template could not be read from Meta.
   let sentBody: string | null = null
   const headerComponents = await buildHeaderComponent(supabase, config.header)
+  // The variant being sent, as Meta lists it: what fillTemplateComponents
+  // reads to fill whatever the step itself does not (a heading, a place, a
+  // code to copy, a link the step has no setting for).
+  let liveTemplate: { name: string; language: string; components: any[] } | null = null
   if (account?.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
       `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_business_account_id}/message_templates`,
@@ -937,6 +942,7 @@ async function runWhatsAppAction(
       variables = variablesFor(templateLanguage)
     }
     const match = candidates.find((t: { language: string }) => t.language === templateLanguage) ?? candidates[0]
+    liveTemplate = match ?? null
 
     const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []
     const dynamicUrlButtonIndexes = buttons
@@ -966,12 +972,17 @@ async function runWhatsAppAction(
     // (whatsapp_template_forms): a step that chose nothing else for it sends
     // that one, rather than Meta's example suffix and a link to no form.
     const ownForm = buttons.some((b: any) => isFormButton(b)) ? await templateForm(supabase, accountId, templateName, templateLanguage) : null
+    // A link made in the creator says what ends it (the phone, the name, a
+    // fixed text); fillTemplateComponents sends that for a step that set
+    // nothing of its own, instead of the older `name=&id=` guess below.
+    const keptValues = dynamicUrlButtonIndexes.length ? await templateSendValues(supabase, accountId, templateName, templateLanguage).catch(() => null) : null
 
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
       const button = buttons[dynamicUrlButtonIndexes[i]]
       const docTemplateId = docTemplateIds[i] ?? (!buttonParams[i] && ownForm && isFormButton(button) ? ownForm : null)
       const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
       const configured = buttonParams[i]
+      if (!token && !configured && keptValues?.buttons?.[dynamicUrlButtonIndexes[i]]?.suffix) continue
       const paramText = token
         ? token
         : configured
@@ -1019,6 +1030,14 @@ async function runWhatsAppAction(
     if (hold) throw new ActionSkipped(hold)
   }
 
+  // Everything the step did not fill, from what QuiroFlow kept with the
+  // template. A template whose parts the step already fills goes out exactly
+  // as it did before this existed.
+  let components = [...headerComponents, ...bodyComponents, ...buttonComponents]
+  if (liveTemplate) {
+    components = (await fillTemplateComponents(supabase, accountId, liveTemplate, components, { firstName: recipient.firstName, phone: to })).components
+  }
+
   let wamid: string | null = null
   let errorMessage: string | null = null
 
@@ -1058,7 +1077,7 @@ async function runWhatsAppAction(
             language: { code: templateLanguage },
             // Header first: Meta rejects a template whose components are
             // out of order with 132000 rather than reordering them.
-            components: [...headerComponents, ...bodyComponents, ...buttonComponents],
+            components,
           },
         },
       },

@@ -1,3 +1,4 @@
+import type { TemplateSendValues } from '~/utils/whatsappTemplateDraft'
 import { starterEmailDesign } from '~/utils/emailDesign'
 import type { DocField } from '~/utils/docFields'
 import type { InjectionKey } from 'vue'
@@ -52,11 +53,14 @@ export interface WhatsAppTemplate {
   variableCount: number
   urlButtonCount: number
   mediaHeaderFormat: string | null
-  buttons?: { type: string; text: string; dynamic: boolean; url?: string | null }[]
+  headerExample?: string | null
+  buttons?: { type: string; text: string; dynamic: boolean; url?: string | null; phoneNumber?: string | null; example?: string | null }[]
   /** The file uploaded with the template when it was created in QuiroFlow: attached by default. */
   headerMedia?: { type: string; storage_path: string; filename: string }
   /** The form its form button opens, when it was created with one in QuiroFlow: chosen by default. */
   form?: { docTemplateId: string }
+  /** What QuiroFlow fills it with on each send, when it was created here: the place, a link's end, a code. */
+  sendValues?: TemplateSendValues | null
 }
 
 interface Draft {

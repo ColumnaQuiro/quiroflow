@@ -2,6 +2,8 @@ import { toE164, whatsappDigits } from '~/utils/phone'
 import { whatsappRecipient } from '~/utils/whatsappRecipient'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { isWithin24hWindow, sendWhatsAppTemplate, sendWhatsAppText } from '~/server/utils/whatsappSend'
+import { resolveTemplateVariant } from '~/server/utils/appointmentNotifications'
+import { fillTemplateComponents } from '~/server/utils/whatsappTemplateFill'
 
 // Send a WhatsApp message as the clinic. Supports the same two message kinds
 // the app itself uses: a pre-approved template (works any time) or free-form
@@ -43,7 +45,7 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token')
+    .select('whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token')
     .eq('id', accountId)
     .maybeSingle()
   await withMessagingTokens(accountId, account)
@@ -113,7 +115,22 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
   try {
     if (body.templateName) {
       const language = body.templateLanguage || 'es'
-      wamid = await sendWhatsAppTemplate(waAccount, to, body.templateName, language, body.variables ?? [])
+      // The caller names the body's variables; anything else a template made
+      // in QuiroFlow takes (a heading, its file or place, a link, a code) is
+      // filled the way every other send fills it.
+      const live = account.whatsapp_business_account_id
+        ? await resolveTemplateVariant(account.whatsapp_business_account_id, account.whatsapp_access_token, body.templateName, language, language)
+            .then((v) => (v && v.language === language ? v.template : null))
+            .catch(() => null)
+        : null
+      let firstName: string | null = null
+      if (patientId) {
+        const { data: who } = await supabase.from('patients').select('first_name').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+        firstName = who?.first_name ?? null
+      }
+      wamid = await sendWhatsAppTemplate(waAccount, to, body.templateName, language, body.variables ?? [], undefined, async (components) =>
+        live ? (await fillTemplateComponents(supabase, accountId, live, components, { firstName, phone: to })).components : components,
+      )
       insert.template_name = body.templateName
       insert.body_preview = body.variables?.length ? `Template ${body.templateName} (${body.variables.join(', ')})` : `Template ${body.templateName}`
     } else if (body.text) {

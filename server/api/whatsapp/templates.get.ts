@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { WhatsAppTemplatesError, fetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
 import { templateMediaFiles } from '~/server/utils/whatsappTemplateMedia'
 import { templateForms } from '~/server/utils/whatsappTemplateForms'
+import { allTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 
 // The account's APPROVED WhatsApp templates, for the pickers (the automation
 // builder among them). The Meta call itself lives in
@@ -15,7 +16,8 @@ import { templateForms } from '~/server/utils/whatsappTemplateForms'
 // A template created in QuiroFlow with a file at the top carries
 // `headerMedia`: the file the clinic uploaded with it, which an automation
 // attaches by default rather than asking for it a second time; one made with
-// a form button carries `form`, the QuiroFlow form that button opens.
+// a form button carries `form`, the QuiroFlow form that button opens; one
+// QuiroFlow fills on each send carries `sendValues`, what goes in its blanks.
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
 
@@ -28,14 +30,20 @@ export default defineEventHandler(async (event) => {
   }
 
   const admin = serverSupabaseServiceRole(event)
-  const [media, forms] = await Promise.all([templateMediaFiles(admin, teamMember.account_id), templateForms(admin, teamMember.account_id)])
+  const [media, forms, sendValues] = await Promise.all([
+    templateMediaFiles(admin, teamMember.account_id),
+    templateForms(admin, teamMember.account_id),
+    allTemplateSendValues(admin, teamMember.account_id),
+  ])
   const withMedia = all.map((t) => {
     const file = t.mediaHeaderFormat ? media.get(`${t.name}.${t.language}`) : undefined
     const formId = forms.get(`${t.name}.${t.language}`)
+    const values = sendValues.get(`${t.name}.${t.language}`)
     return {
       ...t,
       ...(file ? { headerMedia: { type: t.mediaHeaderFormat!.toLowerCase(), storage_path: file.path, filename: file.filename } } : {}),
       ...(formId ? { form: { docTemplateId: formId } } : {}),
+      ...(values ? { sendValues: values } : {}),
     }
   })
 

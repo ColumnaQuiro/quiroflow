@@ -11,11 +11,16 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { cameFromAd, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
+
+/** stop_follow_ups, for a lead: there is nothing of theirs to stop. */
+async function leadHasNoFollowUps(): Promise<{ content: string; isError: boolean }> {
+  return { content: 'They are not one of the clinic\'s patients yet, so they have no follow-ups to stop. Do not call it again: just answer them.', isError: true }
+}
 
 // Writing a receptionist reply for one lead.
 //
@@ -40,9 +45,12 @@ import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPL
 // euro add-on and a busy clinic can draft well over a thousand replies a
 // month, so the model choice is what decides whether the add-on is
 // profitable at all. The support assistant has run on Sonnet since it
-// shipped for the same reason.
-const MODEL = 'claude-sonnet-5'
-const MAX_TOKENS = 1024
+// shipped for the same reason. Which model is receptionistModelName's.
+//
+// 2048 output tokens, thinking included: Haiku thinks more than Sonnet and
+// was cut off at 1024 in 2 of 90 eval replies (21 Nov 2026); only what is
+// written is paid for, and Sonnet never came near it.
+const MAX_TOKENS = 2048
 
 /**
  * How much conversation the model is given.
@@ -278,7 +286,7 @@ export async function draftLeadReply(
   const sends = mayAutoSend && hold === null
   // Its record (receptionist_reply_traces), at whichever exit it leaves by.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
-    recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
+    recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: receptionistModelName(), startedAt, ...extra })
 
   // A voice note since the clinic last wrote that could not be transcribed:
   // always a person's, decided here rather than by the model
@@ -348,6 +356,11 @@ export async function draftLeadReply(
   const offerTimes = actions ? (onOffered: Parameters<typeof offerTimesTool>[1]) => offerTimesTool(actions, onOffered) : null
   const writeBack = actions ? writeBackTool(actions) : null
   const stopEarlier = actions && earlierOn ? stopEarlierTimeOffersTool(actions) : null
+  // A lead has no follow-ups of a patient's to stop, but is offered the tool
+  // all the same, refused, so that its tools are a patient's and the two
+  // share one cached prompt (utils/receptionistPrompt.ts); its prompt says
+  // not to call it.
+  const stopFollowUps = actions ? leadHasNoFollowUps : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
@@ -366,7 +379,7 @@ export async function draftLeadReply(
   if (await overTrialAllowance(calendarClient, accountId)) return { status: 'trial_limit_reached' }
 
   const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
-    model: MODEL,
+    model: receptionistModelName(),
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
     // With the day each message was sent (withDayMarks): "mañana jueves" in
@@ -380,6 +393,7 @@ export async function draftLeadReply(
     askWhyCancelled,
     cancellationReason,
     give,
+    stopFollowUps,
     stopEarlier,
     offerTimes,
     writeBack,

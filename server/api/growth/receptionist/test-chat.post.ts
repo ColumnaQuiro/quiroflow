@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistModelName, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesAfterFirstVisit, typesForAudience, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { isNoReply } from '~/utils/receptionistAutoReply'
@@ -25,11 +25,10 @@ import { internalNotes } from '~/utils/receptionistGuard'
 // would be a second implementation of the booking that could drift from the
 // real one.
 
-// Sonnet, matching receptionistDraft.ts -- see the note there. The test
-// panel has to run the model the drafts actually run on, or it advertises a
-// quality the clinic will not get.
-const MODEL = 'claude-sonnet-5'
-const MAX_TOKENS = 1024
+// The drafts' own model (receptionistModelName). The test panel has to run
+// the model the drafts actually run on, or it advertises a quality the
+// clinic will not get.
+const MAX_TOKENS = 2048
 const MAX_TURNS = 20
 
 interface Body {
@@ -124,7 +123,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const { text: reply, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_test', accountId: teamMember.account_id }), {
-      model: MODEL,
+      model: receptionistModelName(),
       maxTokens: MAX_TOKENS,
       system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices, clinicDetails, team }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),

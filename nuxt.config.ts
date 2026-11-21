@@ -380,6 +380,10 @@ export default defineNuxtConfig({
     // skips straight to "message the QuiroFlow team" rather than failing,
     // so a missing key degrades the feature instead of breaking it.
     anthropicApiKey: '',
+    // Which model the AI receptionist runs on: one of RECEPTIONIST_MODELS
+    // (server/utils/receptionistModel.ts), empty for the default.
+    // NUXT_RECEPTIONIST_MODEL.
+    receptionistModel: '',
     // Transcribes WhatsApp voice notes so the AI receptionist can answer
     // them (server/utils/voiceNoteTranscripts.ts; Mistral's Voxtral, EU).
     // Optional -- if unset, a voice note reads to it as "[Voice note]", as

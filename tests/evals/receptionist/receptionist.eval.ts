@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { evalApiKey, runScenario, timesIn, type EvalResult, type Scenario } from './harness'
+import { afterAll, describe, expect, it } from 'vitest'
+import { evalApiKey, MODEL, replyCost, runScenario, timesIn, type EvalResult, type Scenario } from './harness'
 import { TYPES } from './fixtures'
+import { isNoReply } from '~/utils/receptionistAutoReply'
 
 // What the receptionist DOES with a conversation, checked against the real
 // model. Every case is the shape of something that went wrong with a real
@@ -14,7 +15,10 @@ import { TYPES } from './fixtures'
 //
 // They need a key (ANTHROPIC_API_KEY, or ~/.quiroflow-eval-anthropic-key)
 // and skip without one. EVAL_RUNS=3 runs each case three times, since one
-// pass of a model that is not deterministic proves little.
+// pass of a model that is not deterministic proves little. EVAL_MODEL picks
+// the model (claude-haiku-5-5, to compare), and the run ends with what the
+// replies cost and how they used the cache, so a prompt or model change is
+// judged on both at once.
 
 const key = evalApiKey()
 const RUNS = Math.max(1, Number(process.env.EVAL_RUNS ?? 1))
@@ -23,20 +27,40 @@ const AD_LEAD = { channel: 'facebook', source: 'Meta Ads', externalSource: 'face
 const called = (r: EvalResult, name: string) => r.tools.filter((t) => t.name === name)
 const okCalls = (r: EvalResult, name: string) => called(r, name).filter((t) => t.ok)
 
+const spent = { replies: 0, rounds: 0, dollars: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cutOff: 0 }
+afterAll(() => {
+  if (!spent.replies) return
+  console.log(`\n[cost] ${MODEL}: ${spent.replies} replies, ${spent.rounds} rounds, $${spent.dollars.toFixed(4)} -- $${(spent.dollars / spent.replies).toFixed(4)} a reply. Tokens: ${spent.input} input, ${spent.cacheRead} cache read, ${spent.cacheWrite} cache write, ${spent.output} output. Cut off at max_tokens: ${spent.cutOff}.`)
+})
+
 function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => void) {
   it(name, async () => {
+    const failed: unknown[] = []
     for (let i = 0; i < RUNS; i++) {
       const result = await runScenario(scenario, key!).catch((err) => {
         if ((err as { status?: number })?.status === 401) throw new Error('The eval key was refused (401). Put a working non-production key in ~/.quiroflow-eval-anthropic-key, or pass ANTHROPIC_API_KEY.')
         throw err
       })
+      const usage = result.run.usage
+      spent.replies++
+      spent.rounds += usage.rounds
+      spent.dollars += replyCost(usage) ?? 0
+      spent.input += usage.inputTokens
+      spent.output += usage.outputTokens
+      spent.cacheRead += usage.cacheReadTokens
+      spent.cacheWrite += usage.cacheWriteTokens
+      if (result.run.checks.includes('max_tokens')) spent.cutOff++
       try {
         check(result)
       } catch (err) {
         console.error(`\n[${name}] run ${i + 1}\ntext: ${result.text}\ntools: ${JSON.stringify(result.tools)}\nhanded over: ${result.handedOver}\nchecks: ${result.run.checks.join(', ')}`)
-        throw err
+        failed.push(err)
       }
     }
+    // Every run, then the count: "2 of 5" says more about a model or a prompt
+    // than stopping at the first miss does.
+    console.log(`[pass] ${RUNS - failed.length}/${RUNS} ${name}`)
+    if (failed.length) throw new Error(`${failed.length} of ${RUNS} runs failed. The first: ${(failed[0] as Error)?.message ?? failed[0]}`)
   })
 }
 
@@ -227,5 +251,37 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
   }, (r) => {
     expect(okCalls(r, 'book_appointment').map((t) => [t.input.date, t.input.time])).toEqual([['2026-11-18', '18:30']])
     expect(r.handedOver).toBeNull()
+  })
+  // 14 Oct 2026, trying Haiku: it said a day was full without looking it up.
+  // A date past the Booking list is only known through find_free_times.
+  evalCase('looks up a date past the listed days before answering about it', {
+    kind: 'patient',
+    returning: true,
+    conversation: [{ from: 'them', text: '¿Tenéis algo el jueves 10 de diciembre por la tarde?' }],
+  }, (r) => {
+    expect(called(r, 'find_free_times').some((t) => String(t.input.from_date ?? '') <= '2026-12-10' && String(t.input.to_date ?? t.input.from_date ?? '') >= '2026-12-10')).toBe(true)
+  })
+
+  // 14 Oct 2026, trying Haiku: "del clinic" in a Spanish reply.
+  evalCase('writes Spanish to someone writing Spanish, with no English in it', {
+    kind: 'lead',
+    conversation: [{ from: 'them', text: 'Buenas, ¿dónde está la clínica y qué horario tenéis?' }],
+  }, (r) => {
+    expect(r.text).not.toMatch(/\b(clinic|the|available|appointment|opening|hours|we)\b/i)
+  })
+
+  // 14 Oct 2026, trying Haiku: a lead's "no gracias" got a sales pitch back.
+  evalCase('lets a lead who says "no gracias" go, without offering times', {
+    kind: 'lead',
+    leadOrigin: AD_LEAD,
+    conversation: [
+      { from: 'them', text: 'Hola, quería información de la oferta' },
+      { from: 'us', text: 'La primera visita con la oferta cuesta 50 € e incluye el historial de salud, el análisis postural y la primera sesión. ¿Quieres que te pase horarios?' },
+      { from: 'them', text: 'No gracias' },
+    ],
+  }, (r) => {
+    expect(timesIn(r.text)).toEqual([])
+    expect(okCalls(r, 'book_appointment')).toEqual([])
+    expect(isNoReply(r.text) || r.text.length < 200).toBe(true)
   })
 })

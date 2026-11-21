@@ -1522,6 +1522,7 @@
   "It has a {0} button, which QuiroFlow cannot edit. {1}": "Sie hat eine Schaltfläche vom Typ {0}, die QuiroFlow nicht bearbeiten kann. {1}",
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "Der Link einer Schaltfläche hat seine Variable an einer Stelle, die QuiroFlow nicht bearbeiten kann. {0}",
   "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Sie hat oben ein {0}, das QuiroFlow nicht bearbeiten kann. {1}",
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Kein Preis in PracticeHub für: {0}. Die API von PracticeHub gibt nicht an, mit welcher Leistung jede Terminart abgerechnet wird, und keine ihrer aktiven Leistungen trägt diese Namen, daher bleiben sie bei 0. Lege sie unter Einstellungen › Terminarten fest; eine spätere Synchronisierung ersetzt sie nie.",
   "Still needed for the result: {0}.": "Für das Ergebnis fehlt noch: {0}.",
   "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, nicht verglichen: {1} hat {2} und {3} {4}. Verglichen werden nur Fotos derselben Ansicht."
  },
@@ -9606,6 +9607,7 @@
   "You can change it any time in your profile.": "Sie können das jederzeit in Ihrem Profil ändern.",
   "You can check in from 90 minutes before your visit. If something is wrong, tell the front desk.": "Sie können ab 90 Minuten vor Ihrem Termin einchecken. Wenn etwas nicht stimmt, wenden Sie sich an den Empfang.",
   "You can close this page.": "Sie können diese Seite schließen.",
+  "You can close this tab: the one you started from is up to date.": "Sie können diesen Tab schließen: Der Tab, in dem Sie begonnen haben, ist bereits aktuell.",
   "You can manage these accounts:": "Sie können diese Konten verwalten:",
   "You can pay by ___ (card, cash, transfer, Bizum).": "Sie können mit ___ bezahlen (Karte, bar, Überweisung, Bizum).",
   "You can pay it at the clinic.": "Sie können in der Praxis bezahlen.",

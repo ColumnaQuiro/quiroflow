@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { practiceHubPriceToWrite, practiceHubServiceCents, practiceHubTypePrice, type PracticeHubBillableItem } from '../../utils/practicehubTypePrices'
+import { practiceHubPriceToWrite, practiceHubServiceCents, practiceHubTypePrice, practiceHubUnpricedTypesWarning, type PracticeHubBillableItem } from '../../utils/practicehubTypePrices'
 
 // The appointment-types import step prices each type from PracticeHub's
 // services (2.0's /billable_items), since PracticeHub keeps no price on the
@@ -48,6 +48,16 @@ describe('PracticeHub price for an appointment type', () => {
     expect(practiceHubTypePrice('Ajuste Quiropractico', withRetired)?.priceCents).toBe(5500)
   })
 
+  it('never takes a retired service’s price, even when it is the only one of that name', () => {
+    // QuiroBalance, 20 Nov 2026: "Ajuste" is charged with another, live
+    // service at 50.00; the retired "Ajuste " at 30.00 is an old price.
+    const quiroBalance: PracticeHubBillableItem[] = [
+      { id: 1, description: 'Chequeo quiropráctico y ajuste 2025', amount: '50.00', active: null },
+      { id: 11, description: 'Ajuste ', amount: '30.00', active: false },
+    ]
+    expect(practiceHubTypePrice('Ajuste', quiroBalance)).toBeNull()
+  })
+
   it('reads amounts as cents and refuses discounts and nonsense', () => {
     expect(practiceHubServiceCents('55.00')).toBe(5500)
     expect(practiceHubServiceCents('49.9')).toBe(4990)
@@ -80,5 +90,17 @@ describe('Writing PracticeHub’s price to a type', () => {
     expect(practiceHubPriceToWrite(null, undefined)).toBeNull()
     expect(practiceHubPriceToWrite(0, 0)).toBeNull()
     expect(practiceHubPriceToWrite(null, 0)).toBeNull()
+  })
+})
+
+describe('Naming the types left without a price', () => {
+  const en = (english: string) => english
+  it('lists each name once, trimmed', () => {
+    expect(practiceHubUnpricedTypesWarning(['Informe', 'Ajuste 30 ', 'Informe'], en)).toMatch(/^No price in PracticeHub for: Informe, Ajuste 30\. /)
+  })
+
+  it('says nothing when every type has a price', () => {
+    expect(practiceHubUnpricedTypesWarning([], en)).toBeNull()
+    expect(practiceHubUnpricedTypesWarning(['  '], en)).toBeNull()
   })
 })

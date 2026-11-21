@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
+import { practiceHubPriceToWrite, practiceHubTypePrice, practiceHubUnpricedTypesWarning, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
 import { formatEur } from '~/utils/billing'
 import { hexColor, isWorthBringing, STAGE_BY_NAME } from '~/utils/practicehubImport/appointmentTypes'
 
@@ -24,6 +24,8 @@ interface TypeCandidate {
   ourPriceCents: number | null
   /** What the import writes as the type's price: PracticeHub's, and only over a 0. */
   priceToWrite: number | null
+  /** Left at 0 with nothing to fill it from (see utils/practicehubImport/appointmentTypes.ts). */
+  unpriced: boolean
   funnelStage: string | null
   /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
@@ -58,6 +60,7 @@ const newTypeCount = computed(() => new Set(candidates.value.filter((c) => !c.ou
 // Types already here that take PracticeHub's price. Two PracticeHub types of
 // one name are one type here, so it is counted once.
 const pricesToFill = computed(() => new Set(candidates.value.filter((c) => c.ourTypeId && c.priceToWrite !== null).map((c) => c.ourTypeId)).size)
+const unpricedWarning = computed(() => practiceHubUnpricedTypesWarning(candidates.value.filter((c) => c.unpriced).map((c) => c.name), t))
 const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => sum + c.appointmentRefs.length, 0))
 
 const previewColumns = computed(() => [
@@ -171,6 +174,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           ourTypeId: ours?.id ?? null,
           ourPriceCents,
           priceToWrite: practiceHubPriceToWrite(ourPriceCents, phPrice?.priceCents),
+          unpriced: services !== null && !ourPriceCents && phPrice === null && !(phType.active === 0 || phType.active === false),
           funnelStage: STAGE_BY_NAME[key] ?? null,
           appointmentRefs: refs.filter((ref) => refsHere.has(ref)),
           inPracticeHub: refs.length,
@@ -355,6 +359,7 @@ const introNotes = computed(() => [
       @cancel="reset"
     >
       <template #note>
+        <p v-if="unpricedWarning" class="mb-2 text-xs text-ink-600">{{ unpricedWarning }}</p>
         <p v-if="pricesUnavailable" class="mb-2 text-xs text-ink-600">
           {{
             pricesUnavailable === 'no_v3_key'

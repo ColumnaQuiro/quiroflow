@@ -1522,6 +1522,7 @@
   "It has a {0} button, which QuiroFlow cannot edit. {1}": "Tem um botão do tipo {0}, que o QuiroFlow não sabe editar. {1}",
   "A button's link has its variable somewhere QuiroFlow cannot edit. {0}": "A ligação de um botão tem a variável num sítio que o QuiroFlow não sabe editar. {0}",
   "It has a {0} at the top, which QuiroFlow cannot edit. {1}": "Tem um {0} no topo, que o QuiroFlow não sabe editar. {1}",
+  "No price in PracticeHub for: {0}. PracticeHub's API does not say which service each type is charged with, and none of its active services has these names, so they stay at 0. Set them in Settings › Appointment types; a later sync never replaces them.": "Sem preço no PracticeHub para: {0}. A API do PracticeHub não indica com que serviço cada tipo é cobrado, e nenhum dos seus serviços ativos tem estes nomes, por isso ficam a 0. Defina-os em Definições › Tipos de consulta; uma sincronização posterior nunca os substitui.",
   "Still needed for the result: {0}.": "Para ver o resultado é preciso {0}.",
   "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, sem comparar: a de {1} tem {2} e a de {3}, {4}. Só se comparam fotos da mesma vista."
  },
@@ -9606,6 +9607,7 @@
   "You can change it any time in your profile.": "Pode alterar isto a qualquer momento no seu perfil.",
   "You can check in from 90 minutes before your visit. If something is wrong, tell the front desk.": "Pode fazer check-in a partir de 90 minutos antes da consulta. Se algo estiver errado, avise a receção.",
   "You can close this page.": "Pode fechar esta página.",
+  "You can close this tab: the one you started from is up to date.": "Pode fechar este separador: o que deixou aberto já está atualizado.",
   "You can manage these accounts:": "Pode gerir estas contas:",
   "You can pay by ___ (card, cash, transfer, Bizum).": "Pode pagar com ___ (cartão, numerário, transferência, Bizum).",
   "You can pay it at the clinic.": "Pode pagar na clínica.",

@@ -126,6 +126,7 @@ function mergeText(template: string, ctx: AppointmentContext, escape = false): s
 
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
+  format?: string
   text?: string
 }
 interface MetaTemplate {

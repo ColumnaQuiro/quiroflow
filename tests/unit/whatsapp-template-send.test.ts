@@ -63,7 +63,7 @@ describe('the buttons a send fills', () => {
 
   it("a dynamic link: the phone shaped as the template's sample wants it, a name URL-encoded, or a fixed text", () => {
     const t = buttons([{ type: 'URL', text: 'Reservar', url: 'https://clinica.example/reserva/{{1}}', example: ['https://clinica.example/reserva/?phone=34600000000'] }])
-    const send = (suffix: any) => completeTemplateComponents(t, [body], { ...who, values: { buttons: [{ suffix }] } }).components.at(-1)
+    const send = (suffix: any) => completeTemplateComponents(t, [body], { ...who, values: { buttons: [{ suffix }] } }).components.at(-1)!
     expect(send({ source: 'phone' })).toEqual({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '?phone=34612345678' }] })
     expect(send({ source: 'first_name' }).parameters[0].text).toBe('Luc%C3%ADa')
     expect(send({ source: 'text', text: 'oferta verano' }).parameters[0].text).toBe('oferta%20verano')
@@ -93,7 +93,7 @@ describe('the buttons a send fills', () => {
       index: '1',
       parameters: [{ type: 'coupon_code', coupon_code: 'BIENVENIDA' }],
     })
-    expect(completeTemplateComponents(t, [body], {}).components.at(-1).parameters[0].coupon_code).toBe('MUESTRA')
+    expect(completeTemplateComponents(t, [body], {}).components.at(-1)!.parameters[0].coupon_code).toBe('MUESTRA')
   })
 
   it('a quick reply: its payload when the template was made in QuiroFlow, nothing otherwise (Meta does not require it)', () => {

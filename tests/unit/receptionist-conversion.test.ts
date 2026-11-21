@@ -126,6 +126,21 @@ describe('writing first', () => {
     expect(agreedDueAt(undefined, now, tz)).toBeNull()
   })
 
+  it('writes in the afternoon when they said they would only know by then (20 Nov 2026)', () => {
+    const now = new Date('2026-11-19T21:07:00Z')
+    expect(agreedDueAt('2026-11-20', now, tz, 120, 'afternoon')?.toISOString()).toBe('2026-11-20T16:00:00.000Z')
+    expect(agreedDueAt('2026-11-20', now, tz, 120, 'morning')?.toISOString()).toBe('2026-11-20T08:30:00.000Z')
+    expect(agreedDueAt('2026-11-20', now, tz, 120, 'evening')?.toISOString()).toBe('2026-11-20T08:30:00.000Z')
+  })
+
+  it('greets with a capital, and asks no "this week or next" that may be one day (20 Nov 2026)', () => {
+    expect(agreedText('lucía m', 'es')).toBe('Hola, Lucía. Te escribo como quedamos, para buscar tu cita. ¿Qué días y a qué hora te vendría bien?')
+    expect(nudgeText('álvaro', 'es').startsWith('Hola, Álvaro.')).toBe(true)
+    for (const language of ['es', 'en', 'fr'] as const) {
+      expect(agreedText('Marta', language)).not.toMatch(/semana|week|semaine/i)
+    }
+  })
+
   it('writes fixed sentences that name no time and can be told apart from an answer', () => {
     for (const language of ['es', 'en', 'fr'] as const) {
       for (const text of [nudgeText('Marta López', language), agreedText('Marta López', language), nudgeText(null, language)]) {

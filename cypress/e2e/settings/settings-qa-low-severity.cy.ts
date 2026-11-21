@@ -78,14 +78,14 @@ describe('Settings QA: low-severity fixes', () => {
   it('saves the staff alert WhatsApp in international form, and refuses an email that is not one', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/leads')
-      cy.get('[data-cy="leads-settings"][data-ready="true"]')
+      cy.visit('/settings/team-alerts')
+      cy.get('[data-cy="team-alerts-settings"][data-ready="true"]')
       cy.get('[data-cy="lead-notify-email"]').clear().type('recepcion')
       cy.get('[data-cy="lead-notify-whatsapp"]').clear().type('600 111 222')
-      cy.get('[data-test="save-lead-settings"]').click()
+      cy.get('[data-cy="team-alerts-save"]').click()
       cy.contains('not an email address').should('be.visible')
       cy.get('[data-cy="lead-notify-email"]').clear().type('recepcion@clinica.es')
-      cy.get('[data-test="save-lead-settings"]').click()
+      cy.get('[data-cy="team-alerts-save"]').click()
       cy.get('[data-cy="lead-notify-whatsapp"]').should('have.value', '+34600111222')
       cy.task<any[]>('db:selectRows', { table: 'accounts', columns: 'new_lead_notify_whatsapp', match: { id: account.accountId } })
         .its('0.new_lead_notify_whatsapp')

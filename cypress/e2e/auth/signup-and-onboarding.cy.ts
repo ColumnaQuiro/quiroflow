@@ -98,12 +98,11 @@ describe('Signup and onboarding', () => {
     cy.contains(accountName).should('be.visible')
 
     // The country chosen during onboarding is what a new number defaults to
-    // -- not Spain, which is what every account got before it was asked.
-    cy.visit('/settings/communications-general')
-    cy.get('select').filter(':visible').then(($selects) => {
-      const withPortugal = [...$selects].find((el) => (el as HTMLSelectElement).value === 'PT')
-      expect(withPortugal, 'a country select showing Portugal').to.not.equal(undefined)
-    })
+    // -- not Spain, which is what every account got before it was asked. It
+    // is set in Settings > New Patient Fields, beside the phone field.
+    cy.visit('/settings/new-patient-fields')
+    cy.get('[data-cy="fields-settings"][data-ready="true"]')
+    cy.get('[data-cy="default-phone-country"]').should('have.value', 'PT')
   })
 
   // Every owner used to be made a practitioner. Right for a chiropractor who

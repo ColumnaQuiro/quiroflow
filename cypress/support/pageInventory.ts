@@ -54,6 +54,8 @@ export const SETTINGS_PAGES = [
   '/settings/whatsapp',
   '/settings/instagram',
   '/settings/webchat',
+  '/settings/team-alerts',
+  '/settings/reviews',
 ]
 
 export const APP_PAGES = [

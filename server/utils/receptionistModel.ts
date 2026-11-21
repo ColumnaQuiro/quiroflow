@@ -7,7 +7,7 @@ import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
-import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
+import { receptionistSystemBlocks, withTailBreakpoint, type ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON } from '~/server/utils/receptionistBooking'
 import type { OfferedSlot } from '~/utils/receptionistConversion'
 import { findTypeByName } from '~/utils/receptionistTypes'
@@ -26,6 +26,26 @@ import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UN
 
 /** Tool rounds before the model has to answer with what it has. */
 const MAX_TOOL_ROUNDS = 4
+
+/**
+ * The models the receptionist may run on, the default first. Which one is
+ * NUXT_RECEPTIONIST_MODEL's, so moving between them is an environment change
+ * and so is going back. Anything else falls back to the default rather than
+ * sending a model id nobody has tried with these prompts.
+ *
+ * Sonnet 5 is the default. Haiku 5.5 is about a twentieth of the price and,
+ * on 21 Nov 2026, did as well on tests/evals/receptionist (5 runs of each of
+ * 18 cases) -- better on English and on handing over a worsening symptom.
+ * On 14 Oct it did worse on 24 real replies; the three ways it failed are
+ * eval cases now, and it passed them.
+ */
+export const RECEPTIONIST_MODELS = ['claude-sonnet-5', 'claude-haiku-5-5'] as const
+
+/** The model the receptionist runs on now (RECEPTIONIST_MODELS). */
+export function receptionistModelName(): string {
+  const configured = String(useRuntimeConfig().receptionistModel ?? '').trim()
+  return (RECEPTIONIST_MODELS as readonly string[]).includes(configured) ? configured : RECEPTIONIST_MODELS[0]
+}
 
 const FIND_FREE_TIMES: Anthropic.Tool = {
   name: 'find_free_times',
@@ -68,7 +88,8 @@ export interface ReceptionistRun {
   choices: 'cancellation_reason' | 'times' | null
   /** The times offer_times was last called with, when the reply books nothing. */
   offeredSlots: OfferedSlot[]
-  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
+  /** cacheWriteTokens is both kinds of write; cacheWrite1hTokens the hour-long ones (clinic and role), which cost 2x input rather than 1.25x. */
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; rounds: number }
 }
 
 /** One tool call the model made while writing a reply. */
@@ -238,7 +259,7 @@ export async function runReceptionistModel(
   // What the checks in code did to this reply, and what it cost, for its
   // record (receptionist_reply_traces).
   const checks: string[] = []
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, rounds: 0 }
   let choices: ReceptionistRun['choices'] = null
   let offeredSlots: OfferedSlot[] = []
   const offerTimes = opts.offerTimes ? opts.offerTimes((slots) => { offeredSlots = slots }) : null
@@ -251,22 +272,13 @@ export async function runReceptionistModel(
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
   const toolUses: ReceptionistToolUse[] = []
-  // The clinic's part is cached for an hour (utils/receptionistPrompt.ts
-  // says why it is split). It is the same for every conversation at the
-  // clinic, and a clinic's replies are minutes apart in the day but rarely
-  // five -- the 5-minute default would expire between most of them. A read
-  // refreshes the hour, so a busy day writes it a handful of times. The tools
-  // render before it and are cached with it; they differ only between
-  // drafting and sending, which makes two entries, not a miss.
-  //
-  // The rest of the request is deliberately not cached. Tried and measured
-  // on 24 real replies: writing it costs 25% extra on every call, and only
-  // about one reply in six makes a second call (find_free_times, a rewrite)
-  // that would read it back -- it added ~$0.0015 a reply and saved less.
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: opts.system.clinic, cache_control: { type: 'ephemeral', ttl: '1h' } },
-    { type: 'text', text: opts.system.conversation },
-  ]
+  // The clinic's part and the role after it are cached for an hour, and each
+  // round's messages for five minutes (utils/receptionistPrompt.ts says why).
+  // The tools render before them and are cached with them, so they must be
+  // the same list for a lead and a patient: the callers offer both the same
+  // ones, and a tool one of them cannot use is refused by its handler rather
+  // than left out. Drafting has its own list, which makes two entries.
+  const system = receptionistSystemBlocks(opts.system)
   const tools: Anthropic.Tool[] = [
     ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
     ...(opts.handOver ? [HAND_OVER] : []),
@@ -305,7 +317,7 @@ export async function runReceptionistModel(
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
       system,
-      messages,
+      messages: withTailBreakpoint(messages),
       ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })
     usage.rounds++
@@ -313,9 +325,13 @@ export async function runReceptionistModel(
     usage.outputTokens += message.usage?.output_tokens ?? 0
     usage.cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0
     usage.cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0
+    usage.cacheWrite1hTokens += message.usage?.cache_creation?.ephemeral_1h_input_tokens ?? 0
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.
+    // Cut off at maxTokens: what is there is sent, but the trace says so.
+    if (message.stop_reason === 'max_tokens') checks.push('max_tokens')
+
     if (message.stop_reason === 'refusal') {
       checks.push('model_refused')
       return run('', true)

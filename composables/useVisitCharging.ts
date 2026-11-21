@@ -884,6 +884,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     sendResult,
     sendInvoiceEmail,
     init,
+    loadAppointmentTiming,
     loadInvoice,
     chargeVisit,
     receiptEditable,

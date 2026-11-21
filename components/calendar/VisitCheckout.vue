@@ -27,6 +27,9 @@ const props = defineProps<{
   appointmentTypePriceCents?: number
   /** The appointment's status, so an undone visit is offered again. */
   status?: string
+  /** When they were checked in and when the slot starts, so arriving early offers the checkout at once. */
+  checkedInAt?: string | null
+  startsAt?: string
 }>()
 const emit = defineEmits<{ completed: []; details: []; offered: [value: boolean] }>()
 
@@ -47,6 +50,7 @@ const {
   paymentMethods,
   paymentRows,
   init,
+  loadAppointmentTiming,
   loadInvoice,
   refresh: refreshMoney,
   chargeVisit,
@@ -89,6 +93,20 @@ watch(
     chosen.value = false
     await loadInvoice()
     await refreshMoney()
+  },
+)
+
+// Checking in from this panel does not remount it (it is keyed by the
+// appointment), and whether the visit is still "upcoming" was read once, on
+// open. A patient checked in before their slot's start therefore got no
+// checkout until the panel was closed and reopened. Read it again whenever the
+// arrival or the start time changes: checking in, undoing the arrival, moving
+// the appointment.
+watch(
+  () => [props.checkedInAt ?? null, props.startsAt ?? null],
+  async () => {
+    if (!ready.value) return
+    await loadAppointmentTiming()
   },
 )
 

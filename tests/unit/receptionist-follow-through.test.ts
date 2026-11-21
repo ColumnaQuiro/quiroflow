@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, handoverReasonSaysNothing, isVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
+import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, handoverReasonSaysNothing, isUnheardVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
 import { BASE_BEHAVIOUR, BASE_ESCALATIONS } from '../../utils/receptionistBaseRules'
 import { CONFIRM_BEFORE_BOOKING, phoneSharersSection } from '../../utils/receptionistTypes'
+import { VOICE_NOTE_TRANSCRIPT_MARK } from '../../utils/receptionistHistory'
 
 // What the receptionist decides in code rather than leaving to the prompt
 // (utils/receptionistFollowThrough.ts), from the daily review of 2-6 Nov 2026.
@@ -77,10 +78,21 @@ describe('asksWhetherToCancel and cancelQuestionDue', () => {
 })
 
 describe('voice notes and refused sends', () => {
-  it('answers a voice note with the fixed words the escalation rule gives', () => {
-    expect(isVoiceNote('audio')).toBe(true)
-    expect(isVoiceNote('image')).toBe(false)
+  it('answers a voice note it could not hear with the fixed words the escalation rule gives', () => {
+    expect(isUnheardVoiceNote('audio')).toBe(true)
+    expect(isUnheardVoiceNote('audio', null)).toBe(true)
+    expect(isUnheardVoiceNote('audio', '   ')).toBe(true)
+    expect(isUnheardVoiceNote('image')).toBe(false)
     expect(BASE_ESCALATIONS.find((r) => r.rule.includes('voice note'))!.action).toContain(VOICE_NOTE_REPLY.replace(/\.$/, ''))
+  })
+
+  // 20 Nov 2026: transcription shipped on the 18th, but the check still looked
+  // at the media type alone, so a transcribed voice note got the fixed reply.
+  it('lets a transcribed voice note through to the model', () => {
+    expect(isUnheardVoiceNote('audio', 'Hola, quería pedir cita para el jueves')).toBe(false)
+    const rule = BASE_ESCALATIONS.find((r) => r.rule.includes('voice note'))!.rule
+    expect(rule).toContain('[Voice note -- you cannot listen to it]')
+    expect(rule).toContain(VOICE_NOTE_TRANSCRIPT_MARK)
   })
 
   // 6 Nov 2026: refused for "do not contact", the reply sat as a draft nobody was told about.

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { App } from '@capacitor/app'
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
+import { formatLongDate } from '../../utils/billing'
 
 // Registered once here (not per-tab) so switching between My Day/Calendar/
 // Patients/Inbox doesn't re-register a push token on every navigation.
@@ -50,6 +51,7 @@ watch(context, (ctx) => { if (ctx) homeWidget.refresh() }, { immediate: true })
 // With more than one location, the side menu names the one the app is in.
 const clinicName = computed(() => (clinics.value.length > 1 ? clinics.value.find((c) => c.id === context.value?.clinicId)?.name : null))
 const t = useT()
+const graceEndsOn = computed(() => (context.value?.graceEndsAt ? formatLongDate(context.value.graceEndsAt) : null))
 
 // Team messages and help alerts, for whoever is signed in: one subscription
 // for every staff screen, so an alert reaches a colleague wherever they are.
@@ -81,6 +83,16 @@ const initials = computed(() => (context.value?.fullName ?? '').split(/\s+/).fil
       <div v-if="loadFailed" class="flex shrink-0 items-center gap-2 border-b border-warning-border bg-warning-bg px-4 py-2 text-[13px] text-warning-text" role="status" data-cy="context-load-failed">
         <span class="min-w-0 flex-1">{{ t('Could not reach the clinic. Trying again…', 'No se ha podido conectar con la clínica. Reintentando…') }}</span>
         <button type="button" class="h-9 shrink-0 rounded-ctl px-2 font-semibold" @click="retry">{{ t('Retry', 'Reintentar') }}</button>
+      </div>
+      <!-- The clinic has not paid: an ended trial in its grace week, or past it
+           and read-only. Informational only, with no way to pay from here --
+           the app does not sell subscriptions (store rules); the owner does
+           that on the web, where the same notice carries the button. -->
+      <div v-if="context?.readOnly" class="shrink-0 border-b border-danger-border bg-danger-bg px-4 py-2 text-[13px] text-danger-text" role="status" data-cy="read-only-banner">
+        {{ t('The clinic account is read-only: you can see everything, but changes are not saved. Talk to the account owner.', 'La cuenta de la clínica está en modo solo lectura: puedes consultar todo, pero los cambios no se guardan. Habla con la persona titular de la cuenta.') }}
+      </div>
+      <div v-else-if="graceEndsOn" class="shrink-0 border-b border-warning-border bg-warning-bg px-4 py-2 text-[13px] text-warning-text" role="status" data-cy="grace-banner">
+        {{ t(`The clinic's free trial has ended. From ${graceEndsOn} the account becomes read-only. Talk to the account owner.`, `La prueba gratuita de la clínica ha terminado. Desde el ${graceEndsOn} la cuenta pasará a solo lectura. Habla con la persona titular de la cuenta.`) }}
       </div>
       <!-- A colleague needs help: above every staff screen until answered. -->
       <StaffAlertBanner />

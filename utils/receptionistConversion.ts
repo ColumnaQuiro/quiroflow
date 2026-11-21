@@ -173,6 +173,13 @@ export type FollowUpKind = 'nudge' | 'agreed'
 
 /** When the clinic's morning starts for a message nobody is waiting on. */
 export const FOLLOW_UP_HOUR = '09:30'
+/**
+ * When an agreed day is written on, by the part of the day they said they
+ * would know: "hasta mañana por la tarde no sabré mis horarios" was written
+ * to at 9:30, before they could know (20 Nov 2026).
+ */
+export const AGREED_HOURS = { morning: FOLLOW_UP_HOUR, afternoon: '17:00' } as const
+export type AgreedPartOfDay = keyof typeof AGREED_HOURS
 /** A follow-up this overdue is history: the moment has gone. */
 export const FOLLOW_UP_MAX_LATE_HOURS = 36
 /** Not twice in one conversation within this. */
@@ -191,20 +198,23 @@ export function nudgeDueAt(sentAt: Date, timeZone: string): Date {
 }
 
 /**
- * When the clinic writes on the day they agreed: that morning. Null when the
- * day is not a date, is today or earlier, or is further than `maxDays` away.
+ * When the clinic writes on the day they agreed: that morning, or that
+ * afternoon when they said they would only know by then. Null when the day is
+ * not a date, is today or earlier, or is further than `maxDays` away.
  */
-export function agreedDueAt(date: unknown, now: Date, timeZone: string, maxDays = 120): Date | null {
+export function agreedDueAt(date: unknown, now: Date, timeZone: string, maxDays = 120, partOfDay: unknown = 'morning'): Date | null {
   if (typeof date !== 'string' || !SLOT_DATE.test(date.trim())) return null
   const day = date.trim()
   if (day <= clinicDateOf(now, timeZone)) return null
-  const due = wallClockToUtc(day, FOLLOW_UP_HOUR, timeZone)
+  const due = wallClockToUtc(day, partOfDay === 'afternoon' ? AGREED_HOURS.afternoon : AGREED_HOURS.morning, timeZone)
   if (!Number.isFinite(due) || due - now.getTime() > maxDays * 86_400_000) return null
   return new Date(due)
 }
 
 const greet = (name: string | null | undefined, language: SlotLanguage) => {
-  const first = (name ?? '').replace(/[\r\n*_~`#<>]/g, ' ').trim().split(/\s+/)[0] ?? ''
+  const word = (name ?? '').replace(/[\r\n*_~`#<>]/g, ' ').trim().split(/\s+/)[0] ?? ''
+  // A first name typed all in lower case into a lead form was greeted that way (20 Nov 2026): a name starts with a capital.
+  const first = word ? word.charAt(0).toLocaleUpperCase('es') + word.slice(1) : ''
   const hello = language === 'en' ? 'Hello' : language === 'fr' ? 'Bonjour' : 'Hola'
   return first ? `${hello}, ${first}.` : `${hello}.`
 }
@@ -218,9 +228,11 @@ export function nudgeText(name: string | null | undefined, language: SlotLanguag
 
 /** The message sent on the day they agreed the clinic would write. */
 export function agreedText(name: string | null | undefined, language: SlotLanguage): string {
-  if (language === 'en') return `${greet(name, language)} I said I would write to you today to find your appointment. Which day suits you this week or next?`
-  if (language === 'fr') return `${greet(name, language)} Je vous écris comme convenu pour trouver votre rendez-vous. Quel jour vous conviendrait cette semaine ou la suivante ?`
-  return `${greet(name, language)} Te escribo como quedamos, para buscar tu cita. ¿Qué día te viene bien esta semana o la siguiente?`
+  // "Esta semana o la siguiente" was sent on a Friday, when this week was
+  // that day alone (20 Nov 2026).
+  if (language === 'en') return `${greet(name, language)} I said I would write to you today to find your appointment. Which days and what time of day suit you?`
+  if (language === 'fr') return `${greet(name, language)} Je vous écris comme convenu pour trouver votre rendez-vous. Quels jours et à quel moment de la journée vous conviendraient ?`
+  return `${greet(name, language)} Te escribo como quedamos, para buscar tu cita. ¿Qué días y a qué hora te vendría bien?`
 }
 
 const FOLLOW_UP_MARKS = [

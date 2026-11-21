@@ -202,14 +202,23 @@ export function postureConclusion(metrics: Partial<Record<PostureView, ViewMetri
     const side = h.hipTilt > 0 ? (es ? 'derecho' : 'right') : es ? 'izquierdo' : 'left'
     notes.push(es ? `la pelvis está más baja del lado ${side} (${num(Math.abs(h.hipTilt), lang)}°)` : `the pelvis is lower on the ${side} (${num(Math.abs(h.hipTilt), lang)}°)`)
   }
+  // A plane with no photo was not measured, so "nothing stands out" must not
+  // cover it: said in a sentence of its own.
+  const hasSide = !!(metrics.right ?? metrics.left)
+  const hasFrontal = !!(metrics.front ?? metrics.back)
+  const unmeasured = !hasFrontal
+    ? (es ? ' Sin foto de frente ni de espalda, no se mide la inclinación de hombros ni de pelvis.' : ' With no front or back photo, the tilt of the shoulders and the pelvis is not measured.')
+    : !hasSide
+      ? (es ? ' Sin foto de lado, no se mide la posición de la cabeza respecto al hombro.' : ' With no side photo, where the head sits over the shoulder is not measured.')
+      : ''
   const next = es
     ? 'Repetiremos estas fotos en las próximas revisiones, en el mismo sitio y de la misma forma, para ver cómo evoluciona.'
     : 'We will repeat these photos at your next reviews, in the same place and the same way, to see how it changes.'
   if (!notes.length) {
-    return `${es ? 'En estas fotos la alineación es buena: no hay desplazamientos ni inclinaciones que destaquen.' : 'In these photos the alignment is good: no shift or tilt stands out.'} ${next}`
+    return `${es ? 'En estas fotos la alineación es buena: no hay desplazamientos ni inclinaciones que destaquen.' : 'In these photos the alignment is good: no shift or tilt stands out.'}${unmeasured} ${next}`
   }
   const joined = notes.length === 1 ? notes[0]! : `${notes.slice(0, -1).join('; ')}${es ? ' y ' : ' and '}${notes[notes.length - 1]}`
-  return `${es ? 'Lo que más destaca en estas fotos: ' : 'What stands out most in these photos: '}${joined}. ${next}`
+  return `${es ? 'Lo que más destaca en estas fotos: ' : 'What stands out most in these photos: '}${joined}.${unmeasured} ${next}`
 }
 
 export interface PostureHistoryEntry { takenAt: string; metrics: Partial<Record<PostureView, ViewMetrics>> }

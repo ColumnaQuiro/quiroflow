@@ -80,7 +80,8 @@ async function tellTheDesk(supabase: Admin, accountId: string, patientId: string
   const { data: owners } = await supabase.from('team_members').select('id').eq('account_id', accountId).eq('is_owner', true).is('deleted_at', null)
   if (!owners?.length) return
   const { error } = await supabase.from('staff_tasks').insert(owners.map((o) => ({ account_id: accountId, team_member_id: o.id, patient_id: patientId, title })))
-  if (error) console.error('[gocardless webhook] could not write the task', accountId, title, error.message)
+  // Not the title, which names the patient: the patient id is enough to find it.
+  if (error) console.error('[gocardless webhook] could not write the task', accountId, patientId, error.message)
 }
 
 async function scheduleForSubscription(supabase: Admin, accountId: string, subscriptionId: string | undefined) {

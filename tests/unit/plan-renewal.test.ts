@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dischargeRecallDate, maintenanceConfig, maintenancePreset, openEndedPlanLabel, planVisitsToBook, previousCadence, renewalDue } from '../../utils/planRenewal'
+import { readCarePlanTemplate } from '../../utils/carePlanTemplates'
 
 const en = (e: string) => e
 const es = (_e: string, s: string) => s
@@ -24,6 +25,28 @@ describe('maintenanceConfig', () => {
   it("reads the clinic's own", () => {
     const c = maintenanceConfig({ maintenance_visits_per_period: 1, maintenance_frequency_value: 3, maintenance_frequency_unit: 'week', maintenance_total_visits: 8, maintenance_discharge_recall_months: 6 })
     expect(maintenancePreset(c)).toEqual({ visits_per_period: 1, frequency_value: 3, frequency_unit: 'week', total_visits: 8 })
+    expect(c.dischargeRecallMonths).toBe(6)
+    expect(c.name).toBeNull()
+  })
+  it('takes the cadence, length, name, phases and re-exams from the maintenance template over the account', () => {
+    const tpl = readCarePlanTemplate({
+      id: 't1',
+      name: 'Bienestar',
+      visits_per_period: 1,
+      frequency_value: 2,
+      frequency_unit: 'week',
+      total_visits: 6,
+      next_phases: [{ visits_per_period: 1, frequency_value: 1, frequency_unit: 'month', total_visits: null }],
+      visit_markers: [{ at: 6, every: null }],
+      payment_kind: 'membership',
+      is_maintenance: true,
+    })
+    const c = maintenanceConfig({ maintenance_frequency_value: 3, maintenance_frequency_unit: 'week', maintenance_discharge_recall_months: 6 }, tpl)
+    expect(maintenancePreset(c)).toEqual({ visits_per_period: 1, frequency_value: 2, frequency_unit: 'week', total_visits: 6 })
+    expect(c.name).toBe('Bienestar')
+    expect(c.next_phases).toHaveLength(1)
+    expect(c.visit_markers).toHaveLength(1)
+    // Discharge and the habits pack stay the account's.
     expect(c.dischargeRecallMonths).toBe(6)
   })
 })

@@ -3370,6 +3370,65 @@ export type Database = {
           },
         ]
       }
+      care_plan_templates: {
+        Row: {
+          account_id: string
+          created_at: string
+          frequency_unit: string
+          frequency_value: number
+          id: string
+          is_maintenance: boolean
+          name: string
+          next_phases: Json
+          payment_kind: string
+          sort_order: number
+          total_visits: number | null
+          updated_at: string
+          visit_markers: Json
+          visits_per_period: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          frequency_unit?: string
+          frequency_value?: number
+          id?: string
+          is_maintenance?: boolean
+          name: string
+          next_phases?: Json
+          payment_kind?: string
+          sort_order?: number
+          total_visits?: number | null
+          updated_at?: string
+          visit_markers?: Json
+          visits_per_period?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          frequency_unit?: string
+          frequency_value?: number
+          id?: string
+          is_maintenance?: boolean
+          name?: string
+          next_phases?: Json
+          payment_kind?: string
+          sort_order?: number
+          total_visits?: number | null
+          updated_at?: string
+          visit_markers?: Json
+          visits_per_period?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "care_plan_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       care_plans: {
         Row: {
           account_id: string

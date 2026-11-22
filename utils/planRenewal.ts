@@ -1,13 +1,18 @@
 import type { PlanCadence } from './carePlanCadence'
+import type { CarePlanNextPhase } from './carePlanPhases'
+import type { CarePlanTemplate } from './carePlanTemplates'
+import type { CarePlanVisitMarker } from './carePlanVisitMarkers'
 
 // The review at the end of a care plan ("Revisión"): when a plan has this
 // many visits or fewer left, the visit is flagged on My Day and in the staff
 // app, and the practitioner is offered what comes next. Shared by web and app.
 //
-// What comes next is the clinic's own (Settings > Care plans,
-// 20261105163000_clinic_maintenance): "keep coming" proposes its maintenance
-// cadence and length, and discharge brings the patient back into Recalls
-// after its months. A plan with no end (total_visits null) is never flagged.
+// What comes next is the clinic's own (Settings > Care plans): "keep coming"
+// proposes its maintenance template (care_plan_templates.is_maintenance) --
+// or, for a clinic with none, the cadence on accounts that came before it
+// (20261105163000_clinic_maintenance) -- and discharge brings the patient
+// back into Recalls after its months. A plan with no end (total_visits null)
+// is never flagged.
 
 /** Flag the plan once this many attended visits (or fewer) remain. */
 export const RENEWAL_DUE_REMAINING = 2
@@ -31,6 +36,11 @@ export interface PlanShape extends PlanCadence {
 }
 
 export interface MaintenanceConfig extends PlanShape {
+  /** The maintenance template's name; null when there is none and the account's cadence stands in. */
+  name: string | null
+  /** The template's phases after the first and its re-exam visits, copied into the plan as they are. */
+  next_phases: CarePlanNextPhase[]
+  visit_markers: CarePlanVisitMarker[]
   membershipId: string | null
   dischargeRecallMonths: number
   habitsArticleIds: string[]
@@ -54,13 +64,34 @@ export interface MaintenanceRow {
   maintenance_habits_on_discharge?: boolean | null
 }
 
-/** The account's maintenance, with the migration's defaults for anything missing: one visit a month, no end, back in Recalls after three months. */
-export function maintenanceConfig(row: MaintenanceRow | null | undefined): MaintenanceConfig {
+/**
+ * The clinic's maintenance: its maintenance template's cadence, length,
+ * phases and re-exams when it has one, else the account's own cadence; with
+ * the migration's defaults for anything missing -- one visit a month, no
+ * end, back in Recalls after three months.
+ */
+export function maintenanceConfig(row: MaintenanceRow | null | undefined, template?: CarePlanTemplate | null): MaintenanceConfig {
+  const shape: PlanShape & Pick<MaintenanceConfig, 'name' | 'next_phases' | 'visit_markers'> = template
+    ? {
+        visits_per_period: template.visits_per_period,
+        frequency_value: template.frequency_value,
+        frequency_unit: template.frequency_unit,
+        total_visits: template.total_visits,
+        name: template.name.trim() || null,
+        next_phases: template.total_visits === null ? [] : template.next_phases,
+        visit_markers: template.visit_markers,
+      }
+    : {
+        visits_per_period: row?.maintenance_visits_per_period ?? 1,
+        frequency_value: row?.maintenance_frequency_value ?? 1,
+        frequency_unit: row?.maintenance_frequency_unit === 'week' ? 'week' : 'month',
+        total_visits: row?.maintenance_total_visits ?? null,
+        name: null,
+        next_phases: [],
+        visit_markers: [],
+      }
   return {
-    visits_per_period: row?.maintenance_visits_per_period ?? 1,
-    frequency_value: row?.maintenance_frequency_value ?? 1,
-    frequency_unit: row?.maintenance_frequency_unit === 'week' ? 'week' : 'month',
-    total_visits: row?.maintenance_total_visits ?? null,
+    ...shape,
     membershipId: row?.maintenance_membership_id ?? null,
     dischargeRecallMonths: row?.maintenance_discharge_recall_months ?? 3,
     habitsArticleIds: row?.maintenance_habits_article_ids ?? [],

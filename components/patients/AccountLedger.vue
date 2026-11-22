@@ -1167,7 +1167,7 @@ const fieldId = useId()
                         <button v-else type="button" role="menuitem" :disabled="a.disabled" :class="menuItemClass(a)" @click="runMenuAction(a)">
                           <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
                           <span>{{ a.label }}</span>
-                          <span v-if="a.amount" class="ml-auto font-mono text-[12px] opacity-80">{{ a.amount }}</span>
+                          <span v-if="a.amount" class="ml-auto font-mono text-[12px] opacity-80">{{ ` ${a.amount}` }}</span>
                         </button>
                       </template>
                     </template>
@@ -1196,7 +1196,12 @@ const fieldId = useId()
                           <button v-else type="button" :disabled="a.disabled" :data-cy="a.dataCy" :class="actionButtonClass(a)" @click="a.run?.()">
                             <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
                             <span>{{ a.label }}</span>
-                            <span v-if="a.amount" class="font-mono text-[12px]"> {{ a.amount }}</span>
+                            <!-- The space is inside the expression on purpose: a
+                                 leading literal space here is trimmed by the
+                                 template compiler, and the button's text then
+                                 reads "Refund…45,00 €" to a screen reader and
+                                 to anything matching on it. -->
+                            <span v-if="a.amount" class="font-mono text-[12px]">{{ ` ${a.amount}` }}</span>
                           </button>
                         </template>
                       </div>

@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
   for (const job of jobs ?? []) {
     if (job.slices >= MAX_SLICES) {
       await admin.from('import_jobs').update({ status: 'failed', error: 'Stopped after too many slices.', finished_at: now }).eq('id', job.id)
-      await notifyImportJobFinished(admin, job.id).catch(() => {})
+      await notifyImportJobFinished(admin, job.id).catch((e) => console.error(`[import-jobs-cron] ${job.id} finished email:`, e))
       given_up.push(job.id)
       continue
     }
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const { data: unsent } = await admin.from('import_jobs').select('id').in('status', ['done', 'failed']).is('notified_at', null).limit(10)
-  for (const j of unsent ?? []) await notifyImportJobFinished(admin, j.id).catch(() => {})
+  for (const j of unsent ?? []) await notifyImportJobFinished(admin, j.id).catch((e) => console.error(`[import-jobs-cron] ${j.id} finished email:`, e))
 
   const cutoff = new Date(Date.now() - STALE_COPY_DAYS * 86_400_000).toISOString()
   const { data: stale } = await admin.from('import_snapshots').select('account_id, source').eq('key', 'meta').lt('updated_at', cutoff).limit(50)

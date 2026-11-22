@@ -422,8 +422,8 @@ const summary = computed(() => {
           <p class="mt-1.5 text-[12.5px] leading-[1.5] text-ink-muted">
             {{
               t(
-                'Answers your WhatsApp: replies to patients and new enquiries, offers free times and books them. 1,000 replies a month included; each further 1,000 is €15 + IVA.',
-                'Contesta tu WhatsApp: responde a pacientes y nuevas consultas, ofrece huecos libres y los reserva. Incluye 1.000 respuestas al mes; cada 1.000 más, 15 € + IVA.',
+                'Answers your WhatsApp: replies to patients and new enquiries, offers free times and books them. 1,000 replies a month included; past them, €19 + IVA per 1,000, only the ones used.',
+                'Contesta tu WhatsApp: responde a pacientes y nuevas consultas, ofrece huecos libres y los reserva. Incluye 1.000 respuestas al mes; las de más, a 19 € + IVA cada 1.000, solo las que se usen.',
               )
             }}
             <template v-if="receptionistIncluded">

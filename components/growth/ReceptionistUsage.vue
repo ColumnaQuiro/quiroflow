@@ -5,7 +5,8 @@ import {
   RECEPTIONIST_BLOCK_REPLIES,
   RECEPTIONIST_INCLUDED_REPLIES,
   receptionistAllowanceLevel,
-  receptionistExtraBlocks,
+  receptionistExtraCents,
+  receptionistExtraReplies,
   receptionistLimitReached,
 } from '~/utils/receptionistAllowance'
 
@@ -31,7 +32,8 @@ const t = useT()
 const level = computed(() => receptionistAllowanceLevel(props.replies))
 const pct = computed(() => Math.min(100, Math.round((props.replies / RECEPTIONIST_INCLUDED_REPLIES) * 100)))
 const barTone = computed(() => (level.value === 'over' ? 'bg-danger-text' : level.value === 'near' ? 'bg-warning-accent' : 'bg-brand'))
-const blocks = computed(() => receptionistExtraBlocks(props.replies))
+const extra = computed(() => receptionistExtraReplies(props.replies))
+const extraCost = computed(() => formatEur(receptionistExtraCents(props.replies)))
 const stopped = computed(() => receptionistLimitReached(props.replies, props.limit))
 const trialPct = computed(() => (props.trial ? Math.min(100, Math.round((props.trial.used / props.trial.limit) * 100)) : 0))
 const trialUsedUp = computed(() => !!props.trial && props.trial.used >= props.trial.limit)
@@ -95,20 +97,20 @@ function saveLimit() {
       not the invoice. -->
       <p v-if="level === 'near'" class="mt-2 rounded-ctl border border-warning-border bg-warning-bg px-2.5 py-1.5 text-[11.5px] text-warning-text" data-test="usage-near">
         {{ t(
-          `Most of this month's ${included} included replies are used. Past them, each further ${block} is ${blockPrice} + IVA.`,
-          `Ya se ha usado la mayor parte de las ${included} respuestas incluidas este mes. A partir de ahí, cada ${block} más son ${blockPrice} + IVA.`,
+          `Most of this month's ${included} included replies are used. Past them, each reply is charged at ${blockPrice} + IVA per ${block}, only the ones used.`,
+          `Ya se ha usado la mayor parte de las ${included} respuestas incluidas este mes. A partir de ahí, cada respuesta se cobra a ${blockPrice} + IVA cada ${block}, solo las que se usen.`,
         ) }}
       </p>
       <p v-else-if="level === 'over'" class="mt-2 rounded-ctl border border-danger-border bg-danger-bg px-2.5 py-1.5 text-[11.5px] text-danger-text" data-test="usage-over">
         {{ t(
-          `The ${included} included replies are used. ${blocks} extra block${blocks === 1 ? '' : 's'} of ${block} so far this month, ${blockPrice} + IVA each, charged at the start of next month.`,
-          `Se han usado las ${included} respuestas incluidas. Este mes van ${blocks} ${blocks === 1 ? 'bloque extra' : 'bloques extra'} de ${block}, a ${blockPrice} + IVA cada uno, que se cobran a principios del mes que viene.`,
+          `The ${included} included replies are used. ${extra.toLocaleString('es-ES')} extra so far this month: ${extraCost} + IVA, charged on your next invoice.`,
+          `Se han usado las ${included} respuestas incluidas. Este mes van ${extra.toLocaleString('es-ES')} de más: ${extraCost} + IVA, que se cobran en la próxima factura.`,
         ) }}
       </p>
       <p v-else class="mt-2 text-[11px] leading-[1.5] text-ink-muted">
         {{ t(
-          `Every reply it writes counts, sent or left as a draft. ${included} a month are included; each further ${block} is ${blockPrice} + IVA.`,
-          `Cuenta cada respuesta que escribe, enviada o como borrador. Incluye ${included} al mes; cada ${block} más son ${blockPrice} + IVA.`,
+          `Every reply it writes counts, sent or left as a draft. ${included} a month are included; past them, ${blockPrice} + IVA per ${block}, only the ones used.`,
+          `Cuenta cada respuesta que escribe, enviada o como borrador. Incluye ${included} al mes; las de más, a ${blockPrice} + IVA cada ${block}, solo las que se usen.`,
         ) }}
       </p>
     </div>

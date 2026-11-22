@@ -329,7 +329,7 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="receptionist-included-by"]').should('contain', 'Included in Growth').and('have.attr', 'href', '/subscription')
   })
 
-  // 1,000 replies a month are included and each further 1,000 is charged,
+  // 1,000 replies a month are included and each reply past them is charged,
   // so the clinic is shown the count, warned from 80%, and can set a ceiling.
   it('shows this month\'s replies, warns near the allowance, and stops at the clinic\'s limit', () => {
     cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 850 })
@@ -346,7 +346,7 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="usage-limit"]').should('have.value', '500')
   })
 
-  // Past 1,000 a month each further 1,000 is charged on the 1st -- but never
+  // Past 1,000 a month the extra replies are charged on the 1st -- but never
   // to an account with nothing to charge it to. A seeded account has no
   // Stripe customer, so it is counted and skipped, and no charge is claimed.
   it('skips the monthly charge for an account with no Stripe customer', () => {

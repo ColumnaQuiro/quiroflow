@@ -20,7 +20,7 @@ describe('Deleting a receipt', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
             openReceiptRow('INV-DEL-1')
-            cy.contains('a', 'Open receipt').parent().find('button[aria-label="Delete receipt"]').click()
+            cy.get('[data-cy=ledger-row-detail]').contains('button', 'Delete receipt').click()
 
             cy.contains('has payments recorded against it').should('be.visible')
             cy.get('[data-cy=confirm-dialog]').should('not.exist')
@@ -41,7 +41,7 @@ describe('Deleting a receipt', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
           openReceiptRow('INV-DEL-2')
-          cy.contains('a', 'Open receipt').parent().find('button[aria-label="Delete receipt"]').click()
+          cy.get('[data-cy=ledger-row-detail]').contains('button', 'Delete receipt').click()
 
           cy.get('[data-cy=confirm-dialog]').should('contain.text', 'INV-DEL-2').and('contain.text', 'It has no payments').and('not.contain.text', 'removes any payments')
           cy.get('[data-cy=confirm-dialog-confirm]').click()

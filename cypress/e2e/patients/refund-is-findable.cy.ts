@@ -42,20 +42,26 @@ describe('Finding the refund', () => {
       // now, so the row starts off-screen at 900px. Only the VERTICAL
       // position changes -- the two horizontal measurements below are
       // viewport-relative and still mean exactly what they meant.
-      cy.contains('tr', 'Receipt').scrollIntoView().should('be.visible').find('button').contains('Refund…').should('be.visible')
+      //
+      // Every row carries its actions button, and Refund is one click into it:
+      // the collapsed row is where a refund is looked for.
+      cy.contains('tr', 'Receipt').scrollIntoView().should('be.visible').find('[data-cy=ledger-row-actions]').as('actions').should('be.visible')
 
-      // Visible in the sense that matters: the action column is the eighth in
-      // a table that was already using the full width, so "renders" is not the
+      // Visible in the sense that matters: the action column is the last in a
+      // table that was already using the full width, so "renders" is not the
       // same as "can be seen". be.visible would not catch it being pushed off
       // the side, and the whole change is worthless if it is.
       cy.document().then((doc) => {
         expect(doc.documentElement.scrollWidth, 'the ledger did not widen the page').to.be.at.most(doc.documentElement.clientWidth + 1)
       })
-      cy.contains('button', 'Refund…').then(($b) => {
+      cy.get('@actions').then(($b) => {
         const box = $b[0].getBoundingClientRect()
         expect(box.width, 'the button has been laid out').to.be.greaterThan(0)
         expect(box.right, 'and sits inside the viewport').to.be.at.most(Cypress.config('viewportWidth'))
       })
+      cy.get('@actions').click()
+      cy.get('[role=menu]').contains('[role=menuitem]', 'Refund…').should('be.visible').click()
+      cy.contains('Reason (optional)').should('be.visible')
     })
   })
 

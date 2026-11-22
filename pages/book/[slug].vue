@@ -3,7 +3,7 @@ import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
-import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel } from '~/utils/bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, type OnlineBookingWindows } from '~/utils/bookingSlots'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { BOOKING_LANGUAGES, bookingLanguageFromAcceptLanguage, bookingLanguageFromList, bookingLanguageOfTag, type BookingLanguage } from '~/utils/bookingLanguage'
 
@@ -188,6 +188,11 @@ const summaryDescription = computed(() =>
 // The week each practitioner works at a location, for those who have one
 // per location (get_practitioner_location_hours). Empty for everybody else.
 const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+// The times each type can be booked online, for types that have them
+// (get_appointment_type_booking_windows). A type missing here is offered
+// whenever its practitioner is free.
+const typeWindows = ref<Record<string, OnlineBookingWindows>>({})
+const typeWindowsFor = (memberId: string | null | undefined) => ({ windows: typeWindows.value[appointmentTypeId.value] ?? null, practitionerId: memberId })
 // Everybody on the page, with the hours they work at the clinic chosen
 // (practitionerHoursAt). Somebody at the clinic all week and at a second
 // location two evenings was offered at that second location all week: their
@@ -684,9 +689,9 @@ function dayHasHours(date: Date) {
   if (!hours) return false
   const key = calendarDateKey(date)
   if (anyPractitionerMode.value) {
-    return availablePractitioners.value.some((m) => bookingWindowsFor(key, hours, m.business_hours).length > 0)
+    return availablePractitioners.value.some((m) => bookingWindowsFor(key, hours, m.business_hours, typeWindowsFor(m.id)).length > 0)
   }
-  return bookingWindowsFor(key, hours, teamMember.value?.business_hours).length > 0
+  return bookingWindowsFor(key, hours, teamMember.value?.business_hours, typeWindowsFor(teamMemberId.value)).length > 0
 }
 
 function prevMonth() {
@@ -754,6 +759,7 @@ interface DaySlot {
 // -- utils/bookingSlots.ts, shared with the patient app.
 function slotsForMember(
   date: Date,
+  memberId: string,
   memberBusinessHours: Record<string, [string, string][]> | null | undefined,
   busy: { starts_at: string; ends_at: string }[],
 ): Date[] {
@@ -765,6 +771,8 @@ function slotsForMember(
     durationMinutes: effectiveDurationMinutes.value,
     busy,
     notAfter: latestStart.value,
+    // Only at the times the type is booked online, when it has them.
+    type: typeWindowsFor(memberId),
   })
 }
 
@@ -777,11 +785,11 @@ function dayHasAvailability(date: Date): boolean {
   if (anyPractitionerMode.value) {
     return availablePractitioners.value.some((m) => {
       const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
-      return slotsForMember(date, m.business_hours, busy).length > 0
+      return slotsForMember(date, m.id, m.business_hours, busy).length > 0
     })
   }
   const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
-  return slotsForMember(date, teamMember.value?.business_hours, busy).length > 0
+  return slotsForMember(date, teamMemberId.value, teamMember.value?.business_hours, busy).length > 0
 }
 
 const daySlots = computed<DaySlot[]>(() => {
@@ -795,7 +803,7 @@ const daySlots = computed<DaySlot[]>(() => {
     const merged = new Map<number, string>()
     for (const m of availablePractitioners.value) {
       const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
-      const times = slotsForMember(date, m.business_hours, busy)
+      const times = slotsForMember(date, m.id, m.business_hours, busy)
       for (const time of times) {
         if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
       }
@@ -804,7 +812,7 @@ const daySlots = computed<DaySlot[]>(() => {
   }
 
   const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
-  const times = slotsForMember(date, teamMember.value?.business_hours, busy)
+  const times = slotsForMember(date, teamMemberId.value, teamMember.value?.business_hours, busy)
   return times.map((time) => ({ time, memberId: teamMemberId.value }))
 })
 
@@ -1143,7 +1151,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1180,13 +1188,21 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
   // can have a week per location, and this is one more round trip. If it
   // fails the page offers their one week as before, and
   // assert_booking_slot_open still refuses a time they are not there.
-  let perLocation: typeof locationHours.value = []
+  //
+  // The types' online windows likewise: if that read fails the page offers
+  // every free time, and assert_booking_type_window refuses the ones outside
+  // a window -- a wasted form, never a booking at the wrong time.
   const shared = parsed.team_members.filter((m) => m.clinic_ids.length > 1).map((m) => m.id)
-  if (shared.length) {
-    const { data } = await supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never)
-    perLocation = (data as unknown as typeof locationHours.value | null) ?? []
-  }
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation }
+  const typeIds = parsed.appointment_types.map((t) => t.id)
+  const [perLocation, windows] = await Promise.all([
+    shared.length
+      ? supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never).then(({ data }) => (data as unknown as typeof locationHours.value | null) ?? [])
+      : Promise.resolve([] as typeof locationHours.value),
+    typeIds.length
+      ? supabase.rpc('get_appointment_type_booking_windows', { p_type_ids: typeIds }).then(({ data }) => Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_booking_windows as OnlineBookingWindows])))
+      : Promise.resolve({} as typeof typeWindows.value),
+  ])
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows }
 })
 
 if (import.meta.server) {
@@ -1210,6 +1226,7 @@ function applyBooking(payload: BookingPayload | null) {
   const parsed = payload.info
   info.value = parsed
   locationHours.value = payload.locationHours ?? []
+  typeWindows.value = payload.typeWindows ?? {}
   // The embedding site's language, now that the clinic's settings say
   // whether to follow it. Here so that the server's HTML is in it already.
   if (!queryLang && siteLang && parsed.account.online_booking_hide_language_picker) lang.value = siteLang

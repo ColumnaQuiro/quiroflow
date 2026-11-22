@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bookingSlotsForDay, calendarDateKey, clinicHourOf, clinicTimeLabel, staffDayTimes, weekdayKeyOf } from '../../utils/bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, intersectWindows, staffDayTimes, typeWindowsOn, weekdayKeyOf } from '../../utils/bookingSlots'
 import { clinicDateOf, wallClockToUtc } from '../../utils/clinicClock'
 
 // The slots the booking page and the patient app offer (utils/bookingSlots.ts).
@@ -111,5 +111,67 @@ describe('Every time of the day, for staff', () => {
   it('leaves out times already past', () => {
     const notBefore = new Date(wallClockToUtc('2026-10-05', '10:30', 'Europe/Madrid'))
     expect(label(staffDayTimes({ ...base, date: '2026-10-05', notBefore, latest: '12:00' }))).toEqual(['11:00 free'])
+  })
+})
+
+// An appointment type booked online only at set times
+// (appointment_types.online_booking_windows, 20261122184746), as PracticeHub's
+// "special" slots: a first assessment offered on Tuesdays at 10:00 and never in
+// the rest of the morning.
+describe("A type's online booking windows", () => {
+  const allWeek = { mon: [['09:00', '14:00']], tue: [['09:00', '14:00']], wed: [['09:00', '14:00']], thu: [['09:00', '14:00']], fri: [['09:00', '14:00']], sat: [], sun: [] } as Record<string, [string, string][]>
+  const base = { timeZone: 'Europe/Madrid', clinicHours: allWeek, practitionerHours: null, durationMinutes: 30, busy: [], notBefore: new Date('2020-01-01T00:00:00Z') }
+  const labels = (d: Date[]) => d.map((x) => clinicTimeLabel(x, 'Europe/Madrid'))
+  // Tuesday 6 Oct 2026; Wednesday 7 Oct.
+  const tue = '2026-10-06'
+  const wed = '2026-10-07'
+
+  it('with none, offers the type whenever the practitioner is free, as before', () => {
+    expect(labels(bookingSlotsForDay({ ...base, date: tue, type: { windows: null, practitionerId: 'a' } }))).toHaveLength(10)
+    expect(typeWindowsOn(null, 'tue', 'a')).toBeNull()
+  })
+
+  it('offers it only inside its windows, and not on a day without one', () => {
+    const windows = { all: { tue: [['10:00', '10:30'], ['12:00', '13:00']] as [string, string][] } }
+    expect(labels(bookingSlotsForDay({ ...base, date: tue, type: { windows, practitionerId: 'a' } }))).toEqual(['10:00', '12:00', '12:30'])
+    expect(bookingSlotsForDay({ ...base, date: wed, type: { windows, practitionerId: 'a' } })).toEqual([])
+  })
+
+  it('steps from the start of the window, so a window off the hourly grid still takes its visit', () => {
+    const windows = { all: { tue: [['10:15', '11:00']] as [string, string][] } }
+    expect(labels(bookingSlotsForDay({ ...base, date: tue, durationMinutes: 45, type: { windows, practitionerId: 'a' } }))).toEqual(['10:15'])
+  })
+
+  it('is only where the practitioner also works: a window is not an opening time', () => {
+    const windows = { all: { tue: [['13:30', '15:00']] as [string, string][] } }
+    expect(labels(bookingSlotsForDay({ ...base, date: tue, type: { windows, practitionerId: 'a' } }))).toEqual(['13:30'])
+  })
+
+  it("uses a practitioner's own week in place of everyone's", () => {
+    const windows = { all: { tue: [['10:00', '10:30']] as [string, string][] }, practitioners: { b: { wed: [['09:00', '09:30']] as [string, string][] } } }
+    expect(labels(bookingSlotsForDay({ ...base, date: tue, type: { windows, practitionerId: 'a' } }))).toEqual(['10:00'])
+    expect(bookingSlotsForDay({ ...base, date: tue, type: { windows, practitionerId: 'b' } })).toEqual([])
+    expect(labels(bookingSlotsForDay({ ...base, date: wed, type: { windows, practitionerId: 'b' } }))).toEqual(['09:00'])
+  })
+
+  it('narrows the days a calendar marks as bookable', () => {
+    const windows = { all: { tue: [['10:00', '10:30']] as [string, string][] } }
+    expect(bookingWindowsFor(tue, allWeek, null, { windows, practitionerId: 'a' })).toEqual([['10:00', '10:30']])
+    expect(bookingWindowsFor(wed, allWeek, null, { windows, practitionerId: 'a' })).toEqual([])
+    expect(bookingWindowsFor(wed, allWeek, null)).toEqual([['09:00', '14:00']])
+  })
+
+  it('never narrows what staff can book', () => {
+    const windows = { all: { tue: [['10:00', '10:30']] as [string, string][] } }
+    const times = staffDayTimes({ ...base, date: tue, type: { windows, practitionerId: 'a' } })
+    expect(times.filter((x) => x.state === 'free').map((x) => clinicTimeLabel(x.at, 'Europe/Madrid'))).toContain('09:00')
+  })
+
+  it('intersects windows in order', () => {
+    expect(intersectWindows([['09:00', '14:00'], ['16:00', '20:00']], [['13:00', '17:00'], ['08:00', '09:30']])).toEqual([
+      ['09:00', '09:30'],
+      ['13:00', '14:00'],
+      ['16:00', '17:00'],
+    ])
   })
 })

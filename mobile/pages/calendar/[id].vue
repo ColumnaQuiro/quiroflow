@@ -342,6 +342,7 @@ const {
   paymentRows,
   paymentTotalCents,
   init: initCharging,
+  loadAppointmentTiming,
   loadInvoice,
   chargeVisit,
   visitMissing,
@@ -426,6 +427,16 @@ function bonoRateLabel(p: { price_cents: number; sessions_total: number; charged
 // selected, and "Process" does it. Nothing is written until it is pressed.
 // The billing card further down stays for a part payment or a split.
 const chargingReady = ref(false)
+// Whether the visit is still "upcoming" is read when charging is set up.
+// Checking in early -- or undoing the arrival, or moving the appointment --
+// changes the answer without leaving this screen, and the checkout stayed
+// hidden until the appointment was opened again. Read it again when they move.
+watch(
+  () => [appointment.value?.checked_in_at ?? null, appointment.value?.starts_at ?? null],
+  () => {
+    if (chargingReady.value) void loadAppointmentTiming()
+  },
+)
 const processing = ref(false)
 const checkoutMethod = ref('cash')
 // A receipt missing the visit itself (raised while its type cost 0 €) gets the

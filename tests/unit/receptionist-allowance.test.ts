@@ -1,20 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { RECEPTIONIST_TRIAL_REPLIES, monthNameEs, previousMonthStart, receptionistAllowanceLevel, receptionistExtraBlocks, receptionistLimitReached, receptionistOnTrialAllowance } from '../../utils/receptionistAllowance'
+import { RECEPTIONIST_TRIAL_REPLIES, monthNameEs, previousMonthStart, receptionistAllowanceLevel, receptionistExtraCents, receptionistExtraReplies, receptionistLimitReached, receptionistOnTrialAllowance, receptionistOverageGoesOnPlanInvoice } from '../../utils/receptionistAllowance'
 
 // What the receptionist's price includes (1,000 replies a month) and what is
-// charged past it (EUR 15 per further 1,000, a part block counting whole).
+// charged past it (EUR 19 per 1,000, pro rata: only the replies used).
 // The usage card and the monthly charge both read these, so they are pinned.
 
-describe('Extra blocks past the included replies', () => {
+describe('Replies past the included ones', () => {
   it('charges nothing up to and including the 1,000th reply', () => {
-    expect(receptionistExtraBlocks(0)).toBe(0)
-    expect(receptionistExtraBlocks(1000)).toBe(0)
+    expect(receptionistExtraReplies(0)).toBe(0)
+    expect(receptionistExtraReplies(1000)).toBe(0)
+    expect(receptionistExtraCents(1000)).toBe(0)
   })
 
-  it('counts a part block as a whole one', () => {
-    expect(receptionistExtraBlocks(1001)).toBe(1)
-    expect(receptionistExtraBlocks(2000)).toBe(1)
-    expect(receptionistExtraBlocks(2001)).toBe(2)
+  it('charges each extra reply at EUR 19 per 1,000, not a whole block', () => {
+    expect(receptionistExtraReplies(1300)).toBe(300)
+    expect(receptionistExtraCents(1300)).toBe(570)
+    expect(receptionistExtraCents(2000)).toBe(1900)
+    expect(receptionistExtraCents(3500)).toBe(4750)
+  })
+
+  it('rounds the total to the cent once, not each reply', () => {
+    // One reply is 1.9 cents: rounded per reply, 10 would be 20 cents.
+    expect(receptionistExtraCents(1001)).toBe(2)
+    expect(receptionistExtraCents(1010)).toBe(19)
+    expect(receptionistExtraCents(1033)).toBe(63)
+  })
+})
+
+describe('Where the extra replies are charged', () => {
+  const monthly = { status: 'active', items: { data: [{ price: { recurring: { interval: 'month' } } }] } }
+
+  it('on the next invoice of a monthly plan that will renew', () => {
+    expect(receptionistOverageGoesOnPlanInvoice(monthly)).toBe(true)
+  })
+
+  it('on an invoice of its own when the plan has no near next invoice', () => {
+    expect(receptionistOverageGoesOnPlanInvoice({ ...monthly, items: { data: [{ price: { recurring: { interval: 'year' } } }] } })).toBe(false)
+    expect(receptionistOverageGoesOnPlanInvoice({ ...monthly, cancel_at_period_end: true })).toBe(false)
+    expect(receptionistOverageGoesOnPlanInvoice({ ...monthly, cancel_at: 1798761600 })).toBe(false)
+    expect(receptionistOverageGoesOnPlanInvoice({ ...monthly, status: 'past_due' })).toBe(false)
+    expect(receptionistOverageGoesOnPlanInvoice({ ...monthly, items: { data: [] } })).toBe(false)
+    expect(receptionistOverageGoesOnPlanInvoice(null)).toBe(false)
   })
 })
 

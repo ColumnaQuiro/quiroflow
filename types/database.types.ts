@@ -8276,6 +8276,7 @@ export type Database = {
           month: string
           replies: number
           stripe_invoice_id: string | null
+          stripe_invoice_item_id: string | null
         }
         Insert: {
           account_id: string
@@ -8285,6 +8286,7 @@ export type Database = {
           month: string
           replies: number
           stripe_invoice_id?: string | null
+          stripe_invoice_item_id?: string | null
         }
         Update: {
           account_id?: string
@@ -8294,6 +8296,7 @@ export type Database = {
           month?: string
           replies?: number
           stripe_invoice_id?: string | null
+          stripe_invoice_item_id?: string | null
         }
         Relationships: [
           {

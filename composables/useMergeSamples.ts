@@ -1,27 +1,11 @@
 import { EMAIL_MERGE_FIELDS, say } from '~/utils/automationCatalog'
+import { MERGE_FIELD_SAMPLES } from '~/utils/mergeFieldSamples'
 
 // The example patient every email preview is filled with, and the merge
 // fields an email step offers, in one place for the step's drawer and the
-// full-screen email editor. The real values arrive per patient at send time.
-
-const SAMPLE: Record<string, string> = {
-  first_name: 'Lucía',
-  last_name: 'García',
-  email: 'lucia@ejemplo.com',
-  next_appointment: 'jueves 16 de octubre, 10:00',
-  appointment_date: 'jueves 16 de octubre',
-  appointment_time: '10:00',
-  google_review_link: 'https://g.page/r/ejemplo/review',
-  satisfaction_link: 'https://app.quiroflow.com/valorar/ejemplo',
-  waitlist_claim_link: 'https://app.quiroflow.com/w/ejemplo',
-  waitlist_slot_datetime: 'viernes 17, 18:30',
-  invoice_number: 'F-2026-0142',
-  invoice_amount_owed: '45,00 €',
-  invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
-  practitioner_first_name: 'Ana',
-  last_visit_month: 'julio',
-  referred_first_name: 'Marta',
-}
+// full-screen email editor. The real values arrive per patient at send time;
+// the examples themselves live in utils/mergeFieldSamples.ts, shared with
+// "Send test to me".
 
 const escapeHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -40,10 +24,9 @@ export function useMergeSamples() {
 
   function sample(key: string): string {
     if (key === 'clinic_name') return clinicName.value
-    if (key === 'clinic_phone') return '+34 600 000 000'
     if (key === 'clinic_address') return store.currentClinic?.address ?? ''
     if (key === 'booking_link') return bookingUrl.value
-    return SAMPLE[key] ?? `[${key}]`
+    return MERGE_FIELD_SAMPLES[key] ?? `[${key}]`
   }
   /** Merge fields filled with the example, the values escaped as the send escapes them. */
   const fillHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, k: string) => escapeHtml(sample(k)))

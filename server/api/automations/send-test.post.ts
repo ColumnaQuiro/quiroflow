@@ -21,6 +21,10 @@ import { toE164 } from '~/utils/phone'
 // still fail its patient_docs insert (patient_id has a real FK to patients)
 // and be swallowed by runActionsList's per-action try/catch, same as any
 // other best-effort action failure.
+//
+// Merge fields that need something a test does not have (the appointment's
+// date and time, an invoice, a review link) are sent as example values
+// rather than empty: see MergeContext.samples.
 interface SendTestBody {
   actions: { action_type: 'whatsapp_template' | 'email' | 'webhook'; config: Record<string, any> }[]
   whatsappNumber?: string
@@ -64,6 +68,11 @@ export default defineEventHandler(async (event) => {
     undefined,
     undefined,
     whatsappNumber,
+    // No appointment, invoice or visit stands behind a test, so the fields
+    // that read one would go out empty -- and Meta refuses a template with an
+    // empty parameter (#131008), failing a step that works for a real
+    // patient. They go out as the editor's example values instead.
+    { samples: true },
   )
 
   // A test that quietly sent nothing is worse than one that fails loudly:

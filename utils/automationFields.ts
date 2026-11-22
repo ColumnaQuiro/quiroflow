@@ -8,6 +8,7 @@
 // their own, so a clinic's template can say how to reach that location.
 import type { EmailTheme } from './emailDesign'
 import { earlierVisitLanguage, earlierVisitWhen } from './earlierVisitOffer'
+import { mergeFieldSample } from './mergeFieldSamples'
 
 export const DEFAULT_TIMEZONE = 'Europe/Madrid'
 
@@ -59,6 +60,14 @@ export interface MergeContext {
    * a variable of its own, keyed by answerKey(question).
    */
   leadAnswers?: LeadAnswer[]
+  /**
+   * "Send test to me": fill a field that comes out empty with its example
+   * value (utils/mergeFieldSamples.ts) instead. A test runs against the staff
+   * member, with no appointment, invoice or visit behind it, and Meta refuses
+   * a template whose parameter is empty. Never set for a real send, where an
+   * empty value is the truth and the step's own fallback decides.
+   */
+  samples?: boolean
 }
 
 export interface LeadAnswer {
@@ -166,6 +175,14 @@ export function leadAnswersFromEvents(events: { body?: unknown }[]): LeadAnswer[
 }
 
 export function automationFieldValue(recipient: MergeRecipient, source: string, context?: MergeContext): string {
+  const value = fieldValue(recipient, source, context)
+  // A lead's answer is left to withAnswerFallback: the step's own fallback
+  // ("lo que nos contaste") reads better in a test than "[answer_…]".
+  if (value || !context?.samples || source.startsWith(ANSWER_PREFIX)) return value
+  return mergeFieldSample(source, context.language)
+}
+
+function fieldValue(recipient: MergeRecipient, source: string, context?: MergeContext): string {
   const timeZone = context?.clinicTimezone || DEFAULT_TIMEZONE
   if (source === 'first_name') return recipient.firstName ?? ''
   if (source === 'last_name') return recipient.lastName ?? ''

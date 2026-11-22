@@ -46,6 +46,36 @@ describe('Automation merge fields', () => {
   })
 })
 
+describe('"Send test to me": a field with nothing behind it', () => {
+  // A test has no appointment behind it. The date and time went out empty and
+  // Meta refused the template with #131008 (22 Nov 2026).
+  it('goes out as the example value, never empty', () => {
+    expect(automationFieldValue(laura, 'appointment_date', { samples: true })).toBe('jueves 16 de octubre')
+    expect(automationFieldValue(laura, 'appointment_time', { samples: true })).toBe('10:00')
+    expect(automationFieldValue(laura, 'invoice_pay_link', { samples: true })).toMatch(/^https:\/\//)
+    expect(automationFieldValue(laura, 'something_new', { samples: true })).toBe('[something_new]')
+  })
+
+  it('in the language the template goes out in', () => {
+    expect(automationFieldValue(laura, 'appointment_date', { samples: true, language: 'en' })).toBe('Thursday 16 October')
+  })
+
+  it('keeps every real value it does have', () => {
+    expect(automationFieldValue(laura, 'first_name', { samples: true })).toBe('Laura')
+    expect(automationFieldValue(laura, 'appointment_time', { samples: true, nextAppointmentAt: at })).toBe('10:30')
+    expect(automationFieldValue(laura, 'clinic_name', { samples: true, clinicName: 'Clínica Centro' })).toBe('Clínica Centro')
+  })
+
+  it('leaves a lead answer to the step\'s own fallback', () => {
+    expect(withAnswerFallback('answer_dolor', automationFieldValue(laura, 'answer_dolor', { samples: true }), 'tu molestia')).toBe('tu molestia')
+  })
+
+  it('stays empty for a real send', () => {
+    expect(automationFieldValue(laura, 'appointment_date', {})).toBe('')
+    expect(automationFieldValue(laura, 'appointment_date')).toBe('')
+  })
+})
+
 describe('Lead form answers as merge fields', () => {
   // As /api/public/v1/leads stores a Meta lead ad's field_data: the key
   // humanised into the question, the value as the answer.

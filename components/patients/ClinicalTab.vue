@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { parseVisitNote, visitNotePreview } from '~/utils/visitNote'
+import { visitNotePreview } from '~/utils/visitNote'
 import type { Tables } from '~/types/database.types'
 
 // Everything clinical, on one surface, in the order a practitioner reads it.
@@ -133,13 +133,6 @@ function visitDate(note: NoteRow) {
 function visitType(note: NoteRow) {
   return note.appointments?.appointment_types?.name ?? null
 }
-
-const SECTION_LABELS = computed<Record<string, string>>(() => ({
-  Subjective: t('Subjective', 'Subjetivo'),
-  Objective: t('Objective', 'Objetivo'),
-  Action: t('Action', 'Acción'),
-  Plan: t('Plan', 'Plan'),
-}))
 
 // The flags are single free-text columns, so each renders as one pill
 // carrying its own text. There is no count to show and splitting the prose
@@ -284,18 +277,10 @@ function closeNotes() {
             </p>
 
             <div v-else class="mt-2">
-              <!-- Structured notes keep their structure. An unstructured one
-                   is shown as written rather than forced into headings it
-                   never had. -->
-              <dl v-if="parseVisitNote(note.body).sections.length > 0" class="space-y-2">
-                <div v-for="section in parseVisitNote(note.body).sections" :key="section.label">
-                  <dt class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ SECTION_LABELS[section.label] }}</dt>
-                  <dd class="mt-0.5 whitespace-pre-wrap text-[13.5px] text-ink-700">{{ section.text }}</dd>
-                </div>
-              </dl>
-              <p v-if="parseVisitNote(note.body).preamble" class="mt-2 whitespace-pre-wrap text-[13.5px] text-ink-700">
-                {{ parseVisitNote(note.body).preamble }}
-              </p>
+              <!-- Structured notes keep their structure, under the same
+                   headings as My Day's history. An unstructured one is shown
+                   as written rather than forced into headings it never had. -->
+              <PatientsVisitNoteSections :body="note.body" />
 
               <div class="mt-2.5 flex items-center justify-between gap-3 border-t border-line-divider pt-2">
                 <p class="min-w-0 text-[11.5px] text-ink-faint">

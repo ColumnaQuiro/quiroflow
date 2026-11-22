@@ -262,7 +262,8 @@ function bring(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note',
         </section>
       </div>
 
-      <div v-if="opened.has('history')" v-show="tab === 'history'" id="myday-panel-history" role="tabpanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
+      <!-- No card around it: each note is a card of its own. -->
+      <div v-if="opened.has('history')" v-show="tab === 'history'" id="myday-panel-history" role="tabpanel">
         <PatientsVisitNotesTab :patient-id="appointment.patient_id" />
       </div>
       <div v-if="opened.has('files')" v-show="tab === 'files'" id="myday-panel-files" role="tabpanel" class="rounded-card border border-line bg-surface p-4 shadow-card">

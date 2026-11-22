@@ -268,3 +268,30 @@ export function cancelQuestionDue(opts: { askedAt: string; visitStartsAt: string
   const asked = new Date(opts.askedAt).getTime()
   return visit > now && visit - now <= CANCEL_QUESTION_LEAD_MS && now - asked >= CANCEL_QUESTION_GRACE_MS && visit > asked
 }
+
+/**
+ * The type a time was offered as, from the conversation's recent runs
+ * (receptionist_reply_traces.tool_uses, newest run first): the latest
+ * offer_times that listed that day and time. Null when that time was never
+ * offered, or offered without a type.
+ *
+ * book_appointment holds the booking to it. A lead from WhatsApp, not from an
+ * ad, was quoted the plain first visit at 70 € and booked as the 50 € offer
+ * (10 Nov 2026): the model chose the type twice, once to offer and once to
+ * book, and the two did not agree. Offered as one type, booked as that type.
+ */
+export function offeredTypeAt(runs: { tool_uses: unknown }[], date: string, time: string): string | null {
+  for (const run of runs) {
+    const uses = Array.isArray(run.tool_uses) ? (run.tool_uses as { name?: unknown; input?: unknown }[]) : []
+    for (let i = uses.length - 1; i >= 0; i--) {
+      const use = uses[i]
+      if (use?.name !== 'offer_times') continue
+      const input = (use.input ?? {}) as { times?: unknown; appointment_type?: unknown }
+      const times = Array.isArray(input.times) ? (input.times as { date?: unknown; time?: unknown }[]) : []
+      const listed = times.some((t) => t?.date === date && typeof t?.time === 'string' && t.time.replace(/\*+$/, '') === time)
+      if (!listed) continue
+      return typeof input.appointment_type === 'string' && input.appointment_type.trim() ? input.appointment_type.trim() : null
+    }
+  }
+  return null
+}

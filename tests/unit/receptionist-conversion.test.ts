@@ -17,7 +17,7 @@ import {
   slotTitle,
 } from '../../utils/receptionistConversion'
 import { BASE_BEHAVIOUR } from '../../utils/receptionistBaseRules'
-import { chosenOfferedTime, offeredTimes, offersTimes } from '../../utils/receptionistFollowThrough'
+import { chosenOfferedTime, offeredTimes, offeredTypeAt, offersTimes } from '../../utils/receptionistFollowThrough'
 import { CANCEL_FIRST_BOOKING } from '../../utils/receptionistTypes'
 
 // Keeping a visit instead of losing it (utils/receptionistConversion.ts),
@@ -204,5 +204,29 @@ describe('the rules that go with them', () => {
   it('books a tapped time without asking again', () => {
     expect(rules).toContain('is them tapping one of the times you sent: book or move it straight away, without asking them to confirm')
     expect(rules).toContain('"Otro día" (or "Another day") is them tapping that none suits')
+  })
+})
+
+// Offered as one type, booked as that type: a lead was quoted the plain first
+// visit at 70 € and booked as the 50 € offer (10 Nov 2026).
+describe('The type a time was offered as', () => {
+  const offer = (times: { date: string; time: string }[], appointment_type?: string) => ({ name: 'offer_times', input: { times, ...(appointment_type ? { appointment_type } : {}) } })
+
+  it('is the latest offer that listed that day and time', () => {
+    const runs = [
+      { tool_uses: [offer([{ date: '2026-11-26', time: '15:00' }, { date: '2026-12-01', time: '15:00' }], 'Mantenimiento Quiropractico')] },
+      { tool_uses: [offer([{ date: '2026-12-01', time: '15:00' }], 'Primera visita')] },
+    ]
+    expect(offeredTypeAt(runs, '2026-12-01', '15:00')).toBe('Mantenimiento Quiropractico')
+  })
+
+  it('reads a time listed with its star', () => {
+    expect(offeredTypeAt([{ tool_uses: [offer([{ date: '2026-12-02', time: '15:00*' }], 'Oferta Primera visita')] }], '2026-12-02', '15:00')).toBe('Oferta Primera visita')
+  })
+
+  it('is nothing for a time never offered, or offered without a type', () => {
+    expect(offeredTypeAt([{ tool_uses: [offer([{ date: '2026-12-02', time: '15:00' }], 'Primera visita')] }], '2026-12-03', '17:00')).toBeNull()
+    expect(offeredTypeAt([{ tool_uses: [offer([{ date: '2026-12-02', time: '15:00' }])] }], '2026-12-02', '15:00')).toBeNull()
+    expect(offeredTypeAt([{ tool_uses: null }, { tool_uses: [{ name: 'find_free_times', input: {} }] }], '2026-12-02', '15:00')).toBeNull()
   })
 })

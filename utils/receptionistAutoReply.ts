@@ -242,3 +242,16 @@ const ACTING_TOOLS = ['book_appointment', 'cancel_appointment', 'give_visit_to',
 export function replyActed(toolUses: { name: string; ok: boolean }[]): boolean {
   return toolUses.some((use) => use.ok && ACTING_TOOLS.includes(use.name))
 }
+
+/** Outcomes of a receptionist run that left a draft for a person to send (server/utils/receptionistHeld.ts). */
+export const UNSENT_DRAFT_OUTCOMES = ['drafted', 'held_limit'] as const
+/** How long such a draft may sit unsent before a person is told. */
+export const UNSENT_DRAFT_MINUTES = 60
+/** Older than this, WhatsApp's 24-hour window is closing: the handover is history. */
+export const UNSENT_DRAFT_MAX_AGE_HOURS = 20
+
+/** Whether a draft written at `createdAt` has waited the hour, and is not yet too old, to hand over at `now`. */
+export function unsentDraftDue(createdAt: string, now: Date): boolean {
+  const age = now.getTime() - Date.parse(createdAt)
+  return age >= UNSENT_DRAFT_MINUTES * 60_000 && age < UNSENT_DRAFT_MAX_AGE_HOURS * 3600_000
+}

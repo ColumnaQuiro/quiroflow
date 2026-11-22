@@ -1,6 +1,6 @@
 import { announceHandover, type ReceptionistTarget } from '~/server/utils/receptionistSend'
 import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
-import { autoReplyNow, clinicOpenAt } from '~/utils/receptionistAutoReply'
+import { autoReplyNow, clinicOpenAt, UNSENT_DRAFT_MINUTES, UNSENT_DRAFT_OUTCOMES } from '~/utils/receptionistAutoReply'
 import type { BusinessHours } from '~/utils/businessHours'
 
 // A reply the receptionist held back because somebody from the clinic was in
@@ -33,11 +33,28 @@ const MAX_AGE_HOURS = 20
 /** The reason a person is given when the receptionist is not answering now. */
 export const UNANSWERED_AFTER_HOLD_REASON = 'Escribió cuando había alguien del equipo en la conversación y nadie le ha contestado después. Te he dejado un borrador: revísalo y envíaselo.'
 
+// A reply the receptionist only drafted -- the conversation was already with
+// a person, the clinic answers by hand at that hour, or the reply allowance
+// was spent -- is waiting for somebody to press send. Nothing used to tell
+// anyone it was there: on Saturday 21 Nov 2026 a new patient asked at 13:13
+// for morning times, the reply sat ready in the Inbox all weekend, and she
+// had no answer until somebody happened to open it the next morning. A
+// handover task already existed for her mother's case; it was due on a day
+// the clinic was closed, so its reminder never fired either.
+//
+// So a draft nobody has sent or put away within the hour is handed over like
+// any other unanswered message: a note, a push to the team -- whatever day it
+// is -- and a task. Once per draft (resumed_at). Never re-answered on its
+// own: whatever made it a draft still holds.
+
+/** The reason a person is given for a draft nobody has sent. */
+export const UNSENT_DRAFT_REASON = 'Tiene un mensaje sin contestar desde hace más de una hora. Te he dejado un borrador: revísalo y envíaselo, o contéstale tú.'
+
 export async function resumeHeldReplies(supabase: any, opts: { url: string; secret: string; now?: Date }): Promise<{ key: string; outcome: string }[]> {
   const now = opts.now ?? new Date()
   const { data: held, error } = await supabase
     .from('receptionist_reply_traces')
-    .select('id, account_id, conversation_key, kind, answers_through, created_at')
+    .select('id, account_id, conversation_key, kind, outcome, answers_through, created_at')
     .in('outcome', ['held_person', 'held_diary'])
     .is('resumed_at', null)
     .lte('held_until', now.toISOString())
@@ -48,7 +65,17 @@ export async function resumeHeldReplies(supabase: any, opts: { url: string; secr
     console.error('[receptionist] could not read held replies:', error.message)
     return []
   }
-  const rows = (held ?? []) as { id: string; account_id: string; conversation_key: string; kind: 'lead' | 'patient'; answers_through: string | null; created_at: string }[]
+  const { data: drafted, error: draftedError } = await supabase
+    .from('receptionist_reply_traces')
+    .select('id, account_id, conversation_key, kind, outcome, answers_through, created_at')
+    .in('outcome', [...UNSENT_DRAFT_OUTCOMES])
+    .is('resumed_at', null)
+    .lte('created_at', new Date(now.getTime() - UNSENT_DRAFT_MINUTES * 60_000).toISOString())
+    .gt('created_at', new Date(now.getTime() - MAX_AGE_HOURS * 3600_000).toISOString())
+    .order('created_at')
+    .limit(MAX_PER_TICK)
+  if (draftedError) console.error('[receptionist] could not read unsent drafts:', draftedError.message)
+  const rows = [...(held ?? []), ...(drafted ?? [])] as HeldRow[]
   if (!rows.length) return []
 
   // Only the newest held reply per conversation: an older one is answered
@@ -74,9 +101,11 @@ export async function resumeHeldReplies(supabase: any, opts: { url: string; secr
   return done
 }
 
+type HeldRow = { id: string; account_id: string; conversation_key: string; kind: 'lead' | 'patient'; outcome?: string; answers_through: string | null; created_at: string }
+
 async function resumeOne(
   supabase: any,
-  row: { id: string; account_id: string; conversation_key: string; kind: 'lead' | 'patient'; answers_through: string | null; created_at: string },
+  row: HeldRow,
   answeringNow: boolean,
   opts: { url: string; secret: string },
 ): Promise<string | null> {
@@ -135,9 +164,12 @@ async function resumeOne(
     channel = app?.created_at && (!wa?.created_at || app.created_at > wa.created_at) ? 'app' : 'whatsapp'
   }
 
+  const unsentDraft = (UNSENT_DRAFT_OUTCOMES as readonly string[]).includes(row.outcome ?? '')
+
   // Answering on its own now, and still switched on and paid for: answered
-  // again from scratch, as if they had just written.
-  if (answeringNow && (await receptionistHandlesNewLeads(supabase, row.account_id))) {
+  // again from scratch, as if they had just written. Not a draft it chose
+  // to leave: that would only be drafted again.
+  if (!unsentDraft && answeringNow && (await receptionistHandlesNewLeads(supabase, row.account_id))) {
     if (!(await settle('resent'))) return null
     const { error } = await supabase.rpc('dispatch_receptionist_reply', {
       p_url: opts.url,
@@ -155,7 +187,7 @@ async function resumeOne(
   // Not answering now: a person is told, with the draft there for them.
   if (!(await settle('handed_over'))) return null
   const target: ReceptionistTarget = leadId ? { kind: 'lead', leadId, channel } : { kind: 'patient', patientId: patientId!, channel: channel === 'app' ? 'app' : 'whatsapp' }
-  await announceHandover(supabase, row.account_id, target, name, UNANSWERED_AFTER_HOLD_REASON)
+  await announceHandover(supabase, row.account_id, target, name, unsentDraft ? UNSENT_DRAFT_REASON : UNANSWERED_AFTER_HOLD_REASON)
   return 'handed_over'
 }
 

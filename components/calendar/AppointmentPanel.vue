@@ -874,6 +874,8 @@ async function useExpectedType() {
           :appointment-type-name="appointment.appointment_types?.name"
           :appointment-type-price-cents="priceCents"
           :status="appointment.status"
+          :checked-in-at="appointment.checked_in_at"
+          :starts-at="appointment.starts_at"
           @completed="onBillingCompleted"
           @details="tab = 'billing'"
           @offered="checkoutOffered = $event"

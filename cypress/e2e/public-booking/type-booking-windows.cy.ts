@@ -65,10 +65,10 @@ describe('Online booking windows per appointment type', () => {
         cy.login(account.email, account.password)
         cy.visit(`/settings/appointment-types/${type.id}`)
         cy.get('[data-cy=type-page]').should('have.attr', 'data-ready', 'true')
-        cy.get('[data-cy=type-windows-none]').should('be.visible')
+        cy.get('[data-cy=type-windows-none]').scrollIntoView().should('be.visible')
         cy.get('[data-cy=type-windows-set]').click()
         cy.get('[data-cy=type-windows]').within(() => {
-          cy.get('[data-cy=hours-not-set]').should('be.visible')
+          cy.get('[data-cy=hours-not-set]').scrollIntoView().should('be.visible')
           // Tuesday on: the editor's default range, then narrowed to 10:00-11:00.
           cy.get('[data-cy=hours-day][data-day=tue] [data-cy=hours-day-toggle]').first().click()
           cy.get('[data-cy=hours-day][data-day=tue] [data-cy=hours-range] input[type=time]').first().invoke('val', '10:00').trigger('input')
@@ -85,7 +85,7 @@ describe('Online booking windows per appointment type', () => {
         cy.reload()
         cy.get('[data-cy=type-page]').should('have.attr', 'data-ready', 'true')
         cy.get('[data-cy=type-windows-clear]').click()
-        cy.get('[data-cy=type-windows-none]').should('be.visible')
+        cy.get('[data-cy=type-windows-none]').scrollIntoView().should('be.visible')
         cy.contains('button', 'Save').click()
         cy.contains(/^Saved$/).should('be.visible')
         cy.task<{ row: { online_booking_windows: unknown } | null }>('db:appointmentTypeRow', { id: type.id }).its('row.online_booking_windows').should('eq', null)

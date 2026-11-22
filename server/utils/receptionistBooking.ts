@@ -20,6 +20,7 @@ import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } f
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
 import { MAX_SLOTS_TO_TAP, SLOT_HOLD_MINUTES, agreedDueAt, cleanSlots, isLateNotice, lateChangeNote, lateChangeStaffNote, priorLateChanges, LATE_NOTICE_WINDOW_DAYS, type LateChangeRow, type OfferedSlot } from '~/utils/receptionistConversion'
 import { BROUGHT_RELATIONS, MINOR_AGE, REPEAT_CHANGE_LIMIT, repeatChangeRefusal, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
+import { offeredTypeAt } from '~/utils/receptionistFollowThrough'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -465,6 +466,17 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       }
     }
 
+    // A time they picked from an offer is booked as the type it was offered
+    // as (offeredTypeAt): the model chose the type twice and the two did not
+    // always agree. A move keeps the visit's own type, so it is not checked.
+    if (!moving) {
+      const offeredAs = await loadOfferedTypeAt(ctx, date, time)
+      const offeredType = offeredAs ? findTypeByName([type, ...ctx.types, ...(ctx.bringsSomeone?.types ?? []), ...(ctx.family?.forNew ?? []), ...(ctx.family?.forReturning ?? []), ...(ctx.minors?.forNewChild ?? []), ...(ctx.minors?.forReturningChild ?? [])], offeredAs) : undefined
+      if (offeredType && offeredType.id !== type.id) {
+        return { content: `${time} on ${date} was offered to them as ${offeredType.name}, and that is what they accepted, at its price. Book it as ${offeredType.name}. If it should really be ${type.name}, tell them so, with its price, and ask before booking; do not say anything is booked.`, isError: true }
+      }
+    }
+
     // Free now, and with whom: the visit's own practitioner first for a move,
     // then the patient's own, then anyone the list was built from.
     const dayStart = startOfLocalDate(date, ctx.timeZone)
@@ -660,6 +672,26 @@ function typeRefusal(allowed: OfferedType[], forWhom: string): string {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The type the conversation's latest offer of that day and time named, if any (offeredTypeAt). */
+async function loadOfferedTypeAt(ctx: BookingContext, date: string, time: string): Promise<string | null> {
+  if (!ctx.conversation) return null
+  try {
+    // Not in the generated types (receptionistTrace.ts reads it the same way).
+    const { data } = await (ctx.service as any)
+      .from('receptionist_reply_traces')
+      .select('tool_uses')
+      .eq('account_id', ctx.accountId)
+      .eq('conversation_key', ctx.conversation.key)
+      .gt('created_at', new Date(Date.now() - 14 * DAY_MS).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(10)
+    return offeredTypeAt((data ?? []) as { tool_uses: unknown }[], date, time)
+  } catch (err) {
+    console.error('[receptionist] could not read the offered times:', (err as Error)?.message ?? err)
+    return null
+  }
+}
 
 /**
  * A child the records only suggested was the writer's (loadTutorChildren),

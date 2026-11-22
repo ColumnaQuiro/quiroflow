@@ -108,8 +108,8 @@ describe('The Money tab', () => {
         // An em dash in both columns, not a blank: a blank cell reads as
         // "not filled in yet" rather than "deliberately nothing".
         cy.contains('tr', 'Visit from Bono 10').within(() => {
-          cy.get('td').eq(4).should('have.text', '—')
-          cy.get('td').eq(5).should('have.text', '—')
+          cy.get('[data-cy=ledger-debit]').should('have.text', '—')
+          cy.get('[data-cy=ledger-credit]').should('have.text', '—')
         })
         cy.contains('tr', 'Visit from Bono 10').should('contain.text', 'Paid when the bono was bought')
 

@@ -2,6 +2,7 @@
 import { carePlanCadenceLabel } from '../../utils/carePlanCadence'
 import { dischargeRecallDate, MAINTENANCE_COLUMNS, maintenanceConfig, maintenancePreset, previousCadence, renewalDue, type MaintenanceConfig, type MaintenanceRow, type PlanShape, type RenewalKind } from '../../utils/planRenewal'
 import { readInstallmentOptions } from '../../utils/bonoInstallments'
+import { CARE_PLAN_TEMPLATE_COLUMNS, readCarePlanTemplate } from '../../utils/carePlanTemplates'
 import { formatEur } from '../../utils/billing'
 
 // "Revisión": the patient's care plan is ending (utils/planRenewal.ts), so
@@ -83,14 +84,16 @@ async function load() {
       return
     }
     const ids = list.map((a) => a.id)
-    const [{ data: scores }, { data: account }] = await Promise.all([
+    const [{ data: scores }, { data: account }, { data: tpl }] = await Promise.all([
       ids.length ? supabase.from('visit_pain_scores').select('appointment_id, practitioner_score, patient_score').in('appointment_id', ids) : Promise.resolve({ data: [] }),
       supabase.from('accounts').select(MAINTENANCE_COLUMNS).eq('id', props.accountId).maybeSingle(),
+      // The clinic's maintenance template (Settings > Care plans), if it has one.
+      supabase.from('care_plan_templates').select(CARE_PLAN_TEMPLATE_COLUMNS).eq('account_id', props.accountId).eq('is_maintenance', true).maybeSingle(),
     ])
     const byAppt = new Map(((scores as { appointment_id: string; practitioner_score: number | null; patient_score: number | null }[] | null) ?? []).map((s) => [s.appointment_id, s.practitioner_score ?? s.patient_score]))
     const scored = list.map((a) => byAppt.get(a.id)).filter((v): v is number => v !== null && v !== undefined)
     pain.value = { first: scored[0] ?? null, latest: scored[scored.length - 1] ?? null }
-    config.value = maintenanceConfig(account as MaintenanceRow | null)
+    config.value = maintenanceConfig(account as MaintenanceRow | null, tpl ? readCarePlanTemplate(tpl as Record<string, unknown>) : null)
     const habitIds = config.value.habitsArticleIds
     const [pk, mem, active, arts, sentBefore] = await Promise.all([
       props.canSellBono ? supabase.from('packages').select('id, name, price_cents, session_count, installment_options').order('name') : Promise.resolve({ data: [] }),
@@ -117,7 +120,7 @@ watch(() => props.patientId, load, { immediate: true })
 
 const due = computed(() => !!plan.value && renewalDue(plan.value, done.value))
 const remaining = computed(() => (plan.value?.total_visits ? Math.max(0, plan.value.total_visits - done.value) : 0))
-const maintenanceName = computed(() => t('Maintenance', 'Mantenimiento'))
+const maintenanceName = computed(() => config.value.name ?? t('Maintenance', 'Mantenimiento'))
 function reset(k: RenewalKind) {
   kind.value = k
   shape.value = maintenancePreset(config.value)
@@ -133,6 +136,7 @@ function choose(k: RenewalKind) {
 // back again to the clinic's maintenance.
 const previous = computed(() => (plan.value ? previousCadence(plan.value, shape.value.total_visits) : null))
 const sameCadence = (a: PlanShape, b: PlanShape) => a.frequency_value === b.frequency_value && a.frequency_unit === b.frequency_unit && a.visits_per_period === b.visits_per_period
+const sameShape = (a: PlanShape, b: PlanShape) => sameCadence(a, b) && a.total_visits === b.total_visits
 const onPrevious = computed(() => !!previous.value && sameCadence(shape.value, previous.value))
 const onMaintenance = computed(() => sameCadence(shape.value, maintenancePreset(config.value)))
 function usePrevious() {
@@ -242,6 +246,10 @@ async function renew(withBono: boolean) {
     }
     purchaseId = (purchase as { id: string }).id
   }
+  // The maintenance template's phases and re-exams go with it only while the
+  // plan is still the template's: once the cadence or length is changed here,
+  // they would describe a different plan.
+  const asTemplate = sameShape(shape.value, maintenancePreset(config.value))
   const { error: e } = await supabase.from('care_plans').insert({
     account_id: props.accountId,
     patient_id: props.patientId,
@@ -254,6 +262,8 @@ async function renew(withBono: boolean) {
     payment_kind: patientMembershipId ? 'membership' : purchaseId ? 'bono' : 'per_visit',
     package_purchase_id: purchaseId,
     patient_membership_id: patientMembershipId,
+    next_phases: asTemplate && shape.value.total_visits !== null ? config.value.next_phases : [],
+    visit_markers: asTemplate ? config.value.visit_markers : [],
     created_by: props.teamMemberId,
   } as never)
   if (e) {

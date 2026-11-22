@@ -44,7 +44,7 @@ const AREAS = computed(() => [
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
-  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate', 'check_in_portal', 'receptionist_settings', 'email_template'] },
+  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate', 'check_in_portal', 'receptionist_settings', 'email_template', 'care_plan_template'] },
 ])
 const areaFilter = ref('')
 
@@ -148,6 +148,7 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   appointment_type: t('Appointment type', 'Tipo de cita'),
   care_stop: t('Reason for stopping care', 'Motivo de baja'),
   care_stop_reason: t('Reason for stopping care (list)', 'Motivo de baja (lista)'),
+  care_plan_template: t('Care plan template', 'Plantilla de plan de cuidados'),
   recall_assignment: t('Recall assignment', 'Asignación de recordatorio'),
   patient_segment: t('Patient segment', 'Segmento de pacientes'),
   patient_attribute: t('Custom field', 'Campo personalizado'),

@@ -110,6 +110,7 @@ onBeforeUnmount(() => observer?.disconnect())
 const pillText = computed(() => stageLabel(props.view.stage, props.view.arrivedAt))
 const owesText = computed(() => t(`Owes ${formatEur(props.view.owesCents)}`, `Debe ${formatEur(props.view.owesCents)}`))
 const formsText = computed(() => pendingFormsLabel(props.view.pendingForms, t))
+const noNextText = computed(() => t('No next visit booked', 'Sin próxima cita reservada'))
 // Two or more live bonos (their own and a family one shared with them): the
 // checkout asks which pays, so the block names none of them either.
 const severalBonos = computed(() => (props.view.bono?.choices ?? 0) > 1)
@@ -209,6 +210,7 @@ const ariaLabel = computed(() =>
     pillText.value,
     props.view.owesCents > 0 ? owesText.value : null,
     props.view.pendingForms > 0 ? formsText.value : null,
+    props.view.noNext ? noNextText.value : null,
     props.view.redFlags ? t('Red flags on the record', 'Señales rojas en la ficha') : null,
   ]
     .filter(Boolean)
@@ -268,10 +270,13 @@ const ariaLabel = computed(() =>
       </span>
       <!-- A clipboard, not the note's page: the two sit side by side. -->
       <span v-if="ladder.forms" class="inline-flex shrink-0 text-warning-text" :title="formsText" data-cy="appt-block-forms">
-        <svg :width="week ? 11 : 12" :height="week ? 11 : 12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="formsText"><path d="M9 4h6v3H9z" /><path d="M9 5.5H6v15h12v-15h-3" /><path d="M12 11v3.5M12 17.5h.01" /></svg>
+        <CalendarBlockIcon kind="forms" :size="week ? 11 : 12" />
+      </span>
+      <span v-if="ladder.noNext" class="inline-flex shrink-0 text-ink-500" :title="noNextText" data-cy="appt-block-no-next">
+        <CalendarBlockIcon kind="noNext" :size="week ? 11 : 12" />
       </span>
       <span v-if="ladder.note" class="inline-flex shrink-0 text-warning-accent" :title="t('Clinical note', 'Nota clínica')" data-cy="appt-block-note">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="t('Clinical note', 'Nota clínica')"><path d="M5 4h10l4 4v12H5z" /><path d="M9 12h6M9 16h4" /></svg>
+        <CalendarBlockIcon kind="note" />
       </span>
       <span class="grow" />
       <span
@@ -299,9 +304,8 @@ const ariaLabel = computed(() =>
       <span v-if="ladder.meta !== 'none'" class="min-w-0 shrink truncate">{{ metaText }}</span>
       <span class="grow" />
       <span v-if="ladder.moved" class="inline-flex shrink-0 items-center gap-0.5" :title="t('Moved before', 'Movida antes')" data-cy="appt-block-moved">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 5v6h-6" /></svg>{{ view.movedCount }}
+        <CalendarBlockIcon kind="moved" />{{ view.movedCount }}
       </span>
-      <span v-if="ladder.noNext" class="shrink-0 whitespace-nowrap rounded-[5px] border border-dashed border-line-control px-1.5 py-px text-[11px] font-semibold text-ink-500" data-cy="appt-block-no-next">{{ t('No next visit', 'Sin próxima') }}</span>
       <span
         v-if="ladder.bono"
         class="shrink-0 whitespace-nowrap rounded-[5px] border px-1.5 py-px text-[11px] font-semibold"

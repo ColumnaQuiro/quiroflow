@@ -27,10 +27,10 @@ export const APP_BUNDLE_ID = 'com.quiroflow.app'
 export const APP_STORE_NUMERIC_ID = '6805009978'
 
 /**
- * Spain-only storefront, deliberately -- see CLAUDE.md "Releasing the mobile
- * app". A bare apps.apple.com/app/id… link resolves against the visitor's own
- * storefront, which for anyone outside Spain is a "not available" page rather
- * than the app.
+ * Spanish storefront, deliberately -- the app is sold only in Spain, France and
+ * Italy (see CLAUDE.md "Releasing the mobile app"). A bare apps.apple.com/app/id…
+ * link resolves against the visitor's own storefront, which anywhere else is a
+ * "not available" page rather than the app.
  */
 export function appStoreUrl(): string | null {
   return APP_STORE_NUMERIC_ID ? `https://apps.apple.com/es/app/quiroflow/id${APP_STORE_NUMERIC_ID}` : null

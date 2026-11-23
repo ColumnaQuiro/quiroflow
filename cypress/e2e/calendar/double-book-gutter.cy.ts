@@ -56,7 +56,9 @@ describe('A taken time can still be booked or dropped on', () => {
       seedVisit(account, null, 'Primera', 'Cita', 10, 0)
       openDay(account, 'Primera Cita')
 
-      cy.get('[data-cal-col]').first().then(($col) => {
+      // The card's own column: a visit with no room is in "Unassigned", not
+      // in the first column.
+      block('Primera Cita').closest('[data-cal-col]').then(($col) => {
         const col = rectOf($col)
         const y = (col.height / 12) * 2 + 8 // 10:00
         // The card stops short of the column's right edge.

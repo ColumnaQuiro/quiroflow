@@ -12,11 +12,16 @@ defineExpose({ reload: (opts: { silent?: boolean } = {}) => load(opts) })
 // Messages and calls are one filter, "Contact": a minor's or a do-not-contact
 // patient's record offers nothing that reads as a way to message them
 // (patient-record-actions.cy.ts), and a chip called "Messages" did.
-type FilterKey = 'all' | 'visit' | 'contact' | 'care' | 'document' | 'billing'
+// "Notes" is the history imported from the clinic's previous software
+// (utils/patientTimeline.ts, importedNoteSource), so it is offered only on a
+// record that has some.
+type FilterKey = 'all' | 'visit' | 'contact' | 'note' | 'care' | 'document' | 'billing'
+const hasNotes = computed(() => events.value.some((e) => e.category === 'note'))
 const FILTERS = computed<{ key: FilterKey; label: string }[]>(() => [
   { key: 'all', label: t('All', 'Todo') },
   { key: 'visit', label: t('Visits', 'Visitas') },
   { key: 'contact', label: t('Contact', 'Contacto') },
+  ...(hasNotes.value ? [{ key: 'note' as const, label: t('Notes', 'Notas') }] : []),
   { key: 'care', label: t('Plan & exercises', 'Plan y ejercicios') },
   { key: 'document', label: t('Documents', 'Documentos') },
   { key: 'billing', label: t('Billing', 'Facturación') },
@@ -25,6 +30,7 @@ const filter = ref<FilterKey>('all')
 const GROUPS: Record<Exclude<FilterKey, 'all'>, TimelineCategory[]> = {
   visit: ['visit'],
   contact: ['communication', 'recall'],
+  note: ['note'],
   care: ['plan', 'exercise'],
   document: ['document'],
   billing: ['billing'],
@@ -39,16 +45,28 @@ const CATEGORY: Record<TimelineCategory, { label: () => string; icon: string; to
   visit: { label: () => t('Visit', 'Visita'), icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', tone: 'bg-brand-tint text-brand-text' },
   communication: { label: () => t('Message', 'Mensaje'), icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.83L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', tone: 'bg-success-bg text-success-text' },
   recall: { label: () => t('Recall', 'Recuperación'), icon: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.95.68l1.5 4.49a1 1 0 01-.5 1.21l-2.26 1.13a11.04 11.04 0 005.52 5.52l1.13-2.26a1 1 0 011.21-.5l4.49 1.5a1 1 0 01.68.95V19a2 2 0 01-2 2h-1C9.72 21 3 14.28 3 6V5z', tone: 'bg-warning-bg text-warning-text' },
+  note: { label: () => t('Note', 'Nota'), icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', tone: 'bg-chip-bg text-ink-700' },
   plan: { label: () => t('Care plan', 'Plan'), icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', tone: 'bg-chip-bg text-ink-700' },
   exercise: { label: () => t('Exercises', 'Ejercicios'), icon: 'M13 10V3L4 14h7v7l9-11h-7z', tone: 'bg-chip-bg text-ink-700' },
   document: { label: () => t('Document', 'Documento'), icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', tone: 'bg-chip-bg text-ink-700' },
   billing: { label: () => t('Billing', 'Facturación'), icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z', tone: 'bg-chip-bg text-ink-700' },
 }
+// An imported record can run to dozens of lines: three of them, like any
+// other event, until opened.
+const opened = ref(new Set<string>())
+const isLong = (e: TimelineEvent) => e.category === 'note' && (e.text.split('\n').length > 3 || e.text.length > 240)
+function toggle(key: string) {
+  const next = new Set(opened.value)
+  if (!next.delete(key)) next.add(key)
+  opened.value = next
+}
+
 const TONE_TEXT: Record<string, string> = { success: 'text-success-text', warning: 'text-warning-text', danger: 'text-danger-text' }
 
 function actorLabel(e: TimelineEvent) {
   if (e.actor.kind === 'staff') return e.actor.name
   if (e.actor.kind === 'patient') return t('Patient', 'Paciente')
+  if (e.actor.kind === 'import') return t(`Imported from ${e.channel}`, `Importada de ${e.channel}`)
   return t('System', 'Sistema')
 }
 function when(iso: string) {
@@ -99,7 +117,21 @@ const full = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), 
             <span v-if="e.channel" class="rounded-pill border border-line px-1.5 py-px text-ink-muted">{{ e.channel }}</span>
             <time class="ml-auto shrink-0 text-ink-faint" :datetime="e.at" :title="full(e.at)">{{ when(e.at) }}</time>
           </p>
-          <p class="mt-1 line-clamp-3 text-[13px] leading-snug" :class="e.tone ? TONE_TEXT[e.tone] : 'text-ink-900'" data-cy="timeline-text">{{ e.text }}</p>
+          <p
+            class="mt-1 text-[13px] leading-snug"
+            :class="[e.tone ? TONE_TEXT[e.tone] : 'text-ink-900', e.category === 'note' ? 'whitespace-pre-line break-words' : '', opened.has(e.key) ? '' : 'line-clamp-3']"
+            data-cy="timeline-text"
+          >{{ e.text }}</p>
+          <button
+            v-if="isLong(e)"
+            type="button"
+            class="mt-0.5 text-[12px] font-medium text-brand-text hover:underline"
+            :aria-expanded="opened.has(e.key)"
+            data-cy="timeline-note-toggle"
+            @click="toggle(e.key)"
+          >
+            {{ opened.has(e.key) ? t('Show less', 'Ver menos') : t('Show all', 'Ver todo') }}
+          </button>
           <p class="mt-0.5 text-[11.5px] text-ink-faint" data-cy="timeline-actor">{{ actorLabel(e) }}</p>
         </div>
       </li>

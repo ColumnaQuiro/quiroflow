@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { importedNoteSource } from '../utils/patientTimeline'
+
 const props = defineProps<{ patientId: string; patientName: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-interface LogRow { id: string; action: string; note: string | null; created_at: string }
+interface LogRow { id: string; action: string; note: string | null; created_at: string; external_reference: string | null }
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -18,7 +20,7 @@ const loading = ref(true)
 onMounted(async () => {
   const { data } = await supabase
     .from('contact_log')
-    .select('id, action, note, created_at')
+    .select('id, action, note, created_at, external_reference')
     .eq('patient_id', props.patientId)
     .order('created_at', { ascending: false })
   rows.value = data ?? []
@@ -32,6 +34,14 @@ const actionLabels = computed<Record<string, string>>(() => ({
   booked: t('Booked', 'Reservado'),
   other: t('Contacted', 'Contactado'),
 }))
+
+// History imported from the clinic's previous software is not something
+// anyone here did (utils/patientTimeline.ts, importedNoteSource).
+function label(row: LogRow) {
+  const source = importedNoteSource(row)
+  if (source) return t(`Note from ${source}`, `Nota de ${source}`)
+  return actionLabels.value[row.action] ?? row.action
+}
 
 function fullDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -55,8 +65,8 @@ function fullDate(iso: string) {
         <p v-else-if="rows.length === 0" class="p-6 text-center text-[13px] text-ink-faint">{{ t('No contact history yet.', 'Aún no hay historial de contacto.') }}</p>
         <ul v-else class="divide-y divide-line-row">
           <li v-for="row in rows" :key="row.id" class="px-4 py-2.5">
-            <p class="text-[13px] font-medium text-ink-700">{{ actionLabels[row.action] ?? row.action }}</p>
-            <p v-if="row.note" class="mt-0.5 text-[12px] text-ink-muted2">{{ row.note }}</p>
+            <p class="text-[13px] font-medium text-ink-700">{{ label(row) }}</p>
+            <p v-if="row.note" class="mt-0.5 whitespace-pre-line break-words text-[12px] text-ink-muted2">{{ row.note }}</p>
             <p class="mt-0.5 text-[11.5px] text-ink-faint">{{ fullDate(row.created_at) }}</p>
           </li>
         </ul>

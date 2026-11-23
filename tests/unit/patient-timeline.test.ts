@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPatientTimeline, type TimelineSources } from '../../utils/patientTimeline'
+import { buildPatientTimeline, importedNoteSource, type TimelineSources } from '../../utils/patientTimeline'
 
 const es = (_en: string, es: string) => es
 const now = new Date('2026-10-09T12:00:00Z')
@@ -60,5 +60,38 @@ describe('the patient timeline', () => {
     ])
     expect(events[1].actor).toEqual({ kind: 'staff', name: 'Marta Ruiz' })
     expect(events[0].actor).toEqual({ kind: 'system' })
+  })
+
+  it('shows history imported from another system as a note from it, line breaks kept -- not as a recall', () => {
+    const events = buildPatientTimeline(
+      {
+        ...empty,
+        calls: [
+          { id: 'q1', action: 'other', note: 'Ficha de QuiroHiro\nMotivo: lumbalgia\nAntecedentes: ninguno', created_at: '2026-09-01T09:00:00Z', created_by: 'tm1', external_reference: 'QH-ficha-abc' },
+          { id: 'p1', action: 'other', note: '[note] Mejor de la espalda', created_at: '2026-08-01T09:00:00Z', created_by: 'tm1', external_reference: 'PH-log-17' },
+          { id: 'c1', action: 'other', note: 'Llamada · revisión', created_at: '2026-07-01T09:00:00Z', created_by: 'tm1', external_reference: 'QC-call-9' },
+          { id: 'r1', action: 'other', note: 'Habló con su madre', created_at: '2026-06-01T09:00:00Z', created_by: 'tm1', external_reference: null },
+        ],
+      },
+      es,
+    )
+    expect(events.map((e) => [e.category, e.channel, e.actor.kind])).toEqual([
+      ['note', 'QuiroHiro', 'import'],
+      ['note', 'PracticeHub', 'import'],
+      ['recall', undefined, 'staff'],
+      ['recall', undefined, 'staff'],
+    ])
+    expect(events[0].text).toBe('Ficha de QuiroHiro\nMotivo: lumbalgia\nAntecedentes: ninguno')
+    expect(events[2].text).toBe('Contacto · Llamada · revisión')
+  })
+
+  it('knows which system a contact-history row came from, and only for notes', () => {
+    expect(importedNoteSource({ action: 'other', external_reference: 'QH-note-1' })).toBe('QuiroHiro')
+    expect(importedNoteSource({ action: 'other', external_reference: 'PH-careplan-2' })).toBe('PracticeHub')
+    expect(importedNoteSource({ action: 'other', external_reference: 'QC-history-3' })).toBe('Quirocitas')
+    expect(importedNoteSource({ action: 'other', external_reference: 'QC-call-4' })).toBeNull()
+    expect(importedNoteSource({ action: 'called_no_answer', external_reference: 'QC-call-5' })).toBeNull()
+    expect(importedNoteSource({ action: 'other', external_reference: null })).toBeNull()
+    expect(importedNoteSource({ action: 'other' })).toBeNull()
   })
 })

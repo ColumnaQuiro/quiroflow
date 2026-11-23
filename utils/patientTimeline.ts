@@ -9,8 +9,8 @@
 // wording and ordering are pinned in tests/unit/patient-timeline.test.ts.
 import { carePlanCadenceLabel } from './carePlanCadence'
 
-export type TimelineCategory = 'visit' | 'communication' | 'recall' | 'plan' | 'exercise' | 'document' | 'billing'
-export type TimelineActor = { kind: 'staff'; name: string } | { kind: 'patient' } | { kind: 'system' }
+export type TimelineCategory = 'visit' | 'communication' | 'recall' | 'note' | 'plan' | 'exercise' | 'document' | 'billing'
+export type TimelineActor = { kind: 'staff'; name: string } | { kind: 'patient' } | { kind: 'system' } | { kind: 'import' }
 
 export interface TimelineEvent {
   key: string
@@ -32,11 +32,28 @@ export interface TimelineSources {
   appointments: { id: string; starts_at: string; created_at: string; status: string; appointment_types: { name: string } | null }[]
   sent: { id: string; channel: string; kind: string; status: string | null; preview: string | null; sent_at: string }[]
   received: { id: string; channel: string; at: string; preview: string | null }[]
-  calls: { id: string; action: string; note: string | null; created_at: string; created_by: string | null }[]
+  calls: { id: string; action: string; note: string | null; created_at: string; created_by: string | null; external_reference?: string | null }[]
   plans: { id: string; name: string; created_at: string; created_by: string | null; frequency_value: number; frequency_unit: string; visits_per_period?: number | null; total_visits: number | null }[]
   exercises: { id: string; created_at: string; ended_at: string | null; assigned_by: string | null; exercises: { name: string } | null }[]
   documents: { id: string; title: string; created_at: string; completed_at: string | null; created_by: string | null }[]
   invoices: { id: string; created_at: string; invoice_number: string | null; status: string }[]
+}
+
+// The importers bring a clinic's history from its previous software into
+// contact_log -- the one patient-keyed table with free text and a date --
+// as action 'other' with their own external_reference: a QuiroHiro record
+// ("QH-ficha-") and its day notes ("QH-note-"), PracticeHub care plans and
+// log entries ("PH-careplan-", "PH-log-"), Quirocitas' history, plans,
+// anamnesis and invoice notes ("QC-..."). None of them is a recall and
+// nobody was contacted, yet that is what an 'other' row read as. A
+// Quirocitas call ("QC-call-") really was one, so it stays a call.
+const IMPORT_SOURCES: Record<string, string> = { 'QH-': 'QuiroHiro', 'PH-': 'PracticeHub', 'QC-': 'Quirocitas' }
+
+/** The system a contact-history row was imported from when it is a note brought over, not a call; null for anything logged here. */
+export function importedNoteSource(row: { action: string; external_reference?: string | null }): string | null {
+  const ref = row.external_reference
+  if (row.action !== 'other' || !ref || ref.startsWith('QC-call-')) return null
+  return IMPORT_SOURCES[ref.slice(0, 3)] ?? null
 }
 
 const CHANNELS: Record<string, string> = { whatsapp: 'WhatsApp', instagram: 'Instagram', email: 'Email', app: 'App', push: 'Push' }
@@ -82,6 +99,12 @@ export function buildPatientTimeline(s: TimelineSources, t: T): TimelineEvent[] 
     other: ['Contacted', 'Contacto'],
   }
   for (const c of s.calls) {
+    const source = importedNoteSource(c)
+    if (source) {
+      // The note whole, line breaks and all: ActivityTimeline keeps them.
+      out.push({ key: `note-${c.id}`, at: c.created_at, category: 'note', text: c.note?.trim() || t('Imported note', 'Nota importada'), channel: source, actor: { kind: 'import' } })
+      continue
+    }
     const [en, es] = CALLS[c.action] ?? CALLS.other
     out.push({ key: `call-${c.id}`, at: c.created_at, category: 'recall', text: c.note ? `${t(en, es)} · ${c.note}` : t(en, es), actor: staff(c.created_by) })
   }

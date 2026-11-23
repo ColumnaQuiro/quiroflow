@@ -1807,6 +1807,8 @@ export type Database = {
           whatsapp_confirmation_template_language: string
           whatsapp_confirmation_template_name: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_invoice_template_language: string
+          whatsapp_invoice_template_name: string | null
           whatsapp_recall_template_language: string
           whatsapp_recall_template_name: string | null
           whatsapp_reminder_template_language: string | null
@@ -1938,6 +1940,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_invoice_template_language?: string
+          whatsapp_invoice_template_name?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
@@ -2070,6 +2074,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_invoice_template_language?: string
+          whatsapp_invoice_template_name?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null

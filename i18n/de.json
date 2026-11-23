@@ -1549,7 +1549,8 @@
   "{0} appointments still booked here were deleted in QuiroHiro after being imported: they are cancelled here too.": "{0} hier noch gebuchte Termine wurden nach dem Import in QuiroHiro gelöscht: Sie werden auch hier storniert.",
   "{0} records and notes wait for their patient: run Patients first.": "{0} Akten und Notizen warten auf ihren Patienten: Führen Sie zuerst Patienten aus.",
   "{0} notes were written on the day of a visit that is not here yet: they go on the patient's history. Run Appointments first to have them on their visit.": "{0} Notizen wurden am Tag eines Besuchs geschrieben, der noch nicht hier ist: Sie kommen in den Verlauf des Patienten. Führen Sie zuerst Termine aus, um sie bei ihrem Besuch zu haben.",
-  "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} Dateien und Unterschriften in den benutzerdefinierten Feldern von QuiroHiro werden bei diesem Import nicht kopiert: Laden Sie sie bei Bedarf aus QuiroHiro herunter."
+  "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} Dateien und Unterschriften in den benutzerdefinierten Feldern von QuiroHiro werden bei diesem Import nicht kopiert: Laden Sie sie bei Bedarf aus QuiroHiro herunter.",
+  "WhatsApp did not send it: {0}": "WhatsApp hat es nicht gesendet: {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -2565,6 +2566,7 @@
   "Book anyway": "Trotzdem buchen",
   "Book appointment": "Termin buchen",
   "Book it anyway, overlapping": "Trotzdem buchen, überlappend",
+  "Book next appointment": "Nächsten Termin buchen",
   "Book the 1 visit left": "Die 1 verbleibende Behandlung buchen",
   "Book the next visit": "Nächste Behandlung buchen",
   "Book their first appointment now? You will pick the time on the calendar.": "Jetzt den ersten Termin buchen? Sie wählen die Zeit im Kalender.",
@@ -10632,6 +10634,21 @@
   "not marked in QuiroHiro": "in QuiroHiro nicht markiert",
   "Clinical records": "Krankenakten",
   "Records updated": "Akten aktualisiert",
-  "Other notes": "Weitere Notizen"
+  "Other notes": "Weitere Notizen",
+  "Send receipt by WhatsApp": "Beleg per WhatsApp senden",
+  "By WhatsApp:": "Per WhatsApp:",
+  "Open WhatsApp settings": "WhatsApp-Einstellungen öffnen",
+  "Receipts and invoices": "Belege und Rechnungen",
+  "When staff press “Send by WhatsApp” on a receipt or an invoice. It needs a document header: the PDF goes there.": "Wenn das Team bei einem Beleg oder einer Rechnung auf „Per WhatsApp senden“ drückt. Sie braucht eine Dokument-Kopfzeile: dort wird das PDF angehängt.",
+  "This template has no document header, so the PDF cannot be attached. Choose one whose header is a document.": "Diese Vorlage hat keine Dokument-Kopfzeile, daher kann das PDF nicht angehängt werden. Wählen Sie eine, deren Kopfzeile ein Dokument ist.",
+  "WhatsApp is not connected. Connect it in Settings › WhatsApp.": "WhatsApp ist nicht verbunden. Verbinden Sie es unter Einstellungen › WhatsApp.",
+  "Choose the template for receipts and invoices in Settings › WhatsApp first.": "Wählen Sie zuerst die Vorlage für Belege und Rechnungen unter Einstellungen › WhatsApp.",
+  "Not sent by WhatsApp to a patient who is under age.": "An minderjährige Patienten wird nichts per WhatsApp gesendet.",
+  "This patient has no phone number. Add one to their record.": "Dieser Patient hat keine Telefonnummer. Tragen Sie eine in der Akte ein.",
+  "This patient’s phone number is not valid for WhatsApp.": "Die Telefonnummer dieses Patienten ist für WhatsApp nicht gültig.",
+  "Could not check whether WhatsApp is set up.": "Es konnte nicht geprüft werden, ob WhatsApp eingerichtet ist.",
+  "Checking WhatsApp…": "WhatsApp wird geprüft…",
+  "Sent by WhatsApp": "Per WhatsApp gesendet",
+  "Could not send by WhatsApp": "Senden per WhatsApp fehlgeschlagen"
  }
 }

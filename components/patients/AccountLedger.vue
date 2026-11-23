@@ -90,6 +90,8 @@ const emit = defineEmits<{
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+// "Send receipt by WhatsApp" beside "Email receipt" on each receipt row.
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
 
 const expandedKey = ref<string | null>(null)
 const menuOpen = ref(false)
@@ -477,6 +479,8 @@ interface LedgerAction {
   /** A link rather than a button (Open receipt). */
   to?: string
   disabled?: boolean
+  /** Why it is disabled, as a tooltip. */
+  title?: string
   /** Plain text standing where the action was, e.g. "Receipt sent". */
   textOnly?: boolean
   dataCy?: string
@@ -551,6 +555,17 @@ function actionGroups(row: LedgerRow): ActionGroup[] {
               icon: 'mail',
               disabled: props.sendingInvoiceId === invoiceId,
               run: () => emit('sendInvoice', invoiceId),
+            },
+        whatsapp.results.value[invoiceId]
+          ? { key: 'whatsapp', label: whatsapp.results.value[invoiceId]!.message, icon: 'mail', textOnly: true, dataCy: 'ledger-whatsapp-result' }
+          : {
+              key: 'whatsapp',
+              label: whatsapp.sendingId.value === invoiceId ? t('Sending…', 'Enviando…') : t('Send receipt by WhatsApp', 'Enviar recibo por WhatsApp'),
+              icon: 'mail',
+              disabled: !whatsapp.canSend.value || whatsapp.sendingId.value === invoiceId,
+              title: whatsapp.reason.value || undefined,
+              dataCy: 'ledger-send-whatsapp',
+              run: () => whatsapp.send('invoice', invoiceId),
             },
       ],
     })
@@ -1164,6 +1179,12 @@ const fieldId = useId()
                           <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />{{ a.label }}
                         </NuxtLink>
                         <p v-else-if="a.textOnly" class="px-2.5 py-2 text-[12.5px] text-ink-faint">{{ a.label }}</p>
+                        <span v-else-if="a.disabled && a.title" :title="a.title" class="block">
+                          <button type="button" role="menuitem" disabled :class="menuItemClass(a)">
+                            <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />
+                            <span>{{ a.label }}</span>
+                          </button>
+                        </span>
                         <button v-else type="button" role="menuitem" :disabled="a.disabled" :class="menuItemClass(a)" @click="runMenuAction(a)">
                           <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
                           <span>{{ a.label }}</span>
@@ -1192,7 +1213,13 @@ const fieldId = useId()
                           <NuxtLink v-if="a.to" :to="a.to" :class="actionButtonClass(a)">
                             <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />{{ a.label }}
                           </NuxtLink>
-                          <span v-else-if="a.textOnly" class="inline-flex h-8 items-center text-[12px] text-ink-faint touch:h-10">{{ a.label }}</span>
+                          <span v-else-if="a.textOnly" class="inline-flex h-8 items-center text-[12px] text-ink-faint touch:h-10" :data-cy="a.dataCy">{{ a.label }}</span>
+                          <span v-else-if="a.disabled && a.title" :title="a.title" class="inline-flex">
+                            <button type="button" disabled :data-cy="a.dataCy" :class="actionButtonClass(a)">
+                              <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />
+                              <span>{{ a.label }}</span>
+                            </button>
+                          </span>
                           <button v-else type="button" :disabled="a.disabled" :data-cy="a.dataCy" :class="actionButtonClass(a)" @click="a.run?.()">
                             <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
                             <span>{{ a.label }}</span>

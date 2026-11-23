@@ -2929,10 +2929,47 @@ function openCreateAt(day: Date, time: string, roomId: string | null) {
   // Every way of booking -- the button, a slot click, Enter on a cell, the
   // phone agenda -- ends here, so a read-only calendar is refused once.
   if (readOnly.value) return
+  // A slot clicked while "book next" is open only moves that booking; any
+  // other way in starts from nothing.
+  if (!(modalOpen.value && modalMode.value === 'create')) bookNext.value = null
   prefill.value = { date: toDateKey(day), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
+}
+
+// "Book next appointment" on an open visit: the usual end of a visit is
+// booking the one after it, so the new-appointment panel opens on the same
+// patient, with the same practitioner, room and type, at the same time one
+// care-plan interval on (a visit every 4 days on a twice-a-week plan), or a
+// week on for a patient with no plan. Only a starting point: the panel checks
+// it against the diary, its date and time are fields like any other, and a
+// slot clicked on the grid still moves it. A first visit or a report is not
+// what comes next, so those leave the type at the panel's own default.
+const ONE_OFF_STAGES = ['first_visit', 'first_visit_offer', 'report']
+const bookNext = ref<{ patientId: string; practitionerId: string; appointmentTypeId: string } | null>(null)
+async function bookNextFor(a: AppointmentRow) {
+  if (readOnly.value) return
+  const carriesType = !!a.appointment_type_id && visitTypes.value.some((x) => x.id === a.appointment_type_id)
+  const [type, plans] = await Promise.all([
+    carriesType ? supabase.from('appointment_types').select('stage').eq('id', a.appointment_type_id!).maybeSingle() : null,
+    // The patient's current plan, as the new-appointment panel reads it.
+    supabase.from('care_plans').select('frequency_value, frequency_unit, visits_per_period').eq('patient_id', a.patient_id).order('created_at', { ascending: false }).limit(1),
+  ])
+  const appointmentTypeId = type && !type.error && !ONE_OFF_STAGES.includes(type.data?.stage ?? '') ? a.appointment_type_id! : ''
+  const plan = plans.data?.[0]
+  const start = new Date(a.starts_at)
+  const day = new Date(start)
+  day.setDate(day.getDate() + (plan ? carePlanGapDays(plan) : 7))
+  // A visit opened from weeks back: a week after it is in the past too.
+  const from = day.getTime() > Date.now() ? day : anchorDate.value
+  modalOpen.value = false
+  openCreateAt(from, `${pad(start.getHours())}:${pad(start.getMinutes())}`, a.room_id)
+  bookNext.value = {
+    patientId: a.patient_id,
+    practitionerId: a.practitioner_id && teamMembers.value.some((m) => m.id === a.practitioner_id) ? a.practitioner_id : '',
+    appointmentTypeId,
+  }
 }
 
 const gridRef = ref<HTMLElement | null>(null)
@@ -4056,8 +4093,9 @@ function showNowLineOn(day: Date) {
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
-      :prefill-practitioner-id="prefillPractitionerId"
-      :prefill-patient-id="bookingFor?.id"
+      :prefill-practitioner-id="bookNext?.practitionerId || prefillPractitionerId"
+      :prefill-patient-id="bookNext?.patientId ?? bookingFor?.id"
+      :prefill-appointment-type-id="bookNext?.appointmentTypeId"
       :prefill-follow-plan="bookingFor?.followPlan"
       :slot-minutes="SLOT_MIN"
       @close="modalOpen = false"
@@ -4079,6 +4117,7 @@ function showNowLineOn(day: Date) {
       @close="modalOpen = false"
       @changed="reloadAfterChange()"
       @reschedule="startReschedule(openAppointment!)"
+      @book-next="bookNextFor(openAppointment!)"
     />
 
     <LazyCalendarRescheduleConfirmModal

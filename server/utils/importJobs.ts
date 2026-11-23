@@ -24,6 +24,10 @@ import { importJobEmail, type ImportJobProgress, type ImportJobStepResult } from
 import { uiCatalogTranslate } from '~/utils/uiCatalog'
 import { practiceHubApplySlice, practiceHubReadSlice } from '~/server/utils/practicehubImportJob'
 import type { PracticeHubStepKind } from '~/utils/practicehubImport'
+import { QuirohiroError } from '~/server/utils/quirohiro'
+import { quirohiroApplySlice, quirohiroReadSlice } from '~/server/utils/quirohiroImportJob'
+import type { QuirohiroStepKind } from '~/utils/quirohiroImport'
+import type { QuirohiroWho } from '~/utils/quirohiroRows'
 
 // Runs an import job (import_jobs) one slice at a time.
 //
@@ -49,8 +53,10 @@ export interface ImportJobOptions {
   lang?: string
   quietUpcoming?: boolean
   fromScratch?: boolean
-  /** PracticeHub: plan every step and write nothing; each result says what would have been written. */
+  /** PracticeHub and QuiroHiro: plan every step and write nothing; each result says what would have been written. */
   dryRun?: boolean
+  /** QuiroHiro: only the clinic's patients, or every contact, leads included. */
+  who?: QuirohiroWho
 }
 
 /** Time a slice spends working. A function is cut off at 60 s; a file download or a 200-row insert in flight finishes after this. */
@@ -137,6 +143,11 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
           ? await practiceHubReadSlice(admin, job, progress, deadline, beat, t)
           : await practiceHubApplySlice(admin, job, step as PracticeHubStepKind, options, progress, deadline, beat, t,
             (plan, p) => writePlan(plan, step, p, deadline, beat, t))
+      } else if (job.source === 'quirohiro') {
+        outcome = step === 'read'
+          ? await quirohiroReadSlice(admin, job, options, progress, deadline, beat, t)
+          : await quirohiroApplySlice(admin, job, step as QuirohiroStepKind, options, progress, beat, t,
+            (plan, p) => writePlan(plan, step, p, deadline, beat, t))
       } else {
         const login = await quirocitasLogin(admin, job.account_id)
         if (!login) throw new QuirocitasError('The Quirocitas connection is not saved any more.', 400)
@@ -157,10 +168,11 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
     threw = true
     const failures = (progress.failures ?? 0) + 1
     progress = { ...progress, failures, lastError: errText(e) }
-    // Quirocitas refusing the login, or PracticeHub refusing the key or the
-    // address, will not fix itself by trying again. A rate limit will.
+    // Quirocitas refusing the login, PracticeHub refusing the key or the
+    // address, or QuiroHiro refusing the token or a scope, will not fix
+    // itself by trying again. A rate limit will.
     const httpStatus = (e as { statusCode?: unknown })?.statusCode
-    const permanent = e instanceof QuirocitasError
+    const permanent = e instanceof QuirocitasError || e instanceof QuirohiroError
       ? e.statusCode >= 400 && e.statusCode < 500
       : job.source === 'practicehub' && typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429
     if (permanent || failures >= MAX_FAILURES) {

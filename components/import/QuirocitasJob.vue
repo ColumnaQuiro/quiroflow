@@ -6,8 +6,8 @@ import { PRACTICEHUB_LISTS } from '~/utils/practicehubImport/types'
 // An import job running on the server, or the last one that ran: one bar
 // across every step it does, where the current step stands, and what each
 // finished step wrote. The tab can be closed at any point -- the job carries
-// on, and whoever started it gets an email when it ends. Both sources use it:
-// Quirocitas and PracticeHub (job.source).
+// on, and whoever started it gets an email when it ends. Every source uses it:
+// Quirocitas, PracticeHub and QuiroHiro (job.source).
 const props = defineProps<{ job: ImportJobRow }>()
 const emit = defineEmits<{ cancel: [] }>()
 
@@ -43,6 +43,14 @@ function practiceHubListName(path: string | undefined): string {
   }
 }
 
+// The lists a QuiroHiro read walks, in order (QUIROHIRO_LISTS on the server).
+function quirohiroListName(index: number): string {
+  return [
+    t('team', 'equipo'), t('calendars', 'calendarios'), t('custom fields', 'campos personalizados'), t('custom fields', 'campos personalizados'),
+    t('contacts', 'contactos'), t('appointments', 'citas'), t('notes', 'notas'),
+  ][index] ?? ''
+}
+
 const now = computed(() => {
   const p = progress.value
   if (props.job.status === 'queued') return t('Starting…', 'Empezando…')
@@ -51,6 +59,12 @@ const now = computed(() => {
     return p.pageCount
       ? t(`Reading PracticeHub: ${list}, page ${nf.format(p.page ?? 1)} of ${nf.format(p.pageCount)}`, `Leyendo PracticeHub: ${list}, página ${nf.format(p.page ?? 1)} de ${nf.format(p.pageCount)}`)
       : t(`Reading PracticeHub: ${list}…`, `Leyendo PracticeHub: ${list}…`)
+  }
+  if (current.value === 'read' && source.value === 'quirohiro') {
+    const list = quirohiroListName(p.listIndex ?? 0)
+    return p.pageCount && (p.page ?? 1) > 1
+      ? t(`Reading QuiroHiro: ${list}, ${nf.format(Math.min(p.page ?? 1, p.pageCount))} of ${nf.format(p.pageCount)}`, `Leyendo QuiroHiro: ${list}, ${nf.format(Math.min(p.page ?? 1, p.pageCount))} de ${nf.format(p.pageCount)}`)
+      : t(`Reading QuiroHiro: ${list}…`, `Leyendo QuiroHiro: ${list}…`)
   }
   if (current.value === 'read') {
     if (p.phase === 'patients' && p.total) return t(`Reading patients: ${nf.format(p.done ?? 0)} of ${nf.format(p.total)}`, `Leyendo pacientes: ${nf.format(p.done ?? 0)} de ${nf.format(p.total)}`) + (p.failed ? t(` · ${p.failed} could not be read`, ` · ${p.failed} sin leer`) : '')
@@ -72,7 +86,7 @@ const ended = computed(() => {
 })
 
 function resultLine(step: string, r: ImportJobStepResult): string {
-  if (step === 'read') return source.value === 'practicehub' ? t(`${nf.format(r.written)} records`, `${nf.format(r.written)} registros`) : t(`${nf.format(r.written)} patients`, `${nf.format(r.written)} pacientes`)
+  if (step === 'read') return source.value !== 'quirocitas' ? t(`${nf.format(r.written)} records`, `${nf.format(r.written)} registros`) : t(`${nf.format(r.written)} patients`, `${nf.format(r.written)} pacientes`)
   if (r.dryRun) return t(`preview: ${nf.format(r.wouldWrite ?? 0)} to write, nothing written`, `vista previa: ${nf.format(r.wouldWrite ?? 0)} por escribir, nada escrito`)
   return t(`${nf.format(r.written)} saved`, `${nf.format(r.written)} guardados`)
 }

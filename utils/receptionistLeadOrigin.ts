@@ -114,6 +114,63 @@ export function leadFormSection(answers: LeadFormAnswer[]): string {
   ].join('\n')
 }
 
+const foldText = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+// A symptom getting worse: "cada vez más intensas", "cada vez peor", "va a
+// peor", "empeora", "getting worse". Not "no empeora".
+const WORSENING = /\bcada (?:vez|dia) (?:mas|peor|mayor|con mas)\b|\b(?:va|van|voy|ido|yendo) a peor\b|(?<!\bno (?:me |se )?)\bempeor(?:a|an|o|ado|ando|amiento)\b|\b(?:getting|gotten|got|become|becoming|keeps? getting) (?:much |a lot |even )?worse\b|\bworse and worse\b|\bworsen(?:s|ed|ing)?\b|\bmore (?:and more )?(?:frequent|intense|severe|often)\b/
+// The signs the base rules name as a chiropractor's to judge.
+const ALARM = /\bhormigue|\badormec|\bentumec|\bse me duermen?\b|\bmareos?\b|\bvertigos?\b|\b(?:perdida|falta) de (?:fuerza|sensibilidad)\b|\b(?:pierdo|perdiendo|perdido|sin) (?:la )?fuerza\b|\btingl|\bnumb|\bdizz|\bpins and needles\b|\b(?:loss of|losing|lost) (?:strength|feeling|sensation)\b/
+
+/**
+ * The form answer that has to reach the chiropractor before anyone books --
+ * a symptom getting worse, or tingling, numbness, dizziness or loss of
+ * strength -- or null.
+ *
+ * Decided here rather than left to the model. leadFormSection tells it the
+ * escalation rules apply to the form, and whether it then handed over was
+ * luck: the eval for the 17 Nov 2026 lead passed one run in three on the
+ * day the section was written and none in three two days later, with no
+ * change to the prompt in between. What the model still judges is the rest
+ * of that section (a symptom that is not the clinic's to treat, something
+ * new), which a list of words cannot.
+ */
+export function formSymptomToHandOver(answers: LeadFormAnswer[]): string | null {
+  for (const { answer } of answers) {
+    const text = foldText(answer)
+    if (WORSENING.test(text) || ALARM.test(text)) return answer
+  }
+  return null
+}
+
+/**
+ * The form answer this reply has to hand over, or null: only while nobody
+ * has answered them yet. Once the receptionist or a person at the clinic
+ * has written (an automated welcome is neither), it has been handed over or
+ * dealt with, and a conversation a person gives back to the receptionist is
+ * not handed over again on every reply.
+ */
+export function formAnswerToHandOverNow(answers: LeadFormAnswer[], turns: { direction: string; automated: boolean }[]): string | null {
+  if (turns.some((turn) => turn.direction === 'outbound' && !turn.automated)) return null
+  return formSymptomToHandOver(answers)
+}
+
+/** The handover note for a form answer that goes to the chiropractor (formSymptomToHandOver). */
+export function formHandOverReason(answer: string): string {
+  return `En el formulario escribió: «${answer.slice(0, 300)}». Describe un síntoma que empeora o de alarma: que lo valore la quiropráctica o el quiropráctico antes de darle cita.`
+}
+
+/**
+ * What the prompt says, beside the conversation, when the form answer is
+ * being handed over in code: the reply has to tell them so, and not offer a
+ * visit meanwhile.
+ */
+export function formHandOverNote(answer: string): string {
+  // One string, not a two-item list: the i18n extractor reads a pair of strings as [en, es].
+  const body = `In the clinic's form they wrote: "${answer}". That describes a symptom that is getting worse, or one of the signs under "Stop and hand over to a person when", so this conversation is handed to the chiropractor with this reply whatever you write. In this reply: answer what they asked (a price they asked for is given, in euros), then tell them in one sentence that you are passing what they described on to the chiropractor ("la quiropráctica" or "el quiropráctico", as "The team" gives their name), who will write to them. Call hand_over_to_colleague with what they wrote. Do not offer times and do not book: book_appointment is refused in this reply.`
+  return `# Their form goes to the chiropractor with this reply\n${body}`
+}
+
 const CHANNEL_WORDING: Record<string, string> = {
   whatsapp: 'on WhatsApp',
   sms: 'by SMS',

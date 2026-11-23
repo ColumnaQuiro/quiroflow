@@ -293,6 +293,14 @@ async function runOnce(
      */
     handOver?: boolean
     /**
+     * A handover decided before the model was asked, with its reason (a
+     * form answer describing a worsening symptom: formSymptomToHandOver).
+     * The reply goes with it whether or not the model called
+     * hand_over_to_colleague, and book_appointment is refused meanwhile.
+     * Only with `handOver`: a draft is read by a person anyway.
+     */
+    mustHandOver?: string | null
+    /**
      * Offer book_appointment (receptionistBooking.ts): only when the reply is
      * sent without review, so a calendar change is never made behind a draft
      * a person has not read yet.
@@ -401,6 +409,7 @@ async function runOnce(
     ...(opts.writeBack ? [WRITE_BACK_ON] : []),
   ]
   let handedOver: string | null = null
+  const mustHandOver = opts.handOver ? opts.mustHandOver?.trim() || null : null
   // A booking's confirmation names its time (and a move, the old one too; a
   // cancellation, the one that was): not an offer, so not counted.
   let booked = Boolean(opts.alreadyBooked)
@@ -550,6 +559,13 @@ async function runOnce(
         handedOver = colleaguePromiseReason(promise)
         checks.push('promise_handed_over')
       }
+      // Decided before the model was asked (mustHandOver): it goes to a
+      // person with the reply, whatever the model made of it. Its own reason,
+      // when it gave one, is kept; a "no reply" has nothing to go with.
+      if (mustHandOver && !handedOver && reply && !isNoReply(reply)) {
+        handedOver = mustHandOver
+        checks.push('form_handed_over')
+      }
       return run(reply, false)
     }
 
@@ -569,7 +585,9 @@ async function runOnce(
       results.push(
         await (async (): Promise<Anthropic.ToolResultBlockParam> => {
         let result: { content: string; isError: boolean }
-        if (use.name === 'book_appointment' && opts.book) {
+        if (use.name === 'book_appointment' && opts.book && mustHandOver) {
+          result = { content: 'Not booked: what they wrote in the clinic\'s form goes to the chiropractor first. Do not say anything is booked and do not offer times: tell them the chiropractor will write to them.', isError: true }
+        } else if (use.name === 'book_appointment' && opts.book) {
           result = await opts.book(use.input).catch((err) => {
             console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
             return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
@@ -646,7 +664,11 @@ async function runOnce(
             result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in Spanish: what the person needs and why you handed it over.`, isError: true }
           } else {
             handedOver = reason
-            result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
+            // Handed over for what their form said, not for what they asked:
+            // the question still gets its answer in the last message.
+            result = mustHandOver
+              ? { content: 'Done: the chiropractor has been told, and you will not answer in this conversation until someone at the clinic has. Now write your last message, in two parts: first answer what they asked in their last message (a price they asked for, in euros), then tell them you have passed what they described on to the chiropractor, who will write to them. Do not offer times and do not promise when.', isError: false }
+              : { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
           }
         } else {
           result = { content: `There is no tool called ${use.name}.`, isError: true }

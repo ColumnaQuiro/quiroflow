@@ -4,6 +4,7 @@ import type { Database } from '~/types/database.types'
 import { inboxRecipients } from '~/utils/inboxRecipients'
 import type { BusinessHours } from '~/utils/businessHours'
 import { wantingPush } from './staffPush'
+import { isUnregisteredPushToken } from './pushTokenFailure'
 import { familyPushReach, familyPushTitle, guardianLinkStands } from '~/utils/familyPush'
 
 // Push notification for a new inbound message (WhatsApp or in-app), to
@@ -182,21 +183,28 @@ export async function sendPushToUsers(
           },
         },
       })
-        .then(() => ({ ok: true as const }))
-        // A dead/expired token failing shouldn't block the others -- it'll
-        // just naturally stop being registered next time the app opens --
-        // but it should still be visible in logs instead of vanishing.
-        .catch((err) => ({ ok: false as const, error: err?.data ?? err?.message ?? err })),
+        .then(() => ({ ok: true as const, token: t.fcm_token }))
+        // One token failing shouldn't block the others.
+        .catch((err) => ({ ok: false as const, token: t.fcm_token, error: err?.data ?? err?.message ?? err })),
     ),
   )
-  const failed = results.filter((r) => !r.ok)
+  // A token FCM calls UNREGISTERED (app uninstalled, notifications turned
+  // off) never works again: delete it rather than retry it on every push.
+  // The app registers a fresh one when it is next opened. Best-effort.
+  const gone = results.filter((r) => !r.ok && isUnregisteredPushToken(r.error)).map((r) => r.token)
+  if (gone.length > 0) {
+    const { error } = await supabase.from('device_push_tokens').delete().in('fcm_token', gone)
+    if (error) console.error('[push] could not remove unregistered device tokens', error.message)
+  }
+  // Anything else is unexpected and stays visible.
+  const failed = results.filter((r) => !r.ok && !gone.includes(r.token)).map((r) => ({ ok: false, error: (r as { error?: unknown }).error }))
   // console.error's default inspect depth (2) was hiding the actual FCM
   // rejection reason inside the nested error body -- e.g. a stale token
   // reports as {error:{error:{code,message,status}}}, three levels deep --
   // logging as "[Object]" with no way to tell why a send failed. Stringify
   // explicitly so the real reason survives into the log.
   if (failed.length > 0) console.error(`[push] send failed for ${failed.length} of ${tokens.length} device(s)`, JSON.stringify(failed, null, 2))
-  return { attempted: tokens.length, delivered: tokens.length - failed.length }
+  return { attempted: tokens.length, delivered: results.filter((r) => r.ok).length }
 }
 
 /**

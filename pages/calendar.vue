@@ -3408,6 +3408,40 @@ function showNowLineOn(day: Date) {
               </span>
             </div>
           </div>
+          <!-- The icons a block draws, in the colours it draws them: the €
+               dot in particular says nothing on its own, and week view shows
+               it instead of the amount. -->
+          <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Icons', 'Iconos') }}</p>
+          <ul class="mt-2 space-y-1.5 text-[12.5px] text-ink-600" data-cy="calendar-icon-key">
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center"><span class="flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-danger-on" aria-hidden="true">€</span></span>
+              {{ t('Owes money (the whole balance)', 'Debe dinero (todo su saldo)') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-ink-500"><CalendarBlockIcon kind="noNext" /></span>
+              {{ t('No next visit booked', 'Sin próxima cita reservada') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-danger-text"><CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" /></span>
+              {{ t('Red flags on the record', 'Señales rojas en la ficha') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-brand-text"><CalendarVisitMarkerIcon /></span>
+              {{ t('Care plan re-exam', 'Revisión del plan de tratamiento') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-warning-text"><CalendarBlockIcon kind="forms" /></span>
+              {{ t('Forms not completed', 'Formularios sin completar') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-warning-accent"><CalendarBlockIcon kind="note" /></span>
+              {{ t('Clinical note', 'Nota clínica') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-ink-muted"><CalendarBlockIcon kind="moved" /></span>
+              {{ t('Moved before (times)', 'Movida antes (veces)') }}
+            </li>
+          </ul>
         </div>
       </aside>
 

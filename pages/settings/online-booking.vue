@@ -26,6 +26,8 @@ const SECTIONS = computed(() => [
 
 // --- account-wide settings (General / Layout / Language) ---
 const maxDaysAhead = ref(90)
+// The least notice, in hours: 0 lets a patient take the next free slot.
+const minNoticeHours = ref(0)
 const gtmId = ref('')
 const successUrl = ref('')
 const primaryColor = ref('')
@@ -53,11 +55,12 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_hide_heading, online_booking_hide_language_picker, online_booking_practitioner_order, online_booking_text_overrides, referral_program_enabled, referral_reward_text',
+      'online_booking_max_days_ahead, online_booking_min_notice_hours, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_hide_heading, online_booking_hide_language_picker, online_booking_practitioner_order, online_booking_text_overrides, referral_program_enabled, referral_reward_text',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   maxDaysAhead.value = data?.online_booking_max_days_ahead ?? 90
+  minNoticeHours.value = data?.online_booking_min_notice_hours ?? 0
   gtmId.value = data?.online_booking_gtm_id ?? ''
   successUrl.value = data?.online_booking_success_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
@@ -109,6 +112,7 @@ async function saveAccountSettings() {
   const update: TablesUpdate<'accounts'> = {
     // A cleared box is '' and Postgres would refuse it.
     online_booking_max_days_ahead: Number(maxDaysAhead.value) || 90,
+    online_booking_min_notice_hours: Math.min(720, Math.max(0, Math.round(Number(minNoticeHours.value) || 0))),
     online_booking_gtm_id: gtmId.value.trim() || null,
     online_booking_success_url: success.value,
     online_booking_primary_color: primaryColor.value.trim() || null,
@@ -473,6 +477,16 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 <label class="flex items-center gap-2 text-[14px] text-ink-500">
                   <input id="max-days" v-model.number="maxDaysAhead" type="number" min="1" data-cy="booking-max-days" :class="[inputClass, 'w-20 text-right']" />
                   {{ t('days', 'días') }}
+                </label>
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="min-notice" class="text-[14.5px] font-bold text-ink-900">{{ t('Minimum notice', 'Antelación mínima') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('The soonest a patient can book, counted from now. 0 offers the next free time. Your team can still book any time from the calendar.', 'Lo más pronto que un paciente puede reservar, contando desde ahora. Con 0 se ofrece la próxima hora libre. Desde la agenda podéis seguir citando a cualquier hora.') }}</span>
+                </div>
+                <label class="flex items-center gap-2 text-[14px] text-ink-500">
+                  <input id="min-notice" v-model.number="minNoticeHours" type="number" min="0" max="720" step="1" data-cy="booking-min-notice" :class="[inputClass, 'w-20 text-right']" />
+                  {{ t('hours', 'horas') }}
                 </label>
               </div>
               <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">

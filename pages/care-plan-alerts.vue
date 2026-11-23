@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { readPhaseChange } from '~/utils/carePlanPhases'
 
 // Plan-aware counterpart to pages/recalls.vue -- same "who's overdue, let me
 // message them" shape, but scoped to patients actively on a care plan
@@ -10,6 +11,13 @@ import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 // Then the plans' re-exam visits booked ahead as some other appointment type
 // than the plan asks for (care_plan_marked_visits): the review that a
 // reschedule pushed onto an ordinary slot, with the fix one click away.
+//
+// Then the patients about to change frequency (care_plan_phase_changes): a
+// plan that queued its next phase at another cadence -- "2 a week, then 1 a
+// week" -- whose current phase ends at the next booked visit or has at most
+// one left. The next phase starts by itself, but the visits after it are
+// still to be booked at the new cadence, and any already booked beyond it
+// were booked at the old one.
 //
 // Below it, the patients who have stopped doing their home exercises
 // (exercise_adherence_alerts): the same kind of "someone is falling off
@@ -56,6 +64,18 @@ interface MarkerMismatchRow {
   patient_name: string
 }
 
+interface PhaseChangeRow {
+  patient_id: string
+  patient_name: string
+  care_plan_name: string
+  from_cadence: string
+  to_cadence: string
+  total_visits: number
+  completed_in_plan: number
+  last_visit_starts_at: string | null
+  booked_after_last: number
+}
+
 const supabase = useSupabaseClient()
 const t = useT()
 
@@ -63,6 +83,8 @@ const rows = ref<AlertRow[]>([])
 const exerciseRows = ref<ExerciseAlertRow[]>([])
 const markerRows = ref<MarkerMismatchRow[]>([])
 const markerError = ref('')
+const phaseRows = ref<PhaseChangeRow[]>([])
+const phaseLoadError = ref(false)
 const fixing = ref<string | null>(null)
 const loading = ref(true)
 // A failed read is said, with a way to try again. It used to land in the
@@ -85,7 +107,7 @@ async function load(opts: { silent?: boolean } = {}) {
   if (loadError.value) console.error('[care-plan-alerts] load error', error ?? exercisesError)
   rows.value = (data as AlertRow[]) ?? []
   exerciseRows.value = (exercises as ExerciseAlertRow[] | null) ?? []
-  await loadMarkerMismatches()
+  await Promise.all([loadMarkerMismatches(), loadPhaseChanges()])
   loading.value = false
 }
 
@@ -120,6 +142,37 @@ async function loadMarkerMismatches() {
       patient_name: nameOf.get(m.patient_id) ?? '',
     }))
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+}
+
+// The names are read here, under the page's own policies: the function
+// returns ids and the plan's numbers only.
+async function loadPhaseChanges() {
+  const { data, error } = await supabase.rpc('care_plan_phase_changes')
+  phaseLoadError.value = !!error
+  if (error) console.error('[care-plan-alerts] phase changes', error)
+  const changes = (data ?? []).map((r) => ({ r, next: readPhaseChange(r.next_phase) })).filter((x) => x.next)
+  if (changes.length === 0) {
+    phaseRows.value = []
+    return
+  }
+  const { data: patients } = await supabase.from('patients').select('id, first_name, last_name').in('id', changes.map((x) => x.r.patient_id))
+  const nameOf = new Map((patients ?? []).map((p) => [p.id, patientName(p)]))
+  phaseRows.value = changes
+    // A patient this caller cannot read is not listed with a blank name.
+    .filter((x) => nameOf.has(x.r.patient_id))
+    .map(({ r, next }) => ({
+      patient_id: r.patient_id,
+      patient_name: nameOf.get(r.patient_id) ?? '',
+      care_plan_name: r.care_plan_name,
+      from_cadence: carePlanCadenceLabel(r, t),
+      to_cadence: carePlanCadenceLabel(next!, t),
+      total_visits: r.total_visits,
+      completed_in_plan: r.completed_in_plan,
+      last_visit_starts_at: r.last_visit_starts_at,
+      booked_after_last: r.booked_after_last,
+    }))
+    // Soonest first; a last visit not booked yet is the most urgent of all.
+    .sort((a, b) => (a.last_visit_starts_at ?? '').localeCompare(b.last_visit_starts_at ?? ''))
 }
 
 async function fixMarker(row: MarkerMismatchRow) {
@@ -284,6 +337,61 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
                 <UiBtn size="sm" :disabled="fixing === row.appointment_id" data-cy="marker-mismatch-fix" @click="fixMarker(row)">
                   {{ t(`Change to ${row.expected_type_name}`, `Cambiar a ${row.expected_type_name}`) }}
                 </UiBtn>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mb-1 mt-8 text-[15px] font-semibold text-ink-900">{{ t('Changing frequency', 'Cambian de frecuencia') }}</h2>
+      <p class="mb-4 text-[13px] text-ink-muted2">
+        {{
+          t(
+            'Patients whose care plan phase is about to end and whose next phase has a different frequency. The next phase starts by itself after the last visit; book the visits after it at the new frequency.',
+            'Pacientes cuya fase del plan está a punto de terminar y cuya siguiente fase tiene otra frecuencia. La nueva fase empieza sola tras la última visita; las citas siguientes hay que reservarlas con la nueva frecuencia.',
+          )
+        }}
+      </p>
+      <p v-if="!loading && phaseLoadError" role="alert" class="mb-3 rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text" data-cy="phase-changes-error">
+        {{ t("Couldn't load the patients changing frequency.", 'No se han podido cargar los pacientes que cambian de frecuencia.') }}
+      </p>
+      <div v-if="loading || !phaseLoadError" class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="phase-changes">
+        <UiEmptyState v-if="!loading && phaseRows.length === 0" :title="t('Nobody is about to change frequency', 'Nadie está a punto de cambiar de frecuencia')" :class="INSET_EMPTY">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </template>
+        </UiEmptyState>
+        <table v-else class="w-full min-w-[640px] text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
+            <tr>
+              <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-3 py-2">{{ t('Frequency', 'Frecuencia') }}</th>
+              <th class="px-3 py-2">{{ t('Progress', 'Progreso') }}</th>
+              <th class="px-3 py-2">{{ t('Last visit of the phase', 'Última visita de la fase') }}</th>
+              <th class="px-3 py-2">{{ t('Booked after it', 'Reservadas después') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-divider">
+            <tr v-if="loading">
+              <td colspan="5" class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /></td>
+            </tr>
+            <tr v-for="row in loading ? [] : phaseRows" :key="row.patient_id" data-cy="phase-change-row">
+              <td class="px-3 py-2">
+                <NuxtLink :to="`/patients/${row.patient_id}?tab=clinical`" class="whitespace-nowrap font-medium text-ink-900 hover:text-brand-text">{{ row.patient_name }}</NuxtLink>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">
+                <span class="whitespace-nowrap">{{ row.from_cadence }} → <span class="font-semibold text-ink-900">{{ row.to_cadence }}</span></span>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.completed_in_plan }} / {{ row.total_visits }}</td>
+              <td class="px-3 py-2 text-ink-muted2">
+                <span v-if="row.last_visit_starts_at" class="inline-flex items-center gap-1 whitespace-nowrap"><CalendarVisitMarkerIcon class="text-brand-text" />{{ formatDateTime(row.last_visit_starts_at) }}</span>
+                <UiPill v-else tone="warning" class="whitespace-nowrap">{{ t('Not booked', 'Sin reservar') }}</UiPill>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">
+                <UiPill v-if="row.booked_after_last > 0" tone="warning" class="whitespace-nowrap" data-cy="phase-change-booked-after">
+                  {{ row.booked_after_last === 1 ? t('1 at the old frequency', '1 con la frecuencia anterior') : t(`${row.booked_after_last} at the old frequency`, `${row.booked_after_last} con la frecuencia anterior`) }}
+                </UiPill>
+                <template v-else>{{ t('None', 'Ninguna') }}</template>
               </td>
             </tr>
           </tbody>

@@ -35,6 +35,18 @@ describe('care plan visit markers', () => {
     expect(visitMarkerLabel(null, es)).toBe('Revisión')
   })
 
+  it('names the last visit of a phase by what comes after it', () => {
+    const weekly = { visits_per_period: 1, frequency_value: 1, frequency_unit: 'week', total_visits: 4 }
+    expect(visitMarkerLabel({ label: null, next_phase: weekly }, es)).toBe('Última visita de la fase · después, semanal')
+    expect(visitMarkerLabel({ label: null, next_phase: weekly }, (en) => en)).toBe('Last visit of the phase · then weekly')
+    // Also a re-exam: both are said, the re-exam first.
+    expect(visitMarkerLabel({ label: 'Rx', next_phase: { ...weekly, frequency_value: 2 } }, es)).toBe('Rx · última de la fase; después, cada 2 semanas')
+    // A malformed or missing next phase leaves the re-exam wording alone.
+    expect(visitMarkerLabel({ label: null, next_phase: null }, es)).toBe('Revisión')
+    expect(visitMarkerLabel({ label: null, next_phase: [weekly] }, es)).toBe('Revisión')
+    expect(visitMarkerLabel({ label: null, next_phase: 'weekly' }, es)).toBe('Revisión')
+  })
+
   it('keeps only what the database accepts', () => {
     expect(cleanVisitMarkers([{ at: 0 }, { at: 12.4, every: 12, label: '  ', appointment_type_id: '' }])).toEqual([{ at: 12, every: 12, appointment_type_id: null, label: null }])
   })

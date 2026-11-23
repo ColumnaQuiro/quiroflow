@@ -1529,7 +1529,11 @@
   "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, sem comparar: a de {1} tem {2} e a de {3}, {4}. Só se comparam fotos da mesma vista.",
   "{0}: the email is not an email address.": "{0}: o email não é um endereço de email.",
   "{0}: the WhatsApp is not a phone number.": "{0}: o WhatsApp não é um número de telefone.",
-  "In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers {0}, set in": "No formato +34… Se esse número não escreveu à clínica nas últimas 24 h, o WhatsApp só entrega {0}, configurado em"
+  "In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers {0}, set in": "No formato +34… Se esse número não escreveu à clínica nas últimas 24 h, o WhatsApp só entrega {0}, configurado em",
+  "Last visit of the phase · then {0}": "Última consulta da fase · depois, {0}",
+  "Marked plan visits in this series: {0}. Booked as the plan's type where it has one.": "Consultas assinaladas do plano nesta série: {0}. Marcadas com o tipo do plano quando o tem.",
+  "last of the phase, then {0}": "última da fase; depois, {0}",
+  "{0} at the old frequency": "{0} com a frequência antiga"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10527,6 +10531,33 @@
   "Set their own": "Definir os seus",
   "No times yet: it is not offered online with them.": "Ainda sem horários: com este profissional não é oferecida online.",
   "At any free time in the practitioner's hours. Set times if it is only booked online in certain slots, like first visits.": "Em qualquer horário livre do profissional. Defina horários se online só se marca em vagas concretas, como as primeiras consultas.",
-  "Only at set times": "Só a certas horas"
+  "Only at set times": "Só a certas horas",
+  "1 at the old frequency": "1 com a frequência antiga",
+  "Back to the normal price": "Voltar ao preço normal",
+  "Booked after it": "Marcadas depois",
+  "Change price": "Alterar preço",
+  "Changing frequency": "Mudam de frequência",
+  "Couldn't load the patients changing frequency.": "Não foi possível carregar os pacientes que mudam de frequência.",
+  "Disability": "Deficiência",
+  "Frequency": "Frequência",
+  "Hide side panel": "Ocultar painel lateral",
+  "Last visit of the phase": "Última consulta da fase",
+  "Minimum notice": "Antecedência mínima",
+  "No payments by this method on this day.": "Sem pagamentos com este método neste dia.",
+  "Nobody is about to change frequency": "Ninguém está prestes a mudar de frequência",
+  "Normal price": "Preço normal",
+  "Normal price:": "Preço normal:",
+  "Patients whose care plan phase is about to end and whose next phase has a different frequency. The next phase starts by itself after the last visit; book the visits after it at the new frequency.": "Pacientes cuja fase do plano está prestes a terminar e cuja fase seguinte tem outra frequência. A nova fase começa sozinha após a última consulta; marque as consultas seguintes com a nova frequência.",
+  "Reason for the special price": "Motivo do preço especial",
+  "Save price": "Guardar preço",
+  "Seniors": "Seniores",
+  "Show only these payments": "Ver só estes pagamentos",
+  "Show side panel": "Mostrar painel lateral",
+  "Special price (€)": "Preço especial (€)",
+  "Student": "Estudante",
+  "The soonest a patient can book, counted from now. 0 offers the next free time. Your team can still book any time from the calendar.": "O mais cedo que um paciente pode marcar, a contar de agora. Com 0 oferece-se o próximo horário livre. A sua equipa pode continuar a marcar a qualquer hora a partir da agenda.",
+  "This price can no longer be changed: the receipt has payments or is closed.": "Este preço já não pode ser alterado: o recibo tem pagamentos ou está fechado.",
+  "Why this price? It shows on the receipt": "Porquê este preço? Aparece no recibo",
+  "Your role cannot change prices on receipts.": "A sua função não permite alterar preços nos recibos."
  }
 }

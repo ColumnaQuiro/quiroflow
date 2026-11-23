@@ -51,14 +51,15 @@ create index if not exists appointments_practitioner_starts_at_idx
   on public.appointments (practitioner_id, starts_at);
 drop index if exists public.appointments_practitioner_id_idx;
 
--- 3. The importers read an account's appointments a page at a time
---    (`account_id = $1 and external_reference like 'PH-%' order by id limit
---    1000 offset N`). Nothing was indexed by account in id order, so each page
---    walked appointments_pkey across every clinic's rows: ~70,000 buffers a
---    page, sixty pages a sync, six at a time. With the reference carried in
---    the index, the pages that ask only for id and external_reference never
---    touch the table (57,000 buffers -> 465 on a copy of the same shape).
---    Pages that ask for more columns still fetch the rows they skip; that is
---    the offset paging itself and needs the importer changed, not an index.
+-- 3. The importers read an account's appointments a page at a time, and
+--    nothing was indexed by account in id order, so each page walked
+--    appointments_pkey across every clinic's rows: ~70,000 buffers a page,
+--    sixty pages a sync, six at a time. readAllForAccount now reads by ranges
+--    of id instead of by offset (utils/practicehubImport/appointments.ts),
+--    and this is the index those ranges run on: `account_id = $1 and id >= $2
+--    and id < $3 order by id` touches the rows it returns and no others. The
+--    reference is carried along so that reads asking only for id and
+--    external_reference never touch the table (57,000 buffers -> 465 on a
+--    copy of the same shape).
 create index if not exists appointments_account_id_id_idx
   on public.appointments (account_id, id) include (external_reference);

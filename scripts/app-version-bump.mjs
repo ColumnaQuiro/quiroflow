@@ -25,8 +25,8 @@
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs'
 
 const APP_ID = '6805009978'
-// Both stores are Spain-only, and the lookup answers nothing for a country
-// the app is not sold in.
+// Spain is the home storefront (France and Italy were added later), and the
+// lookup answers nothing for a country the app is not sold in.
 const COUNTRY = 'es'
 const PBXPROJ = 'mobile/ios/App/App.xcodeproj/project.pbxproj'
 const GRADLE = 'mobile/android/app/build.gradle'

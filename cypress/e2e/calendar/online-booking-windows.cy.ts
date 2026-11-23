@@ -37,16 +37,14 @@ describe('Calendar: hours kept for online booking', () => {
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
 
-      cy.get('[data-cy=online-booking-window]')
-        .should('have.length.at.least', 1)
-        .first()
-        .should('contain.text', 'Primera visita · online')
-        .and('not.contain.text', 'Informe')
-        .should(($band) => {
-          // The type's colour on the band's edge: #8b5cf6 is rgb(139, 92, 246).
-          expect(getComputedStyle($band[0]).boxShadow).to.contain('rgb(139, 92, 246)')
-          expect($band[0].getBoundingClientRect().height, 'an hour tall, not a sliver').to.be.greaterThan(20)
-        })
+      // cy.contains, not get().first(): the grid redraws once its reference
+      // data arrives, and a subject taken before that is detached. contains
+      // re-queries on every retry.
+      cy.contains('[data-cy=online-booking-window]', 'Primera visita · online').should(($band) => {
+        // The type's colour on the band's edge: #8b5cf6 is rgb(139, 92, 246).
+        expect(getComputedStyle($band[0]).boxShadow).to.contain('rgb(139, 92, 246)')
+        expect($band[0].getBoundingClientRect().height, 'an hour tall, not a sliver').to.be.greaterThan(20)
+      })
       cy.contains('[data-cy=online-booking-window]', 'Informe').should('not.exist')
 
       // Switched off for online booking: the hours are no longer kept.

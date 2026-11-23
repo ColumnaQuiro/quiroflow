@@ -3,7 +3,7 @@ import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
 import { planProfilePhotos, practiceHubPhotoPath, sniffImageType, type PracticeHubPhotoSource } from '~/utils/practicehubProfilePhotos'
-import { practiceHubPatientNumberMap, practiceHubPatientRows, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
 import {
   practiceHubBlank,
   practiceHubLanguageLabel,
@@ -81,12 +81,17 @@ const loadingFromApi = ref(false)
 const apiProgress = ref('')
 const tagsUnavailable = ref(false)
 
-async function loadTagsByPatientNumber(): Promise<Map<string, string[]> | undefined> {
+// What only PracticeHub 2.0's /patients carries: each patient's tags, and the
+// "Social security number" a Spanish clinic keeps the DNI/NIE in.
+async function loadFromV3(): Promise<{ tagsByPatientNumber: Map<string, string[]>; governmentNumberById: Map<string, string> } | undefined> {
   const saved = await useStaffFetch<{ hasV3Key?: boolean }>('/api/import/practicehub-connection').catch(() => null)
   if (!saved?.hasV3Key) return undefined
   try {
-    const patients = await usePracticeHubV3().fetchAll<{ patient_number: string | null; tags?: { name: string }[] | null }>('/patients')
-    return new Map(patients.map((p) => [String(p.patient_number ?? '').trim(), (p.tags ?? []).map((tag) => tag.name).filter(Boolean)]))
+    const patients = await usePracticeHubV3().fetchAll<PHV3Patient>('/patients')
+    return {
+      tagsByPatientNumber: new Map(patients.map((p) => [String(p.patient_number ?? '').trim(), (p.tags ?? []).map((tag) => tag.name).filter(Boolean)])),
+      governmentNumberById: practiceHubGovernmentNumbers(patients),
+    }
   } catch {
     return undefined
   }
@@ -105,11 +110,11 @@ async function loadFromPracticeHub() {
       apiProgress.value = t(`Reading patients… ${fetched} / ${total}`, `Leyendo pacientes… ${fetched} / ${total}`)
     })
     apiProgress.value = t('Reading tags…', 'Leyendo etiquetas…')
-    const tagsByPatientNumber = await loadTagsByPatientNumber()
-    tagsUnavailable.value = !tagsByPatientNumber
+    const fromV3 = await loadFromV3()
+    tagsUnavailable.value = !fromV3
 
     readNumberCountries(patients)
-    rawRows.value = practiceHubPatientRows(patients, { practitioners, referralSources, tagsByPatientNumber })
+    rawRows.value = practiceHubPatientRows(patients, { practitioners, referralSources, ...fromV3 })
     fileName.value = t('PracticeHub, read just now', 'PracticeHub, leído ahora mismo')
     await computeDiff()
     stage.value = 'preview'

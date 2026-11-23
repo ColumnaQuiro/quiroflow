@@ -13,6 +13,7 @@ import {
   type PracticeHubPatientsDiffOptions,
 } from '../../utils/practicehubImport/patients'
 import type { PracticeHubImportContext, PracticeHubSnapshot } from '../../utils/practicehubImport/types'
+import { practiceHubGovernmentNumbers, practiceHubPatientRows } from '../../utils/practicehubApiRows'
 
 // The Patients step of the PracticeHub import, shared by the browser screen
 // and the server sync. The pure rules first, then the server planner against
@@ -66,7 +67,7 @@ function existingPatient(over: Partial<PracticeHubExistingPatient> = {}): Practi
   return {
     id: 'p1', external_reference: '202400007', email: 'lucia@example.test', first_name: 'Lucía', last_name: 'Demo',
     date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null,
-    created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null,
+    created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null, national_id: null,
     ...over,
   }
 }
@@ -179,6 +180,41 @@ describe('what each row does', () => {
   })
 })
 
+// PracticeHub keeps a Spanish patient's DNI/NIE in the "Social security
+// number" box, which only its 2.0 API sends (government_number). A clinic
+// arrived with none of its patients' because nothing read it.
+describe('the DNI/NIE from PracticeHub 2.0', () => {
+  const ph = [{ id: 501, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo' }, { id: 502, patient_number: '202400008', first_name: 'Pablo', last_name: 'Prueba' }]
+  const rowsWith = (v3: { id: number | string; government_number?: string | null }[]) =>
+    practiceHubPatientRows(ph, { practitioners: [], referralSources: [], governmentNumberById: practiceHubGovernmentNumbers(v3) })
+
+  it('is matched by PracticeHub id, trimmed, and left out when blank', () => {
+    expect([...practiceHubGovernmentNumbers([{ id: 501, government_number: ' X0000000T ' }, { id: '502', government_number: '  ' }, { id: 503, government_number: null }, { id: 504 }])])
+      .toEqual([['501', 'X0000000T']])
+    expect(rowsWith([{ id: '501', government_number: 'X0000000T' }]).map((r) => r['Government Number'])).toEqual(['X0000000T', ''])
+  })
+
+  it('goes onto a new patient, and only when it reads as an identity number', () => {
+    const d = practiceHubPatientsDiff(rowsWith([{ id: 501, government_number: '00000000T' }, { id: 502, government_number: 'see the note on the file, renewed in 2025' }]), [], diffOptions())
+    expect(d.toImport.map((c) => c.patient.national_id)).toEqual(['00000000T', null])
+  })
+
+  it('fills a blank one on a patient already here and never replaces one', () => {
+    const rows = rowsWith([{ id: 501, government_number: '00000000T' }])
+    const blankHere = practiceHubPatientsDiff(rows, [existingPatient({ email: null, national_id: ' ' })], diffOptions())
+    expect(blankHere.toUpdate[0]!.updates).toEqual({ national_id: '00000000T' })
+    expect(blankHere.toUpdate[0]!.diff).toEqual([{ field: 'national_id', from: ' ', to: '00000000T' }])
+    const typedHere = practiceHubPatientsDiff(rows, [existingPatient({ email: null, national_id: 'Y1111111H' })], diffOptions())
+    expect(typedHere.toUpdate).toEqual([])
+  })
+
+  it('leaves the DNI/NIE alone when PracticeHub has none', () => {
+    const d = practiceHubPatientsDiff(rowsWith([]), [existingPatient({ email: null, national_id: 'Y1111111H' })], diffOptions())
+    expect(d.toUpdate).toEqual([])
+    expect(d.skippedDuplicate).toBe(1)
+  })
+})
+
 describe('the server step', () => {
   const snapshot = (): PracticeHubSnapshot => ({
     readAt: '', baseUrl: '',
@@ -247,6 +283,31 @@ describe('the server step', () => {
     await plan.apply(() => {}, () => false)
     expect(tables.patients![0]).toMatchObject({ balance_cents: -4500, last_name: 'Demo', default_practitioner_id: null, referral_source: 'Google' })
     expect(tables.patient_contact_numbers!.map((n) => n.number)).toEqual(['600-11-22-33', '(303) 710-5245', '700 00 00 00'])
+  })
+
+  it('brings the DNI/NIE from the 2.0 list in the copy, and says when the copy has none', async () => {
+    const tables: Record<string, Row[]> = {
+      team_members: [{ id: 'tm-1', account_id: ACCOUNT, full_name: 'Marta Ruiz' }],
+      patients: [{ ...existingPatient({ id: 'p1', balance_cents: -4500, preferred_language: 'fr', default_practitioner_id: 'tm-1', referral_source: 'Google' }), account_id: ACCOUNT }],
+      patient_contact_numbers: [
+        { id: 'n1', account_id: ACCOUNT, patient_id: 'p1', number: '600112233' }, { id: 'n2', account_id: ACCOUNT, patient_id: 'p1', number: '3037105245' },
+        { id: 'n3', account_id: ACCOUNT, patient_id: 'p1', number: '700000000' },
+      ],
+    }
+    const ctx = setup(tables)
+    const without = await planPatients(ctx, snapshot())
+    expect(without.warnings.some((w) => w.includes('DNI/NIE'))).toBe(true)
+    expect(without.rows.map((r) => r.name)).toEqual(['Pablo Prueba'])
+
+    const withV3 = { ...snapshot(), lists: { ...snapshot().lists, '/v3/patients': [{ id: 501, government_number: 'X0000000T' }, { id: 502, government_number: '00000000T' }] } }
+    const plan = await planPatients(ctx, withV3)
+    expect(plan.warnings.some((w) => w.includes('DNI/NIE'))).toBe(false)
+    expect(plan.rows.find((r) => r.name === 'Lucía Demo')!.what).toBe('DNI / NIE: (blank) → X0000000T')
+    await plan.apply(() => {}, () => false)
+    expect(tables.patients!.map((p) => p.national_id)).toEqual(['X0000000T', '00000000T'])
+    // Nothing else on the patient already here was touched, and nothing is left to do.
+    expect(tables.patients![0]).toMatchObject({ balance_cents: -4500, email: 'lucia@example.test', last_name: 'Demo' })
+    expect((await planPatients(ctx, withV3)).total).toBe(0)
   })
 
   it('stops between chunks when told to', async () => {

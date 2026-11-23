@@ -1549,7 +1549,8 @@
   "{0} appointments still booked here were deleted in QuiroHiro after being imported: they are cancelled here too.": "{0} consultas que aqui continuam marcadas foram apagadas no QuiroHiro depois de importadas: também são canceladas aqui.",
   "{0} records and notes wait for their patient: run Patients first.": "{0} fichas e notas esperam pelo seu paciente: execute primeiro Pacientes.",
   "{0} notes were written on the day of a visit that is not here yet: they go on the patient's history. Run Appointments first to have them on their visit.": "{0} notas foram escritas no dia de uma visita que ainda não está aqui: vão para o histórico do paciente. Execute primeiro Consultas para as ter na sua visita.",
-  "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} ficheiros e assinaturas dos campos personalizados do QuiroHiro não são copiados nesta importação: descarregue-os do QuiroHiro se precisar deles."
+  "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} ficheiros e assinaturas dos campos personalizados do QuiroHiro não são copiados nesta importação: descarregue-os do QuiroHiro se precisar deles.",
+  "WhatsApp did not send it: {0}": "O WhatsApp não o enviou: {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10632,6 +10633,21 @@
   "not marked in QuiroHiro": "sem marcar no QuiroHiro",
   "Clinical records": "Fichas clínicas",
   "Records updated": "Fichas atualizadas",
-  "Other notes": "Outras notas"
+  "Other notes": "Outras notas",
+  "Send receipt by WhatsApp": "Enviar recibo por WhatsApp",
+  "By WhatsApp:": "Por WhatsApp:",
+  "Open WhatsApp settings": "Abrir definições do WhatsApp",
+  "Receipts and invoices": "Recibos e faturas",
+  "When staff press “Send by WhatsApp” on a receipt or an invoice. It needs a document header: the PDF goes there.": "Quando a equipa carrega em «Enviar por WhatsApp» num recibo ou numa fatura. Precisa de um cabeçalho de documento: é aí que vai o PDF.",
+  "This template has no document header, so the PDF cannot be attached. Choose one whose header is a document.": "Este modelo não tem cabeçalho de documento, por isso não é possível anexar o PDF. Escolha um cujo cabeçalho seja um documento.",
+  "WhatsApp is not connected. Connect it in Settings › WhatsApp.": "O WhatsApp não está ligado. Ligue-o em Definições › WhatsApp.",
+  "Choose the template for receipts and invoices in Settings › WhatsApp first.": "Escolha primeiro o modelo de recibos e faturas em Definições › WhatsApp.",
+  "Not sent by WhatsApp to a patient who is under age.": "Não se envia por WhatsApp a um paciente menor de idade.",
+  "This patient has no phone number. Add one to their record.": "Este paciente não tem número de telefone. Adicione-o na ficha.",
+  "This patient’s phone number is not valid for WhatsApp.": "O número de telefone deste paciente não é válido para o WhatsApp.",
+  "Could not check whether WhatsApp is set up.": "Não foi possível verificar se o WhatsApp está configurado.",
+  "Checking WhatsApp…": "A verificar o WhatsApp…",
+  "Sent by WhatsApp": "Enviado por WhatsApp",
+  "Could not send by WhatsApp": "Não foi possível enviar por WhatsApp"
  }
 }

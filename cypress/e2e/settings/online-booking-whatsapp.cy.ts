@@ -56,12 +56,12 @@ describe('WhatsApp settings', () => {
       cy.login(account.email, account.password)
       cy.visit('/settings/whatsapp')
       cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
-      cy.get('[data-cy="whatsapp-templates-count"]').should('contain', '0 of 5')
+      cy.get('[data-cy="whatsapp-templates-count"]').should('contain', '0 of 6')
 
       cy.get('[data-template-use="staff-lead"] [data-cy="whatsapp-template-select"] option').contains('recordatorio_cita').then((option) => {
         cy.get('[data-template-use="staff-lead"] [data-cy="whatsapp-template-select"]').select(String(option.val()))
       })
-      cy.get('[data-cy="whatsapp-templates-count"]').should('contain', '1 of 5')
+      cy.get('[data-cy="whatsapp-templates-count"]').should('contain', '1 of 6')
       cy.get('[data-cy="whatsapp-save"]').click()
       cy.wait('@saveAccount')
       cy.task<{ new_lead_notify_whatsapp_template_name: string }>('db:bookingAndWhatsappSettingsOf', { accountId: account.accountId })

@@ -227,6 +227,16 @@
 
   --color-toggle-off: 216 218 226;
 
+  /* The staff calendar's three states of a column (pages/calendar.vue).
+     Bookable time is the page itself. Hours nobody works are a flat grey well
+     away from it, so the bookable area reads at a glance. A deliberate block
+     (leave, training, "something came up") sits on surface and carries
+     diagonal stripes and an outline, so it is neither of the other two.
+     Neutral on purpose: no status colour is borrowed. */
+  --color-cal-closed: 228 230 237;
+  --color-cal-block-stripe: 201 205 218;
+  --color-cal-block-border: 174 179 196;
+
   /* What a modal, drawer or command palette lays over the page behind it,
      always with an opacity (bg-scrim/40). Its own token because the
      backdrops used to be bg-ink-900/40, and ink-900 is the TEXT colour: in
@@ -309,6 +319,12 @@
   --color-chart-projected: 70 73 130;
 
   --color-toggle-off: 58 61 74;
+
+  /* Lighter than the page here, not darker: the grid sits on surface-page,
+     which is already near black, so there is no room below it. */
+  --color-cal-closed: 34 36 45;
+  --color-cal-block-stripe: 64 67 82;
+  --color-cal-block-border: 92 96 114;
 
   --color-scrim: 0 0 0;
 }

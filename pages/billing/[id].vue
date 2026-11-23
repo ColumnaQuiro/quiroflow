@@ -269,6 +269,10 @@ async function confirmVoid() {
   await load()
 }
 
+// The same receipt, by WhatsApp: disabled, saying why, until the clinic has
+// chosen its template and this patient has a number (useInvoiceWhatsApp).
+const whatsapp = useInvoiceWhatsApp(() => invoice.value?.patient_id)
+
 async function sendEmail() {
   sendMessage.value = ''
   sending.value = true
@@ -434,8 +438,15 @@ const fieldId = useId()
               <UiBtn variant="secondary" :disabled="sending || !invoice.patients?.email" @click="sendEmail">
                 {{ sending ? t('Sending…', 'Enviando…') : t('Send by email', 'Enviar por correo') }}
               </UiBtn>
+              <!-- The span carries the tooltip: a disabled button does not show its own everywhere. -->
+              <span :title="whatsapp.reason.value || undefined" data-cy="invoice-whatsapp-wrap">
+                <UiBtn variant="secondary" data-cy="invoice-send-whatsapp" :disabled="!whatsapp.canSend.value || whatsapp.sendingId.value === invoiceId" @click="whatsapp.send('invoice', invoiceId)">
+                  {{ whatsapp.sendingId.value === invoiceId ? t('Sending…', 'Enviando…') : t('Send by WhatsApp', 'Enviar por WhatsApp') }}
+                </UiBtn>
+              </span>
               <UiBtn variant="secondary" @click="downloadPdf">{{ t('Download PDF', 'Descargar PDF') }}</UiBtn>
               <span v-if="sendMessage" class="text-[12.5px] text-ink-muted2">{{ sendMessage }}</span>
+              <span v-if="whatsapp.results.value[invoiceId]" class="text-[12.5px]" :class="whatsapp.results.value[invoiceId]!.ok ? 'text-ink-muted2' : 'font-semibold text-danger-text'" data-cy="invoice-whatsapp-result">{{ whatsapp.results.value[invoiceId]!.message }}</span>
             </div>
             <UiBtn
               v-if="canTakePayments"
@@ -449,6 +460,10 @@ const fieldId = useId()
         </div>
         <p v-if="!invoice.patients?.email" class="text-[12px] text-ink-faint2 print:hidden">
           {{ t('Add an email address to this patient to enable sending.', 'Añade una dirección de correo a este paciente para poder enviarla.') }}
+        </p>
+        <p v-if="whatsapp.reason.value && !whatsapp.canSend.value" class="text-[12px] text-ink-faint2 print:hidden" data-cy="invoice-whatsapp-reason">
+          {{ t('By WhatsApp:', 'Por WhatsApp:') }} {{ whatsapp.reason.value }}
+          <NuxtLink v-if="whatsapp.needsSetup.value" to="/settings/whatsapp" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open WhatsApp settings', 'Abrir ajustes de WhatsApp') }}</NuxtLink>
         </p>
 
         <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6 print:hidden">

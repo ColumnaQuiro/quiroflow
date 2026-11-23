@@ -30,6 +30,8 @@ const recallTemplateName = ref('')
 const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
+const invoiceTemplateName = ref('')
+const invoiceTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
@@ -130,7 +132,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_business_app_since, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_business_app_since, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, whatsapp_invoice_template_name, whatsapp_invoice_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -159,6 +161,8 @@ async function load() {
   recallTemplateLanguage.value = data?.whatsapp_recall_template_language ?? 'es'
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
+  invoiceTemplateName.value = data?.whatsapp_invoice_template_name ?? ''
+  invoiceTemplateLanguage.value = data?.whatsapp_invoice_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
@@ -183,7 +187,7 @@ async function loadTemplates() {
   }
 }
 
-// --- the five messages, one table ---
+// --- the six messages, one table ---
 // Each message QuiroFlow can start a WhatsApp conversation with, and the
 // approved template it uses. This replaces a name/language pair of text
 // fields per message plus a row of "Use for …" buttons on each template --
@@ -199,6 +203,9 @@ const USES = computed<TemplateUse[]>(() => [
   { key: 'confirmation', title: t('Appointment confirmation', 'Confirmación de cita'), when: t('When an appointment is booked. A patient’s own language is used when it has an approved variant.', 'Al reservar una cita. Se usa el idioma del paciente si tiene una variante aprobada.'), name: confirmationTemplateName, lang: confirmationTemplateLanguage },
   { key: 'reminder', title: t('Appointment reminder', 'Recordatorio de cita'), when: t('Before the appointment, as set in Messages.', 'Antes de la cita, según Mensajes.'), name: reminderTemplateName, lang: reminderTemplateLanguage },
   { key: 'recall', title: t('Recall', 'Revisión'), when: t('Pre-selected when staff send a recall; they can switch it each time.', 'Preseleccionada al enviar una revisión; se puede cambiar cada vez.'), name: recallTemplateName, lang: recallTemplateLanguage },
+  // The one template here that must carry a file: the send attaches the PDF
+  // to its document header, and Meta refuses a template without one.
+  { key: 'invoice', title: t('Receipts and invoices', 'Recibos y facturas'), when: t('When staff press “Send by WhatsApp” on a receipt or an invoice. It needs a document header: the PDF goes there.', 'Cuando el personal pulsa «Enviar por WhatsApp» en un recibo o una factura. Necesita una cabecera de documento: ahí va el PDF.'), name: invoiceTemplateName, lang: invoiceTemplateLanguage },
   { key: 'staff-booking', title: t('New booking alert (to staff)', 'Aviso de reserva (al personal)'), when: t('To Online Booking’s notify number, when it has not written to the clinic in 24 h.', 'Al número de aviso de Reserva online, si no ha escrito a la clínica en 24 h.'), name: staffNotifyTemplateName, lang: staffNotifyTemplateLanguage },
   { key: 'staff-lead', title: t('New lead alert (to staff)', 'Aviso de lead (al personal)'), when: t('To the notify number in Leads. Fills name, phone, email, source.', 'Al número de aviso de Leads. Rellena nombre, teléfono, email y origen.'), name: newLeadNotifyTemplateName, lang: newLeadNotifyTemplateLanguage },
 ])
@@ -221,6 +228,13 @@ function templateBody(name: string, lang: string) {
 // flagged, rather than silently vanishing from the picker.
 function isKnownTemplate(name: string, lang: string) {
   return templates.value.some((x) => x.name === name && x.language === lang)
+}
+// The receipt goes in the template's document header, so one without it is
+// refused at send time. Said here, where it is chosen, rather than only then.
+function lacksDocumentHeader(use: TemplateUse) {
+  if (use.key !== 'invoice' || !use.name.value) return false
+  const tpl = templates.value.find((x) => x.name === use.name.value && x.language === use.lang.value)
+  return !!tpl && tpl.mediaHeaderFormat !== 'DOCUMENT'
 }
 
 const connected = computed(() => !!(phoneNumberId.value && businessAccountId.value && hasStoredToken.value))
@@ -253,6 +267,8 @@ async function save() {
     whatsapp_recall_template_language: recallTemplateLanguage.value.trim() || 'es',
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
+    whatsapp_invoice_template_name: invoiceTemplateName.value.trim() || null,
+    whatsapp_invoice_template_language: invoiceTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
@@ -455,6 +471,9 @@ async function save() {
                     <input v-model="u.lang.value" type="text" placeholder="es" :aria-label="t(`${u.title}: language`, `${u.title}: idioma`)" :class="[inputClass, 'w-16 text-center']" />
                   </div>
                   <p v-if="templateBody(u.name.value, u.lang.value)" class="line-clamp-2 text-[12.5px] leading-snug text-ink-500">“{{ templateBody(u.name.value, u.lang.value) }}”</p>
+                  <p v-if="lacksDocumentHeader(u)" class="text-[12.5px] font-semibold leading-snug text-warning-text" data-cy="whatsapp-invoice-template-no-document">
+                    {{ t('This template has no document header, so the PDF cannot be attached. Choose one whose header is a document.', 'Esta plantilla no tiene cabecera de documento, así que no se puede adjuntar el PDF. Elige una cuya cabecera sea un documento.') }}
+                  </p>
                 </div>
               </div>
             </section>

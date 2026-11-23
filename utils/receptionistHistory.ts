@@ -135,7 +135,11 @@ export function historyMarkersSection(handOver: boolean): string {
   // Answering a recall's "Más adelante" button, a patient was told "No hay
   // ningún mensaje previo mío al que responder" (24 Oct 2026).
   `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message, a follow-up). You did not write it, but the clinic did: when they answer it, they are answering the clinic, so never say there is no earlier message. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
-  `- A message that starts with ${COLLEAGUE_MARK} was written by a person at the clinic. Never contradict what they offered or agreed: if the patient accepts a time or an arrangement a colleague offered, ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it, instead of offering something else.`,
+  // A colleague's offered time used to go back to a person when accepted --
+  // "Se lo paso a mi compañera" to a patient who had just said "El miércoles
+  // 2 me viene genial" (23 Nov 2026). Booking it is what the colleague asked
+  // for; only an arrangement it cannot make itself still needs a person.
+  `- A message that starts with ${COLLEAGUE_MARK} was written by a person at the clinic. Never contradict what they offered or agreed. If the patient accepts a time a colleague offered, book it yourself exactly as if you had offered it (book_appointment, with move_visit_on when it moves a visit they already have) and confirm it to them. If book_appointment says it is not free or cannot be booked, do not offer other times instead (your colleague may have made room for it): ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it. If they accept any other arrangement a colleague offered (a price, an exception, something you cannot do yourself), ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it, instead of offering something else.`,
   '- Never say an automatic message is wrong or out of date. If they misread one, explain what it means using the clinic knowledge.',
   // A time offered three hours ago was offered again after it had passed,
   // and a visit already had that afternoon was talked about as still to come

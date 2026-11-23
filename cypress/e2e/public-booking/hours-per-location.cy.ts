@@ -23,6 +23,12 @@ function nextDay(day: string, fromDays = 2): string {
   }
   throw new Error(`no ${day} ahead`)
 }
+// The Wednesday right after that Tuesday. A second nextDay('wed') is not it on
+// a Monday: nextDay starts two days out, so it skips tomorrow's Tuesday for next
+// week's and finds this week's Wednesday, and the API refuses to > from (400).
+function dayAfter(date: string): string {
+  return clinicDateOf(new Date(new Date(wallClockToUtc(date, '12:00', MADRID)).getTime() + 86400000), MADRID)
+}
 const at = (date: string, hhmm: string) => new Date(wallClockToUtc(date, hhmm, MADRID)).toISOString()
 
 describe('Hours per location', () => {
@@ -62,7 +68,7 @@ describe('Hours per location', () => {
 
   it('books them at the second location only in the week set for it, and not at the clinic meanwhile', () => {
     const tue = nextDay('tue')
-    const wed = nextDay('wed')
+    const wed = dayAfter(tue)
     cy.get('@acct').then((account: any) => {
       cy.get<string>('@gymId').then((gymId) => {
         worksTuesdayEveningsAtTheGym(account, gymId)
@@ -96,7 +102,7 @@ describe('Hours per location', () => {
 
   it('offers the same through the public API and to the booking page', () => {
     const tue = nextDay('tue')
-    const wed = nextDay('wed')
+    const wed = dayAfter(tue)
     cy.get('@acct').then((account: any) => {
       cy.get<string>('@gymId').then((gymId) => {
         worksTuesdayEveningsAtTheGym(account, gymId)

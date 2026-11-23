@@ -3,8 +3,8 @@ import type { Tables } from '~/types/database.types'
 import type { ImportSource } from '~/utils/importJobReport'
 
 // The newest server-side import job (import_jobs) for this clinic, per source,
-// kept up to date while any screen watches it. Quirocitas and PracticeHub run
-// through the same job runner (server/utils/importJobs.ts); this is the
+// kept up to date while any screen watches it. Quirocitas, PracticeHub and QuiroHiro
+// run through the same job runner (server/utils/importJobs.ts); this is the
 // browser's side of it: start one, watch it, stop it. The tab can be closed at
 // any point -- the job carries on.
 
@@ -12,10 +12,13 @@ export type ImportJobRow = Tables<'import_jobs'>
 
 export const importJobActive = (j: ImportJobRow | null) => j?.status === 'queued' || j?.status === 'running'
 
+/** QuiroHiro's `who`: only the clinic's patients, or every contact, leads included. */
+export interface ImportJobStartOptions { quietUpcoming?: boolean; fromScratch?: boolean; dryRun?: boolean; who?: 'patients' | 'everyone' }
+
 export interface ImportJobControls {
   job: ShallowRef<ImportJobRow | null>
   refresh(): Promise<void>
-  start(steps: string[], options?: { quietUpcoming?: boolean; fromScratch?: boolean; dryRun?: boolean }): Promise<ImportJobRow | null>
+  start(steps: string[], options?: ImportJobStartOptions): Promise<ImportJobRow | null>
   cancel(): Promise<void>
 }
 
@@ -72,7 +75,7 @@ export function useImportJob(source: ImportSource, onFinished?: () => unknown): 
     if (--state.watchers <= 0 && state.timer) { clearInterval(state.timer); state.timer = null }
   })
 
-  async function start(steps: string[], options: { quietUpcoming?: boolean; fromScratch?: boolean; dryRun?: boolean } = {}) {
+  async function start(steps: string[], options: ImportJobStartOptions = {}) {
     job.value = await useStaffFetch<ImportJobRow>('/api/import/jobs', {
       method: 'POST',
       body: { source, steps, clinicId: store.currentClinicId ?? null, options: { ...options, lang: preference.value } },

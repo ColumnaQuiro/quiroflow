@@ -1,8 +1,8 @@
 // What an import job (import_jobs) says about itself: its progress while it
 // runs, what each step did, and the email sent when it ends. Shared by the
 // server that runs it (server/utils/importJobs.ts) and the screens that watch
-// it (components/import/QuirocitasJob.vue). Both sources run through it:
-// Quirocitas and PracticeHub (see import_jobs.source).
+// it (components/import/QuirocitasJob.vue). Every source runs through it:
+// Quirocitas, PracticeHub and QuiroHiro (see import_jobs.source).
 
 export type ImportJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -38,6 +38,8 @@ export interface ImportJobProgress {
   pagesRead?: Record<string, number>
   /** Records PracticeHub says it holds, summed over the lists read so far. */
   records?: number
+  /** QuiroHiro: the month the oldest contact was added, which the appointment walk starts a year before. */
+  earliest?: string
   /**
    * A downloading step's fresh read of its link list (PRACTICEHUB_LINK_LISTS),
    * kept apart from the step's own counts. `readAt` is unset while it reads,
@@ -70,17 +72,17 @@ export interface ImportJobStepResult {
   wouldWrite?: number
 }
 
-export type ImportSource = 'quirocitas' | 'practicehub'
+export type ImportSource = 'quirocitas' | 'practicehub' | 'quirohiro'
 
 export function importSourceName(source: string | undefined): string {
-  return source === 'practicehub' ? 'PracticeHub' : 'Quirocitas'
+  return source === 'practicehub' ? 'PracticeHub' : source === 'quirohiro' ? 'QuiroHiro' : 'Quirocitas'
 }
 
 type T = (en: string, es: string) => string
 
 export function importJobStepLabel(step: string, t: T, source?: string): string {
   switch (step) {
-    case 'read': return source === 'practicehub' ? t('Read PracticeHub', 'Leer PracticeHub') : t('Read Quirocitas', 'Leer Quirocitas')
+    case 'read': return source === 'practicehub' ? t('Read PracticeHub', 'Leer PracticeHub') : source === 'quirohiro' ? t('Read QuiroHiro', 'Leer QuiroHiro') : t('Read Quirocitas', 'Leer Quirocitas')
     case 'patients': return t('Patients', 'Pacientes')
     case 'appointments': return t('Appointments', 'Citas')
     case 'appointment_types': return t('Appointment types', 'Tipos de cita')
@@ -91,7 +93,7 @@ export function importJobStepLabel(step: string, t: T, source?: string): string 
     case 'custom_form_responses': return t('Form responses', 'Respuestas de formularios')
     case 'profile_photos': return t('Profile photos', 'Fotos de perfil')
     case 'file_attachments': return t('Files', 'Archivos')
-    case 'clinical': return t('Clinical history and calls', 'Historial clínico y llamadas')
+    case 'clinical': return source === 'quirohiro' ? t('Clinical records and notes', 'Fichas y notas clínicas') : t('Clinical history and calls', 'Historial clínico y llamadas')
     case 'files': return t('Files and photos', 'Archivos y fotos')
     case 'bonos': return 'Bonos'
     case 'ledger': return t('Payments and invoices', 'Pagos y facturas')

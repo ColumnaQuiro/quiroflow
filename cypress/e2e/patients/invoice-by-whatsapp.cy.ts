@@ -184,7 +184,7 @@ describe('A receipt by WhatsApp', () => {
       // The settings page says so where it is chosen.
       cy.visit('/settings/whatsapp')
       cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
-      cy.get('[data-cy="whatsapp-invoice-template-no-document"]').should('be.visible')
+      cy.get('[data-cy="whatsapp-invoice-template-no-document"]').scrollIntoView().should('be.visible')
     })
   })
 

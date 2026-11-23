@@ -536,7 +536,7 @@ export async function runReceptionistModel(
           // asked for again, never a cause to lose the handover itself.
           if (handoverReasonSaysNothing(reason)) {
             handedOver = handedOver ?? UNEXPLAINED_HANDOVER_REASON
-            result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in the clinic's language: what the person needs and why you handed it over.`, isError: true }
+            result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in Spanish: what the person needs and why you handed it over.`, isError: true }
           } else {
             handedOver = reason
             result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
@@ -563,7 +563,7 @@ const HAND_OVER: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      reason: { type: 'string', description: 'For your colleagues, in one short sentence in the clinic\'s language: what they need and why you handed it over.' },
+      reason: { type: 'string', description: 'For your colleagues, in one short sentence in Spanish whatever language the conversation is in: what they need and why you handed it over. It is shown to them as written, after "Motivo:".' },
     },
     required: ['reason'],
     additionalProperties: false,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cameFromAd, leadFormAnswers, leadFormSection, leadOriginSection, type LeadOrigin } from '../../utils/receptionistLeadOrigin'
+import { cameFromAd, formAnswerToHandOverNow, formHandOverNote, formHandOverReason, formSymptomToHandOver, leadFormAnswers, leadFormSection, leadOriginSection, type LeadOrigin } from '../../utils/receptionistLeadOrigin'
 
 // A clinic can price a first visit differently for someone who came from its
 // ad, and the receptionist used to find that out by asking "how did you hear
@@ -96,5 +96,61 @@ describe('What they wrote in the form', () => {
 
   it('says nothing when there was no form', () => {
     expect(leadFormSection([])).toBe('')
+  })
+})
+
+// Whether the model then handed the form over was luck: the eval for the
+// 17 Nov 2026 lead passed one run in three on Haiku the day the section
+// above was written, and none two days later with the prompt unchanged. So
+// the worsening and the alarm signs are read in code.
+describe('A form answer that goes to the chiropractor, decided in code', () => {
+  const answer = (text: string) => [{ question: '¿Cuál sería el motivo de tu visita?', answer: text }]
+  const welcome = { direction: 'outbound', automated: true }
+  const theirs = { direction: 'inbound', automated: false }
+
+  it.each([
+    'Sufro de migraña cada vez más intensas y frecuentes.',
+    'Dolor lumbar desde que amanezco y empeora durante el día',
+    'Llevo un mes con ciática y va a peor',
+    'El dolor de cuello está cada día peor',
+    'Hormigueo en la mano derecha desde hace semanas',
+    'Se me duermen los dedos por la noche',
+    'Dolor cervical con mareos',
+    'Pérdida de fuerza en la pierna izquierda',
+    'My back pain keeps getting worse',
+    'Numbness and tingling down my left arm',
+  ])('reads "%s" as one', (text) => {
+    expect(formSymptomToHandOver(answer(text))).toBe(text)
+  })
+
+  it.each([
+    'Dolor de espalda desde hace años',
+    'Contractura en el cuello, trabajo muchas horas sentada',
+    'Quiero mejorar mi postura',
+    'Me duele la lumbar pero no empeora',
+    'Lower back pain after the gym',
+  ])('leaves "%s" to the conversation', (text) => {
+    expect(formSymptomToHandOver(answer(text))).toBeNull()
+  })
+
+  it('reads every answer of the form, not only the first', () => {
+    expect(formSymptomToHandOver([{ question: 'Nombre', answer: 'Persona Inventada' }, ...answer('Cada vez peor de la espalda')])).toBe('Cada vez peor de la espalda')
+    expect(formSymptomToHandOver([])).toBeNull()
+  })
+
+  it('hands it over with the first reply: an automated welcome is not an answer', () => {
+    expect(formAnswerToHandOverNow(answer('Migrañas cada vez más frecuentes'), [welcome, theirs])).toBe('Migrañas cada vez más frecuentes')
+  })
+
+  it('not again once the receptionist or a person has written', () => {
+    expect(formAnswerToHandOverNow(answer('Migrañas cada vez más frecuentes'), [welcome, theirs, { direction: 'outbound', automated: false }, theirs])).toBeNull()
+  })
+
+  it('tells the person reading the handover what they wrote, and the model to say so and not book', () => {
+    expect(formHandOverReason('Migrañas cada vez más frecuentes')).toContain('«Migrañas cada vez más frecuentes»')
+    const note = formHandOverNote('Migrañas cada vez más frecuentes')
+    expect(note).toContain('"Migrañas cada vez más frecuentes"')
+    expect(note).toContain('answer what they asked')
+    expect(note).toContain('Do not offer times and do not book')
   })
 })

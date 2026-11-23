@@ -17,7 +17,7 @@ import { internalNotes } from '~/utils/receptionistGuard'
 import { standingClockTimes, dayMark, AUTOMATED_MARK, COLLEAGUE_MARK } from '~/utils/receptionistHistory'
 import { chosenOfferedTime, chosenTimeNote } from '~/utils/receptionistFollowThrough'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
-import type { LeadFormAnswer, LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { formAnswerToHandOverNow, formHandOverNote, formHandOverReason, type LeadFormAnswer, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { ALL_TYPES, BOOKED, CLINIC, CLINIC_DETAILS, KNOWLEDGE, NOW, PACKAGES, PRACTITIONERS, TIME_ZONE } from './fixtures'
 
 /** The model production uses (receptionistDraft.ts, patientReplyDraft.ts). */
@@ -169,6 +169,11 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
     if (chosen) system = { ...system, conversation: `${system.conversation}\n\n${chosenTimeNote(chosen, true, { sentOn: scenario.conversation[lastUs]!.on ?? today, today })}` }
   }
 
+  // And a worsening symptom written only in the form is handed over in code
+  // with the first reply (receptionistDraft.ts).
+  const formAnswer = scenario.kind === 'lead' ? formAnswerToHandOverNow(scenario.leadForm ?? [], scenario.conversation.map((t) => ({ direction: t.from === 'them' ? 'inbound' : 'outbound', automated: t.from === 'system' }))) : null
+  if (formAnswer) system = { ...system, conversation: `${system.conversation}\n\n${formHandOverNote(formAnswer)}` }
+
   // The conversation as the model reads it (historyLine's marks), with each
   // side's consecutive messages joined into one turn.
   const messages: Anthropic.MessageParam[] = []
@@ -203,6 +208,7 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
     system,
     messages,
     handOver: true,
+    mustHandOver: formAnswer ? formHandOverReason(formAnswer) : null,
     findFreeTimes: async (input) => {
       const value = input as { from_date?: string; to_date?: string; appointment_type?: string }
       if (!value.from_date) return { content: 'from_date is required.', isError: true }

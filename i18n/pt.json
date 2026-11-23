@@ -8143,6 +8143,8 @@
   "Tag removed": "Etiqueta removida",
   "Tags": "Etiquetas",
   "Tags (all of)": "Etiquetas (todas)",
+  "ID numbers": "documentos de identificação",
+  "The DNI/NIE (PracticeHub’s \"Social security number\") is only in PracticeHub 2.0’s API. Save a 2.0 key in Settings > Import > Connection and read again to bring it.": "O documento de identificação (o «Número de segurança social» do PracticeHub) só existe na API do PracticeHub 2.0. Guarde uma chave 2.0 em Definições > Importar > Ligação e leia novamente para o trazer.",
   "Tags are only in PracticeHub 2.0’s API, so they are not included. Save the 2.0 key under Connection and read again to bring them.": "As etiquetas só existem na API do PracticeHub 2.0, por isso não estão incluídas. Guarde a chave 2.0 em Ligação e leia novamente para as trazer.",
   "Tags are only in PracticeHub 2.0’s API, which this sync does not read, so new patients come in without them.": "As etiquetas só existem na API 2.0 do PracticeHub, que esta sincronização não lê, por isso os pacientes novos chegam sem elas.",
   "Take a photo": "Tirar uma foto",

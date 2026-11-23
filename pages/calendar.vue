@@ -12,6 +12,8 @@ import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import { gridEndHour, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
+import { onlineBookingBands, type PractitionerDay } from '~/utils/calendarBookingWindows'
+import type { OnlineBookingWindows } from '~/utils/bookingSlots'
 import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
@@ -92,7 +94,20 @@ const DAY_ROW_PX = 30
 const WEEK_ROW_PX = 22
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null; class_capacity?: number | null }
+interface AppointmentType {
+  id: string
+  name: string
+  duration_minutes: number
+  color: string
+  default_price_cents: number
+  sort_order: number | null
+  archived_at: string | null
+  class_capacity?: number | null
+  // Missing until the migration adding them to calendar_reference is applied.
+  online_booking_enabled?: boolean | null
+  online_booking_windows?: OnlineBookingWindows | null
+  practitioner_ids?: string[] | null
+}
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string; business_hours?: BusinessHours | null }
 
@@ -1429,6 +1444,55 @@ const closedRectsByDay = computed(() => {
 })
 function closedRectsFor(day: Date) {
   return closedRectsByDay.value.get(toDateKey(day)) ?? []
+}
+
+// The hours kept for booking a type online (utils/calendarBookingWindows),
+// tinted in that type's colour so the front desk sees them before filling
+// them with something else. Who counts is who the hatching counts: the
+// practitioner on their own tab, everyone assigned here on the clinic's --
+// each with the hours they work, since a window is only offered inside them.
+function practitionerDaysFor(date: Date): PractitionerDay[] {
+  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
+  const clinicDay = windowsForDay(date, clinicHours)
+  const pid = singlePractitionerId.value
+  const members = pid ? clinicTeamMembers.value.filter((m) => m.id === pid) : clinicTeamMembers.value
+  return members.map((m) => ({
+    id: m.id,
+    working: !hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(m.business_hours) ? null : practitionerWindowsForDay(clinicDay, m.business_hours, dayKeyFor(date)),
+  }))
+}
+function hhmmMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+function bookingBandRects(forDate: Date, tops: HourTops) {
+  return onlineBookingBands(appointmentTypes.value, dayKeyFor(forDate), practitionerDaysFor(forDate)).flatMap((band) => {
+    const from = Math.max(0, hhmmMinutes(band.from) - START_HOUR * 60)
+    const to = Math.min(totalMin.value, hhmmMinutes(band.to) - START_HOUR * 60)
+    if (to <= from) return []
+    const top = gridYAt(tops, from)
+    return [{ key: `${band.from}-${band.to}`, top, height: gridYAt(tops, to) - top, color: band.types[0].color, label: band.types.map((x) => x.name).join(' · ') }]
+  })
+}
+const bookingBandsByDay = computed(() => {
+  const tops = topsForView()
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  return new Map(days.map((d) => [toDateKey(d), bookingBandRects(d, tops)]))
+})
+function bookingBandsFor(day: Date) {
+  return bookingBandsByDay.value.get(toDateKey(day)) ?? []
+}
+// A wash of the type's colour, light enough not to drown the visits booked
+// on it, with a solid edge down the day's first column so a pale type still
+// reads against the grid. The edge only there: repeated on every room column
+// it read as stripes rather than one stretch of the day.
+function bookingBandStyle(band: { top: number; height: number; color: string }, firstColumn: boolean) {
+  return {
+    top: `${band.top}px`,
+    height: `${band.height}px`,
+    background: `color-mix(in srgb, ${band.color} 14%, transparent)`,
+    boxShadow: firstColumn ? `inset 3px 0 0 ${band.color}` : undefined,
+  }
 }
 
 // Placeholder visits while a range loads: a few per column at fixed, varied
@@ -3612,6 +3676,9 @@ function showNowLineOn(day: Date) {
                   <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
                     <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
                   </div>
+                  <div v-for="band in bookingBandsFor(anchorDate)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2.5 pr-2 pt-1 text-[11.5px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
+                    <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }} · {{ t('online', 'online') }}</span>
+                  </div>
                   <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(dayTops, m)}px` }" />
                   <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(dayTops, (h - START_HOUR) * 60)}px` }" />
 
@@ -3829,6 +3896,9 @@ function showNowLineOn(day: Date) {
                     @click="onColumnClick($event, day, col.id, weekTops)"
                   >
                     <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                    <div v-for="band in bookingBandsFor(day)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2 pr-1 pt-1 text-[11px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
+                      <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }}</span>
+                    </div>
                     <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(weekTops, m)}px` }" />
                     <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(weekTops, (h - START_HOUR) * 60)}px` }" />
 

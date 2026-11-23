@@ -13,7 +13,7 @@ import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { acceptOfferedTime, alreadyBookedNote, keepOffer } from '~/server/utils/receptionistOffers'
-import { cameFromAd, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
+import { cameFromAd, formAnswerToHandOverNow, formHandOverNote, formHandOverReason, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { chosenOfferedTime, chosenTimeNote, isUnheardVoiceNote, HANDED_OVER_REPLY, REFUSED_REASON, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
@@ -285,6 +285,10 @@ export async function draftLeadReply(
   // the conversation, or the day's limit is reached.
   const hold = mayAutoSend ? autoReplyHeldBack(asTurns, new Date()) : null
   const sends = mayAutoSend && hold === null
+  // A worsening symptom written only in the clinic's form goes to the
+  // chiropractor with the first reply, decided here rather than by the model
+  // (formSymptomToHandOver). Not behind a draft: a person reads that anyway.
+  const formAnswer = sends ? formAnswerToHandOverNow(leadForm, asTurns) : null
   // Its record (receptionist_reply_traces), at whichever exit it leaves by.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
     recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: receptionistModelName(), startedAt, ...extra })
@@ -371,6 +375,7 @@ export async function draftLeadReply(
   const offer = ours && ours.direction === 'outbound' && !ourLast?.automated ? ours.body_preview ?? '' : ''
   const offeredBy = ours?.sent_by_ai === true ? 'you' as const : 'colleague' as const
   const chosen = offer ? chosenOfferedTime(offer, ordered.slice(lastOutbound + 1).filter((m: { direction: string }) => m.direction === 'inbound').map((m: { body_preview: string | null }) => m.body_preview ?? '').join(' ')) : null
+  const withFormHandOver = <P extends { conversation: string }>(prompt: P): P => (formAnswer ? { ...prompt, conversation: `${prompt.conversation}\n\n${formHandOverNote(formAnswer)}` } : prompt)
   const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined, offeredBy)}` } : prompt)
 
   // The clinic's monthly ceiling, if it set one: checked before the model is
@@ -407,12 +412,13 @@ export async function draftLeadReply(
     fallbackModel: receptionistFallbackModel(),
     alreadyBooked: accepted?.kind === 'booked' ? { input: accepted.input, details: accepted.details } : null,
     maxTokens: MAX_TOKENS,
-    system: withAccepted(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
+    system: withFormHandOver(withAccepted(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }))),
     // With the day each message was sent (withDayMarks): "mañana jueves" in
     // yesterday's offer is today, not a week from now.
     messages: withImages(withDayMarks(dated, calendar.timeZone).map(({ role, content }: { role: 'user' | 'assistant'; content: string }) => ({ role, content })), images),
     findFreeTimes,
     handOver: sends,
+    mustHandOver: formAnswer ? formHandOverReason(formAnswer) : null,
     book,
     waitlist,
     cancel,

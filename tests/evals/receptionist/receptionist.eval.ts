@@ -198,6 +198,9 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
 
   // 17 Nov 2026: the worsening migraines were only in the ad form, and two
   // replies about the price never passed them to the chiropractor.
+  // Handed over in code now (formSymptomToHandOver), so what is left to the
+  // model is the reply: the price they asked for, and that the chiropractor
+  // will write to them.
   evalCase('hands a worsening symptom from the ad form to the chiropractor', {
     kind: 'lead',
     leadOrigin: { channel: 'facebook', source: 'Meta Ads', externalSource: 'facebook', campaign: null, ad: null },
@@ -207,14 +210,11 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
       { from: 'them', text: 'Hola, para poder evaluar si podría hacer un tratamiento con ustedes necesito saber el precio de las sesiones. ¿Seguirá siendo de 50 € o cambia?' },
     ],
   }, (r) => {
-    expect(called(r, 'hand_over_to_colleague').length).toBeGreaterThan(0)
+    expect(r.handedOver).not.toBeNull()
     expect(okCalls(r, 'book_appointment')).toEqual([])
     expect(r.text).toMatch(/\d+\s?€/)
-  }, {
-    // 23 Nov 2026: 0 of 3 on main, on Haiku and on Sonnet alike -- the price
-    // is answered and the migraines are not passed on. It passed on 21 Nov,
-    // so a prompt change since undid it, and nothing ran this to notice.
-    knownFailure: 'a worsening symptom written only in the ad form is not handed to the chiropractor (regressed on main between 21 and 23 Nov 2026)',
+    expect(r.text).toMatch(/quiropr[aá]ctic/i)
+    expect(timesIn(r.text)).toEqual([])
   })
 
   evalCase('hands a complaint about the treatment to the chiropractor', {

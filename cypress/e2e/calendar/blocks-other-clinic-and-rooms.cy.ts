@@ -36,6 +36,10 @@ function openDay(account: StaffAccount, firstBlock: string) {
   cy.login(account.email, account.password)
   cy.visit('/calendar')
   cy.contains('select', 'Work week').select('day')
+  // Week view prints the whole name too where it fits, so the name alone no
+  // longer says the day grid is up -- and a drag begun on a week block lands
+  // on an element the switch is about to replace.
+  cy.get('[data-cy=week-day-col]').should('not.exist')
   cy.contains('[data-cy=appt-block]', firstBlock).should('exist')
 }
 

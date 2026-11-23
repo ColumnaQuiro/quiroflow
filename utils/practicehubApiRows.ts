@@ -47,6 +47,18 @@ export interface PHApiPatient {
   profile_image?: string | null
 }
 
+/**
+ * A PracticeHub 2.0 /patients record, as far as the import reads it. Its ids
+ * are Classic's ids (all 327 of one clinic's agreed, 23 Nov 2026).
+ */
+export interface PHV3Patient {
+  id: number | string
+  patient_number?: string | number | null
+  /** The "Social security number" box on the patient file: the DNI/NIE, for a Spanish clinic. Only 2.0 sends it. */
+  government_number?: string | null
+  tags?: { name: string }[] | null
+}
+
 /** A Classic /appointments record, as far as the import reads it. */
 export interface PHApiAppointment {
   id: number | string
@@ -118,7 +130,7 @@ const flag = (value: unknown) => (value === true || value === 1 || value === '1'
 /** Patients in the shape of the CSV export's rows, keyed by PracticeHub's patient number. */
 export function practiceHubPatientRows(
   patients: PHApiPatient[],
-  lookups: { practitioners: PHNamed[]; referralSources: PHNamed[]; tagsByPatientNumber?: Map<string, string[]> },
+  lookups: { practitioners: PHNamed[]; referralSources: PHNamed[]; tagsByPatientNumber?: Map<string, string[]>; governmentNumberById?: Map<string, string> },
 ): Row[] {
   const practitioners = byId(lookups.practitioners)
   const sources = byId(lookups.referralSources)
@@ -158,8 +170,19 @@ export function practiceHubPatientRows(
       'Default Practitioner': nameOf(practitioners.get(text(p.default_practitioners?.[0]?.practitioner_id))),
       'Referral Source': referral,
       'Tags': (lookups.tagsByPatientNumber?.get(patientNumber) ?? []).join(', '),
+      'Government Number': lookups.governmentNumberById?.get(text(p.id)) ?? '',
     }
   })
+}
+
+/** Each patient's government number from PracticeHub 2.0's /patients, by PracticeHub id. Patients without one are left out. */
+export function practiceHubGovernmentNumbers(patients: Pick<PHV3Patient, 'id' | 'government_number'>[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const p of patients) {
+    const number = text(p.government_number)
+    if (number) map.set(text(p.id), number)
+  }
+  return map
 }
 
 /** Appointments in the shape of the CSV export's rows. */

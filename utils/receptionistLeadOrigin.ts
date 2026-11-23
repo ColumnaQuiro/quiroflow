@@ -166,10 +166,9 @@ export function formHandOverReason(answer: string): string {
  * visit meanwhile.
  */
 export function formHandOverNote(answer: string): string {
-  return [
-    '# Their form goes to the chiropractor with this reply',
-    `In the clinic's form they wrote: "${answer}". That describes a symptom that is getting worse, or one of the signs under "Stop and hand over to a person when", so this conversation is handed to the chiropractor with this reply whatever you write. In this reply: answer what they asked (a price they asked for is given, in euros), then tell them in one sentence that you are passing what they described on to the chiropractor ("la quiropráctica" or "el quiropráctico", as "The team" gives their name), who will write to them. Call hand_over_to_colleague with what they wrote. Do not offer times and do not book: book_appointment is refused in this reply.`,
-  ].join('\n')
+  // One string, not a two-item list: the i18n extractor reads a pair of strings as [en, es].
+  const body = `In the clinic's form they wrote: "${answer}". That describes a symptom that is getting worse, or one of the signs under "Stop and hand over to a person when", so this conversation is handed to the chiropractor with this reply whatever you write. In this reply: answer what they asked (a price they asked for is given, in euros), then tell them in one sentence that you are passing what they described on to the chiropractor ("la quiropráctica" or "el quiropráctico", as "The team" gives their name), who will write to them. Call hand_over_to_colleague with what they wrote. Do not offer times and do not book: book_appointment is refused in this reply.`
+  return `# Their form goes to the chiropractor with this reply\n${body}`
 }
 
 const CHANNEL_WORDING: Record<string, string> = {

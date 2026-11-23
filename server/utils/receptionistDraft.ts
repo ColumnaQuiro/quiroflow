@@ -11,7 +11,8 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { acceptOfferedTime, alreadyBookedNote, keepOffer } from '~/server/utils/receptionistOffers'
 import { cameFromAd, formAnswerToHandOverNow, formHandOverNote, formHandOverReason, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -385,10 +386,33 @@ export async function draftLeadReply(
   // RLS hid would fail open.
   if (await overTrialAllowance(calendarClient, accountId)) return { status: 'trial_limit_reached' }
 
-  const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
+  // One of the times it offered, accepted: booked here, from the offer as it
+  // was kept, and confirmed in words written from the booking -- no model is
+  // asked (acceptOfferedTime). Someone not yet a patient only when the record
+  // already has what a booking needs; otherwise the model asks for it.
+  const known = { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: Boolean(lead.phone) }
+  const accepted = actions
+    ? await acceptOfferedTime({
+        service: calendarClient,
+        accountId,
+        conversationKey: `lead:${leadId}`,
+        actions,
+        ours: ours ? { createdAt: ours.created_at, sentByAi: ours.sent_by_ai === true, automated: Boolean(ourLast?.automated) } : null,
+        inbound: ordered.slice(lastOutbound + 1).filter((m: { direction: string }) => m.direction === 'inbound').map((m: { body_preview: string | null }) => m.body_preview ?? ''),
+        language: 'es',
+        newPersonReady: Boolean(lead.patient_id) || (known.name && known.email && known.phone),
+      })
+    : null
+  // Booked in code, with a confirmation that is the model's to word: told so
+  // instead of which time they chose.
+  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : withChosenTime(prompt))
+
+  const run = accepted?.kind === 'reply' ? accepted.run : await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
     model: receptionistModelName(),
+    fallbackModel: receptionistFallbackModel(),
+    alreadyBooked: accepted?.kind === 'booked' ? { input: accepted.input, details: accepted.details } : null,
     maxTokens: MAX_TOKENS,
-    system: withFormHandOver(withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }))),
+    system: withFormHandOver(withAccepted(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }))),
     // With the day each message was sent (withDayMarks): "mañana jueves" in
     // yesterday's offer is today, not a week from now.
     messages: withImages(withDayMarks(dated, calendar.timeZone).map(({ role, content }: { role: 'user' | 'assistant'; content: string }) => ({ role, content })), images),
@@ -421,7 +445,8 @@ export async function draftLeadReply(
 
   // Counted for the monthly allowance: every reply it writes, sent or left as
   // a draft -- writing it is what cost money, whatever happens to it next.
-  if (!refused && draft) await recordReceptionistReply(supabase, accountId, `lead:${leadId}`, sends && opts.send ? 'sent' : 'draft')
+  // Not one written in code: no model was paid for.
+  if (!refused && draft && !run.inCode) await recordReceptionistReply(supabase, accountId, `lead:${leadId}`, sends && opts.send ? 'sent' : 'draft')
 
   // A refusal is the model declining to write this, which is a real answer
   // and not an error -- reported as such rather than dressed up as a failed
@@ -483,6 +508,8 @@ export async function draftLeadReply(
     }
     // Sent: no draft waiting any more.
     await record('sent', run)
+    // The times it offered, kept as data: one accepted is booked from here.
+    if (run.choices === 'times') await keepOffer(calendarClient, accountId, `lead:${leadId}`, run.offer)
     // Times offered and nothing booked: asked about once, the next morning,
     // if they have not answered by then.
     await scheduleNudgeAfterOffer(calendarClient, accountId, `lead:${leadId}`, replyChannel, { text: draft, offeredTimes: run.choices === 'times', changedDiary: replyActed(toolUses) }, calendar.timeZone)

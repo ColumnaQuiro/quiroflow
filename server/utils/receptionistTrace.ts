@@ -67,7 +67,8 @@ export async function recordReply(service: any, record: ReplyRecord): Promise<vo
       tool_uses: run ? traceToolUses(run.toolUses) : [],
       checks: run?.checks ?? [],
       handed_over: Boolean(record.handedOver ?? run?.handedOver),
-      model: run ? record.model ?? null : null,
+      // 'code': booked and written with no model asked (acceptOfferedTime).
+      model: run ? (run.inCode ? 'code' : run.model ?? record.model ?? null) : null,
       rounds: run?.usage.rounds ?? null,
       input_tokens: run?.usage.inputTokens ?? null,
       output_tokens: run?.usage.outputTokens ?? null,

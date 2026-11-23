@@ -101,7 +101,7 @@ describe('Calendar: the day at a glance', () => {
       block('Laura Gómez').find('[data-cy=appt-block-note]').should('exist')
       block('Sergio Navarro').find('[data-cy=appt-block-moved]').should('contain.text', '2')
       // In the room with nothing booked after: the moment to book the next one.
-      block('Jordi Mas').find('[data-cy=appt-block-no-next]').should('contain.text', 'No next visit')
+      block('Jordi Mas').find('[data-cy=appt-block-no-next]').should('have.attr', 'title', 'No next visit booked')
       // ...and not on a visit still to come.
       block('Raúl Iglesias').find('[data-cy=appt-block-no-next]').should('not.exist')
 

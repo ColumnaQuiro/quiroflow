@@ -22,6 +22,11 @@ import { isNoReply } from '~/utils/receptionistAutoReply'
 
 const key = evalApiKey()
 const RUNS = Math.max(1, Number(process.env.EVAL_RUNS ?? 1))
+// How many of a case's runs have to pass. All of them, by hand; in CI
+// (receptionist-evals.yml) two of three, so that one unlucky run of a model
+// that is not deterministic does not block a pull request, and a case that
+// fails most of the time does.
+const MIN_PASS = Math.min(RUNS, Math.max(1, Number(process.env.EVAL_MIN_PASS ?? RUNS)))
 const AD_LEAD = { channel: 'facebook', source: 'Meta Ads', externalSource: 'facebook', campaign: null, ad: null }
 
 const called = (r: EvalResult, name: string) => r.tools.filter((t) => t.name === name)
@@ -33,7 +38,13 @@ afterAll(() => {
   console.log(`\n[cost] ${MODEL}: ${spent.replies} replies, ${spent.rounds} rounds, $${spent.dollars.toFixed(4)} -- $${(spent.dollars / spent.replies).toFixed(4)} a reply. Tokens: ${spent.input} input, ${spent.cacheRead} cache read, ${spent.cacheWrite} cache write, ${spent.output} output. Cut off at max_tokens: ${spent.cutOff}.`)
 })
 
-function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => void) {
+/**
+ * `knownFailure`: a case that fails on main today, with why. It still runs
+ * and still prints its count, but does not fail the run -- so the gate in CI
+ * starts from green and says what is owed, instead of teaching everyone to
+ * ignore a red check. Remove it in the change that fixes the case.
+ */
+function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => void, opts: { knownFailure?: string } = {}) {
   it(name, async () => {
     const failed: unknown[] = []
     for (let i = 0; i < RUNS; i++) {
@@ -60,11 +71,80 @@ function evalCase(name: string, scenario: Scenario, check: (r: EvalResult) => vo
     // Every run, then the count: "2 of 5" says more about a model or a prompt
     // than stopping at the first miss does.
     console.log(`[pass] ${RUNS - failed.length}/${RUNS} ${name}`)
-    if (failed.length) throw new Error(`${failed.length} of ${RUNS} runs failed. The first: ${(failed[0] as Error)?.message ?? failed[0]}`)
+    if (RUNS - failed.length < MIN_PASS && opts.knownFailure) {
+      console.warn(`[known failure] ${name}: ${opts.knownFailure}`)
+      return
+    }
+    if (RUNS - failed.length < MIN_PASS) throw new Error(`${failed.length} of ${RUNS} runs failed. The first: ${(failed[0] as Error)?.message ?? failed[0]}`)
   })
 }
 
 describe.skipIf(!key)('The receptionist, on real conversations', () => {
+  // 22 Nov 2026, 23:11, on Haiku: "Cambiar cita" tapped on the reminder. It
+  // found two times, called offer_times, and ended the turn with no words --
+  // which read as a refusal, so a move it had already solved went to a
+  // person until the next morning.
+  evalCase('offers times to move a visit after "Cambiar cita", in words, without handing over', {
+    kind: 'patient',
+    returning: true,
+    booked: [{ at: '2026-11-19 17:30', type: TYPES.adjustment }],
+    conversation: [
+      { from: 'system', text: 'Hola Paula, te recordamos tu cita quiropráctica el día 19 de noviembre de 2026 a las 17:30h.' },
+      { from: 'them', text: 'Cambiar cita' },
+    ],
+  }, (r) => {
+    expect(r.refused).toBe(false)
+    expect(r.handedOver).toBeNull()
+    expect(r.text.trim()).not.toBe('')
+    expect(okCalls(r, 'cancel_appointment')).toEqual([])
+    expect(okCalls(r, 'book_appointment')).toEqual([])
+    // Either it offers times, as buttons that say which visit they move, or it asks which days suit.
+    const offers = okCalls(r, 'offer_times')
+    if (offers.length) {
+      expect(r.run.offeredSlots.length).toBeGreaterThan(0)
+      for (const slot of r.run.offeredSlots) expect(timesIn(r.text)).toContain(`${Number(slot.time.slice(0, 2))}:${slot.time.slice(3)}`)
+    } else {
+      expect(r.text).toMatch(/\?/)
+    }
+  })
+
+  // 23 Nov 2026, 09:23, on Haiku: offered two mornings, "me gustaría cita por
+  // la tarde" came back, and the reply after offer_times was empty again.
+  evalCase('offers afternoon times when the ones it offered were mornings', {
+    kind: 'patient',
+    returning: true,
+    booked: [{ at: '2026-11-19 10:30', type: TYPES.adjustment }],
+    conversation: [
+      { from: 'them', text: 'Cambiar cita' },
+      { from: 'us', text: 'Para tu cita del jueves 19 de noviembre a las 10:30, tengo el viernes 20 de noviembre a las 9:00 o el lunes 23 de noviembre a las 10:00. ¿Cuál te viene mejor?' },
+      { from: 'them', text: 'Me gustaría cita por la tarde' },
+    ],
+  }, (r) => {
+    expect(r.refused).toBe(false)
+    expect(r.handedOver).toBeNull()
+    expect(r.text.trim()).not.toBe('')
+    expect(okCalls(r, 'book_appointment')).toEqual([])
+    expect(okCalls(r, 'cancel_appointment')).toEqual([])
+    // Whatever it offers now is in the afternoon.
+    for (const slot of r.run.offeredSlots) expect(Number(slot.time.slice(0, 2))).toBeGreaterThanOrEqual(14)
+  })
+
+  // 23 Nov 2026: with move_visit_on, a time tapped from the offer is moved by
+  // code and no model is asked. The offer has to say which visit it moves.
+  evalCase('says which visit its offer moves, so a tap can be booked in code', {
+    kind: 'patient',
+    returning: true,
+    booked: [{ at: '2026-11-19 17:30', type: TYPES.adjustment }],
+    conversation: [{ from: 'them', text: 'Hola, no puedo ir el jueves. ¿Me la puedes cambiar a otro día de esa semana o la siguiente por la tarde?' }],
+  }, (r) => {
+    expect(r.refused).toBe(false)
+    expect(okCalls(r, 'cancel_appointment')).toEqual([])
+    const offers = okCalls(r, 'offer_times')
+    expect(offers.length).toBeGreaterThan(0)
+    expect(offers.at(-1)!.input.move_visit_on).toBe('2026-11-19 17:30')
+    expect(r.run.offer?.auto).toBe(true)
+  })
+
   // 4 Nov 2026: picked a time, the type was named loosely, the booking was
   // refused, and the lead was handed to a person instead.
   evalCase('books the time an ad lead picked from the two offered', {
@@ -118,6 +198,9 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
 
   // 17 Nov 2026: the worsening migraines were only in the ad form, and two
   // replies about the price never passed them to the chiropractor.
+  // Handed over in code now (formSymptomToHandOver), so what is left to the
+  // model is the reply: the price they asked for, and that the chiropractor
+  // will write to them.
   evalCase('hands a worsening symptom from the ad form to the chiropractor', {
     kind: 'lead',
     leadOrigin: { channel: 'facebook', source: 'Meta Ads', externalSource: 'facebook', campaign: null, ad: null },
@@ -127,9 +210,11 @@ describe.skipIf(!key)('The receptionist, on real conversations', () => {
       { from: 'them', text: 'Hola, para poder evaluar si podría hacer un tratamiento con ustedes necesito saber el precio de las sesiones. ¿Seguirá siendo de 50 € o cambia?' },
     ],
   }, (r) => {
-    expect(called(r, 'hand_over_to_colleague').length).toBeGreaterThan(0)
+    expect(r.handedOver).not.toBeNull()
     expect(okCalls(r, 'book_appointment')).toEqual([])
     expect(r.text).toMatch(/\d+\s?€/)
+    expect(r.text).toMatch(/quiropr[aá]ctic/i)
+    expect(timesIn(r.text)).toEqual([])
   })
 
   evalCase('hands a complaint about the treatment to the chiropractor', {

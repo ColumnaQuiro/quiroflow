@@ -12,6 +12,7 @@ import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { paymentRefundableCents } from '~/utils/paymentRefund'
+import type { LedgerIconName } from './LedgerIcon.vue'
 
 interface InvoiceRow {
   id: string
@@ -74,7 +75,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   addCredit: []
-  takePayment: []
+  /** With a target, from a receipt's Collect: take payment on THAT receipt, for what is still open on it. */
+  takePayment: [target?: { invoiceId: string; amountCents: number }]
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
   deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
@@ -88,6 +90,8 @@ const emit = defineEmits<{
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+// "Send receipt by WhatsApp" beside "Email receipt" on each receipt row.
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
 
 const expandedKey = ref<string | null>(null)
 const menuOpen = ref(false)
@@ -123,15 +127,32 @@ function recordedBy(p: PaymentRow): string {
   return t('Not recorded', 'Sin registrar')
 }
 
+/**
+ * What a row is, which picks its icon tile and which filter it falls under.
+ * Kept apart from the money columns on purpose: a refund receipt and a refund
+ * payment both move money out, but one is a fiscal document and the other is
+ * cash leaving the till.
+ */
+type LedgerKind = 'receipt' | 'refundReceipt' | 'paymentIn' | 'paymentOut' | 'bono' | 'credit'
+type StatusTone = 'success' | 'danger' | 'neutral' | 'info'
+
 interface LedgerRow {
   key: string
+  kind: LedgerKind
   ref: string
   date: string
   description: string
+  /** Shown beside the ref under the description: the receipt's first item. */
+  sub?: string
   debitCents: number
   creditCents: number
-  balanceText: string
-  balanceTone: 'success' | 'danger' | 'neutral'
+  /** Replaces the old Balance column: what state this entry is in, as a pill. */
+  statusText: string
+  statusTone: StatusTone
+  /** The pill carries a dot only for paid and owed, the two states a desk acts on. */
+  statusDot?: boolean
+  /** Hover text for the pill, e.g. the receipt a payment settles. */
+  statusTitle?: string
   voided: boolean
   invoiceId?: string
   paymentId?: string
@@ -181,13 +202,14 @@ const rows = computed<LedgerRow[]>(() => {
         : (invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado'))
       return {
         key: `invoice-${inv.id}`,
+        kind: 'refundReceipt' as const,
         ref: inv.invoice_number,
         date: inv.created_at,
         description: `${t('Refund', 'Reembolso')} — ${against}`,
         debitCents: 0,
         creditCents: refundedCents,
-        balanceText: '—',
-        balanceTone: 'neutral' as const,
+        statusText: t('Rectifying', 'Rectificativa'),
+        statusTone: 'info' as const,
         voided: false,
         invoiceId: inv.id,
         isRefund: true,
@@ -225,16 +247,26 @@ const rows = computed<LedgerRow[]>(() => {
     // a negative debitCents that the template hides (debitCents > 0 only).
     const isUnflaggedRefund = inv.total_cents < 0
 
+    const voided = inv.status === 'void'
+    const status: Pick<LedgerRow, 'statusText' | 'statusTone' | 'statusDot'> = voided
+      ? { statusText: t('Void', 'Anulado'), statusTone: 'neutral' }
+      : isUnflaggedRefund
+        ? { statusText: t('Refund', 'Reembolso'), statusTone: 'info' }
+        : openCents > 0
+          ? { statusText: `${t('Unpaid', 'Pendiente')} ${money(openCents)}`, statusTone: 'danger', statusDot: true }
+          : { statusText: t('Paid', 'Pagado'), statusTone: 'success', statusDot: true }
+
     return {
       key: `invoice-${inv.id}`,
+      kind: isUnflaggedRefund ? ('refundReceipt' as const) : ('receipt' as const),
       ref: inv.invoice_number,
       date: inv.created_at,
-      description: inv.status === 'void' ? t('Receipt (void)', 'Recibo (anulado)') : isUnflaggedRefund ? t('Receipt (refund)', 'Recibo (reembolso)') : t('Receipt', 'Recibo'),
-      debitCents: inv.status === 'void' ? 0 : Math.max(inv.total_cents, 0),
-      creditCents: inv.status === 'void' ? 0 : Math.max(-inv.total_cents, 0),
-      balanceText: inv.status === 'void' ? '—' : money(openCents),
-      balanceTone: inv.status === 'void' ? 'neutral' : openCents > 0 ? 'danger' : 'neutral',
-      voided: inv.status === 'void',
+      description: voided ? t('Receipt (void)', 'Recibo (anulado)') : isUnflaggedRefund ? t('Receipt (refund)', 'Recibo (reembolso)') : t('Receipt', 'Recibo'),
+      sub: items[0],
+      debitCents: voided ? 0 : Math.max(inv.total_cents, 0),
+      creditCents: voided ? 0 : Math.max(-inv.total_cents, 0),
+      ...status,
+      voided,
       invoiceId: inv.id,
       invoiceOpenCents: inv.status === 'void' ? 0 : openCents,
       refundableCents,
@@ -266,6 +298,7 @@ const rows = computed<LedgerRow[]>(() => {
 
   const paymentRows: LedgerRow[] = countablePayments.map((p) => ({
     key: `payment-${p.id}`,
+    kind: p.amount_cents < 0 ? ('paymentOut' as const) : ('paymentIn' as const),
     ref: '',
     // A direct debit names GoCardless's payment id (PM…) under its
     // description: the handle GoCardless's dashboard and support know the
@@ -307,8 +340,16 @@ const rows = computed<LedgerRow[]>(() => {
     description: p.amount_cents < 0 ? `${t('Refund payment', 'Pago de reembolso')} — ${methodLabel(p.method)}` : `${t('Payment', 'Pago')} — ${methodLabel(p.method)}`,
     debitCents: p.amount_cents < 0 ? -p.amount_cents : 0,
     creditCents: p.amount_cents > 0 ? p.amount_cents : 0,
-    balanceText: '—',
-    balanceTone: 'neutral' as const,
+    // Which receipt it settles stays OUT of the pill's text and in its hover
+    // title: rows are found by their receipt number, and a payment row
+    // carrying the same number would be found first.
+    ...(p.amount_cents < 0
+      ? { statusText: t('Refunded', 'Devuelto'), statusTone: 'neutral' as const }
+      : p.invoice_id
+        ? { statusText: t('Applied', 'Aplicado'), statusTone: 'neutral' as const, statusTitle: `${t('Applied to', 'Aplicado a')} ${invoiceRefFor(p.invoice_id)}` }
+        : p.package_purchase_id
+          ? { statusText: t('Bono', 'Bono'), statusTone: 'neutral' as const }
+          : { statusText: t('On account', 'A cuenta'), statusTone: 'neutral' as const }),
     voided: false,
     detail: [
       { label: t('Method', 'Método'), value: methodLabel(p.method) },
@@ -326,6 +367,7 @@ const rows = computed<LedgerRow[]>(() => {
 
   const sessionRows: LedgerRow[] = props.packageSessions.map((ps) => ({
     key: `pkgsession-${ps.id}`,
+    kind: 'bono' as const,
     ref: '',
     date: ps.used_at,
     description: ps.package_name
@@ -336,8 +378,8 @@ const rows = computed<LedgerRow[]>(() => {
     // their package already covered.
     debitCents: 0,
     creditCents: 0,
-    balanceText: `${money(ps.amount_cents)} ${t('from bono', 'del bono')}`,
-    balanceTone: 'neutral' as const,
+    statusText: `${money(ps.amount_cents)} ${t('from bono', 'del bono')}`,
+    statusTone: 'info' as const,
     voided: false,
     // Em dashes rather than blanks in Debit and Credit, plus a note: this
     // row moves no money, and a blank cell reads as "not filled in yet"
@@ -361,13 +403,14 @@ const rows = computed<LedgerRow[]>(() => {
     creditRunning += c.amount_cents
     return {
       key: `credit-${c.id}`,
+      kind: 'credit' as const,
       ref: '',
       date: c.created_at,
       description: c.reason ?? t('Account credit', 'Crédito en cuenta'),
       debitCents: c.amount_cents < 0 ? -c.amount_cents : 0,
       creditCents: c.amount_cents > 0 ? c.amount_cents : 0,
-      balanceText: `${money(creditRunning)} ${t('in credit', 'de crédito')}`,
-      balanceTone: creditRunning < 0 ? ('danger' as const) : ('neutral' as const),
+      statusText: `${money(creditRunning)} ${t('in credit', 'de crédito')}`,
+      statusTone: creditRunning < 0 ? ('danger' as const) : ('info' as const),
       voided: false,
       detail: [
         ...(c.method ? [{ label: t('Method', 'Método'), value: methodLabel(c.method) }] : []),
@@ -391,6 +434,236 @@ const rows = computed<LedgerRow[]>(() => {
 function toggleExpanded(key: string) {
   expandedKey.value = expandedKey.value === key ? null : key
 }
+
+// --- Filter ---------------------------------------------------------------
+type LedgerFilter = 'all' | 'receipts' | 'payments' | 'bonos'
+const filter = ref<LedgerFilter>('all')
+function filterOf(kind: LedgerKind): Exclude<LedgerFilter, 'all'> {
+  if (kind === 'receipt' || kind === 'refundReceipt') return 'receipts'
+  if (kind === 'paymentIn' || kind === 'paymentOut') return 'payments'
+  return 'bonos'
+}
+const visibleRows = computed(() => (filter.value === 'all' ? rows.value : rows.value.filter((r) => filterOf(r.kind) === filter.value)))
+const filters = computed(() => {
+  const count = (f: LedgerFilter) => (f === 'all' ? rows.value.length : rows.value.filter((r) => filterOf(r.kind) === f).length)
+  return ([
+    { key: 'all', label: t('All', 'Todo') },
+    { key: 'receipts', label: t('Receipts', 'Recibos') },
+    { key: 'payments', label: t('Payments', 'Pagos') },
+    { key: 'bonos', label: t('Bonos & credit', 'Bonos y crédito') },
+  ] as const).map((f) => ({ ...f, count: count(f.key) }))
+})
+
+const KIND_TILE: Record<LedgerKind, { icon: LedgerIconName; tone: string }> = {
+  receipt: { icon: 'receipt', tone: 'bg-chip-bg text-chip-text' },
+  refundReceipt: { icon: 'rectifying', tone: 'bg-chip-bg text-chip-text' },
+  paymentIn: { icon: 'money-in', tone: 'bg-success-bg text-success-accent' },
+  paymentOut: { icon: 'money-out', tone: 'bg-danger-bg text-danger-text' },
+  bono: { icon: 'bono', tone: 'bg-info-bg text-info-accent' },
+  credit: { icon: 'credit', tone: 'bg-info-bg text-info-accent' },
+}
+
+// --- Actions ----------------------------------------------------------------
+// One list per row, drawn twice: as buttons in the expanded panel and as the
+// row's "…" menu. They used to be faint text links in the panel only, set in
+// the same grey as the facts above them, so a person looking for "Change
+// method" read straight past it -- and a collapsed row showed none of them.
+// Each one appears under exactly the conditions it always did.
+interface LedgerAction {
+  key: string
+  label: string
+  icon: LedgerIconName
+  /** Mono figure after the label: what the action will move. */
+  amount?: string
+  tone?: 'primary' | 'default' | 'danger'
+  /** A link rather than a button (Open receipt). */
+  to?: string
+  disabled?: boolean
+  /** Why it is disabled, as a tooltip. */
+  title?: string
+  /** Plain text standing where the action was, e.g. "Receipt sent". */
+  textOnly?: boolean
+  dataCy?: string
+  run?: () => void
+}
+interface ActionGroup {
+  key: string
+  danger?: boolean
+  /** One line under the group, for an action whose effect is not obvious. */
+  hint?: string
+  actions: LedgerAction[]
+}
+
+function actionGroups(row: LedgerRow): ActionGroup[] {
+  const groups: ActionGroup[] = []
+  const push = (g: ActionGroup) => {
+    if (g.actions.length > 0) groups.push(g)
+  }
+
+  if (row.paymentId) {
+    const paymentId = row.paymentId
+    push({
+      key: 'correct',
+      actions: [
+        ...(props.canChangePaymentMethod && row.paymentMethodChangeable
+          ? [{ key: 'method', label: t('Change method…', 'Cambiar método…'), icon: 'swap' as const, dataCy: 'payment-change-method', run: () => openMethodModal(paymentId, row.paymentMethod ?? '') }]
+          : []),
+        ...(props.canChangePaymentMethod && row.paymentAmountCorrectable
+          ? [{ key: 'amount', label: t('Correct amount…', 'Corregir importe…'), icon: 'pencil' as const, dataCy: 'payment-correct-amount', run: () => openAmountModal(paymentId, row.paymentAmountCents ?? 0) }]
+          : []),
+      ],
+    })
+    // Refunds THIS payment: capped at what came in on it and pre-set to the
+    // method it came in on. Removing a payment says it never happened and
+    // reopens the receipt; this says it happened and went back.
+    push({
+      key: 'refund',
+      actions:
+        props.canRefund && (row.paymentRefundableCents ?? 0) > 0
+          ? [{ key: 'refund', label: t('Refund…', 'Reembolsar…'), icon: 'refund', amount: money(row.paymentRefundableCents ?? 0), run: () => openPaymentRefundModal(paymentId, row.paymentInvoiceId ?? null, row.paymentRefundableCents ?? 0, row.paymentMethod ?? '') }]
+          : [],
+    })
+    push({
+      key: 'remove',
+      danger: true,
+      hint: t('Refunds nothing. The receipt reopens if it is no longer fully paid.', 'No reembolsa nada. El recibo se reabre si deja de estar pagado.'),
+      actions: props.canDeletePayments
+        ? [{ key: 'remove', label: t('Remove payment', 'Eliminar pago'), icon: 'trash', tone: 'danger', run: () => emit('deletePayment', { paymentId, invoiceId: row.paymentInvoiceId ?? null, amountCents: row.paymentAmountCents ?? 0 }) }]
+        : [],
+    })
+  }
+
+  if (row.invoiceId) {
+    const invoiceId = row.invoiceId
+    const open = row.invoiceOpenCents ?? 0
+    push({
+      key: 'collect',
+      actions:
+        props.canTakePayments && !row.voided && !row.isRefund && open > 0
+          ? [{ key: 'collect', label: t('Collect', 'Cobrar'), icon: 'collect', amount: money(open), tone: 'primary', run: () => emit('takePayment', { invoiceId, amountCents: open }) }]
+          : [],
+    })
+    push({
+      key: 'documents',
+      actions: [
+        { key: 'open', label: t('Open receipt', 'Abrir recibo'), icon: 'open', to: `/billing/${invoiceId}` },
+        props.sendResultInvoiceId === invoiceId
+          ? { key: 'email', label: props.sendResultMessage, icon: 'mail', textOnly: true }
+          : {
+              key: 'email',
+              label: props.sendingInvoiceId === invoiceId ? t('Sending…', 'Enviando…') : t('Email receipt', 'Enviar recibo por correo'),
+              icon: 'mail',
+              disabled: props.sendingInvoiceId === invoiceId,
+              run: () => emit('sendInvoice', invoiceId),
+            },
+        whatsapp.results.value[invoiceId]
+          ? { key: 'whatsapp', label: whatsapp.results.value[invoiceId]!.message, icon: 'mail', textOnly: true, dataCy: 'ledger-whatsapp-result' }
+          : {
+              key: 'whatsapp',
+              label: whatsapp.sendingId.value === invoiceId ? t('Sending…', 'Enviando…') : t('Send receipt by WhatsApp', 'Enviar recibo por WhatsApp'),
+              icon: 'mail',
+              disabled: !whatsapp.canSend.value || whatsapp.sendingId.value === invoiceId,
+              title: whatsapp.reason.value || undefined,
+              dataCy: 'ledger-send-whatsapp',
+              run: () => whatsapp.send('invoice', invoiceId),
+            },
+      ],
+    })
+    push({
+      key: 'money',
+      actions: [
+        ...(props.canWriteOff && !row.voided && open > 0
+          ? [{ key: 'writeoff', label: t('Write off', 'Condonar'), icon: 'write-off' as const, amount: money(open), run: () => writeOffInvoice(invoiceId) }]
+          : []),
+        ...(props.canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0
+          ? [{ key: 'refund', label: t('Refund…', 'Reembolsar…'), icon: 'refund' as const, run: () => openRefundModal(invoiceId, row.refundableCents ?? 0) }]
+          : []),
+      ],
+    })
+    push({
+      key: 'delete',
+      danger: true,
+      actions: props.canDeleteInvoices ? [{ key: 'delete', label: t('Delete receipt', 'Eliminar recibo'), icon: 'trash', tone: 'danger', run: () => emit('deleteInvoice', invoiceId) }] : [],
+    })
+  }
+
+  if (row.kind === 'credit' && props.spendableCreditCents > 0) {
+    push({ key: 'credit', actions: [{ key: 'transfer', label: t('Transfer credit', 'Transferir crédito'), icon: 'transfer', run: openTransferCredit }] })
+  }
+
+  return groups
+}
+const rowActions = computed(() => Object.fromEntries(visibleRows.value.map((r) => [r.key, actionGroups(r)])))
+
+function actionButtonClass(a: LedgerAction) {
+  const base =
+    'inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-ctl border px-2.5 text-[12.5px] font-medium outline-none transition-colors focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50 touch:h-10'
+  if (a.tone === 'primary') return `${base} border-brand bg-brand text-brand-on hover:bg-brand-hover`
+  if (a.tone === 'danger') return `${base} border-transparent text-danger-text hover:border-danger-border hover:bg-danger-bg`
+  return `${base} border-line-control bg-surface text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle`
+}
+function menuItemClass(a: LedgerAction) {
+  const base = 'flex h-9 w-full items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[13px] outline-none disabled:opacity-50 touch:h-11'
+  if (a.tone === 'primary') return `${base} font-semibold text-brand-text hover:bg-brand-tint focus-visible:bg-brand-tint`
+  if (a.tone === 'danger') return `${base} text-danger-text hover:bg-danger-bg focus-visible:bg-danger-bg`
+  return `${base} text-ink-700 hover:bg-surface-subtle focus-visible:bg-surface-subtle`
+}
+
+// --- The row's "…" menu -----------------------------------------------------
+// Fixed to the viewport rather than absolute in its cell: the ledger scrolls
+// inside a 420px box, and an absolute menu on one of the last rows opened
+// below the box's edge and was clipped.
+const rowMenuKey = ref<string | null>(null)
+const rowMenuStyle = ref<Record<string, string>>({})
+const rowMenuRoot = ref<HTMLElement | null>(null)
+const rowMenuOpen = computed({
+  get: () => rowMenuKey.value !== null,
+  set: (open: boolean) => {
+    if (!open) rowMenuKey.value = null
+  },
+})
+useDismissOnOutside(rowMenuRoot, rowMenuOpen)
+function setRowMenuRoot(key: string, el: unknown) {
+  if (key === rowMenuKey.value) rowMenuRoot.value = el as HTMLElement | null
+}
+function toggleRowMenu(key: string, e: MouseEvent) {
+  if (rowMenuKey.value === key) {
+    rowMenuKey.value = null
+    return
+  }
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const viewport = document.documentElement
+  const right = `${viewport.clientWidth - box.right}px`
+  // Opens upwards when there is not room for a full menu below the button.
+  rowMenuStyle.value = viewport.clientHeight - box.bottom < 320 && box.top > viewport.clientHeight - box.bottom ? { bottom: `${viewport.clientHeight - box.top + 4}px`, right } : { top: `${box.bottom + 4}px`, right }
+  rowMenuKey.value = key
+  nextTick(() => rowMenuRoot.value?.querySelector<HTMLElement>('[role=menuitem]')?.focus({ preventScroll: true }))
+}
+function runMenuAction(a: LedgerAction) {
+  rowMenuKey.value = null
+  a.run?.()
+}
+function onRowMenuKeydown(e: KeyboardEvent) {
+  const items = Array.from(rowMenuRoot.value?.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled])') ?? [])
+  if (items.length === 0) return
+  const at = items.indexOf(document.activeElement as HTMLElement)
+  const go = (i: number) => {
+    e.preventDefault()
+    items[(i + items.length) % items.length]?.focus()
+  }
+  if (e.key === 'ArrowDown') go(at + 1)
+  else if (e.key === 'ArrowUp') go(at - 1)
+  else if (e.key === 'Home') go(0)
+  else if (e.key === 'End') go(items.length - 1)
+  else if (e.key === 'Tab') rowMenuKey.value = null
+}
+// A fixed menu stays where it opened while the ledger scrolls under it, so
+// any scroll closes it.
+function closeRowMenu() {
+  rowMenuKey.value = null
+}
+onMounted(() => window.addEventListener('scroll', closeRowMenu, true))
+onBeforeUnmount(() => window.removeEventListener('scroll', closeRowMenu, true))
 // In the staff member's language. toLocaleDateString(undefined) took the
 // browser's, so a Spanish front desk on an English-language Mac read "28 Oct".
 const { formatShortDateYear } = useDates()
@@ -740,10 +1013,10 @@ const fieldId = useId()
 </script>
 
 <template>
-  <div class="rounded-card border border-line bg-surface shadow-card">
-    <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account ledger', 'Libro de cuenta') }}</p>
-      <div class="flex items-center gap-2">
+  <section class="rounded-card border border-line bg-surface shadow-card" :aria-label="t('Account ledger', 'Libro de cuenta')">
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pb-3 pt-3.5">
+      <p class="text-[14.5px] font-semibold tracking-[-0.012em] text-ink-900">{{ t('Account ledger', 'Libro de cuenta') }}</p>
+      <div class="flex flex-wrap items-center gap-2">
         <!-- The ledger stays here, on the record, because "what does this
              person owe" is a patient-context question asked with the patient
              on the phone or at the desk. This is the way OUT to the clinic's
@@ -751,27 +1024,38 @@ const fieldId = useId()
              paperwork" -- not a replacement for the ledger. -->
         <NuxtLink
           :to="`/billing?patient=${patientId}`"
-          class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
+          class="inline-flex h-8 items-center gap-1 rounded-ctl px-2 text-[12.5px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:h-10"
         >
           {{ t('All receipts', 'Todos los recibos') }}
+          <PatientsLedgerIcon name="chevron" class="h-3.5 w-3.5" />
         </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
+        <!-- Secondary, not primary: the Owed now card above already carries
+             this screen's one primary action, Cobrar. -->
+        <UiBtn size="sm" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</UiBtn>
+        <UiBtn v-if="canTakePayments" size="sm" @click="takePayment">{{ t('New payment', 'Nuevo pago') }}</UiBtn>
         <div ref="menuRoot" class="relative">
-          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" data-cy="ledger-menu" :aria-label="t('More actions', 'Más acciones')" @click="menuOpen = !menuOpen">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 outline-none hover:border-line-controlHover hover:bg-surface-subtle focus-visible:shadow-focus touch:h-10 touch:w-10"
+            :class="menuOpen ? 'border-line-controlHover bg-chip-bg' : ''"
+            data-cy="ledger-menu"
+            :aria-label="t('More actions', 'Más acciones')"
+            :aria-expanded="menuOpen"
+            @click="menuOpen = !menuOpen"
+          >
+            <PatientsLedgerIcon name="dots" class="h-[18px] w-[18px]" />
           </button>
-          <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
-            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New payment', 'Nuevo pago') }}</button>
-            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add credit', 'Añadir crédito') }}</button>
-            <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
+          <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-52 rounded-ctl border border-line bg-surface p-1 shadow-popover">
+            <button v-if="canTakePayments" type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add credit', 'Añadir crédito') }}</button>
+            <button v-if="spendableCreditCents > 0" type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
               {{ t('Transfer credit', 'Transferir crédito') }}
             </button>
-            <div class="my-1 border-t border-line-divider"></div>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">{{ t('Download statement', 'Descargar extracto') }}</button>
+            <div v-if="canTakePayments || spendableCreditCents > 0" class="my-1 border-t border-line-divider"></div>
+            <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">{{ t('Download statement', 'Descargar extracto') }}</button>
             <button
               type="button"
-              class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
+              class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
               data-cy="send-statement"
               :disabled="statementSending || contactBlocked"
               :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
@@ -784,142 +1068,173 @@ const fieldId = useId()
       </div>
     </div>
 
-    <div v-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Nothing on this account yet.', 'Aún no hay movimientos en esta cuenta.') }}</div>
+    <div v-if="rows.length > 0" class="px-4 pb-3">
+      <div role="group" :aria-label="t('Show', 'Mostrar')" class="inline-flex max-w-full flex-wrap gap-0.5 rounded-ctl bg-chip-bg p-[3px]">
+        <button
+          v-for="f in filters"
+          :key="f.key"
+          type="button"
+          class="inline-flex h-7 items-center gap-1.5 rounded-ctlSm px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus touch:h-9"
+          :class="filter === f.key ? 'bg-surface text-ink-700 shadow-card ring-1 ring-line' : 'text-ink-muted hover:text-ink-700'"
+          :aria-pressed="filter === f.key"
+          :data-cy="`ledger-filter-${f.key}`"
+          @click="filter = f.key"
+        >
+          {{ f.label }}
+          <span class="font-mono text-[11.5px] text-ink-faint">{{ f.count }}</span>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="rows.length === 0" class="border-t border-line-divider p-8 text-center text-[13px] text-ink-faint">{{ t('Nothing on this account yet.', 'Aún no hay movimientos en esta cuenta.') }}</div>
     <!-- Scrolls sideways on a phone rather than squeezing every column:
          squeezed, "PAY-11" broke after the hyphen and each date took two
-         lines. -->
-    <div v-else class="max-h-[420px] overflow-auto">
-      <table class="w-full min-w-[640px] text-[13px]">
-        <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
+         lines. The actions column stays pinned to the right edge, so the
+         "…" button is reachable without scrolling across. -->
+    <div v-else class="max-h-[460px] overflow-auto border-t border-line">
+      <table class="w-full min-w-[760px] text-[13px]">
+        <thead class="sticky top-0 z-[1] border-b border-line-divider bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
           <tr>
-            <th class="w-6 px-2 py-2"></th>
-            <th class="px-2 py-2">{{ t('Ref', 'Ref.') }}</th>
-            <th class="px-2 py-2">{{ t('Date', 'Fecha') }}</th>
-            <th class="px-2 py-2">{{ t('Description', 'Descripción') }}</th>
-            <th class="px-2 py-2 text-right">{{ t('Debit', 'Debe') }}</th>
-            <th class="px-2 py-2 text-right">{{ t('Credit', 'Haber') }}</th>
-            <th class="px-4 py-2 text-right">{{ t('Balance', 'Saldo') }}</th>
-            <!-- Refund used to live only inside the expanded row, which meant
-                 a collapsed ledger showed no sign it was there at all. -->
-            <th class="w-[92px] px-2 py-2"></th>
+            <th class="py-2 pl-4 pr-2 font-[640]"><span class="pl-6">{{ t('Entry', 'Concepto') }}</span></th>
+            <th class="w-[112px] px-2 py-2 font-[640]">{{ t('Date', 'Fecha') }}</th>
+            <th class="w-[104px] px-2 py-2 text-right font-[640]">{{ t('Debit', 'Debe') }}</th>
+            <th class="w-[104px] px-2 py-2 text-right font-[640]">{{ t('Credit', 'Haber') }}</th>
+            <th class="w-[184px] px-3 py-2 font-[640]">{{ t('Status', 'Estado') }}</th>
+            <th class="sticky right-0 w-[56px] bg-surface-subtle py-2 pl-2 pr-4"><span class="sr-only">{{ t('Actions', 'Acciones') }}</span></th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-line-row">
-          <template v-for="row in rows" :key="row.key">
-            <tr class="h-[42px] cursor-pointer hover:bg-surface-subtle" :class="row.voided ? 'opacity-60' : ''" @click="toggleExpanded(row.key)">
-              <td class="px-2 text-ink-faint">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="transition-transform" :class="expandedKey === row.key ? 'rotate-90' : ''">
-                  <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </td>
-              <td class="whitespace-nowrap px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
-              <td class="whitespace-nowrap px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
-              <td class="px-2 text-ink-700">
-                {{ row.description }}
-                <span v-if="row.note" class="block text-[11.5px] text-ink-faint">{{ row.note }}</span>
-              </td>
-              <td class="whitespace-nowrap px-2 text-right font-mono text-ink-700">
-                {{ row.noMoneyMoved ? '—' : row.debitCents > 0 ? money(row.debitCents) : '' }}
-              </td>
-              <td class="whitespace-nowrap px-2 text-right font-mono text-success-text">
-                {{ row.noMoneyMoved ? '—' : row.creditCents > 0 ? money(row.creditCents) : '' }}
-              </td>
-              <td class="whitespace-nowrap px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
-              <td class="px-2 text-right">
-                <!-- .stop, or the click toggles the row open underneath the
-                     modal it just opened. -->
-                <button
-                  v-if="canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0"
-                  type="button"
-                  class="whitespace-nowrap text-[12px] text-ink-faint hover:text-danger-text"
-                  @click.stop="openRefundModal(row.invoiceId!, row.refundableCents ?? 0)"
-                >
-                  {{ t('Refund…', 'Reembolsar…') }}
+        <tbody>
+          <tr v-if="visibleRows.length === 0">
+            <td colspan="6" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Nothing of this kind on this account.', 'No hay movimientos de este tipo en esta cuenta.') }}</td>
+          </tr>
+          <template v-for="row in visibleRows" :key="row.key">
+            <tr
+              class="group cursor-pointer border-t border-line-row first:border-t-0"
+              :class="expandedKey === row.key ? 'bg-surface-subtle' : 'hover:bg-surface-subtle'"
+              @click="toggleExpanded(row.key)"
+            >
+              <td class="py-2 pl-4 pr-2">
+                <!-- The whole row toggles on click; this button is what a
+                     keyboard and a screen reader reach it by. Its click
+                     bubbles to the row, so it carries no handler of its own. -->
+                <button type="button" class="flex w-full min-w-0 items-center gap-2.5 rounded-ctlSm text-left outline-none focus-visible:shadow-focus" :aria-expanded="expandedKey === row.key">
+                  <PatientsLedgerIcon name="chevron" class="h-3.5 w-3.5 shrink-0 text-ink-faint transition-transform" :class="expandedKey === row.key ? 'rotate-90' : ''" />
+                  <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-ctlSm" :class="[KIND_TILE[row.kind].tone, row.voided ? 'opacity-60' : '']">
+                    <PatientsLedgerIcon :name="KIND_TILE[row.kind].icon" class="h-4 w-4" />
+                  </span>
+                  <span class="flex min-w-0 flex-col" :class="row.voided ? 'opacity-60' : ''">
+                    <span class="font-medium text-ink-700">{{ row.description }}</span>
+                    <span class="truncate text-[11.5px] text-ink-faint" :title="[row.ref, row.sub, row.note].filter(Boolean).join(' · ')"><span class="font-mono">{{ row.ref }}</span><template v-if="row.sub"> · {{ row.sub }}</template><template v-if="row.note"> · {{ row.note }}</template></span>
+                  </span>
                 </button>
+              </td>
+              <td class="whitespace-nowrap px-2 text-[12.5px] text-ink-muted" :class="row.voided ? 'opacity-60' : ''">{{ formatDate(row.date) }}</td>
+              <td data-cy="ledger-debit" class="whitespace-nowrap px-2 text-right font-mono" :class="row.noMoneyMoved ? 'text-ink-faint' : row.voided ? 'text-ink-faint' : 'text-ink-700'">{{ row.noMoneyMoved ? '—' : row.debitCents > 0 ? money(row.debitCents) : '' }}</td>
+              <td data-cy="ledger-credit" class="whitespace-nowrap px-2 text-right font-mono" :class="row.noMoneyMoved ? 'text-ink-faint' : 'text-success-text'">{{ row.noMoneyMoved ? '—' : row.creditCents > 0 ? money(row.creditCents) : '' }}</td>
+              <td class="px-3">
+                <UiPill :tone="row.statusTone" :dot="row.statusDot" :title="row.statusTitle">{{ row.statusText }}</UiPill>
+              </td>
+              <!-- Pinned right with its own background, so on a narrow
+                   screen it sits over the columns scrolled beneath it.
+                   .stop on everything in it: a click here is never "open
+                   this row".
+                   A sticky cell is its own stacking context, so the menu's
+                   z-index only counts inside it: without z-20 on the open
+                   row's cell, every later row's pinned cell painted over the
+                   menu's right-hand side. -->
+              <td
+                class="sticky right-0 py-2 pl-2 pr-4 text-right"
+                :class="[expandedKey === row.key ? 'bg-surface-subtle' : 'bg-surface group-hover:bg-surface-subtle', rowMenuKey === row.key ? 'z-20' : '']"
+                @click.stop
+              >
+                <div v-if="rowActions[row.key]?.length" :ref="(el) => setRowMenuRoot(row.key, el)" class="inline-block">
+                  <button
+                    type="button"
+                    class="inline-flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 outline-none hover:border-line-controlHover hover:bg-surface-subtle focus-visible:shadow-focus touch:h-10 touch:w-10"
+                    :class="rowMenuKey === row.key ? 'border-line-controlHover bg-chip-bg' : ''"
+                    data-cy="ledger-row-actions"
+                    aria-haspopup="menu"
+                    :aria-expanded="rowMenuKey === row.key"
+                    :aria-label="`${t('Actions for', 'Acciones de')} ${row.ref}`"
+                    @click="toggleRowMenu(row.key, $event)"
+                  >
+                    <PatientsLedgerIcon name="dots" class="h-[18px] w-[18px]" />
+                  </button>
+                  <div
+                    v-if="rowMenuKey === row.key"
+                    role="menu"
+                    :aria-label="`${t('Actions for', 'Acciones de')} ${row.ref}`"
+                    class="fixed z-30 w-64 rounded-ctl border border-line bg-surface p-1.5 text-left shadow-popover"
+                    :style="rowMenuStyle"
+                    @keydown="onRowMenuKeydown"
+                  >
+                    <p class="flex items-center justify-between px-2.5 pb-1.5 pt-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
+                      <span class="truncate">{{ row.description }}</span>
+                      <span class="font-mono normal-case tracking-normal">{{ row.ref }}</span>
+                    </p>
+                    <template v-for="(g, gi) in rowActions[row.key]" :key="g.key">
+                      <div v-if="gi > 0" role="separator" class="mx-1 my-1 border-t border-line-divider"></div>
+                      <template v-for="a in g.actions" :key="a.key">
+                        <NuxtLink v-if="a.to" role="menuitem" :to="a.to" :class="menuItemClass(a)" @click="rowMenuKey = null">
+                          <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />{{ a.label }}
+                        </NuxtLink>
+                        <p v-else-if="a.textOnly" class="px-2.5 py-2 text-[12.5px] text-ink-faint">{{ a.label }}</p>
+                        <span v-else-if="a.disabled && a.title" :title="a.title" class="block">
+                          <button type="button" role="menuitem" disabled :class="menuItemClass(a)">
+                            <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />
+                            <span>{{ a.label }}</span>
+                          </button>
+                        </span>
+                        <button v-else type="button" role="menuitem" :disabled="a.disabled" :class="menuItemClass(a)" @click="runMenuAction(a)">
+                          <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
+                          <span>{{ a.label }}</span>
+                          <span v-if="a.amount" class="ml-auto font-mono text-[12px] opacity-80">{{ ` ${a.amount}` }}</span>
+                        </button>
+                      </template>
+                    </template>
+                  </div>
+                </div>
               </td>
             </tr>
             <tr v-if="expandedKey === row.key">
-              <td colspan="8" class="bg-surface-subtle px-8 py-3">
-                <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
-                  <template v-for="(d, i) in row.detail" :key="i">
-                    <dt class="text-ink-faint">{{ d.label }}</dt>
-                    <dd class="text-ink-muted2">{{ d.value }}</dd>
-                  </template>
+              <td colspan="6" class="bg-surface-subtle pb-4 pl-[74px] pr-4 pt-0.5" data-cy="ledger-row-detail">
+                <dl class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-7 gap-y-2.5">
+                  <div v-for="(d, i) in row.detail" :key="i" class="min-w-0">
+                    <dt class="text-[11px] font-medium text-ink-faint">{{ d.label }}</dt>
+                    <dd class="mt-0.5 break-words text-[13px] text-ink-700">{{ d.value }}</dd>
+                  </div>
                 </dl>
-                <div
-                  v-if="row.paymentId && (canDeletePayments || (canChangePaymentMethod && (row.paymentMethodChangeable || row.paymentAmountCorrectable)) || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
-                  class="mt-2 flex flex-wrap items-center gap-3 border-t border-line-divider pt-2 text-[12px]"
-                >
-                  <button
-                    v-if="canChangePaymentMethod && row.paymentMethodChangeable"
-                    type="button"
-                    data-cy="payment-change-method"
-                    class="text-ink-faint hover:text-ink-muted"
-                    @click="openMethodModal(row.paymentId!, row.paymentMethod ?? '')"
-                  >
-                    {{ t('Change method…', 'Cambiar método…') }}
-                  </button>
-                  <button
-                    v-if="canChangePaymentMethod && row.paymentAmountCorrectable"
-                    type="button"
-                    data-cy="payment-correct-amount"
-                    class="text-ink-faint hover:text-ink-muted"
-                    @click="openAmountModal(row.paymentId!, row.paymentAmountCents ?? 0)"
-                  >
-                    {{ t('Correct amount…', 'Corregir importe…') }}
-                  </button>
-                  <template v-if="canDeletePayments">
-                    <button
-                      type="button"
-                      class="text-ink-faint hover:text-danger-text"
-                      @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId ?? null, amountCents: row.paymentAmountCents ?? 0 })"
-                    >
-                      {{ t('Remove payment', 'Eliminar pago') }}
-                    </button>
-                    <span class="text-ink-faint2">{{ t('Refunds nothing. The receipt reopens if it is no longer fully paid.', 'No reembolsa nada. El recibo se reabre si deja de estar pagado.') }}</span>
+                <div v-if="rowActions[row.key]?.length" class="mt-3.5 flex flex-wrap items-start gap-2.5 border-t border-line pt-3.5">
+                  <template v-for="(g, gi) in rowActions[row.key]" :key="g.key">
+                    <span v-if="gi > 0 && !g.danger" class="mt-1.5 h-5 w-px shrink-0 bg-line-control" aria-hidden="true"></span>
+                    <div class="flex flex-col gap-1.5" :class="g.danger ? 'ml-auto items-end' : ''">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <template v-for="a in g.actions" :key="a.key">
+                          <NuxtLink v-if="a.to" :to="a.to" :class="actionButtonClass(a)">
+                            <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />{{ a.label }}
+                          </NuxtLink>
+                          <span v-else-if="a.textOnly" class="inline-flex h-8 items-center text-[12px] text-ink-faint touch:h-10" :data-cy="a.dataCy">{{ a.label }}</span>
+                          <span v-else-if="a.disabled && a.title" :title="a.title" class="inline-flex">
+                            <button type="button" disabled :data-cy="a.dataCy" :class="actionButtonClass(a)">
+                              <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0 text-ink-muted" />
+                              <span>{{ a.label }}</span>
+                            </button>
+                          </span>
+                          <button v-else type="button" :disabled="a.disabled" :data-cy="a.dataCy" :class="actionButtonClass(a)" @click="a.run?.()">
+                            <PatientsLedgerIcon :name="a.icon" class="h-4 w-4 shrink-0" :class="a.tone ? '' : 'text-ink-muted'" />
+                            <span>{{ a.label }}</span>
+                            <!-- The space is inside the expression on purpose: a
+                                 leading literal space here is trimmed by the
+                                 template compiler, and the button's text then
+                                 reads "Refund…45,00 €" to a screen reader and
+                                 to anything matching on it. -->
+                            <span v-if="a.amount" class="font-mono text-[12px]">{{ ` ${a.amount}` }}</span>
+                          </button>
+                        </template>
+                      </div>
+                      <p v-if="g.hint" class="max-w-[300px] text-[11.5px] leading-snug text-ink-faint" :class="g.danger ? 'text-right' : ''">{{ g.hint }}</p>
+                    </div>
                   </template>
-                  <!-- Refunds THIS payment: capped at what came in on it and
-                       pre-set to the method it came in on. Removing a payment
-                       says it never happened and reopens the receipt; this
-                       says it happened and went back. -->
-                  <button
-                    v-if="canRefund && (row.paymentRefundableCents ?? 0) > 0"
-                    type="button"
-                    class="text-ink-faint hover:text-danger-text"
-                    @click="openPaymentRefundModal(row.paymentId!, row.paymentInvoiceId ?? null, row.paymentRefundableCents ?? 0, row.paymentMethod ?? '')"
-                  >
-                    {{ t('Refund…', 'Reembolsar…') }} {{ money(row.paymentRefundableCents ?? 0) }}
-                  </button>
-                </div>
-                <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
-                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open receipt', 'Abrir recibo') }}</NuxtLink>
-                  <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>
-                  <button
-                    v-else
-                    type="button"
-                    class="text-ink-faint hover:text-brand-text disabled:opacity-50"
-                    :disabled="sendingInvoiceId === row.invoiceId"
-                    @click="emit('sendInvoice', row.invoiceId)"
-                  >
-                    {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email receipt', 'Enviar recibo por correo') }}
-                  </button>
-                  <UiIconBtn v-if="canDeleteInvoices" icon="trash" tone="danger" :label="t('Delete receipt', 'Eliminar recibo')" @click="emit('deleteInvoice', row.invoiceId)" />
-                  <button
-                    v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
-                    type="button"
-                    class="text-ink-faint hover:text-warning-text"
-                    @click="writeOffInvoice(row.invoiceId)"
-                  >
-                    {{ t('Write off', 'Condonar') }} {{ money(row.invoiceOpenCents ?? 0) }}
-                  </button>
-                  <button
-                    v-if="canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0"
-                    type="button"
-                    class="text-ink-faint hover:text-danger-text"
-                    @click="openRefundModal(row.invoiceId, row.refundableCents ?? 0)"
-                  >
-                    {{ t('Refund…', 'Reembolsar…') }}
-                  </button>
                 </div>
               </td>
             </tr>
@@ -930,19 +1245,19 @@ const fieldId = useId()
       <!-- The footer states the bono rule once, so a reader who meets an
       em-dash row anywhere in the table has somewhere to resolve it, and
       says what is on screen versus what is owed. -->
-      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider px-2 py-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
         <p class="text-[11.5px] text-ink-faint">
-          {{ rows.length }} {{ rows.length === 1 ? t('entry', 'movimiento') : t('entries', 'movimientos') }}
+          {{ visibleRows.length }} {{ visibleRows.length === 1 ? t('entry', 'movimiento') : t('entries', 'movimientos') }}
           <template v-if="hasNoMoneyRows">
             · {{ t('A bono visit shows — in both columns: the money moved when the bono was bought.', 'Una visita de bono muestra — en ambas columnas: el dinero se movió al comprar el bono.') }}
           </template>
         </p>
-        <p class="font-mono text-[12px]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted'">
-          {{ t('Outstanding', 'Pendiente') }} {{ money(outstandingCents) }}
+        <p class="inline-flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-[12.5px] font-semibold" :class="outstandingCents > 0 ? 'bg-danger-bg text-danger-text' : 'text-ink-muted'">
+          {{ t('Outstanding', 'Pendiente') }} <span class="font-mono">{{ money(outstandingCents) }}</span>
         </p>
       </div>
     </div>
-  </div>
+  </section>
 
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="transferModalOpen = false">
     <div ref="transferPanel" role="dialog" aria-modal="true" :aria-labelledby="transferTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { bonoVisitChargeCents } from '../../utils/visitCharging'
+import { bonoVisitChargeCents, SPECIAL_PRICE_REASONS } from '../../utils/visitCharging'
+import { parseEurosToCents } from '../../utils/appointmentTypes'
+import type { VisitLineItem } from '../../composables/useVisitCharging'
 const props = defineProps<{
   appointmentId: string
   patientId: string
@@ -9,6 +11,9 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ completed: [] }>()
+
+// The receipt by WhatsApp, beside "Send receipt" (which emails it).
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
 
 const store = useAccountStore()
 const { can } = usePermission()
@@ -56,6 +61,8 @@ const {
   addVisitLine,
   addLineItem,
   removeLineItem,
+  canChangeLinePrice,
+  changeLinePrice,
   usePackageSession,
   recordPayment,
   afterThirdPartyChange,
@@ -93,6 +100,55 @@ const chargeLabel = computed(() =>
 // Ties each visible <label> to the field under it (for/id), so a screen
 // reader announces the field by its name.
 const fieldId = useId()
+
+// A special price on the visit -- seniors, students, disability -- set on the
+// open receipt before it is charged (useVisitCharging changeLinePrice). One
+// line at a time, inline under it.
+const priceEditLineId = ref<string | null>(null)
+const priceInput = ref('')
+const priceReason = ref<string>('')
+const priceReasonOther = ref('')
+
+/** What the line cost before any special price. */
+function normalPriceCents(line: VisitLineItem): number {
+  return line.list_price_cents ?? line.price_cents * line.quantity
+}
+
+function openPriceEditor(line: VisitLineItem) {
+  priceEditLineId.value = line.id
+  const known = SPECIAL_PRICE_REASONS.some((r) => r.value === line.price_change_reason)
+  priceReason.value = line.price_change_reason ? (known ? line.price_change_reason : 'other') : ''
+  priceReasonOther.value = line.price_change_reason && !known ? line.price_change_reason : ''
+  priceInput.value = line.list_price_cents != null ? (line.price_cents / 100).toFixed(2).replace('.', ',') : ''
+  nextTick(() => (document.getElementById(`${fieldId}-special-price`) as HTMLInputElement | null)?.focus())
+}
+
+function closePriceEditor() {
+  priceEditLineId.value = null
+}
+
+const newPriceCents = computed(() => {
+  const cents = parseEurosToCents(priceInput.value)
+  return cents != null && Number.isFinite(cents) && cents >= 0 ? cents : null
+})
+const priceReasonText = computed(() => (priceReason.value === 'other' ? priceReasonOther.value.trim() : priceReason.value))
+
+function priceEditReady(line: VisitLineItem): boolean {
+  if (newPriceCents.value == null) return false
+  // Back to the normal price undoes the special one, and needs no reason.
+  if (line.list_price_cents != null && newPriceCents.value === line.list_price_cents) return true
+  return priceReasonText.value.length > 0
+}
+
+async function savePrice(line: VisitLineItem) {
+  if (!priceEditReady(line) || newPriceCents.value == null) return
+  if (await changeLinePrice(line, newPriceCents.value, priceReasonText.value || null)) closePriceEditor()
+}
+
+async function restoreNormalPrice(line: VisitLineItem) {
+  if (line.list_price_cents == null) return
+  if (await changeLinePrice(line, line.list_price_cents, null)) closePriceEditor()
+}
 </script>
 
 <template>
@@ -229,24 +285,128 @@ const fieldId = useId()
           >
             {{ sendingInvoice ? t('Sending…', 'Enviando…') : t('Send receipt', 'Enviar recibo') }}
           </button>
+          <template v-if="can('billing_access')">
+            <span v-if="whatsapp.results.value[invoice.id]" class="max-w-[200px] text-[12px]" :class="whatsapp.results.value[invoice.id]!.ok ? 'text-ink-muted' : 'text-danger-text'" data-cy="appt-whatsapp-result">{{ whatsapp.results.value[invoice.id]!.message }}</span>
+            <span v-else :title="whatsapp.reason.value || undefined">
+              <button
+                type="button"
+                data-cy="appt-send-whatsapp"
+                class="-my-1 flex h-8 items-center rounded-ctlSm px-2 text-[12.5px] font-medium text-brand-text hover:bg-brand-tint disabled:opacity-50 touch:h-11"
+                :disabled="!whatsapp.canSend.value || whatsapp.sendingId.value === invoice.id"
+                @click="whatsapp.send('invoice', invoice.id)"
+              >
+                {{ whatsapp.sendingId.value === invoice.id ? t('Sending…', 'Enviando…') : t('WhatsApp', 'WhatsApp') }}
+              </button>
+            </span>
+          </template>
         </div>
       </div>
       <ul class="mt-2 space-y-1">
-        <li v-for="line in lineItems" :key="line.id" class="flex items-center justify-between text-ink-700">
-          <span>{{ line.description }} &times;{{ line.quantity }}</span>
-          <span class="flex items-center gap-1">
-            <span class="font-mono">{{ formatEur((line.price_cents * line.quantity)) }}</span>
-            <button
-              v-if="can('billing_access') && receiptEditable"
-              type="button"
-              :aria-label="t(`Remove ${line.description}`, `Quitar ${line.description}`)"
-              :title="t('Remove', 'Quitar')"
-              class="-my-1 -mr-1.5 flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-11 touch:w-11"
-              @click="removeLineItem(line)"
-            >
-              <UiCloseIcon />
-            </button>
-          </span>
+        <li v-for="line in lineItems" :key="line.id" class="text-ink-700">
+          <div class="flex items-center justify-between gap-2">
+            <span>{{ line.description }} &times;{{ line.quantity }}</span>
+            <span class="flex shrink-0 items-center gap-1">
+              <button
+                v-if="canChangeLinePrice(line) && priceEditLineId !== line.id"
+                type="button"
+                data-cy="appt-line-change-price"
+                class="-my-1 flex h-7 items-center rounded-ctlSm px-1.5 text-[12px] font-medium text-brand-text hover:bg-brand-tint touch:h-11"
+                @click="openPriceEditor(line)"
+              >
+                {{ t('Change price', 'Cambiar precio') }}
+              </button>
+              <!-- The price it would have been, so a special price is never a
+              mystery on the receipt. -->
+              <s
+                v-if="line.list_price_cents != null && line.list_price_cents !== line.price_cents * line.quantity"
+                class="font-mono text-[12px] text-ink-faint"
+                :title="t('Normal price', 'Precio normal')"
+              >{{ formatEur(line.list_price_cents) }}</s>
+              <span class="font-mono">{{ formatEur((line.price_cents * line.quantity)) }}</span>
+              <button
+                v-if="can('billing_access') && receiptEditable"
+                type="button"
+                :aria-label="t(`Remove ${line.description}`, `Quitar ${line.description}`)"
+                :title="t('Remove', 'Quitar')"
+                class="-my-1 -mr-1.5 flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-11 touch:w-11"
+                @click="removeLineItem(line)"
+              >
+                <UiCloseIcon />
+              </button>
+            </span>
+          </div>
+          <form
+            v-if="priceEditLineId === line.id"
+            class="mt-1.5 space-y-2 rounded-ctl border border-line bg-surface-subtle p-2.5"
+            data-cy="appt-line-price-editor"
+            @submit.prevent="savePrice(line)"
+            @keydown.esc="closePriceEditor"
+          >
+            <div class="flex flex-wrap items-end gap-x-3 gap-y-1">
+              <div>
+                <label :for="`${fieldId}-special-price`" class="block text-[12px] font-medium text-ink-600">{{ t('Special price (€)', 'Precio especial (€)') }}</label>
+                <input
+                  :id="`${fieldId}-special-price`"
+                  v-model="priceInput"
+                  type="text"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  :placeholder="(normalPriceCents(line) / 100).toFixed(2).replace('.', ',')"
+                  class="mt-1 h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 font-mono text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11"
+                />
+              </div>
+              <p class="pb-2 text-[12px] text-ink-muted2">{{ t('Normal price:', 'Precio normal:') }} <span class="font-mono">{{ formatEur(normalPriceCents(line)) }}</span></p>
+            </div>
+            <fieldset>
+              <legend class="text-[12px] font-medium text-ink-600">{{ t('Reason', 'Motivo') }}</legend>
+              <div class="mt-1 flex flex-wrap gap-1.5">
+                <button
+                  v-for="r in SPECIAL_PRICE_REASONS"
+                  :key="r.value"
+                  type="button"
+                  :aria-pressed="priceReason === r.value"
+                  class="h-7 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
+                  :class="priceReason === r.value ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+                  @click="priceReason = r.value"
+                >
+                  {{ t(r.en, r.es) }}
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="priceReason === 'other'"
+                  class="h-7 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
+                  :class="priceReason === 'other' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+                  @click="priceReason = 'other'"
+                >
+                  {{ t('Other', 'Otro') }}
+                </button>
+              </div>
+              <input
+                v-if="priceReason === 'other'"
+                v-model="priceReasonOther"
+                type="text"
+                maxlength="80"
+                :aria-label="t('Reason for the special price', 'Motivo del precio especial')"
+                :placeholder="t('Why this price? It shows on the receipt', '¿Por qué este precio? Sale en el recibo')"
+                class="mt-1.5 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11"
+              />
+            </fieldset>
+            <div class="flex flex-wrap items-center gap-2">
+              <UiBtn type="submit" variant="primary" size="sm" :disabled="savingPayment || !priceEditReady(line)">
+                {{ savingPayment ? t('Saving…', 'Guardando…') : t('Save price', 'Guardar precio') }}
+              </UiBtn>
+              <UiBtn variant="ghost" size="sm" @click="closePriceEditor">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+              <button
+                v-if="line.list_price_cents != null"
+                type="button"
+                class="ml-auto flex h-8 items-center rounded-ctlSm px-2 text-[12px] font-medium text-ink-muted hover:bg-brand-tint hover:text-brand-text disabled:opacity-50 touch:h-11"
+                :disabled="savingPayment"
+                @click="restoreNormalPrice(line)"
+              >
+                {{ t('Back to the normal price', 'Volver al precio normal') }}
+              </button>
+            </div>
+          </form>
         </li>
       </ul>
 

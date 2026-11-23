@@ -71,7 +71,31 @@ describe('Supabase usage', () => {
     const u = buildUsage(parsePrometheus(scrape(1000, 10, 100)), { ...sql, connections: 50, buckets: [{ bucket: 'patient-files', objects: 1, bytes: 0.85 * PRO_STORAGE_BYTES }] }, null)
     u.disk = { size_bytes: 100, avail_bytes: 15 }
     u.memory!.swap_free_bytes = 0.1 * u.memory!.swap_total_bytes
+    u.memory!.available_bytes = 0.1 * u.memory!.total_bytes
     expect(usageAlerts(u).map((a) => a.name).sort()).to.deep.equal(['supabase-connections', 'supabase-disk', 'supabase-memory', 'supabase-storage'])
+  })
+
+  // Swap stays high long after the peak that filled it. 23 Nov 2026: 86% used
+  // at 10:45 and still 80% at 13:45 with a third of the memory free, emailed
+  // as "out of memory" while nothing was wrong.
+  it('does not alert on swap alone while memory is available', () => {
+    const u = buildUsage(parsePrometheus(scrape(1000, 10, 100)), sql, null)
+    u.memory = { total_bytes: 948_191_232, available_bytes: 336_723_968, swap_total_bytes: 1_073_737_728, swap_free_bytes: 213_938_176 }
+    expect(usageAlerts(u)).to.deep.equal([])
+  })
+
+  it('alerts on high swap once little memory is available', () => {
+    const u = buildUsage(parsePrometheus(scrape(1000, 10, 100)), sql, null)
+    u.memory = { total_bytes: 948_191_232, available_bytes: 120_000_000, swap_total_bytes: 1_073_737_728, swap_free_bytes: 150_000_000 }
+    const [alert] = usageAlerts(u)
+    expect(alert.name).to.equal('supabase-memory')
+    expect(alert.subject).to.equal('Supabase database is low on memory (13% free, swap 86% used)')
+  })
+
+  it('alerts when swap is all but full, whatever memory is available', () => {
+    const u = buildUsage(parsePrometheus(scrape(1000, 10, 100)), sql, null)
+    u.memory = { total_bytes: 948_191_232, available_bytes: 336_723_968, swap_total_bytes: 1_073_737_728, swap_free_bytes: 30_000_000 }
+    expect(usageAlerts(u).map((a) => a.name)).to.deep.equal(['supabase-memory'])
   })
 
   it('records what it can when the metrics endpoint is unreachable', () => {

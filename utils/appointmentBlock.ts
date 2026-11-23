@@ -23,9 +23,16 @@ import type { AppointmentStage } from './appointmentStage'
 //   5 bono left         day, two-line blocks
 //   6 forms pending     an icon beside the name; week: only where the
 //                       short name and the stage icon leave room for it
+//   6½ no next visit    an icon beside the name (a calendar struck
+//                       through), only when it applies -- in the room or
+//                       done today with nothing booked after. It was a
+//                       "Sin próxima" chip on the detail line, last in the
+//                       ladder, so it only ever showed on tall day blocks:
+//                       the moment to book the next visit went unflagged
+//                       in week view and on every 30-minute block. Week:
+//                       where the forms icon leaves room for it
 //   7 clinical note     day; an icon beside the name
 //   8 moved count       day, two-line blocks
-//   9 "Sin próxima"     day, two-line blocks, and only when it applies
 //
 // Pure, so the ladder can be pinned in a spec without rendering anything --
 // the block measures itself and asks this what to draw.
@@ -111,7 +118,7 @@ const WEEK_NAME_CHAR_PX = 6.6
 const WEEK_INNER_PAD_PX = 12
 const MARKER_PX = 14
 const MOVED_PX = 26
-const NO_NEXT_PX = 82
+const NO_NEXT_PX = 17
 const GAP_PX = 6
 // A circle for one letter (14px in week view, 18px in day), a pill a letter
 // wider for two. 16 splits the difference; the template still ellipsises.
@@ -145,17 +152,19 @@ export function blockLadder(input: LadderInput): Ladder {
     // Two lines: the badge leads the second, and the time keeps its place
     // beside it only where both fit.
     const timeFits = !input.badgeText || input.width - WEEK_INNER_PAD_PX - badgeRoom - WEEK_SQUARE_PX >= WEEK_TIME_PX
+    const forms = !!input.forms && room >= FORMS_PX
+    const noNext = input.noNext && room - (forms ? FORMS_PX + GAP_PX : 0) >= NO_NEXT_PX
     return {
       compact,
       shortName: true,
       pill: pillHidden ? 'none' : 'icon',
       owes: input.owes ? 'dot' : 'none',
       meta: compact || !timeFits ? 'none' : 'time',
-      forms: !!input.forms && room >= FORMS_PX,
+      forms,
       note: false,
       bono: false,
       moved: false,
-      noNext: false,
+      noNext,
       marker: !!input.marker,
       badge: !input.badgeText ? 'none' : compact ? 'name' : 'meta',
       wrap: false,
@@ -174,7 +183,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const pill: Ladder['pill'] = pillHidden ? 'none' : input.width >= PILL_LABEL_FROM_PX && labelFits ? 'label' : 'icon'
   const pillPx = pill === 'none' ? 0 : pill === 'icon' ? 18 : textPx(input.pillText, 26)
 
-  // Line one: name, [marker], [forms], [note], pill, and -- on a one-line
+  // Line one: name, [marker], [forms], [no next], [note], pill, and -- on a one-line
   // block -- the money.
   let line1 = inner - Math.max(namePx, NAME_MIN_PX) - (pillPx ? pillPx + GAP_PX : 0)
   if (compact && input.owes) line1 -= owesPx + GAP_PX
@@ -182,10 +191,12 @@ export function blockLadder(input: LadderInput): Ladder {
   if (marker) line1 -= MARKER_PX + GAP_PX
   const forms = !!input.forms && line1 >= FORMS_PX + GAP_PX
   if (forms) line1 -= FORMS_PX + GAP_PX
+  const noNext = input.noNext && line1 >= NO_NEXT_PX + GAP_PX
+  if (noNext) line1 -= NO_NEXT_PX + GAP_PX
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext: false, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
+    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
@@ -212,7 +223,6 @@ export function blockLadder(input: LadderInput): Ladder {
   }
   const bono = take(input.bono, textPx(input.bonoText ?? 'Bono 00/00', 14))
   const moved = take(input.moved > 0, MOVED_PX)
-  const noNext = take(input.noNext, NO_NEXT_PX)
 
   return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap }
 }

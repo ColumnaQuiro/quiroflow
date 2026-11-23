@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseVisitNote, visitNotePreview } from '../../utils/visitNote'
+import { composeVisitNote, parseVisitNote, visitNoteEditSections, visitNotePreview } from '../../utils/visitNote'
 
 // Unit-style: no cy.visit, no seeding. A visit note is one text column that
 // the charting pane writes in four labelled sections. That convention lived
@@ -91,5 +91,25 @@ describe('Reading a visit note', () => {
   it('treats an empty note as empty rather than throwing', () => {
     expect(parseVisitNote(null).structured).to.equal(false)
     expect(visitNotePreview(null)).to.equal('')
+  })
+})
+
+describe('Correcting a visit note section by section', () => {
+  it('round-trips a charted note unchanged', () => {
+    const written = ['Subjective: Sore.', 'Objective: Tight L5.', 'Action: Adjusted L5.', 'Plan: One week.'].join('\n\n')
+    expect(composeVisitNote(visitNoteEditSections(written))).to.equal(written)
+  })
+
+  it('keeps text written before the first label, at the top of Subjective', () => {
+    const sections = visitNoteEditSections('Called ahead.\n\nSubjective: Sore.\n\nPlan: One week.')
+    expect(sections.Subjective).to.equal('Called ahead.\n\nSore.')
+    expect(sections.Plan).to.equal('One week.')
+    expect(parseVisitNote(composeVisitNote(sections)).sections.map((s) => s.label)).to.deep.equal(['Subjective', 'Plan'])
+  })
+
+  it('keeps paragraphs inside a section together', () => {
+    const sections = visitNoteEditSections('Subjective: First.\n\nSecond.\n\nObjective: Tight.')
+    expect(sections.Subjective).to.equal('First.\n\nSecond.')
+    expect(parseVisitNote(composeVisitNote(sections)).sections[0]!.text).to.equal('First.\n\nSecond.')
   })
 })

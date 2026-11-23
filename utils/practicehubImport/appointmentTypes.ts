@@ -1,7 +1,7 @@
 import { TYPE_STAGES } from '~/utils/appointmentTypes'
 import { formatEur } from '~/utils/billing'
-import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
-import { byExactName, practiceHubTypesHere, readAllForAccount } from '~/utils/practicehubImport/appointments'
+import { practiceHubPriceToWrite, practiceHubTypePrice, practiceHubUnpricedTypesWarning, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
+import { practiceHubTypeMatches, practiceHubTypesHere, readAllForAccount } from '~/utils/practicehubImport/appointments'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
 // The Appointment types step of a PracticeHub import, run on the server from
@@ -12,7 +12,9 @@ import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } fr
 //
 // In a full sync it runs AFTER Appointments, which leaves a visit whose type
 // name is not here yet with no type: this step creates the type and links
-// the visit. Run twice, it finds the types it created by name, fills in only
+// the visit. Run twice, it finds each type by the one its visits already
+// have here, or by name when they have none (practiceHubTypeMatches), so a
+// type renamed or merged here stays the one they point at. It fills in only
 // prices still at 0, and re-points only the visits whose type differs.
 
 export interface PHAppointmentType { id: number | string; name: string; active?: number | boolean | null; duration?: number | null; color?: string | null }
@@ -50,12 +52,20 @@ export interface VisitHere { id: string; external_reference: string; appointment
 export interface TypeCandidate {
   phTypeId: string
   name: string
-  /** Set when a type of the same name is already here; null means it gets created. */
+  /** Set when the type is already here (practiceHubTypeMatches); null means it gets created. */
   ourTypeId: string | null
+  /** That type's name here, which a rename here can have made different from PracticeHub's. */
+  ourName: string | null
   /** The type's price here; null when it gets created. */
   ourPriceCents: number | null
   /** What the import writes as the type's price: PracticeHub's, and only over a 0. */
   priceToWrite: number | null
+  /**
+   * Left at 0 with nothing to fill it from: no price here, and no live
+   * PracticeHub service of its name. Never set for a retired type, or when
+   * the copy has no services at all (that has its own warning).
+   */
+  unpriced: boolean
   funnelStage: string | null
   /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
@@ -81,7 +91,7 @@ export function practiceHubTypeCandidates(input: {
   visitsHere: VisitHere[]
   services: PracticeHubBillableItem[] | null
 }): { candidates: TypeCandidate[]; skippedNoMatch: number } {
-  const typeNamed = byExactName(input.typesHere, (ty) => ty.name)
+  const matches = practiceHubTypeMatches(input)
   const visitsByRef = new Map<string, VisitHere[]>()
   for (const v of input.visitsHere) {
     const list = visitsByRef.get(v.external_reference)
@@ -111,7 +121,7 @@ export function practiceHubTypeCandidates(input: {
       const name = String(phType.name ?? '')
       const key = name.trim().toLowerCase()
       const refs = refsByPhTypeId.get(String(phType.id)) ?? []
-      const ours = typeNamed(name)
+      const ours = matches.get(String(phType.id))
       const ourPriceCents = ours ? ours.default_price_cents : null
       const phPrice = input.services ? practiceHubTypePrice(name, input.services) : null
       // Only the visits already here can be re-pointed. Counting PracticeHub's
@@ -122,8 +132,10 @@ export function practiceHubTypeCandidates(input: {
         phTypeId: String(phType.id),
         name,
         ourTypeId: ours?.id ?? null,
+        ourName: ours?.name ?? null,
         ourPriceCents,
         priceToWrite: practiceHubPriceToWrite(ourPriceCents, phPrice?.priceCents),
+        unpriced: input.services !== null && !ourPriceCents && phPrice === null && !(phType.active === 0 || phType.active === false),
         funnelStage: STAGE_BY_NAME[key] ?? null,
         appointmentRefs,
         relinkIds,
@@ -195,13 +207,18 @@ export const planAppointmentTypes: PracticeHubStepPlanner = async (ctx, snapshot
       .sort((a, b) => b.inPracticeHub - a.inPracticeHub)
       .map((c) => ({
         name: c.name,
-        status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará') + (c.archived ? ` (${t('archived', 'archivado')})` : ''),
+        status: !c.ourTypeId
+          ? t('Will be created', 'Se creará') + (c.archived ? ` (${t('archived', 'archivado')})` : '')
+          : c.ourName && c.ourName.trim().toLowerCase() !== c.name.trim().toLowerCase()
+            ? t(`Already here as "${c.ourName}"`, `Ya existe como «${c.ourName}»`)
+            : t('Already here', 'Ya existe'),
         price: priceLabel(c),
         funnelStage: stageLabel(c.funnelStage),
         appointments: nf.format(c.inPracticeHub),
         relink: nf.format(c.relinkIds.length),
       })),
     warnings: [
+      ...[practiceHubUnpricedTypesWarning(candidates.filter((c) => c.unpriced).map((c) => c.name), t)].filter((w): w is string => w !== null),
       ...(!services ? [t(
         'Prices are not brought across: PracticeHub only gives them through its 2.0 API, and this copy has none. Add the phk_ key under Connection and sync again; it fills in every price still at 0.',
         'Los precios no se traen: PracticeHub solo los da por su API 2.0 y esta copia no los tiene. Añade la clave phk_ en Conexión y vuelve a sincronizar; completará los precios que sigan a 0.',

@@ -4,7 +4,6 @@ import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
 import { orderTypes } from '~/utils/appointmentTypes'
 import { nextDate, startOfLocalDate } from '~/utils/clinicClock'
-import { normalizeNotifyEmail, normalizeNotifyWhatsapp } from '~/utils/notifyContacts'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -27,6 +26,8 @@ const SECTIONS = computed(() => [
 
 // --- account-wide settings (General / Layout / Language) ---
 const maxDaysAhead = ref(90)
+// The least notice, in hours: 0 lets a patient take the next free slot.
+const minNoticeHours = ref(0)
 const gtmId = ref('')
 const successUrl = ref('')
 const primaryColor = ref('')
@@ -37,8 +38,6 @@ const hideHeading = ref(false)
 const hideLanguagePicker = ref(false)
 const practitionerOrder = ref<'default' | 'alphabetical'>('default')
 const textOverrides = ref<Record<string, string>>({})
-const notifyEmail = ref('')
-const notifyWhatsapp = ref('')
 
 const { showToast } = useToast()
 const loading = ref(true)
@@ -56,11 +55,12 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_hide_heading, online_booking_hide_language_picker, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp, referral_program_enabled, referral_reward_text',
+      'online_booking_max_days_ahead, online_booking_min_notice_hours, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_hide_heading, online_booking_hide_language_picker, online_booking_practitioner_order, online_booking_text_overrides, referral_program_enabled, referral_reward_text',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   maxDaysAhead.value = data?.online_booking_max_days_ahead ?? 90
+  minNoticeHours.value = data?.online_booking_min_notice_hours ?? 0
   gtmId.value = data?.online_booking_gtm_id ?? ''
   successUrl.value = data?.online_booking_success_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
@@ -77,8 +77,6 @@ async function loadAccountSettings() {
   if (overrides.choose_practitioner && !overrides.select_heading) overrides.select_heading = overrides.choose_practitioner
   delete overrides.choose_practitioner
   textOverrides.value = overrides
-  notifyEmail.value = data?.online_booking_notify_email ?? ''
-  notifyWhatsapp.value = data?.online_booking_notify_whatsapp ?? ''
   referralsOn.value = data?.referral_program_enabled ?? false
   referralReward.value = data?.referral_reward_text ?? ''
   loading.value = false
@@ -110,23 +108,11 @@ async function saveAccountSettings() {
     return
   }
   successUrl.value = success.value ?? ''
-  const notifyEmailValue = normalizeNotifyEmail(notifyEmail.value)
-  const notifyWhatsappValue = normalizeNotifyWhatsapp(notifyWhatsapp.value, store.defaultPhoneCountry)
-  if (notifyEmailValue === undefined) {
-    showToast(t('The alert email is not an email address.', 'El correo de aviso no es una dirección de correo.'), 'error')
-    return
-  }
-  if (notifyWhatsappValue === undefined) {
-    showToast(t('The alert WhatsApp is not a phone number.', 'El WhatsApp de aviso no es un número de teléfono.'), 'error')
-    return
-  }
-  notifyEmail.value = notifyEmailValue ?? ''
-  notifyWhatsapp.value = notifyWhatsappValue ?? ''
-
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     // A cleared box is '' and Postgres would refuse it.
     online_booking_max_days_ahead: Number(maxDaysAhead.value) || 90,
+    online_booking_min_notice_hours: Math.min(720, Math.max(0, Math.round(Number(minNoticeHours.value) || 0))),
     online_booking_gtm_id: gtmId.value.trim() || null,
     online_booking_success_url: success.value,
     online_booking_primary_color: primaryColor.value.trim() || null,
@@ -137,8 +123,6 @@ async function saveAccountSettings() {
     online_booking_hide_language_picker: hideLanguagePicker.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
-    online_booking_notify_email: notifyEmailValue,
-    online_booking_notify_whatsapp: notifyWhatsappValue,
     referral_program_enabled: referralsOn.value,
     referral_reward_text: referralReward.value.trim() || null,
   }
@@ -497,6 +481,16 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               </div>
               <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
                 <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="min-notice" class="text-[14.5px] font-bold text-ink-900">{{ t('Minimum notice', 'Antelación mínima') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('The soonest a patient can book, counted from now. 0 offers the next free time. Your team can still book any time from the calendar.', 'Lo más pronto que un paciente puede reservar, contando desde ahora. Con 0 se ofrece la próxima hora libre. Desde la agenda podéis seguir citando a cualquier hora.') }}</span>
+                </div>
+                <label class="flex items-center gap-2 text-[14px] text-ink-500">
+                  <input id="min-notice" v-model.number="minNoticeHours" type="number" min="0" max="720" step="1" data-cy="booking-min-notice" :class="[inputClass, 'w-20 text-right']" />
+                  {{ t('hours', 'horas') }}
+                </label>
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
                   <strong id="order-label" class="text-[14.5px] text-ink-900">{{ t('Practitioner order', 'Orden de los profesionales') }}</strong>
                   <span class="text-[13px] text-ink-500">{{ t('How practitioners are listed when a patient picks one.', 'Cómo se listan los profesionales cuando el paciente elige uno.') }}</span>
                 </div>
@@ -680,27 +674,13 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               </div>
             </section>
 
-            <!-- Notifications -->
-            <section id="notify" aria-labelledby="h-notify" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
-              <h2 id="h-notify" class="px-[18px] pb-2 pt-4 text-[16px] font-bold text-ink-900">{{ t('Tell the clinic about new bookings', 'Avisar a la clínica de las reservas') }}</h2>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="notify-email" class="text-[14.5px] font-bold text-ink-900">{{ t('By email', 'Por correo') }}</label>
-                  <span class="text-[13px] text-ink-500">{{ t('Sent the moment a patient books.', 'Se envía en cuanto un paciente reserva.') }}</span>
-                </div>
-                <input id="notify-email" v-model="notifyEmail" type="email" placeholder="recepcion@clinica.es" :class="[inputClass, 'w-full sm:w-[280px]']" />
-              </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="notify-whatsapp" class="text-[14.5px] font-bold text-ink-900">{{ t('By WhatsApp', 'Por WhatsApp') }}</label>
-                  <span class="text-[13px] leading-snug text-ink-500">
-                    {{ t('In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers the staff booking template set in', 'En formato +34… Si ese número no ha escrito a la clínica en 24 h, WhatsApp solo entrega la plantilla de aviso de reserva configurada en') }}
-                    <NuxtLink to="/settings/whatsapp" class="font-semibold text-brand-text hover:underline">WhatsApp</NuxtLink>.
-                  </span>
-                </div>
-                <input id="notify-whatsapp" v-model="notifyWhatsapp" type="tel" placeholder="+34600000000" :class="[inputClass, 'w-full sm:w-[280px]']" />
-              </div>
-            </section>
+            <!-- Notifications: the alerts themselves are in Settings > Team alerts,
+                 beside the same alert for a new lead. The section stays, as a
+                 pointer, so the jump link and old #notify links land somewhere. -->
+            <p id="notify" class="scroll-mt-4 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="booking-alerts-moved">
+              {{ t('Who at the clinic is told about a new booking is in', 'A quién de la clínica se avisa de una reserva nueva está en') }}
+              <NuxtLink to="/settings/team-alerts" data-cy="booking-team-alerts-link" class="font-semibold text-brand-text hover:underline">{{ t('Team alerts', 'Avisos al equipo') }}</NuxtLink>.
+            </p>
 
             <!-- Tracking -->
             <section id="tracking" aria-labelledby="h-track" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">

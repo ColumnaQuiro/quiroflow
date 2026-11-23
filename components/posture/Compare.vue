@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PostureView, ViewMetrics } from '../../utils/posture'
-import { COMPARE_GROUPS, COMPARE_METRICS, compareBar, compareHighlights, comparePosture, type CompareAudience, type CompareGroup, type CompareRow } from '../../utils/postureCompare'
+import { COMPARE_GROUPS, COMPARE_METRICS, compareBar, compareHighlights, comparePosture, uncomparedPlanes, type CompareAudience, type CompareGroup, type CompareRow, type UncomparedPlane } from '../../utils/postureCompare'
 
 // Two posture assessments, measure by measure: what each number was, what it
 // is now, where both sit against aligned, and whether that is better -- said
@@ -72,6 +72,19 @@ const sentence = computed(() => {
   else if (h.same) out.push(h.same === 1 ? t('The other measurement is much the same.', 'La otra medida se mantiene parecida.') : t('The rest is much the same.', 'El resto se mantiene parecido.'))
   return out.join(' ')
 })
+// A plane the two share no view of (one from the front, the other from the
+// back, say): said in a line, so a frontal row is not just missing.
+const uncompared = computed(() => uncomparedPlanes(props.before, props.after))
+const viewWords = (v: PostureView | null) =>
+  v === 'front' ? t('the front photo', 'la foto de frente') : v === 'back' ? t('the back photo', 'la foto de espalda') : v === 'right' ? t('the right side', 'la del lado derecho') : v === 'left' ? t('the left side', 'la del lado izquierdo') : t('no photo from there', 'ninguna foto de ese lado')
+const uncomparedLine = (u: UncomparedPlane) => {
+  const plane = u.plane === 'front' ? t('From the front', 'De frente') : t('From the side', 'De lado')
+  const [b, a] = [viewWords(u.before), viewWords(u.after)]
+  return t(
+    `${plane}, not compared: ${shortDay(props.beforeAt)} has ${b} and ${shortDay(props.afterAt)} ${a}. Only photos of the same view are compared.`,
+    `${plane}, sin comparar: el ${shortDay(props.beforeAt)} tiene ${b} y el ${shortDay(props.afterAt)}, ${a}. Solo se comparan fotos de la misma vista.`,
+  )
+}
 const pct = (f: number) => `${(f * 100).toFixed(1)}%`
 function bar(r: CompareRow) {
   const b = compareBar(r)
@@ -114,6 +127,8 @@ function bar(r: CompareRow) {
         </li>
       </ul>
     </div>
+
+    <p v-for="u in uncompared" :key="u.plane" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-700" :data-cy="`posture-comparison-uncompared-${u.plane}`">{{ uncomparedLine(u) }}</p>
 
     <p v-if="comparison.rows.length" class="text-[12px] text-ink-muted">
       {{ t(`On each bar: hollow dot, ${shortDay(beforeAt)}; full dot, ${shortDay(afterAt)}; green mark, aligned. The closer to the mark, the better.`, `En cada barra: punto hueco, ${shortDay(beforeAt)}; punto lleno, ${shortDay(afterAt)}; marca verde, lo alineado. Cuanto más cerca de la marca, mejor.`) }}

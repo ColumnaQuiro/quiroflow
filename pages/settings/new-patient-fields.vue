@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Database } from '~/types/database.types'
+import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { PATIENT_ATTRIBUTE_COLUMNS, patientAttributeKindLabel, patientAttributeNewPatientKey, type PatientAttribute } from '~/utils/patientAttributes'
 
 // What the front desk is asked for when adding a patient (AddPatientModal
@@ -10,6 +11,14 @@ import { PATIENT_ATTRIBUTE_COLUMNS, patientAttributeKindLabel, patientAttributeN
 //
 // The clinic's own fields (Settings > Custom fields) are listed after the
 // standard ones, under the key "attribute:<id>", and start hidden.
+//
+// The default phone country is here too, beside the phone field it fills in
+// (it was under Settings > Messages, which it has nothing to do with): which
+// country a number belongs to when typed without a prefix -- the "add a
+// number" field, the new-patient forms, the public booking page and an
+// import's fallback. Chosen at onboarding. Saved only when it changes, under
+// clinic_config like the field config
+// (20261121193000_settings_regroup_permissions.sql).
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -37,6 +46,8 @@ const FIELDS = computed<{ key: string; label: string; hint: string; canRequire: 
 
 const config = ref<Record<string, FieldConfig>>({})
 const saved = ref('')
+const phoneCountry = ref('ES')
+const savedPhoneCountry = ref('ES')
 const loading = ref(true)
 const saving = ref(false)
 
@@ -62,32 +73,36 @@ function setState(key: string, state: State) {
   config.value = { ...config.value, [key]: { visible: state !== 'hidden', required: state === 'required' } }
 }
 
-const dirty = computed(() => JSON.stringify(config.value) !== saved.value)
+const dirty = computed(() => JSON.stringify(config.value) !== saved.value || phoneCountry.value !== savedPhoneCountry.value)
 
 async function load() {
   const [{ data }, { data: attrs }] = await Promise.all([
-    supabase.from('accounts').select('new_patient_field_config').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('new_patient_field_config, default_phone_country').eq('id', store.accountId!).maybeSingle(),
     supabase.from('patient_attributes').select(PATIENT_ATTRIBUTE_COLUMNS).is('archived_at', null).order('section', { ascending: false }).order('position').order('created_at'),
   ])
   attributes.value = (attrs as PatientAttribute[] | null) ?? []
   config.value = (data?.new_patient_field_config as unknown as Record<string, FieldConfig>) ?? {}
   saved.value = JSON.stringify(config.value)
+  phoneCountry.value = data?.default_phone_country || 'ES'
+  savedPhoneCountry.value = phoneCountry.value
   loading.value = false
 }
 onMounted(load)
 
 async function save() {
   saving.value = true
-  const { error } = await supabase
-    .from('accounts')
-    .update({ new_patient_field_config: config.value as unknown as Database['public']['Tables']['accounts']['Update']['new_patient_field_config'] })
-    .eq('id', store.accountId!)
+  const update: Database['public']['Tables']['accounts']['Update'] = {}
+  if (JSON.stringify(config.value) !== saved.value) update.new_patient_field_config = config.value as unknown as Database['public']['Tables']['accounts']['Update']['new_patient_field_config']
+  if (phoneCountry.value !== savedPhoneCountry.value) update.default_phone_country = phoneCountry.value
+  const { error } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (error) {
     showToast(error.message, 'error')
     return
   }
   saved.value = JSON.stringify(config.value)
+  savedPhoneCountry.value = phoneCountry.value
+  store.defaultPhoneCountry = phoneCountry.value
   showToast(t('Saved', 'Guardado'))
 }
 
@@ -185,6 +200,28 @@ const STATES: { value: State; label: () => string }[] = [
               </div>
             </figure>
           </div>
+
+          <section aria-labelledby="h-phones" class="overflow-hidden rounded-card border border-line bg-surface lg:max-w-[calc(100%-340px)]" data-cy="phone-country-settings">
+            <h2 id="h-phones" class="px-[18px] pb-3 pt-4 text-[16px] font-bold text-ink-900">{{ t('Phone numbers', 'Teléfonos') }}</h2>
+            <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+              <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                <label for="phone-country" class="text-[14.5px] font-bold text-ink-900">{{ t('Default phone country', 'País de teléfono por defecto') }}</label>
+                <span class="text-[12.5px] leading-snug text-ink-muted">
+                  {{ t('For a number typed without a prefix: at the desk, for a new patient, on the booking page, or in an import.', 'Para un número escrito sin prefijo: en recepción, para un paciente nuevo, en la página de reservas o en una importación.') }}
+                </span>
+              </div>
+              <UiSkeleton v-if="loading" class="h-9 w-full rounded-ctl sm:w-[280px]" />
+              <select
+                v-else
+                id="phone-country"
+                v-model="phoneCountry"
+                data-cy="default-phone-country"
+                class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11 sm:w-[280px]"
+              >
+                <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
+              </select>
+            </div>
+          </section>
         </div>
       </div>
     </div>

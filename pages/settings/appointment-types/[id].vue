@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import type { TablesUpdate } from '~/types/database.types'
+import type { Json, TablesUpdate } from '~/types/database.types'
 import { formatEur } from '~/utils/billing'
 import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
 import { DURATION_MAX, DURATION_MIN, TYPE_STAGES, centsToInput, parseEurosToCents, parseMinutes, typeProblems } from '~/utils/appointmentTypes'
 import { receptionistOffersType } from '~/utils/receptionistTypes'
+import type { BusinessHours } from '~/utils/businessHours'
+import type { OnlineBookingWindows } from '~/utils/bookingSlots'
+import { fullWeek, hoursProblems, normalizeHours } from '~/utils/clinicHours'
 
 // One appointment type, everything about it on one page: what used to be the
 // row of Settings -> Appointment Types (name, duration, price, colour, stage,
@@ -43,6 +46,15 @@ interface Form {
   bookableBy: string
   bypass: boolean
   maxDays: string | number
+  /**
+   * appointment_types.online_booking_windows: offered online only at set
+   * times (PracticeHub's "special" slots). Off is null, any free time.
+   */
+  windowsOn: boolean
+  /** Everyone's times, a full week. */
+  windowsAll: BusinessHours
+  /** A practitioner's own times, in place of everyone's. */
+  windowsOwn: Record<string, BusinessHours>
   /** Places, when the type is a class; '' for an individual visit. */
   places: string | number
   payment: boolean
@@ -95,6 +107,14 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     bookableBy: row.online_bookable_by ?? 'all',
     bypass: !!row.online_bypass_practitioner,
     maxDays: row.online_max_days_ahead != null ? String(row.online_max_days_ahead) : '',
+    windowsOn: !!row.online_booking_windows,
+    windowsAll: fullWeek((row.online_booking_windows as OnlineBookingWindows | null)?.all),
+    // Only people still on the team, as with practitionerIds.
+    windowsOwn: Object.fromEntries(
+      Object.entries((row.online_booking_windows as OnlineBookingWindows | null)?.practitioners ?? {})
+        .filter(([id]) => people.some((p) => p.id === id))
+        .map(([id, week]) => [id, fullWeek(week)]),
+    ),
     places: row.class_capacity != null ? String(row.class_capacity) : '',
     payment: !!row.online_payment_required,
     deposit: centsToInput(row.online_deposit_cents),
@@ -187,6 +207,8 @@ const changes = computed(() => {
   if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
   if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
   if (!same(f.maxDays, before.maxDays)) out.online_max_days_ahead = parseMinutes(f.maxDays)
+  const windows = windowsValue(f)
+  if (!same(windows, windowsValue(before))) out.online_booking_windows = windows as unknown as Json
   if (!same(f.places, before.places)) out.class_capacity = String(f.places).trim() === '' ? null : Number(f.places)
   if (f.payment !== before.payment) out.online_payment_required = f.payment
   // A deposit only means something while payment is taken at booking, and
@@ -210,6 +232,28 @@ const overrideChanges = computed(() => {
 })
 const noteChanged = computed(() => !!form.value && !!saved.value && form.value.staffNote.trim() !== saved.value.staffNote.trim())
 const dirty = computed(() => Object.keys(changes.value).length > 0 || overrideChanges.value.length > 0 || noteChanged.value)
+
+// What online_booking_windows is stored as: null when off, otherwise
+// everyone's week and the weeks of those who have their own.
+function windowsValue(f: Form): OnlineBookingWindows | null {
+  if (!f.windowsOn) return null
+  const own = Object.entries(f.windowsOwn).filter(([id]) => windowPractitioners.value.some((p) => p.id === id))
+  return { all: normalizeHours(f.windowsAll), ...(own.length ? { practitioners: Object.fromEntries(own.map(([id, week]) => [id, normalizeHours(week)])) } : {}) }
+}
+// Who can have times of their own: whoever does the type.
+const windowPractitioners = computed(() => {
+  const only = form.value?.practitionerIds ?? []
+  return practitioners.value.filter((p) => only.length === 0 || only.includes(p.id))
+})
+function setOwnWindows(id: string) {
+  if (!form.value) return
+  form.value.windowsOwn = { ...form.value.windowsOwn, [id]: fullWeek(form.value.windowsAll) }
+}
+function clearOwnWindows(id: string) {
+  if (!form.value) return
+  const { [id]: _, ...rest } = form.value.windowsOwn
+  form.value.windowsOwn = rest
+}
 
 // --- Validation -------------------------------------------------------------------
 const problems = computed(() =>
@@ -241,7 +285,14 @@ const placesProblem = computed(() => {
   const n = Number(v)
   return !Number.isInteger(n) || n < 2 || n > 200
 })
-const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0 && !placesProblem.value)
+// Each week of times as the hours editor checks it; nothing while they are off.
+const windowProblems = computed(() => {
+  const f = form.value
+  if (!f?.windowsOn) return { all: {}, own: {} as Record<string, ReturnType<typeof hoursProblems>> }
+  return { all: hoursProblems(f.windowsAll), own: Object.fromEntries(Object.entries(f.windowsOwn).map(([id, week]) => [id, hoursProblems(week)])) }
+})
+const windowsInvalid = computed(() => Object.keys(windowProblems.value.all).length > 0 || Object.values(windowProblems.value.own).some((p) => Object.keys(p).length > 0))
+const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0 && !placesProblem.value && !windowsInvalid.value)
 const priceCents = computed(() => {
   const p = parseEurosToCents(form.value?.price ?? '')
   return p === null || Number.isNaN(p) ? 0 : p
@@ -640,6 +691,45 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                     (<NuxtLink to="/settings/online-booking" class="text-brand-text hover:underline">{{ t('Settings › Online booking', 'Ajustes › Reserva online') }}</NuxtLink>).
                   </span>
                 </label>
+                <div v-if="String(form.places).trim() === ''" class="flex flex-col gap-3 border-t border-line-row py-3" data-cy="type-windows">
+                  <div class="flex items-center gap-3">
+                    <strong class="flex-1 text-[14.5px] text-ink-900">{{ t('When it is offered', 'Cuándo se ofrece') }}</strong>
+                    <button v-if="form.windowsOn" type="button" data-cy="type-windows-clear" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="form.windowsOn = false">{{ t('At any free time', 'En cualquier hueco') }}</button>
+                  </div>
+                  <template v-if="form.windowsOn">
+                    <span :class="hint">{{ t('Online it is only offered inside these times, and only when the practitioner is also working. The team can still book it at any time from the calendar.', 'Online solo se ofrece dentro de estas horas, y solo cuando el profesional también trabaja. El equipo puede seguir dándola a cualquier hora desde la agenda.') }}</span>
+                    <SettingsClinicHoursEditor
+                      :model-value="form.windowsAll"
+                      :problems="windowProblems.all"
+                      :empty-note="t('No times yet: until you add one it is not offered online, except with a practitioner who has times of their own.', 'Aún sin horas: hasta que añadas alguna no se ofrece online, salvo con un profesional que tenga las suyas.')"
+                      @update:model-value="form.windowsAll = $event"
+                    />
+                    <div v-if="windowPractitioners.length > 1" class="flex flex-col gap-3 pt-1" data-cy="type-windows-practitioners">
+                      <span class="text-[13px] font-semibold text-ink-700">{{ t('Other times for one practitioner', 'Otras horas para un profesional') }}</span>
+                      <div v-for="p in windowPractitioners" :key="p.id" class="flex flex-col gap-3 rounded-ctl border border-line px-3.5 py-3" data-cy="type-windows-practitioner">
+                        <div class="flex flex-wrap items-center gap-3">
+                          <span class="min-w-0 flex-1 text-[14px] font-semibold text-ink-900">{{ p.full_name }}</span>
+                          <button v-if="form.windowsOwn[p.id]" type="button" data-cy="type-windows-own-clear" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="clearOwnWindows(p.id)">{{ t('Same as everyone', 'Las mismas que el resto') }}</button>
+                          <template v-else>
+                            <span class="text-[13.5px] text-ink-700">{{ t('Same as everyone', 'Las mismas que el resto') }}</span>
+                            <UiBtn data-cy="type-windows-own-set" @click="setOwnWindows(p.id)">{{ t('Set their own', 'Poner las suyas') }}</UiBtn>
+                          </template>
+                        </div>
+                        <SettingsClinicHoursEditor
+                          v-if="form.windowsOwn[p.id]"
+                          :model-value="form.windowsOwn[p.id]"
+                          :problems="windowProblems.own[p.id] ?? {}"
+                          :empty-note="t('No times yet: it is not offered online with them.', 'Aún sin horas: con este profesional no se ofrece online.')"
+                          @update:model-value="form.windowsOwn = { ...form.windowsOwn, [p.id]: $event }"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="type-windows-none">
+                    <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t("At any free time in the practitioner's hours. Set times if it is only booked online in certain slots, like first visits.", 'En cualquier hueco del horario del profesional. Pon unas horas si online solo se reserva en huecos concretos, como las primeras visitas.') }}</span>
+                    <UiBtn data-cy="type-windows-set" @click="form.windowsOn = true">{{ t('Only at set times', 'Solo a unas horas') }}</UiBtn>
+                  </div>
+                </div>
                 <SettingsSwitchRow
                   v-model="form.payment"
                   data-cy="type-payment"

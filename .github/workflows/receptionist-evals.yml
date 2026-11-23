@@ -1,0 +1,87 @@
+name: Receptionist evals
+
+# The AI receptionist's behaviour, checked against the real model on every
+# pull request that could change it.
+#
+# The unit tests pin the wording and the checks in code. What they cannot
+# pin is what the model DOES with them, and that is where the receptionist
+# broke most days of its first six weeks: a line added to the prompt for
+# Tuesday's failure quietly changed Monday's fix, and nobody ran the evals
+# because nothing made them (#1271: "no se han ejecutado los evals del
+# modelo"). Each case in tests/evals/receptionist is something that went
+# wrong with a real patient, with invented people.
+#
+# Only when the receptionist's own files change, so every other pull request
+# pays nothing. On the model production runs on (NUXT_RECEPTIONIST_MODEL on
+# Netlify -- Haiku since 21 Nov 2026; change EVAL_MODEL here when that
+# changes). Three runs of each case and two must pass: one unlucky run of a
+# model that is not deterministic does not block a pull request, a case that
+# fails most of the time does. About 60 replies at $0.003: under 20 cents.
+#
+# EVAL_ANTHROPIC_API_KEY is a repository secret holding a key kept for evals,
+# never the production one -- these calls are tests, and should not show as
+# the clinics' usage. A pull request from a fork gets no secrets, and a
+# repository without the secret has nothing to run with: both say so and
+# pass, rather than fail every pull request for a reason its author cannot
+# fix.
+on:
+  pull_request:
+    paths:
+      - 'server/utils/receptionist*.ts'
+      - 'server/utils/patientReplyDraft.ts'
+      - 'utils/receptionist*.ts'
+      - 'utils/patientReplyPrompt.ts'
+      - 'tests/evals/**'
+      - 'vitest.evals.config.ts'
+      - '.github/workflows/receptionist-evals.yml'
+
+concurrency:
+  group: receptionist-evals-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.EVAL_ANTHROPIC_API_KEY }}
+      EVAL_MODEL: claude-haiku-5-5
+      EVAL_RUNS: 3
+      EVAL_MIN_PASS: 2
+    steps:
+      - name: Is there a key to run with?
+        id: key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning title=Receptionist evals skipped::EVAL_ANTHROPIC_API_KEY is not set for this run (a fork, or the repository secret is missing). The receptionist's behaviour was NOT checked: run 'npm run eval:receptionist' by hand."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      # The same cache the CI workflow fills (e2e.yml), so this is a restore.
+      - name: Restore node_modules
+        if: steps.key.outputs.present == 'true'
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+        if: steps.key.outputs.present == 'true' && steps.modules.outputs.cache-hit != 'true'
+
+      - run: npm run eval:receptionist
+        if: steps.key.outputs.present == 'true'

@@ -12,7 +12,9 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
-import { freeTimesLookup, receptionistModelName, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { acceptOfferedTime, alreadyBookedNote, keepOffer } from '~/server/utils/receptionistOffers'
+import { choiceLanguage } from '~/utils/cancellationReason'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
@@ -397,9 +399,11 @@ export async function draftPatientReply(
 
   // Their answer can only be one of the times it just offered: said so in the
   // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
-  const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ours.automated ? ours.body : ''
+  // A colleague's offer as much as its own: accepted, either is booked.
+  const offer = ours && ours.direction === 'outbound' && !ours.automated ? ours.body : ''
+  const offeredBy = ours?.sent_by_ai === true ? 'you' as const : 'colleague' as const
   const chosen = offer ? chosenOfferedTime(offer, turns.slice(lastOutbound + 1).filter((m) => m.direction === 'inbound').map((m) => m.body).join(' ')) : null
-  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined)}` } : prompt)
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined, offeredBy)}` } : prompt)
 
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
@@ -407,10 +411,33 @@ export async function draftPatientReply(
   // And the trial's, for a trial that has bought nothing.
   if (await overTrialAllowance(service, accountId)) return { status: 'trial_limit_reached' }
 
-  const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
+  // One of the times it offered, accepted: booked here, from the offer as it
+  // was kept, and confirmed in words written from the booking -- no model is
+  // asked (acceptOfferedTime).
+  const language = choiceLanguage(patient.preferred_language)
+  const accepted = actions
+    ? await acceptOfferedTime({
+        service,
+        accountId,
+        conversationKey: patientId,
+        actions,
+        ours: ours ? { createdAt: ours.created_at, sentByAi: ours.sent_by_ai === true, automated: Boolean(ours.automated) } : null,
+        inbound: turns.slice(lastOutbound + 1).filter((m) => m.direction === 'inbound').map((m) => m.body),
+        language,
+        newPersonReady: true,
+      })
+    : null
+  // Booked in code, with a confirmation that is the model's to word: told so
+  // instead of which time they chose.
+  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : withChosenTime(prompt))
+
+  const run = accepted?.kind === 'reply' ? accepted.run : await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: receptionistModelName(),
+    fallbackModel: receptionistFallbackModel(),
+    alreadyBooked: accepted?.kind === 'booked' ? { input: accepted.input, details: accepted.details } : null,
+    language,
     maxTokens: MAX_TOKENS,
-    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),
+    system: withAccepted(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),
     // With the day each message was sent (withDayMarks): "mañana jueves" in
     // yesterday's offer is today, not a week from now.
     messages: withImages(asHistory(withDayMarks(turns.map((m) => ({ direction: m.direction, content: m.body, at: m.created_at })), calendar.timeZone)), images),
@@ -441,7 +468,8 @@ export async function draftPatientReply(
 
   // Counted for the monthly allowance: every reply it writes, sent or left as
   // a draft -- writing it is what cost money, whatever happens to it next.
-  if (!refused && draft) await recordReceptionistReply(service, accountId, patientId, sends && opts.send ? 'sent' : 'draft')
+  // Not one written in code: no model was paid for.
+  if (!refused && draft && !run.inCode) await recordReceptionistReply(service, accountId, patientId, sends && opts.send ? 'sent' : 'draft')
   const name = patient.first_name ?? 'Paciente'
   if (sends && opts.send && channel && newestInboundAt) {
     const target = { kind: 'patient' as const, patientId, channel }
@@ -509,6 +537,8 @@ export async function draftPatientReply(
     }
     // Sent: dealt with, so it no longer shows as a draft.
     await record('sent', run)
+    // The times it offered, kept as data: one accepted is booked from here.
+    if (run.choices === 'times') await keepOffer(service, accountId, patientId, run.offer)
     // Times offered and nothing booked: asked about once, the next morning,
     // if they have not answered by then.
     await scheduleNudgeAfterOffer(service, accountId, patientId, channel, { text: draft, offeredTimes: run.choices === 'times', changedDiary: replyActed(toolUses) }, calendar.timeZone)

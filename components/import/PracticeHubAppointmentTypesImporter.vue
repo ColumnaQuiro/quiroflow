@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { practiceHubPriceToWrite, practiceHubTypePrice, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
+import { practiceHubPriceToWrite, practiceHubTypePrice, practiceHubUnpricedTypesWarning, type PracticeHubBillableItem } from '~/utils/practicehubTypePrices'
 import { formatEur } from '~/utils/billing'
 import { hexColor, isWorthBringing, STAGE_BY_NAME } from '~/utils/practicehubImport/appointmentTypes'
+import { practiceHubTypeMatches } from '~/utils/practicehubImport/appointments'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -13,17 +14,23 @@ interface PHAppointment { id: number; appointment_type_id: number | null }
 
 // STAGE_BY_NAME (which type names get a funnel stage), isWorthBringing (which
 // retired types are left behind) and hexColor live in
-// utils/practicehubImport/appointmentTypes.ts, shared with the server-side sync.
+// utils/practicehubImport/appointmentTypes.ts, and practiceHubTypeMatches
+// (which type here each PracticeHub type is) in appointments.ts, shared with
+// the server-side sync.
 
 interface TypeCandidate {
   phTypeId: number
   name: string
-  /** Set when a type of the same name is already here; null means it gets created. */
+  /** Set when the type is already here (practiceHubTypeMatches); null means it gets created. */
   ourTypeId: string | null
+  /** That type's name here, which a rename here can have made different from PracticeHub's. */
+  ourName: string | null
   /** The type's price here; null when it gets created. */
   ourPriceCents: number | null
   /** What the import writes as the type's price: PracticeHub's, and only over a 0. */
   priceToWrite: number | null
+  /** Left at 0 with nothing to fill it from (see utils/practicehubImport/appointmentTypes.ts). */
+  unpriced: boolean
   funnelStage: string | null
   /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
@@ -58,6 +65,7 @@ const newTypeCount = computed(() => new Set(candidates.value.filter((c) => !c.ou
 // Types already here that take PracticeHub's price. Two PracticeHub types of
 // one name are one type here, so it is counted once.
 const pricesToFill = computed(() => new Set(candidates.value.filter((c) => c.ourTypeId && c.priceToWrite !== null).map((c) => c.ourTypeId)).size)
+const unpricedWarning = computed(() => practiceHubUnpricedTypesWarning(candidates.value.filter((c) => c.unpriced).map((c) => c.name), t))
 const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => sum + c.appointmentRefs.length, 0))
 
 const previewColumns = computed(() => [
@@ -84,7 +92,11 @@ const previewRows = computed(() =>
     .sort((a, b) => b.inPracticeHub - a.inPracticeHub)
     .map((c) => ({
       name: c.name,
-      status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará'),
+      status: !c.ourTypeId
+        ? t('Will be created', 'Se creará')
+        : c.ourName && c.ourName.trim().toLowerCase() !== c.name.trim().toLowerCase()
+          ? t(`Already here as "${c.ourName}"`, `Ya existe como «${c.ourName}»`)
+          : t('Already here', 'Ya existe'),
       price: priceLabel(c),
       // The stage's name as Settings › Appointment types shows it, not its key.
       funnelStage: stageLabel(c.funnelStage),
@@ -121,23 +133,30 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const services = await loadPracticeHubServices()
 
     phase.value = t('Matching to existing types…', 'Emparejando con los tipos existentes…')
-    const { data: existing, error: existingError } = await supabase.from('appointment_types').select('id, name, default_price_cents')
+    // Oldest id first, as the server reads them, so a twin name resolves to the same one.
+    const { data: existing, error: existingError } = await supabase.from('appointment_types').select('id, name, default_price_cents').order('id')
     // Read wrong, every type here would look new and be created a second time.
     if (existingError) throw existingError
-    const existingByName = new Map((existing ?? []).map((row) => [row.name.trim().toLowerCase(), row]))
 
     // Only the visits already here can be re-pointed. Counting PracticeHub's
     // own told a clinic with no appointments yet that 8,695 would be relinked.
+    // Their types say which type here each PracticeHub type has become.
     const refsHere = new Set<string>()
+    const visitsHere: { external_reference: string | null; appointment_type_id: string | null }[] = []
     const PAGE_SIZE = 1000
     for (let page = 0; ; page++) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('appointments')
-        .select('external_reference')
+        .select('external_reference, appointment_type_id')
         .not('external_reference', 'is', null)
         .order('id')
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const a of data ?? []) refsHere.add(a.external_reference!)
+      // Read short, a renamed type would look missing and be created again.
+      if (error) throw error
+      for (const a of data ?? []) {
+        refsHere.add(a.external_reference!)
+        visitsHere.push(a)
+      }
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -157,20 +176,23 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       refsByPhTypeId.set(appt.appointment_type_id, list)
     }
 
+    const matches = practiceHubTypeMatches({ phTypes, phAppointments, typesHere: existing ?? [], visitsHere })
     candidates.value = phTypes
       .filter((phType) => isWorthBringing(phType, refsByPhTypeId.get(phType.id)?.length ?? 0))
       .map((phType) => {
         const key = phType.name.trim().toLowerCase()
         const refs = refsByPhTypeId.get(phType.id) ?? []
-        const ours = existingByName.get(key)
+        const ours = matches.get(String(phType.id))
         const ourPriceCents = ours ? ours.default_price_cents : null
         const phPrice = services ? practiceHubTypePrice(phType.name, services) : null
         return {
           phTypeId: phType.id,
           name: phType.name,
           ourTypeId: ours?.id ?? null,
+          ourName: ours?.name ?? null,
           ourPriceCents,
           priceToWrite: practiceHubPriceToWrite(ourPriceCents, phPrice?.priceCents),
+          unpriced: services !== null && !ourPriceCents && phPrice === null && !(phType.active === 0 || phType.active === false),
           funnelStage: STAGE_BY_NAME[key] ?? null,
           appointmentRefs: refs.filter((ref) => refsHere.has(ref)),
           inPracticeHub: refs.length,
@@ -355,6 +377,7 @@ const introNotes = computed(() => [
       @cancel="reset"
     >
       <template #note>
+        <p v-if="unpricedWarning" class="mb-2 text-xs text-ink-600">{{ unpricedWarning }}</p>
         <p v-if="pricesUnavailable" class="mb-2 text-xs text-ink-600">
           {{
             pricesUnavailable === 'no_v3_key'

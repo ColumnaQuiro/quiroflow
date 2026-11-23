@@ -20,6 +20,8 @@ import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } f
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
 import { MAX_SLOTS_TO_TAP, SLOT_HOLD_MINUTES, agreedDueAt, cleanSlots, isLateNotice, lateChangeNote, lateChangeStaffNote, priorLateChanges, LATE_NOTICE_WINDOW_DAYS, type LateChangeRow, type OfferedSlot } from '~/utils/receptionistConversion'
 import { BROUGHT_RELATIONS, MINOR_AGE, REPEAT_CHANGE_LIMIT, repeatChangeRefusal, accentBlindPrefix, findTypeByName, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
+import { offeredTypeAt } from '~/utils/receptionistFollowThrough'
+import type { BookedDetails, StoredOffer, StoredOfferSlot } from '~/utils/receptionistOffers'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -186,6 +188,8 @@ export const OFFER_TIMES: Anthropic.Tool = {
         },
       },
       appointment_type: { type: 'string', description: 'The type the times are for, by its exact name. Leave out when moving or replacing a visit they have: it keeps its type.' },
+      move_visit_on: { type: 'string', description: 'When the times are to move a visit they already have: that visit\'s current day and time, as "YYYY-MM-DD HH:MM". Leave out for a new visit.' },
+      for_name: { type: 'string', description: 'When the times are for their child or for someone else rather than for the person writing: that person\'s name. Leave out otherwise.' },
     },
     required: ['times'],
     additionalProperties: false,
@@ -329,6 +333,22 @@ export interface BookingContext {
 }
 
 type ToolResult = { content: string; isError: boolean }
+/** book_appointment's result: with what it booked, when it did (utils/receptionistOffers.ts). */
+type BookingResult = ToolResult & { booked?: BookedDetails }
+
+/** An offer as offer_times resolved it, before it is sent and kept (receptionist_offers). */
+export type OfferDraft = Omit<StoredOffer, 'id' | 'createdAt'>
+
+/**
+ * What the model looked up before offering, in the same reply: whose times
+ * they were (find_free_times' any_chiropractor, chiropractor and for_name),
+ * so the offer is checked against the same diary and not told a second time.
+ */
+export interface OfferHints {
+  anyChiropractor?: boolean
+  chiropractor?: string | null
+  forName?: string | null
+}
 
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -338,7 +358,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
  * children, or a visit for themselves and one for their partner, is several
  * people, each booked once.
  */
-export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<BookingResult> {
   const used = new Set<string>()
   return async (input) => {
     const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown; any_chiropractor?: unknown; chiropractor?: unknown }
@@ -465,6 +485,17 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       }
     }
 
+    // A time they picked from an offer is booked as the type it was offered
+    // as (offeredTypeAt): the model chose the type twice and the two did not
+    // always agree. A move keeps the visit's own type, so it is not checked.
+    if (!moving) {
+      const offeredAs = await loadOfferedTypeAt(ctx, date, time)
+      const offeredType = offeredAs ? findTypeByName([type, ...ctx.types, ...(ctx.bringsSomeone?.types ?? []), ...(ctx.family?.forNew ?? []), ...(ctx.family?.forReturning ?? []), ...(ctx.minors?.forNewChild ?? []), ...(ctx.minors?.forReturningChild ?? [])], offeredAs) : undefined
+      if (offeredType && offeredType.id !== type.id) {
+        return { content: `${time} on ${date} was offered to them as ${offeredType.name}, and that is what they accepted, at its price. Book it as ${offeredType.name}. If it should really be ${type.name}, tell them so, with its price, and ask before booking; do not say anything is booked.`, isError: true }
+      }
+    }
+
     // Free now, and with whom: the visit's own practitioner first for a move,
     // then the patient's own, then anyone the list was built from.
     const dayStart = startOfLocalDate(date, ctx.timeZone)
@@ -503,14 +534,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       named = found
       own = [found.id]
     }
-    for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
-      const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
-      const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))
-      if (group) {
-        chosen = { practitionerId, clinicId: group.clinicId }
-        break
-      }
-    }
+    chosen = await freeWith(ctx, type, date, time, await candidatePractitioners(ctx, moving, own))
     if (!chosen) {
       const day = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1 }, own)
       const free = [...new Set(day.availability?.groups.flatMap((g) => g.days.filter((d) => d.date === date).flatMap((d) => d.times)) ?? [])].sort()
@@ -606,6 +630,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // What follows any booking nobody at the clinic made: the note in the
     // conversation, the practitioner told, the patient's confirmation.
     // Best-effort -- the visit stands either way.
+    await closeOffers(ctx)
     try {
       await ctx.onBooked(summary)
       if (moving) {
@@ -623,15 +648,16 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // landed the day after a visit they already had there, and nobody told
     // them they now had two in a row.
     // (Their own visits, not a child's: the child's are not in this list.)
-    const near = ctx.booked.appointments
-      .filter((a) => !child && !relative && !brought && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+    const nearVisits = ctx.booked.appointments.filter((a) => !child && !relative && !brought && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+    const near = nearVisits
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     // Someone coming for the first time is told where to go.
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     // A first visit two or more days away, at a clinic offering earlier times
     // (earlierVisitOffers.ts), was just enrolled by the database: they are
     // told, so the WhatsApp that may follow is not a surprise.
-    const earlierLine = !moving && (await earlierVisitEnrolled(ctx.service, appointmentId).catch(() => false))
+    const earlier = !moving && (await earlierVisitEnrolled(ctx.service, appointmentId).catch(() => false))
+    const earlierLine = earlier
       ? `This first visit is two or more days away: if an earlier time frees up, the clinic will write to them on WhatsApp to offer it. Tell them so in one short sentence ("si se libera algo antes, te escribo").${ctx.earlierTimeOffers ? ' If they say they do not want that, call stop_earlier_time_offers.' : ''}`
       : ''
     return {
@@ -643,7 +669,62 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
         earlierLine,
       ].filter(Boolean).join(' '),
       isError: false,
+      booked: {
+        moved: Boolean(moving),
+        typeName: type.name,
+        slot: { date, time },
+        practitionerName,
+        quiet,
+        address,
+        near: nearVisits.map((a) => {
+          const [nearDate, nearTime] = localStamp(a.startsAt, ctx.timeZone).split(' ')
+          return { date: nearDate!, time: nearTime! }
+        }),
+        earlierOffer: Boolean(earlier),
+        repeatLateChange: lateMove && priorLateMoves >= 1,
+        forSomeoneElse: Boolean(child || relative || brought),
+      },
     }
+  }
+}
+
+/** Who `time` on `date` is free with for this type, the first of `practitionerIds` it is; null when none. */
+async function freeWith(
+  ctx: BookingContext,
+  type: OfferedType,
+  date: string,
+  time: string,
+  practitionerIds: string[],
+  // One read of a practitioner's day, however many of its times are asked about.
+  cache?: Map<string, { clinicId: string; times: string[] }[]>,
+): Promise<{ practitionerId: string; clinicId: string } | null> {
+  const dayStart = startOfLocalDate(date, ctx.timeZone)
+  for (const practitionerId of practitionerIds) {
+    const key = `${type.id}|${date}|${practitionerId}`
+    let groups = cache?.get(key)
+    if (!groups) {
+      const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
+      groups = (calendar.availability?.groups ?? []).map((g) => ({ clinicId: g.clinicId, times: g.days.filter((d) => d.date === date).flatMap((d) => d.times) }))
+      cache?.set(key, groups)
+    }
+    const group = groups.find((g) => g.times.includes(time))
+    if (group) return { practitionerId, clinicId: group.clinicId }
+  }
+  return null
+}
+
+/**
+ * The conversation's open offers are over: a visit was booked or moved
+ * ('booked'), so a time tapped on an old one is not booked a second time.
+ */
+async function closeOffers(ctx: BookingContext): Promise<void> {
+  if (!ctx.conversation) return
+  try {
+    const writer = receptionistServiceClient(ctx.event) as any
+    const { error } = await writer.from('receptionist_offers').update({ status: 'booked', resolved_at: new Date().toISOString() }).eq('account_id', ctx.accountId).eq('conversation_key', ctx.conversation.key).eq('status', 'open')
+    if (error) console.error('[receptionist] could not close the offered times:', error.message)
+  } catch (err) {
+    console.error('[receptionist] could not close the offered times:', (err as Error)?.message ?? err)
   }
 }
 
@@ -660,6 +741,26 @@ function typeRefusal(allowed: OfferedType[], forWhom: string): string {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The type the conversation's latest offer of that day and time named, if any (offeredTypeAt). */
+async function loadOfferedTypeAt(ctx: BookingContext, date: string, time: string): Promise<string | null> {
+  if (!ctx.conversation) return null
+  try {
+    // Not in the generated types (receptionistTrace.ts reads it the same way).
+    const { data } = await (ctx.service as any)
+      .from('receptionist_reply_traces')
+      .select('tool_uses')
+      .eq('account_id', ctx.accountId)
+      .eq('conversation_key', ctx.conversation.key)
+      .gt('created_at', new Date(Date.now() - 14 * DAY_MS).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(10)
+    return offeredTypeAt((data ?? []) as { tool_uses: unknown }[], date, time)
+  } catch (err) {
+    console.error('[receptionist] could not read the offered times:', (err as Error)?.message ?? err)
+    return null
+  }
+}
 
 /**
  * A child the records only suggested was the writer's (loadTutorChildren),
@@ -1191,23 +1292,92 @@ async function loadPriorLateChanges(ctx: BookingContext, patientId: string): Pro
 }
 
 /**
- * offer_times: the times of this reply, to go under it as buttons. What it
- * returns to the caller is the list (runReceptionistModel keeps it for the
- * send); what it does here is hold them for a few minutes, so the same
- * minute is not offered to somebody else while this person decides.
+ * offer_times: the times of this reply, to go under it as buttons, held for
+ * a few minutes so the same minute is not offered to somebody else while
+ * this person decides -- and resolved into an offer the code can book from
+ * (OfferDraft): what the times are for, and who each is free with now.
+ *
+ * An offer to the person writing, for a type named or a visit named to move,
+ * is checked against the diary here, by the same reading book_appointment
+ * uses. A time that is not free is not offered; the model is told which, and
+ * who each of the rest is with, so its words say what will be booked. On 23
+ * Nov 2026 a move was offered as "with another chiropractor" from a
+ * whole-team lookup and booked with the patient's own, because offering and
+ * booking each worked out whose diary it was.
+ *
+ * Anything else -- for a child, with no type and no visit named -- goes out
+ * as before and is the model's to book (`auto: false`).
  */
-export function offerTimesTool(ctx: BookingContext, onOffered: (slots: OfferedSlot[]) => void): (input: unknown) => Promise<ToolResult> {
-  return async (input) => {
-    const value = (input ?? {}) as { times?: unknown; appointment_type?: unknown }
+export function offerTimesTool(ctx: BookingContext, onOffered: (slots: OfferedSlot[], offer: OfferDraft | null) => void): (input: unknown, hints?: OfferHints) => Promise<ToolResult> {
+  return async (input, hints = {}) => {
+    const value = (input ?? {}) as { times?: unknown; appointment_type?: unknown; move_visit_on?: unknown; for_name?: unknown }
     const today = clinicDateOf(new Date(), ctx.timeZone)
-    const slots = cleanSlots(value.times, Math.min(MAX_SLOTS_TO_TAP, Math.max(1, ctx.config.slotsPerReply))).filter((slot) => slot.date >= today && wallClockToUtc(slot.date, slot.time, ctx.timeZone) > Date.now())
-    if (!slots.length) return { content: 'No valid times were given: each needs date as YYYY-MM-DD and time as HH:MM, in the future. Offer the times in words only, or call it again.', isError: true }
-    onOffered(slots)
+    const asked = cleanSlots(value.times, Math.min(MAX_SLOTS_TO_TAP, Math.max(1, ctx.config.slotsPerReply))).filter((slot) => slot.date >= today && wallClockToUtc(slot.date, slot.time, ctx.timeZone) > Date.now())
+    if (!asked.length) return { content: 'No valid times were given: each needs date as YYYY-MM-DD and time as HH:MM, in the future. Offer the times in words only, or call it again.', isError: true }
+
+    const forOther = (typeof value.for_name === 'string' && value.for_name.trim() !== '') || Boolean(hints.forName)
+    const moveOn = typeof value.move_visit_on === 'string' ? value.move_visit_on.trim().replace('T', ' ') : ''
+    const typeNamed = typeof value.appointment_type === 'string' && value.appointment_type.trim() !== ''
+    let moving: BookedAppointment | null = null
+    if (moveOn && !forOther) {
+      moving = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === moveOn) ?? null
+      if (!moving) {
+        const theirs = ctx.booked.appointments.map((a) => localStamp(a.startsAt, ctx.timeZone)).join(', ')
+        return { content: `They have no booked visit at ${moveOn}. Their visits: ${theirs || 'none'}. Call it again with the right move_visit_on, or without it for a new visit.`, isError: true }
+      }
+    }
+    // As long as the longest visit these could be: the type named, else
+    // the visit they have, else the longest it may book.
+    const named = findTypeByName([...ctx.types, ...ctx.booked.types], value.appointment_type)
+    const type = moving ? ctx.booked.types.find((t) => t.id === moving!.typeId) : typeNamed ? findTypeByName(ctx.types, value.appointment_type) : undefined
+
+    let slots: StoredOfferSlot[] = asked
+    let offer: OfferDraft = { slots: asked, typeName: named?.name ?? null, moveVisitOn: null, pinned: false, anyChiropractor: false, auto: false }
+    let dropped: OfferedSlot[] = []
+    if (type && !forOther) {
+      try {
+        // Whose diary, exactly as book_appointment works it out.
+        let own = ctx.practitionerIds
+        if (own && type.practitionerIds?.length && !own.some((id) => type.practitionerIds!.includes(id))) own = null
+        const anyone = hints.anyChiropractor === true && !moving
+        if (anyone) own = null
+        if (moving?.practitionerId) own = [moving.practitionerId]
+        let pinned = anyone
+        const askedFor = !moving && typeof hints.chiropractor === 'string' ? hints.chiropractor.trim() : ''
+        if (askedFor) {
+          const found = await findChiropractor(ctx.service, ctx.accountId, askedFor)
+          if (!('error' in found)) {
+            own = [found.id]
+            pinned = true
+          }
+        }
+        const candidates = await candidatePractitioners(ctx, moving, own)
+        const cache = new Map<string, { clinicId: string; times: string[] }[]>()
+        const free: StoredOfferSlot[] = []
+        for (const slot of asked) {
+          const with_ = await freeWith(ctx, type, slot.date, slot.time, candidates, cache)
+          if (with_) free.push({ ...slot, practitionerId: with_.practitionerId })
+          else dropped.push(slot)
+        }
+        if (!free.length) {
+          return { content: `None of those times is free${moving ? ' with the chiropractor of the visit being moved, and a move stays with them' : ''} for ${type.name}. Do not offer them: look at the Booking list or call find_free_times again, and offer times that are listed.`, isError: true }
+        }
+        const { data: team } = await ctx.service.from('team_members').select('id, full_name').in('id', [...new Set(free.map((slot) => slot.practitionerId!))])
+        const nameOf = new Map(((team ?? []) as { id: string; full_name: string | null }[]).map((m) => [m.id, m.full_name]))
+        slots = free.map((slot) => ({ ...slot, practitionerName: nameOf.get(slot.practitionerId!) ?? null }))
+        offer = { slots, typeName: moving ? null : type.name, moveVisitOn: moving ? moveOn : null, pinned, anyChiropractor: anyone, auto: true }
+      } catch (err) {
+        // The diary could not be read: offered as the model gave them, and
+        // the model's to book, as before any of this.
+        console.error('[receptionist] could not check the offered times:', (err as Error)?.message ?? err)
+        slots = asked
+        dropped = []
+        offer = { slots: asked, typeName: named?.name ?? null, moveVisitOn: null, pinned: false, anyChiropractor: false, auto: false }
+      }
+    }
+    onOffered(slots.map(({ date, time }) => ({ date, time })), offer)
     if (ctx.conversation) {
-      // As long as the longest visit these could be: the type named, else
-      // the visit they have, else the longest it may book.
-      const named = findTypeByName([...ctx.types, ...ctx.booked.types], value.appointment_type)
-      const minutes = named?.durationMinutes ?? Math.max(30, ...[...ctx.booked.types, ...ctx.types].map((t) => t.durationMinutes || 0))
+      const minutes = named?.durationMinutes ?? type?.durationMinutes ?? Math.max(30, ...[...ctx.booked.types, ...ctx.types].map((t) => t.durationMinutes || 0))
       const expires = new Date(Date.now() + SLOT_HOLD_MINUTES * 60_000).toISOString()
       const rows = slots.map((slot) => {
         const start = wallClockToUtc(slot.date, slot.time, ctx.timeZone)
@@ -1222,7 +1392,9 @@ export function offerTimesTool(ctx: BookingContext, onOffered: (slots: OfferedSl
         console.error('[receptionist] could not hold the offered times:', (err as Error)?.message ?? err)
       }
     }
-    return { content: `These ${slots.length === 1 ? 'time goes' : `${slots.length} times go`} under your reply as buttons to tap, with "another day" after them. Write the reply: name the same times in words, and ask which they prefer. Do not say there are buttons.`, isError: false }
+    const withWhom = slots.some((slot) => slot.practitionerName) ? ` They are: ${slots.map((slot) => `${slot.date} ${slot.time}${slot.practitionerName ? ` with ${slot.practitionerName}` : ''}`).join('; ')}. If you say who a time is with, say exactly that.` : ''
+    const notFree = dropped.length ? ` Not offered, because ${dropped.length === 1 ? 'it is' : 'they are'} not free: ${dropped.map((slot) => `${slot.date} ${slot.time}`).join(', ')}. Do not name ${dropped.length === 1 ? 'it' : 'them'}.` : ''
+    return { content: `These ${slots.length === 1 ? 'time goes' : `${slots.length} times go`} under your reply as buttons to tap, with "another day" after them.${withWhom}${notFree} Write the reply: name the same times in words, and ask which they prefer. Do not say there are buttons.`, isError: false }
   }
 }
 

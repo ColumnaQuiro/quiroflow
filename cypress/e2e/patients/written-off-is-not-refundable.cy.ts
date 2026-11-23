@@ -16,7 +16,7 @@ describe('Refunding a receipt', () => {
             cy.contains('Refund…').should('not.exist')
           })
           cy.contains('tr', 'INV-WO-1').click()
-          cy.contains('a', 'Open receipt').parent().within(() => {
+          cy.get('[data-cy=ledger-row-detail]').should('contain.text', 'Open receipt').within(() => {
             cy.contains('Refund…').should('not.exist')
           })
         })
@@ -33,9 +33,8 @@ describe('Refunding a receipt', () => {
 
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
-          cy.contains('tr', 'INV-WO-2').should('exist').within(() => {
-            cy.contains('button', 'Refund…').click()
-          })
+          cy.contains('tr', 'INV-WO-2').should('exist').click()
+          cy.get('[data-cy=ledger-row-detail]').contains('button', 'Refund…').click()
           cy.contains('up to 20,00 €').should('be.visible')
         })
       })

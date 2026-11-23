@@ -19,6 +19,7 @@ import {
 } from '~/utils/receptionistSlots'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { practitionerHoursAt, type BusinessHours } from '~/utils/businessHours'
+import type { OnlineBookingWindows } from '~/utils/bookingSlots'
 import { patientAge } from '~/utils/patientAge'
 import { hasReceptionist } from '~/server/utils/requireGrowth'
 import { TRIAL_ALLOWANCE_COLUMNS, trialAllowanceUsedUp } from '~/server/utils/receptionistUsage'
@@ -132,6 +133,8 @@ export interface OfferedType extends PromptType {
   id: string
   /** appointment_types.practitioner_ids: only these do it; empty for everyone. */
   practitionerIds?: string[]
+  /** appointment_types.online_booking_windows: the only times it is offered online; null for any free time. */
+  onlineWindows?: OnlineBookingWindows | null
 }
 
 /**
@@ -253,7 +256,7 @@ export async function loadPackagePrices(supabase: SupabaseClient<Database>, acco
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids, online_booking_windows')
     .eq('account_id', accountId)
 }
 
@@ -504,7 +507,7 @@ export async function loadBookedVisits(
   const todayStart = await clinicTodayStart(supabase, accountId)
   const { data, error } = await supabase
     .from('appointments')
-    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids)')
+    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids, online_booking_windows)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -634,8 +637,20 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-export function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null; practitioner_ids?: string[] | null }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals, priceCents: type.default_price_cents ?? null, practitionerIds: type.practitioner_ids ?? [] }
+export function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null; practitioner_ids?: string[] | null; online_booking_windows?: unknown }): OfferedType {
+  return {
+    id: type.id,
+    name: type.name,
+    durationMinutes: type.duration_minutes,
+    stage: type.stage ?? null,
+    bookableBy: type.online_bookable_by ?? null,
+    forMinors: !!type.for_minors,
+    forReferrals: !!type.for_referrals,
+    priceCents: type.default_price_cents ?? null,
+    practitionerIds: type.practitioner_ids ?? [],
+    // Only where it has them: a type with none must compare equal to what it was.
+    ...(type.online_booking_windows ? { onlineWindows: type.online_booking_windows as OnlineBookingWindows } : {}),
+  }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */

@@ -41,6 +41,8 @@ describe('Plan renewal at the review', () => {
     cy.get('[data-cy=plan-renewal-visits]').should('have.text', '2/3')
   }
 
+  // Every clinic starts with a maintenance template (care_plan_templates),
+  // named Mantenimiento: one a month, no end.
   it("proposes the default maintenance -- one a month, no end -- and creates it with its bono", () => {
     endingPlan().then(({ account, patient }) => {
       cy.task('db:insertRows', { table: 'packages', rows: [{ account_id: account.accountId, name: 'Bono mantenimiento 8', session_count: 8, price_cents: 28000 }] })
@@ -54,8 +56,8 @@ describe('Plan renewal at the review', () => {
       cy.get('[data-cy=plan-renewal-habits]').should('not.exist')
       cy.get('[data-cy=plan-renewal-bono]').select('Bono mantenimiento 8')
       cy.get('[data-cy=plan-renewal-create-bono]').click()
-      cy.get('[data-cy=plan-renewal-done]').should('contain', 'Maintenance created').and('contain', 'Bono mantenimiento 8')
-      cy.task<PlanRow[]>('db:selectRows', { table: 'care_plans', columns: PLAN_COLUMNS, match: { patient_id: patient.id, name: 'Maintenance' } }).then((rows) => {
+      cy.get('[data-cy=plan-renewal-done]').should('contain', 'Mantenimiento created').and('contain', 'Bono mantenimiento 8')
+      cy.task<PlanRow[]>('db:selectRows', { table: 'care_plans', columns: PLAN_COLUMNS, match: { patient_id: patient.id, name: 'Mantenimiento' } }).then((rows) => {
         expect(rows).to.have.length(1)
         expect(rows[0]).to.include({ frequency_value: 1, frequency_unit: 'month', visits_per_period: 1, total_visits: null, payment_kind: 'bono' })
         expect(rows[0]!.package_purchase_id).not.to.be.null
@@ -80,14 +82,17 @@ describe('Plan renewal at the review', () => {
           const [desk, sleep, lifting] = articles
           // The third was sent before: it is listed but not sent again.
           cy.task('db:insertRows', { table: 'learn_sends', rows: [{ account_id: account.accountId, patient_id: patient.id, article_id: lifting!.id, sent_by: account.teamMemberId }] })
+          // The cadence is the maintenance template's; the membership and the
+          // habits pack stay on the account.
+          cy.task('db:updateRows', {
+            table: 'care_plan_templates',
+            match: { account_id: account.accountId, is_maintenance: true },
+            values: { visits_per_period: 1, frequency_value: 3, frequency_unit: 'week', total_visits: 8 },
+          })
           cy.task('db:updateRows', {
             table: 'accounts',
             match: { id: account.accountId },
             values: {
-              maintenance_visits_per_period: 1,
-              maintenance_frequency_value: 3,
-              maintenance_frequency_unit: 'week',
-              maintenance_total_visits: 8,
               maintenance_membership_id: membership!.id,
               maintenance_habits_article_ids: [desk!.id, sleep!.id, lifting!.id],
             },

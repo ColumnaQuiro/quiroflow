@@ -187,7 +187,8 @@ describe('GoCardless: new mandates, refunds and retries', () => {
         } else {
           // The receipt's own Refund: GoCardless collected all of it, so this
           // is that payment's refund too. It used to only record the refund.
-          cy.contains('td', /^\s*Receipt\s*$/, SLOW).parents('tr').contains('button', /^Refund…$/).click()
+          cy.contains('tr', 'Receipt', SLOW).click()
+          cy.get('[data-cy=ledger-row-detail]').contains('button', /^Refund…$/).click()
         }
         cy.get('[data-cy=refund-through-gocardless]').should('be.visible')
         cy.get('[role=dialog] input[type=number]').clear().type(euros)

@@ -4,26 +4,35 @@ import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 import {
   RECEPTIONIST_BLOCK_PRICE_CENTS,
+  RECEPTIONIST_BLOCK_REPLIES,
   RECEPTIONIST_INCLUDED_REPLIES,
   monthNameEs,
   previousMonthStart,
-  receptionistExtraBlocks,
+  receptionistExtraCents,
+  receptionistExtraReplies,
+  receptionistOverageGoesOnPlanInvoice,
 } from '~/utils/receptionistAllowance'
+import { formatEur } from '~/utils/billing'
 
 // Charges last month's receptionist replies past the allowance: 1,000 are
-// included, each further 1,000 or part of one is EUR 15 + IVA
-// (utils/receptionistAllowance.ts). Called by a pg_cron job hourly on the 1st
+// included, and each reply past them is charged at EUR 19 + IVA per 1,000,
+// pro rata (utils/receptionistAllowance.ts). Called by a pg_cron job hourly on the 1st
 // (the later runs retry a charge cut off half way, and otherwise find every
 // month already charged and do nothing); like
 // every *-cron endpoint, that job is created by hand against production
 // (CLAUDE.md, "Scheduling a cron"), and the deploy fails until it exists.
 //
-// Its own invoice, issued now, rather than a line left pending for the next
-// subscription invoice: on an annual plan that is up to a year away, and a
-// clinic should be charged for October in November, not next September. The
-// invoice is created first and the line attached to it, never "include
-// pending items" -- that would sweep a plan change's prorations, which
-// belong on the subscription's own invoice, into this one.
+// On a monthly plan that will renew, the charge is a line left pending on the
+// subscription, so it goes out on the plan's next invoice beside the plan: one
+// invoice a month, and a few cents of extra replies pay no Stripe fee of their
+// own. Otherwise (annual, cancelled, set to end, past due) it is an invoice of
+// its own, issued now: an annual plan's next invoice is up to a year away, a
+// clinic should be charged for October in November, not next September, and a
+// plan that ends has no next invoice for the line to go on
+// (receptionistOverageGoesOnPlanInvoice). That invoice is created first and
+// the line attached to it, never "include pending items" -- that would sweep a
+// plan change's prorations, which belong on the subscription's own invoice,
+// into this one.
 //
 // Not charged: a comped account, one still in its trial (the trial includes
 // everything), and one with no Stripe customer to charge. Their replies are
@@ -53,7 +62,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: subscriptions, error: subError } = await supabase
     .from('subscriptions')
-    .select('account_id, status, comped, stripe_customer_id')
+    .select('account_id, status, comped, stripe_customer_id, stripe_subscription_id')
     .in('account_id', over.map((c) => c.account_id))
   if (subError) throw createError({ statusCode: 500, statusMessage: subError.message })
   const subscriptionOf = new Map((subscriptions ?? []).map((s) => [s.account_id, s]))
@@ -78,8 +87,11 @@ export default defineEventHandler(async (event) => {
       continue
     }
 
-    const blocks = receptionistExtraBlocks(replies)
-    const amountCents = blocks * RECEPTIONIST_BLOCK_PRICE_CENTS
+    const extra = receptionistExtraReplies(replies)
+    const amountCents = receptionistExtraCents(replies)
+    // Kept for the table's sake (blocks > 0): the thousands started. The
+    // charge is amount_cents, pro rata, not blocks times a price.
+    const blocks = Math.ceil(extra / RECEPTIONIST_BLOCK_REPLIES)
 
     // Claimed before Stripe is called, so the row is what makes it happen once.
     // A claim with an invoice is done. One without is a charge cut off half
@@ -89,11 +101,11 @@ export default defineEventHandler(async (event) => {
     // person, loudly, rather than risk billing twice.
     const { data: existing } = await supabase
       .from('receptionist_overage_charges')
-      .select('stripe_invoice_id, created_at')
+      .select('stripe_invoice_id, stripe_invoice_item_id, created_at')
       .eq('account_id', accountId)
       .eq('month', month)
       .maybeSingle()
-    if (existing?.stripe_invoice_id) {
+    if (existing?.stripe_invoice_id || existing?.stripe_invoice_item_id) {
       skipped.push(accountId)
       continue
     }
@@ -115,9 +127,34 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    const line = `Recepcionista IA: ${blocks} ${blocks === 1 ? 'bloque' : 'bloques'} de 1.000 respuestas por encima de las ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} incluidas (${name}, ${replies.toLocaleString('es-ES')} respuestas)`
+    const line = `Recepcionista IA, ${name}: ${extra.toLocaleString('es-ES')} ${extra === 1 ? 'respuesta' : 'respuestas'} por encima de las ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} incluidas, a ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} cada ${RECEPTIONIST_BLOCK_REPLIES.toLocaleString('es-ES')} (${replies.toLocaleString('es-ES')} respuestas en total)`
     try {
       stripe ??= await stripeForPlatformBilling()
+
+      // Read from Stripe, not our row: whether it is set to end lives there.
+      const stripeSubscription = subscription.stripe_subscription_id
+        ? await stripe.subscriptions.retrieve(subscription.stripe_subscription_id).catch(() => null)
+        : null
+      if (stripeSubscription && receptionistOverageGoesOnPlanInvoice(stripeSubscription)) {
+        // IVA set on the line itself: a pending item is not a subscription
+        // item, so the subscription's default_tax_rates are not relied on.
+        const item = await stripe.invoiceItems.create(
+          {
+            customer: subscription.stripe_customer_id,
+            subscription: stripeSubscription.id,
+            currency: 'eur',
+            amount: amountCents,
+            description: line,
+            ...(taxRateId ? { tax_rates: [taxRateId] } : {}),
+            metadata: { account_id: accountId, receptionist_overage_month: month },
+          },
+          { idempotencyKey: `receptionist-overage-pending-${accountId}-${month}` },
+        )
+        await supabase.from('receptionist_overage_charges').update({ stripe_invoice_item_id: item.id }).eq('account_id', accountId).eq('month', month)
+        charged.push(accountId)
+        continue
+      }
+
       const invoice = await stripe.invoices.create(
         {
           customer: subscription.stripe_customer_id,

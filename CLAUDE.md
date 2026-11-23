@@ -502,6 +502,47 @@ month in a day) and `NUXT_EMAIL_TRANSACTIONAL_RESERVE` (empty = a quarter of
 the day). A provider that refuses on quota is marked exhausted for the day
 whatever the config says, so a wrong limit costs a deferral, not lost email.
 
+## The AI receptionist: a booking failure is fixed in code or in an eval, not in the prompt
+
+Between 12 Oct and 23 Nov 2026 the receptionist took 140 commits, most of
+them one more line in the prompt for the failure of the day before; 98 of
+those lines carry the date of the patient they were written for. Each held
+until it did not, and each new one could quietly undo an older one, because
+nothing ran the model against the old cases.
+
+What a reply DOES is now decided by code wherever it can be:
+
+- **An offer is a row** (`receptionist_offers`). `offer_times` checks every
+  time against the diary with the same reading `book_appointment` uses, and
+  keeps what the times are for and who each is free with.
+- **A time accepted from an offer is booked by code**
+  (`acceptOfferedTime`, `server/utils/receptionistOffers.ts`), through
+  `book_appointment`'s own handler, and confirmed in words written from the
+  booking. No model is asked. Anything short of certain -- a question beside
+  the time, a booking the handler refuses, someone new whose name is not on
+  record -- falls through to the model exactly as before.
+- **Words can always be written from data.** A reply that comes back empty
+  after an offer or a booking, or names times other than the ones under it,
+  goes out as `offerInWords` / `confirmationInWords` instead of being handed
+  to a person.
+- **A reply with nothing to send is tried once on the default model** before
+  anyone is handed over, unless the first try already changed the diary.
+- **The 15-minute job looks for the result, not the cause**
+  (`handOverAcceptedUnbooked`): a time somebody accepted, no visit at that
+  time, nobody having answered -- a person is told which time.
+
+So when it gets a booking wrong, look at `receptionist_reply_traces`
+(`checks`, `tool_uses`, `model`; `model = 'code'` is a reply no model wrote)
+and fix it where it broke: a handler that should refuse, a match that should
+not have been made, a sentence that should be written from data. If it
+really is the model's judgement, add the conversation to
+`tests/evals/receptionist/receptionist.eval.ts` with invented people first,
+watch it fail, and only then touch the wording.
+`.github/workflows/receptionist-evals.yml` runs those cases against the real
+model on every pull request that touches the receptionist; it needs the
+repository secret `EVAL_ANTHROPIC_API_KEY` (a key kept for evals, not
+production's) and skips with a warning without it.
+
 ## A top-level import in `server/utils` runs on every cold start
 
 Nitro bundles every module under `server/utils` into the one chunk the
@@ -767,12 +808,21 @@ round trip to work out, neither is discoverable from the code.
   by hand with `force`. Without the `APP_VERSION_BUMP_TOKEN` secret, the
   PR is opened with the workflow's own token and starts no CI: close
   and reopen it.
-- **Both stores are Spain-only** as of 2026-09-13, deliberately -- more
-  countries later. On Apple, "Make this app available in new territories"
-  is still ticked and the API refuses to change it (`appAvailabilities`
-  allows CREATE and GET only); the checkbox only appears inside the Manage
-  Availability wizard's second step, which needs a pending country change
-  to reach. Untick it next time you add a country there.
+- **Both stores sell in Spain, France and Italy** -- Spain-only from
+  2026-09-13, France and Italy added on 2026-11-23 because patients living
+  in Spain keep an Italian or French store account and could not find the
+  app. Add a country by hand: App Store Connect (Apple ID
+  **hola@quiroflow.com**, not hola@columnaquiro.com, which is "not enabled
+  for App Store Connect") → Pricing and Availability → Manage Availability,
+  live within 24 h with no review; Play Console → Production →
+  Países/Territorios → Editar, then send the change from Resumen de
+  publicación, which Google reviews. On Apple, "Make this app available in
+  new territories" may still be ticked and the API refuses to change it
+  (`appAvailabilities` allows CREATE and GET only); the checkbox is
+  supposed to appear inside the Manage Availability wizard's second step,
+  but adding France and Italy showed only a confirm screen without it.
+  Spain stays the storefront the code looks up and links to
+  (`scripts/app-version-bump.mjs`, `utils/appLinks.ts`).
 - **Android builds in GitHub Actions and lands on Play's internal testing
   track, never production.** `.github/workflows/android.yml` runs on every
   push to `main` that touches `mobile/` (the same pushes Xcode Cloud builds

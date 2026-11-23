@@ -8,6 +8,7 @@
 // their own, so a clinic's template can say how to reach that location.
 import type { EmailTheme } from './emailDesign'
 import { earlierVisitLanguage, earlierVisitWhen } from './earlierVisitOffer'
+import { mergeFieldSample } from './mergeFieldSamples'
 
 export const DEFAULT_TIMEZONE = 'Europe/Madrid'
 
@@ -59,6 +60,14 @@ export interface MergeContext {
    * a variable of its own, keyed by answerKey(question).
    */
   leadAnswers?: LeadAnswer[]
+  /**
+   * "Send test to me": fill a field that comes out empty with its example
+   * value (utils/mergeFieldSamples.ts) instead. A test runs against the staff
+   * member, with no appointment, invoice or visit behind it, and Meta refuses
+   * a template whose parameter is empty. Never set for a real send, where an
+   * empty value is the truth and the step's own fallback decides.
+   */
+  samples?: boolean
 }
 
 export interface LeadAnswer {
@@ -103,6 +112,55 @@ export function answerKey(question: string): string {
   return slug ? ANSWER_PREFIX + slug : ''
 }
 
+/**
+ * A multiple-choice answer as Meta hands it over is the option's key, not its
+ * text: "Lumbalgia (dolor lumbar)" arrives as `lumbalgia_(dolor_lumbar)` and
+ * "10: Lo antes posible" as `10:_lo_antes_posible`. Underscores go back to
+ * spaces -- the same thing humanise() does to the question -- but only when
+ * the answer has no space of its own, since anything a person typed does.
+ * Meta's lowercasing cannot be undone, and does not need to be: the answer
+ * fills the middle of a sentence ("molestias de lumbalgia (dolor lumbar)").
+ */
+export function readableAnswer(answer: string): string {
+  if (/\s/.test(answer) || !answer.includes('_')) return answer
+  return answer.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The shortest question key the loose match in findLeadAnswer accepts, in
+ * words after the prefix: "motivo" alone is too generic to stand for a longer
+ * question, "cual sería el motivo de tu visita" is not.
+ */
+const LOOSE_MATCH_MIN_WORDS = 4
+
+/**
+ * What a lead answered to the question `key` names -- the one lookup behind
+ * both a {{answer_…}} variable and a branch on a form answer, so the message
+ * and the branch before it cannot disagree.
+ *
+ * The exact question wins. Failing that, the same question with words added
+ * or removed at the END: a clinic that copies its form and tidies a question
+ * -- "¿Cuál sería el motivo de tu visita? (alguna molestia...)" became "¿Cuál
+ * sería el motivo de tu visita?" -- would otherwise silently send every new
+ * lead the fallback, while leads from ads still on the old form keep
+ * answering the old wording. A later answer wins, as everywhere else.
+ */
+export function findLeadAnswer(answers: LeadAnswer[], key: string | null | undefined): string | undefined {
+  if (!key) return undefined
+  const exact = answers.filter((a) => answerKey(a.question) === key).pop()
+  const match =
+    exact ??
+    answers
+      .filter((a) => {
+        const k = answerKey(a.question)
+        if (!k || k === key) return false
+        const [shorter, longer] = k.length < key.length ? [k, key] : [key, k]
+        return longer.startsWith(shorter + '_') && shorter.slice(ANSWER_PREFIX.length).split('_').length >= LOOSE_MATCH_MIN_WORDS
+      })
+      .pop()
+  return match ? readableAnswer(match.answer) : undefined
+}
+
 /** Every answer across a lead's form events, oldest first; a later answer to the same question wins. */
 export function leadAnswersFromEvents(events: { body?: unknown }[]): LeadAnswer[] {
   const out: LeadAnswer[] = []
@@ -117,6 +175,14 @@ export function leadAnswersFromEvents(events: { body?: unknown }[]): LeadAnswer[
 }
 
 export function automationFieldValue(recipient: MergeRecipient, source: string, context?: MergeContext): string {
+  const value = fieldValue(recipient, source, context)
+  // A lead's answer is left to withAnswerFallback: the step's own fallback
+  // ("lo que nos contaste") reads better in a test than "[answer_…]".
+  if (value || !context?.samples || source.startsWith(ANSWER_PREFIX)) return value
+  return mergeFieldSample(source, context.language)
+}
+
+function fieldValue(recipient: MergeRecipient, source: string, context?: MergeContext): string {
   const timeZone = context?.clinicTimezone || DEFAULT_TIMEZONE
   if (source === 'first_name') return recipient.firstName ?? ''
   if (source === 'last_name') return recipient.lastName ?? ''
@@ -166,10 +232,10 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
     return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone })
   }
   if (source.startsWith(ANSWER_PREFIX)) {
-    const match = (context?.leadAnswers ?? []).filter((a) => answerKey(a.question) === source).pop()
+    const answer = findLeadAnswer(context?.leadAnswers ?? [], source)
     // One line, for the same reason as the address: Meta refuses a template
     // parameter with a line break in it, and a free-text answer can have one.
-    return (match?.answer ?? '').trim().replace(/\s*\n\s*/g, ', ')
+    return (answer ?? '').trim().replace(/\s*\n\s*/g, ', ')
   }
   return ''
 }

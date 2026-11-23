@@ -2,6 +2,7 @@
 import type { Json } from '~/types/database.types'
 import { cleanVisitMarkers, markerVisitNumbers, MAX_VISIT_MARKERS, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
 import { cleanNextPhases, MAX_NEXT_PHASES, nextPhaseLabel, readNextPhases, type CarePlanNextPhase } from '~/utils/carePlanPhases'
+import { CARE_PLAN_TEMPLATE_COLUMNS, carePlanTemplateSummary, readCarePlanTemplate, sortCarePlanTemplates, type CarePlanTemplate } from '~/utils/carePlanTemplates'
 
 interface CarePlan {
   id: string
@@ -18,7 +19,12 @@ interface CarePlan {
   next_phases?: unknown
 }
 
-const props = defineProps<{ patientId: string; plan?: CarePlan | null }>()
+// Two uses, one form. For a patient (patientId): a new plan or "Edit plan",
+// optionally started from one of the clinic's templates. As a template
+// (asTemplate, Settings > Care plans): the same plan without a patient --
+// no start date, and payment says only the kind, since a template cannot
+// name a patient's bono or membership.
+const props = defineProps<{ patientId?: string; plan?: CarePlan | null; asTemplate?: boolean; template?: CarePlanTemplate | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const supabase = useSupabaseClient()
@@ -31,15 +37,17 @@ const dialogPanel = ref<HTMLElement | null>(null)
 const dialogTitleId = useId()
 useFocusTrap(dialogPanel, () => emit('close'))
 
-const name = ref(props.plan?.name ?? t('Care plan', 'Plan de cuidados'))
+// What the form starts from: the plan being edited, or the template.
+const source = props.asTemplate ? props.template : props.plan
+const name = ref(props.asTemplate ? (props.template?.name ?? '') : (props.plan?.name ?? t('Care plan', 'Plan de cuidados')))
 // "N visits every M weeks": frequency_value is the interval M (what the
 // calendar series and Care Plan Alerts read), visits_per_period is N.
-const visitsPerPeriod = ref(props.plan?.visits_per_period ?? 1)
-const frequencyValue = ref(props.plan?.frequency_value ?? 1)
-const frequencyUnit = ref<'week' | 'month'>(props.plan?.frequency_unit ?? 'week')
-const totalVisits = ref(props.plan?.total_visits ?? 10)
+const visitsPerPeriod = ref(source?.visits_per_period ?? 1)
+const frequencyValue = ref(source?.frequency_value ?? 1)
+const frequencyUnit = ref<'week' | 'month'>(source?.frequency_unit ?? 'week')
+const totalVisits = ref(source?.total_visits ?? 10)
 // "Sin fin": a plan with no end (total_visits null), as maintenance usually is.
-const noEnd = ref(props.plan ? props.plan.total_visits === null : false)
+const noEnd = ref(source ? source.total_visits === null : false)
 const startedAt = ref(props.plan?.started_at ?? new Date().toISOString().slice(0, 10))
 const saving = ref(false)
 const error = ref('')
@@ -56,7 +64,7 @@ interface MarkerRow {
   label: string
 }
 const markers = ref<MarkerRow[]>(
-  (props.plan?.visit_markers ?? []).map((m) => ({ at: m.at, repeat: !!m.every, every: m.every ?? m.at, appointment_type_id: m.appointment_type_id ?? '', label: m.label ?? '' })),
+  (source?.visit_markers ?? []).map((m) => ({ at: m.at, repeat: !!m.every, every: m.every ?? m.at, appointment_type_id: m.appointment_type_id ?? '', label: m.label ?? '' })),
 )
 function addMarker() {
   const last = markers.value[markers.value.length - 1]
@@ -74,7 +82,7 @@ const appointmentTypes = ref<{ id: string; name: string }[]>([])
 // its own, when this one's last visit is marked done. Only the last may have
 // no end, and a plan with no end queues nothing. An edit is a new phase, so
 // they are copied over, as the markers are.
-const nextPhases = ref<CarePlanNextPhase[]>(readNextPhases(props.plan?.next_phases))
+const nextPhases = ref<CarePlanNextPhase[]>(readNextPhases(source?.next_phases))
 function addNextPhase() {
   const last = nextPhases.value[nextPhases.value.length - 1]
   if (last && last.total_visits === null) last.total_visits = 4
@@ -98,18 +106,48 @@ const phasesSummary = computed(() => {
 // already sells, linked (care_plan_payment migration). Nothing is charged
 // from here.
 type PaymentKind = 'per_visit' | 'bono' | 'membership'
-const paymentKind = ref<PaymentKind>((props.plan?.payment_kind as PaymentKind) ?? 'per_visit')
+const paymentKind = ref<PaymentKind>((source?.payment_kind as PaymentKind) ?? 'per_visit')
 const bonoId = ref(props.plan?.package_purchase_id ?? '')
 const membershipId = ref(props.plan?.patient_membership_id ?? '')
 const bonos = ref<{ id: string; label: string }[]>([])
 const memberships = ref<{ id: string; label: string }[]>([])
+
+// The clinic's templates (Settings > Care plans). Choosing one fills in the
+// form, which can still be changed for this patient; nothing keeps the plan
+// tied to it.
+const templates = ref<CarePlanTemplate[]>([])
+const templateId = ref('')
+function applyTemplate() {
+  const tpl = templates.value.find((x) => x.id === templateId.value)
+  if (!tpl) return
+  name.value = tpl.name
+  visitsPerPeriod.value = tpl.visits_per_period
+  frequencyValue.value = tpl.frequency_value
+  frequencyUnit.value = tpl.frequency_unit
+  noEnd.value = tpl.total_visits === null
+  if (tpl.total_visits !== null) totalVisits.value = tpl.total_visits
+  nextPhases.value = tpl.next_phases.map((p) => ({ ...p }))
+  markers.value = tpl.visit_markers.map((m) => ({ at: m.at, repeat: !!m.every, every: m.every ?? m.at, appointment_type_id: m.appointment_type_id ?? '', label: m.label ?? '' }))
+  paymentKind.value = tpl.payment_kind
+  // The patient's own bono or membership, when there is only one to choose.
+  if (tpl.payment_kind === 'bono' && !bonoId.value && bonos.value.length === 1) bonoId.value = bonos.value[0]!.id
+  if (tpl.payment_kind === 'membership' && !membershipId.value && memberships.value.length === 1) membershipId.value = memberships.value[0]!.id
+}
+
 onMounted(async () => {
-  const [{ data: own }, { data: shared }, { data: mems }, { data: types }] = await Promise.all([
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, is_closed').eq('patient_id', props.patientId).eq('is_closed', false),
-    supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, is_closed)').eq('patient_id', props.patientId),
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status').eq('patient_id', props.patientId).eq('status', 'active'),
+  if (props.asTemplate) {
+    const { data: types } = await supabase.from('appointment_types').select('id, name').is('archived_at', null).order('sort_order').order('name')
+    appointmentTypes.value = (types as { id: string; name: string }[] | null) ?? []
+    return
+  }
+  const [{ data: own }, { data: shared }, { data: mems }, { data: types }, { data: tpls }] = await Promise.all([
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, is_closed').eq('patient_id', props.patientId!).eq('is_closed', false),
+    supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, is_closed)').eq('patient_id', props.patientId!),
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status').eq('patient_id', props.patientId!).eq('status', 'active'),
     supabase.from('appointment_types').select('id, name').is('archived_at', null).order('sort_order').order('name'),
+    supabase.from('care_plan_templates').select(CARE_PLAN_TEMPLATE_COLUMNS).eq('account_id', store.accountId!),
   ])
+  templates.value = sortCarePlanTemplates(((tpls ?? []) as Record<string, unknown>[]).map(readCarePlanTemplate))
   appointmentTypes.value = (types as { id: string; name: string }[] | null) ?? []
   type P = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }
   const open = [...((own ?? []) as P[]), ...(((shared ?? []) as { package_purchases: P | null }[]).map((r) => r.package_purchases).filter((p): p is P => !!p && !p.is_closed))]
@@ -118,8 +156,39 @@ onMounted(async () => {
   memberships.value = ((mems ?? []) as { id: string; membership_name: string; price_cents: number }[]).map((m) => ({ id: m.id, label: `${m.membership_name} · ${formatEur(m.price_cents)}` }))
 })
 
+async function saveTemplate() {
+  if (!name.value.trim()) {
+    error.value = t('Give the template a name.', 'Ponle un nombre a la plantilla.')
+    return
+  }
+  saving.value = true
+  const row = {
+    account_id: store.accountId!,
+    name: name.value.trim().slice(0, 80),
+    frequency_value: Math.min(52, Math.max(1, Math.round(frequencyValue.value || 1))),
+    frequency_unit: frequencyUnit.value,
+    visits_per_period: Math.min(7, Math.max(1, Math.round(visitsPerPeriod.value || 1))),
+    total_visits: noEnd.value ? null : Math.min(200, Math.max(1, Math.round(totalVisits.value || 1))),
+    payment_kind: paymentKind.value,
+    visit_markers: cleanVisitMarkers(
+      markers.value.map((m) => ({ at: m.at, every: m.repeat ? m.every : null, appointment_type_id: m.appointment_type_id || null, label: m.label })),
+    ) as unknown as Json,
+    next_phases: (noEnd.value ? [] : cleanNextPhases(nextPhases.value)) as unknown as Json,
+  }
+  const { error: e } = props.template
+    ? await supabase.from('care_plan_templates').update(row).eq('id', props.template.id)
+    : await supabase.from('care_plan_templates').insert(row)
+  saving.value = false
+  if (e) {
+    error.value = `${t('The template was not saved.', 'No se ha guardado la plantilla.')} (${e.message})`
+    return
+  }
+  emit('saved')
+}
+
 async function save() {
   error.value = ''
+  if (props.asTemplate) return saveTemplate()
   if (paymentKind.value === 'bono' && !bonoId.value) {
     error.value = t('Choose the bono that pays for it.', 'Elige el bono con el que se paga.')
     return
@@ -134,7 +203,7 @@ async function save() {
   // to the changed one -- "Edit Plan" starts a fresh phase.
   const { error: insertError } = await supabase.from('care_plans').insert({
     account_id: store.accountId!,
-    patient_id: props.patientId,
+    patient_id: props.patientId!,
     name: name.value.trim() || t('Care plan', 'Plan de cuidados'),
     frequency_value: Math.max(1, Math.round(frequencyValue.value || 1)),
     frequency_unit: frequencyUnit.value,
@@ -167,14 +236,23 @@ const fieldId = useId()
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados') }}</h2>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">
+          {{ asTemplate ? (template ? t('Edit template', 'Editar plantilla') : t('New template', 'Nueva plantilla')) : plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados') }}
+        </h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
+        <div v-if="!asTemplate && templates.length" data-cy="plan-from-template">
+          <label :for="`${fieldId}-template`" class="block text-sm font-medium text-ink-700">{{ t('Start from a template', 'Empezar desde una plantilla') }}</label>
+          <select :id="`${fieldId}-template`" v-model="templateId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" data-cy="plan-template-select" @change="applyTemplate">
+            <option value="">{{ t('None · fill it in by hand', 'Ninguna · rellenarlo a mano') }}</option>
+            <option v-for="tpl in templates" :key="tpl.id" :value="tpl.id">{{ tpl.name }} · {{ carePlanTemplateSummary(tpl, t) }}</option>
+          </select>
+        </div>
         <div>
           <label :for="`${fieldId}-name`" class="block text-sm font-medium text-ink-700">{{ t('Name', 'Nombre') }}</label>
-          <input :id="`${fieldId}-name`" v-model="name" type="text" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
+          <input :id="`${fieldId}-name`" v-model="name" type="text" maxlength="80" data-cy="plan-name" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
         <div class="flex flex-wrap items-end gap-2">
           <div>
@@ -199,7 +277,7 @@ const fieldId = useId()
             {{ t('No end · runs until a new plan replaces it', 'Sin fin · sigue hasta que lo sustituya un plan nuevo') }}
           </label>
         </div>
-        <div>
+        <div v-if="!asTemplate">
           <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-ink-700">{{ t('Start date', 'Fecha de inicio') }}</label>
           <input :id="`${fieldId}-startedAt`" v-model="startedAt" type="date" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
@@ -289,11 +367,14 @@ const fieldId = useId()
               {{ k === 'per_visit' ? t('Per visit', 'Por visita') : k === 'bono' ? t('Bono', 'Bono') : t('Membership', 'Membresía') }}
             </button>
           </div>
-          <select v-if="paymentKind === 'bono'" v-model="bonoId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-bono-select">
+          <p v-if="asTemplate && paymentKind !== 'per_visit'" class="mt-1.5 text-[12px] text-ink-muted" data-cy="template-pay-note">
+            {{ paymentKind === 'bono' ? t("The patient's bono is chosen when the plan starts.", 'El bono del paciente se elige al empezar el plan.') : t("The patient's membership is chosen when the plan starts.", 'La membresía del paciente se elige al empezar el plan.') }}
+          </p>
+          <select v-if="!asTemplate && paymentKind === 'bono'" v-model="bonoId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-bono-select">
             <option value="" disabled>{{ bonos.length ? t('Choose a bono…', 'Elige un bono…') : t('No open bono: sell one in Money', 'Sin bono abierto: véndelo en Dinero') }}</option>
             <option v-for="b in bonos" :key="b.id" :value="b.id">{{ b.label }}</option>
           </select>
-          <select v-if="paymentKind === 'membership'" v-model="membershipId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-membership-select">
+          <select v-if="!asTemplate && paymentKind === 'membership'" v-model="membershipId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-membership-select">
             <option value="" disabled>{{ memberships.length ? t('Choose a membership…', 'Elige una membresía…') : t('No active membership: start one in Money', 'Sin membresía activa: empiézala en Dinero') }}</option>
             <option v-for="m in memberships" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>

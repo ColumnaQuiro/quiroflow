@@ -17,7 +17,8 @@ import { internalNotes } from '~/utils/receptionistGuard'
 import { standingClockTimes, dayMark, AUTOMATED_MARK, COLLEAGUE_MARK } from '~/utils/receptionistHistory'
 import { chosenOfferedTime, chosenTimeNote } from '~/utils/receptionistFollowThrough'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
-import type { LeadFormAnswer, LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { cleanSlots } from '~/utils/receptionistConversion'
+import { formAnswerToHandOverNow, formHandOverNote, formHandOverReason, type LeadFormAnswer, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { ALL_TYPES, BOOKED, CLINIC, CLINIC_DETAILS, KNOWLEDGE, NOW, PACKAGES, PRACTITIONERS, TIME_ZONE } from './fixtures'
 
 /** The model production uses (receptionistDraft.ts, patientReplyDraft.ts). */
@@ -136,8 +137,12 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
   const laterPrices = { sessions: typesAfterFirstVisit(ALL_TYPES), packages: PACKAGES }
   const bookedVisits = booked.map((b) => ({ startsAt: b.startsAt, typeName: b.type.name }))
 
+  // A lead from the ad's form has given their name and email there, as
+  // production reads it (leadNameIsTheirs, receptionistDraft.ts); one who
+  // wrote on WhatsApp has not, and is asked before being booked.
+  const fromForm = scenario.leadOrigin?.source === 'Meta Ads'
   let system = scenario.kind === 'lead'
-    ? buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin: scenario.leadOrigin ?? null, leadForm: scenario.leadForm, searchTool: true, bookedVisits, draft: { personName: null }, knownDetails: { name: false, email: false, phone: true }, sendsItself: true, canBook: true, canWaitlist: true, minors, bringsSomeone, referral: audience === 'existing' ? undefined : { types: typesForReferral(ALL_TYPES) }, laterPrices, clinicDetails: CLINIC_DETAILS, team })
+    ? buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin: scenario.leadOrigin ?? null, leadForm: scenario.leadForm, searchTool: true, bookedVisits, draft: { personName: null }, knownDetails: { name: fromForm, email: fromForm, phone: true }, sendsItself: true, canBook: true, canWaitlist: true, minors, bringsSomeone, referral: audience === 'existing' ? undefined : { types: typesForReferral(ALL_TYPES) }, laterPrices, clinicDetails: CLINIC_DETAILS, team })
     : buildPatientReplyPrompt({ personaName: config.personaName, toneLine: 'Courteous and brief. Two or three sentences at most.', languages: config.languages, knowledge: config.knowledge, escalationRules: config.escalationRules, neverSays: config.neverSays, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays }, {
         facts: patientFacts(scenario, booked),
         offeredTypes: types,
@@ -168,6 +173,11 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
     const chosen = chosenOfferedTime(scenario.conversation[lastUs]!.text, answer)
     if (chosen) system = { ...system, conversation: `${system.conversation}\n\n${chosenTimeNote(chosen, true, { sentOn: scenario.conversation[lastUs]!.on ?? today, today })}` }
   }
+
+  // And a worsening symptom written only in the form is handed over in code
+  // with the first reply (receptionistDraft.ts).
+  const formAnswer = scenario.kind === 'lead' ? formAnswerToHandOverNow(scenario.leadForm ?? [], scenario.conversation.map((t) => ({ direction: t.from === 'them' ? 'inbound' : 'outbound', automated: t.from === 'system' }))) : null
+  if (formAnswer) system = { ...system, conversation: `${system.conversation}\n\n${formHandOverNote(formAnswer)}` }
 
   // The conversation as the model reads it (historyLine's marks), with each
   // side's consecutive messages joined into one turn.
@@ -203,6 +213,7 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
     system,
     messages,
     handOver: true,
+    mustHandOver: formAnswer ? formHandOverReason(formAnswer) : null,
     findFreeTimes: async (input) => {
       const value = input as { from_date?: string; to_date?: string; appointment_type?: string }
       if (!value.from_date) return { content: 'from_date is required.', isError: true }
@@ -227,6 +238,22 @@ export async function runScenario(scenario: Scenario, apiKey: string, injected?:
       if (!visit) return { content: `They have no booked visit at ${value.visit_on}. Their visits: ${stillBooked.map((b) => stamp(b.startsAt)).join(', ') || 'none'}. Do not say anything is cancelled.`, isError: true }
       stillBooked.splice(stillBooked.indexOf(visit), 1)
       return { content: `Cancelled: ${visit.type.name}, ${value.visit_on}. Tell them it is cancelled, with the day and time in words.`, isError: false }
+    },
+    // As production's offer_times (receptionistBooking.ts): the times are
+    // checked against the diary, and kept as an offer the code can book from.
+    offerTimes: (onOffered) => async (input) => {
+      const value = input as { times?: unknown; appointment_type?: string; move_visit_on?: string; for_name?: string }
+      const slots = cleanSlots(value.times, config.slotsPerReply)
+      if (!slots.length) return { content: 'No valid times were given: each needs date as YYYY-MM-DD and time as HH:MM, in the future. Offer the times in words only, or call it again.', isError: true }
+      const moving = value.move_visit_on ? stillBooked.find((b) => stamp(b.startsAt) === value.move_visit_on!.replace('T', ' ')) : null
+      if (value.move_visit_on && !moving) return { content: `They have no booked visit at ${value.move_visit_on}. Their visits: ${stillBooked.map((b) => stamp(b.startsAt)).join(', ') || 'none'}. Call it again with the right move_visit_on, or without it for a new visit.`, isError: true }
+      const type = moving ? moving.type : value.appointment_type ? findTypeByName(offeredTypes, value.appointment_type) : undefined
+      const checked = Boolean(type) && !value.for_name
+      const free = checked ? slots.filter((slot) => freeAt(type!, slot.date, slot.time)) : slots
+      if (!free.length) return { content: `None of those times is free for ${type!.name}. Do not offer them: look at the Booking list or call find_free_times again, and offer times that are listed.`, isError: true }
+      const who = own ? 'Marta Ríos' : 'Laura Vidal'
+      onOffered(free, { slots: free.map((slot) => ({ ...slot, practitionerName: checked ? who : null })), typeName: moving ? null : type?.name ?? null, moveVisitOn: moving ? stamp(moving.startsAt) : null, pinned: false, anyChiropractor: false, auto: checked })
+      return { content: `These ${free.length === 1 ? 'time goes' : `${free.length} times go`} under your reply as buttons to tap, with "another day" after them.${checked ? ` They are: ${free.map((slot) => `${slot.date} ${slot.time} with ${who}`).join('; ')}. If you say who a time is with, say exactly that.` : ''} Write the reply: name the same times in words, and ask which they prefer. Do not say there are buttons.`, isError: false }
     },
     waitlist: async () => ({ content: 'On the waiting list. Tell them the clinic will let them know if a time frees up; do not promise one.', isError: false }),
     stopFollowUps: async () => ({ content: 'Done: no more follow-ups. Say goodbye in one short sentence.', isError: false }),

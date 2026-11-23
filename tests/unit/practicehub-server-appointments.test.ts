@@ -5,6 +5,7 @@ import {
   planAppointments,
   planPracticeHubAppointmentRows,
   practiceHubAppointmentStatus,
+  practiceHubTypeMatches,
   type AppointmentHereRow,
 } from '../../utils/practicehubImport/appointments'
 import { hexColor, isWorthBringing, planAppointmentTypes, practiceHubTypeCandidates } from '../../utils/practicehubImport/appointmentTypes'
@@ -382,8 +383,128 @@ describe('planAppointmentTypes', () => {
     expect(second.total).to.equal(0)
   })
 
+  // The shape QuiroBalance's PracticeHub returned on 20 Nov 2026: its types
+  // and services do not share names, and the one service that does share a
+  // name ("Ajuste ") is retired at an old price. The sync before this wrote
+  // that 30 € to the type, and left the rest at 0 without a word.
+  it('never prices a type from a retired service, and names the types it cannot price', async () => {
+    const tables = clinicTables()
+    tables.appointment_types!.push(
+      { id: 'type-ajuste', account_id: ACCOUNT, name: 'Ajuste', default_price_cents: 0 },
+      { id: 'type-primera', account_id: ACCOUNT, name: 'Primera visita', default_price_cents: 0 },
+      // Priced by the clinic here: kept, and not reported as missing.
+      { id: 'type-informe', account_id: ACCOUNT, name: 'Informe', default_price_cents: 5000 },
+    )
+    const snap = snapshot([], {
+      '/appointment_types': [{ id: 1, name: 'Ajuste', active: 1 }, { id: 2, name: 'Primera visita', active: 1 }, { id: 3, name: 'Informe', active: 1 }, { id: 4, name: 'Reevaluación', active: 1 }],
+      '/billable_items': [
+        { id: 1, description: 'Chequeo quiropráctico y ajuste 2025', amount: '50.00', active: null },
+        { id: 2, description: 'Primera visita', amount: '70.00', active: null },
+        { id: 11, description: 'Ajuste ', amount: '30.00', active: false },
+        { id: 17, description: 'Chequeo quiropráctico', amount: '0.00', active: true },
+      ],
+    })
+    const plan = await planAppointmentTypes(ctxFor(tables), snap)
+    const unpriced = plan.warnings.find((w) => w.startsWith('No price in PracticeHub for:'))
+    expect(unpriced).to.contain('Ajuste, Reevaluación.')
+    expect(unpriced).not.to.contain('Informe')
+    expect(unpriced).not.to.contain('Primera visita')
+
+    const res = await plan.apply(noop, never)
+    expect(res.errors).to.deep.equal([])
+    const price = (id: string) => tables.appointment_types!.find((ty) => ty.id === id)!.default_price_cents
+    expect(price('type-ajuste')).to.equal(0)
+    expect(price('type-primera')).to.equal(7000)
+    expect(price('type-informe')).to.equal(5000)
+    expect(tables.appointment_types!.find((ty) => ty.name === 'Reevaluación')).to.not.have.property('default_price_cents')
+  })
+
   it('says when the copy has no prices to bring', async () => {
     const p = await planAppointmentTypes(ctxFor(clinicTables()), snapshot([{ id: 9500, appointment_type_id: 10 }]))
     expect(p.warnings.some((w) => w.includes('2.0 API'))).to.equal(true)
+  })
+})
+
+// --- a type renamed or merged here --------------------------------------------------------
+
+describe('Which type here a PracticeHub type is', () => {
+  const typesHere = [
+    { id: 'type-consulta', name: 'Consulta inicial' },
+    { id: 'type-ajuste', name: 'Ajuste' },
+    { id: 'type-a30', name: 'Ajuste 30' },
+  ]
+
+  it('is the type its visits already have here, whatever it is called now', () => {
+    const matches = practiceHubTypeMatches({
+      phTypes: [{ id: 2, name: 'Primera visita' }, { id: 1, name: 'Ajuste' }, { id: 7, name: 'Ajuste 30' }],
+      phAppointments: [
+        { id: 1, appointment_type_id: 2 }, { id: 2, appointment_type_id: '2' }, { id: 3, appointment_type_id: 2 },
+        // Two of three visits of "Ajuste" were moved to "Ajuste 30" here: that
+        // is where the type went, though "Ajuste" still exists by name.
+        { id: 4, appointment_type_id: 1 }, { id: 5, appointment_type_id: 1 }, { id: 6, appointment_type_id: 1 },
+      ],
+      typesHere,
+      visitsHere: [
+        { external_reference: '1', appointment_type_id: 'type-consulta' },
+        { external_reference: '2', appointment_type_id: 'type-consulta' },
+        // One changed by hand does not outvote the rest.
+        { external_reference: '3', appointment_type_id: 'type-ajuste' },
+        { external_reference: '4', appointment_type_id: 'type-a30' },
+        { external_reference: '5', appointment_type_id: 'type-a30' },
+        { external_reference: '6', appointment_type_id: 'type-ajuste' },
+      ],
+    })
+    expect(matches.get('2')?.id).to.equal('type-consulta')
+    expect(matches.get('1')?.id).to.equal('type-a30')
+    // No visits here yet: by name, as before.
+    expect(matches.get('7')?.id).to.equal('type-a30')
+  })
+
+  it('falls back to the name when its visits are split evenly, untyped, or on a type that is gone', () => {
+    const matches = practiceHubTypeMatches({
+      phTypes: [{ id: 1, name: 'Ajuste' }, { id: 2, name: 'Primera visita' }, { id: 3, name: 'Informe' }],
+      phAppointments: [{ id: 1, appointment_type_id: 1 }, { id: 2, appointment_type_id: 1 }, { id: 3, appointment_type_id: 2 }, { id: 4, appointment_type_id: 3 }],
+      typesHere,
+      visitsHere: [
+        { external_reference: '1', appointment_type_id: 'type-consulta' },
+        { external_reference: '2', appointment_type_id: 'type-a30' },
+        { external_reference: '3', appointment_type_id: null },
+        { external_reference: '4', appointment_type_id: 'type-deleted' },
+      ],
+    })
+    expect(matches.get('1')?.id).to.equal('type-ajuste')
+    expect(matches.get('2')).to.equal(undefined)
+    expect(matches.get('3')).to.equal(undefined)
+  })
+
+  // QuiroBalance, 21 Nov 2026: "Primera visita" renamed "Consulta inicial"
+  // here, while PracticeHub still calls it "Primera visita". By name, the next
+  // sync cleared the type off every one of its visits, created a second
+  // "Primera visita" and moved them all to it.
+  it('survives a full sync: neither step clears, re-creates or moves anything', async () => {
+    const tables = clinicTables()
+    tables.appointment_types!.push({ id: 'type-consulta', account_id: ACCOUNT, name: 'Consulta inicial', default_price_cents: 7000 })
+    tables.appointments!.push(
+      { id: 'v1', account_id: ACCOUNT, external_reference: '9500', patient_id: 'pat-1', clinic_id: CLINIC, starts_at: madrid('2026-09-09 10:00'), ends_at: madrid('2026-09-09 11:00'), status: 'booked', rescheduled: false, checked_in_at: null, practitioner_id: 'tm-1', practitioner_name: 'Ana Demo', appointment_type_id: 'type-consulta' },
+    )
+    const snap = snapshot(
+      [
+        { id: 9500, patient_id: 500, practitioner_id: 1, appointment_type_id: 2, start: '2026-09-09 10:00:00', end: '2026-09-09 11:00:00', status: 'pending' },
+        // A new one in PracticeHub comes in typed too.
+        { id: 9501, patient_id: 500, practitioner_id: 1, appointment_type_id: 2, start: '2026-09-16 10:00:00', end: '2026-09-16 11:00:00', status: 'pending' },
+      ],
+      { '/appointment_types': [{ id: 2, name: 'Primera visita', active: 1 }] },
+    )
+
+    const appointments = await planAppointments(ctxFor(tables), snap)
+    expect(appointments.warnings.some((w) => w.includes('Primera visita'))).to.equal(false)
+    expect((await appointments.apply(noop, never)).errors).to.deep.equal([])
+    expect(tables.appointments!.map((a) => a.appointment_type_id)).to.deep.equal(['type-consulta', 'type-consulta'])
+
+    const types = await planAppointmentTypes(ctxFor(tables), snap)
+    expect(types.total).to.equal(0)
+    expect(types.rows[0]).to.include({ name: 'Primera visita', status: 'Already here as "Consulta inicial"' })
+    await types.apply(noop, never)
+    expect(tables.appointment_types!.map((ty) => ty.name)).to.deep.equal(['Consulta inicial'])
   })
 })

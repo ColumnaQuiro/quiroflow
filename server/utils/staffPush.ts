@@ -183,7 +183,8 @@ export async function pushPatientAction(
     if (userIds.length === 0) return
     await sendPushToUsers(service, userIds, { title: opts.title, body: opts.body, data: { type: 'patient', patientId: opts.patientId, ...(opts.data ?? {}) } })
   } catch (err) {
-    console.error('[staff-push] patient action failed', opts.title, opts.patientId, err)
+    // Not the title: it is written for the desk and usually names the patient.
+    console.error('[staff-push] patient action failed', opts.patientId, err)
   }
 }
 

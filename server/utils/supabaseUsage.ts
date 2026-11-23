@@ -27,6 +27,9 @@ export const PRO_STORAGE_BYTES = 100 * 1024 ** 3
 export const PRO_DATABASE_BYTES = 8 * 1024 ** 3
 
 const ALERT_AT = 0.8
+/** Memory: swap this full is worth an email by itself; below it, only with less than MEMORY_LOW_BELOW of RAM available. */
+const SWAP_FULL_AT = 0.95
+const MEMORY_LOW_BELOW = 0.2
 
 export interface SupabaseUsage {
   sampled_at: string
@@ -194,15 +197,23 @@ export function usageAlerts(u: SupabaseUsage): UsageAlert[] {
     })
   }
 
-  if (u.memory && u.memory.swap_total_bytes > 0) {
+  // Swap on its own says little. Linux moves idle pages out under a peak and
+  // does not bring them back when the peak has passed, so swap stays high for
+  // days on a machine with a third of its memory free -- which is what this
+  // used to email as "out of memory" (23 Nov 2026: swap 86%, nothing wrong,
+  // and still 80% three hours later with 337 MB available). What precedes
+  // the kernel killing Postgres is swap high AND little left to reclaim, or
+  // swap all but gone whatever else is free.
+  if (u.memory && u.memory.swap_total_bytes > 0 && u.memory.total_bytes > 0) {
     const swapUsed = 1 - u.memory.swap_free_bytes / u.memory.swap_total_bytes
-    if (swapUsed >= ALERT_AT) {
+    const available = u.memory.available_bytes / u.memory.total_bytes
+    if (swapUsed >= SWAP_FULL_AT || (swapUsed >= ALERT_AT && available < MEMORY_LOW_BELOW)) {
       alerts.push({
         name: 'supabase-memory',
-        subject: `Supabase database is out of memory (swap ${pct(swapUsed)} used)`,
+        subject: `Supabase database is low on memory (${pct(available)} free, swap ${pct(swapUsed)} used)`,
         lines: [
           `${gb(u.memory.available_bytes)} of ${gb(u.memory.total_bytes)} memory available, and ${pct(swapUsed)} of ${gb(u.memory.swap_total_bytes)} swap in use.`,
-          'Once swap fills, Postgres is killed and restarted, which drops every connection in every clinic.',
+          'Once both run out, Postgres is killed and restarted, which drops every connection in every clinic.',
           COMPUTE,
         ],
         everyHours: 6,

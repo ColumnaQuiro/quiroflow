@@ -51,6 +51,15 @@ export type AccountSecretName =
    * revoked on disconnect.
    */
   | 'gocardless_access_token'
+  /**
+   * QuiroHiro (a white-labelled GoHighLevel, server/utils/quirohiro.ts): a
+   * read-only Private Integration token the clinic creates there, and the
+   * location (sub-account) it belongs to. The location's name is kept beside
+   * them only to show which QuiroHiro is connected.
+   */
+  | 'quirohiro_token'
+  | 'quirohiro_location_id'
+  | 'quirohiro_location_name'
 
 // The secrets that once had a column on `accounts`. practicehub_v3_api_key
 // arrived after the move and never did: selecting or clearing it there is a

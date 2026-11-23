@@ -267,6 +267,10 @@ async function confirmAnnulFactura() {
   await loadFacturas()
 }
 
+// A factura by WhatsApp, beside "Send" (which emails it): disabled, saying
+// why, until the clinic has chosen its template and the patient has a number.
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
+
 async function sendFactura(id: string) {
   sendingFacturaId.value = id
   try {
@@ -476,14 +480,24 @@ const paymentError = ref('')
 const paymentDate = ref(todayPaymentDate())
 const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment('cash', computed(() => paymentMethods.value.map((m) => m.key)))
 
-function openTakePayment() {
+/**
+ * Opens Take payment, on the first unpaid receipt -- or, from a ledger row's
+ * Collect button, on THAT receipt and for what is still open on it, which is
+ * less than its total once part of it has been paid.
+ */
+function openTakePayment(target?: { invoiceId: string; amountCents: number }) {
   activePanel.value = 'payment'
   paymentError.value = ''
-  const firstUnpaid = unpaidInvoices.value[0]
-  paymentInvoiceId.value = firstUnpaid?.id ?? ''
+  const chosen = (target && unpaidInvoices.value.find((i) => i.id === target.invoiceId)) || unpaidInvoices.value[0]
+  paymentInvoiceId.value = chosen?.id ?? ''
   paymentDate.value = todayPaymentDate()
-  resetPaymentRows(firstUnpaid ? (firstUnpaid.total_cents / 100).toFixed(2) : '')
+  const cents = chosen && target && chosen.id === target.invoiceId ? target.amountCents : chosen?.total_cents
+  resetPaymentRows(cents ? (cents / 100).toFixed(2) : '')
+  // The panel opens above the ledger, so a click far down the list would
+  // otherwise appear to do nothing.
+  if (target) nextTick(() => actionPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
 }
+const actionPanel = ref<HTMLElement | null>(null)
 
 async function takePayment() {
   const invoice = invoices.value.find((i) => i.id === paymentInvoiceId.value)
@@ -2885,7 +2899,7 @@ const fieldId = useId()
     </div>
 
     <!-- The panels the cards above open. -->
-    <div v-if="activePanel && canTakePayments" class="rounded-card border border-line bg-surface p-4 shadow-card">
+    <div v-if="activePanel && canTakePayments" ref="actionPanel" class="scroll-mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
       <div v-if="activePanel === 'product'" class="mt-4 border-t border-line-divider pt-4">
         <PatientsSellProduct :patient-id="patientId" @sold="onMoneyAdded" />
       </div>
@@ -3557,7 +3571,7 @@ const fieldId = useId()
       :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
       :contact-blocked="props.contactBlocked ?? false"
       @add-credit="activePanel = 'credit'"
-      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
+      @take-payment="(target?: { invoiceId: string; amountCents: number }) => (target ? openTakePayment(target) : activePanel === 'payment' ? (activePanel = null) : openTakePayment())"
       @send-invoice="sendInvoiceEmail"
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
@@ -3663,6 +3677,18 @@ const fieldId = useId()
               >
                 {{ sendingFacturaId === f.id ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
               </button>
+              <span v-if="whatsapp.results.value[f.id]" class="max-w-[220px] text-[12px]" :class="whatsapp.results.value[f.id]!.ok ? 'text-ink-faint' : 'text-danger-text'" data-cy="factura-whatsapp-result">{{ whatsapp.results.value[f.id]!.message }}</span>
+              <span v-else :title="whatsapp.reason.value || undefined">
+                <button
+                  type="button"
+                  data-cy="factura-send-whatsapp"
+                  class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
+                  :disabled="!whatsapp.canSend.value || whatsapp.sendingId.value === f.id"
+                  @click="whatsapp.send('factura', f.id)"
+                >
+                  {{ whatsapp.sendingId.value === f.id ? t('Sending…', 'Enviando…') : t('WhatsApp', 'WhatsApp') }}
+                </button>
+              </span>
             </div>
           </li>
         </ul>

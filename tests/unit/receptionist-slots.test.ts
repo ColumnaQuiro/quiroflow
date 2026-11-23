@@ -6,6 +6,7 @@ import {
   hasFreeTimes,
   receptionistBookingSection,
   receptionistClockSection,
+  receptionistCalendarGuide,
   receptionistSlotGroups,
   availabilityLists,
   type ReceptionistSlotQuery,
@@ -43,6 +44,11 @@ describe('Receptionist free times', () => {
         { date: '2026-10-07', times: ['09:00', '10:00', '11:00'] },
       ],
     ])
+  })
+
+  it("offers a type only at its online booking times, as the booking page does", () => {
+    const q: ReceptionistSlotQuery = { ...base, types: [{ id: 't1', name: 'Primera visita', durationMinutes: 60, onlineWindows: { all: { tue: [['10:00', '11:00']] } } }] }
+    expect(days(q)).toEqual([[{ date: '2026-10-06', times: ['10:00'] }]])
   })
 
   it('leaves out appointments and blocks, the way the public API does', () => {
@@ -317,4 +323,37 @@ describe("A returning patient's own practitioner", () => {
     expect(section).not.toMatch(/\n\n\n/)
   })
 
+})
+
+// The days people name, worked out in code: "este lunes" written at 00:13 on
+// a Saturday was read as the Monday a week later (21 Nov 2026).
+describe('What their words mean', () => {
+  const saturday = new Date('2026-11-20T23:13:00Z') // Saturday 21 Nov, 00:13 in Madrid
+  const guide = receptionistCalendarGuide(saturday, 'Europe/Madrid')
+
+  it('makes "este lunes" on a Saturday the Monday just ahead', () => {
+    expect(guide).toContain('- Monday 2026-11-23: "pasado mañana", "este lunes", "el lunes", "el lunes que viene", "el próximo lunes"')
+    expect(guide).not.toMatch(/Monday 2026-11-30: "este lunes"/)
+  })
+
+  it('makes "la semana que viene" on a Saturday the days just ahead', () => {
+    expect(guide).toContain('"la semana que viene", "la próxima semana": Monday 2026-11-23 to Sunday 2026-11-29')
+    expect(guide).toContain('"esta semana": Saturday 2026-11-21 to Sunday 2026-11-22')
+  })
+
+  it('names today and tomorrow', () => {
+    expect(guide).toContain('- Saturday 2026-11-21: "hoy"')
+    expect(guide).toContain('- Sunday 2026-11-22: "mañana", "este domingo", "el domingo"')
+  })
+
+  it('on a Wednesday keeps "este viernes" in this week and "la semana que viene" the next', () => {
+    const wednesday = receptionistCalendarGuide(new Date('2026-11-25T10:00:00Z'), 'Europe/Madrid')
+    expect(wednesday).toContain('- Friday 2026-11-27: "pasado mañana", "este viernes", "el viernes"')
+    expect(wednesday).toContain('"la semana que viene", "la próxima semana": Monday 2026-11-30 to Sunday 2026-12-06')
+    expect(wednesday).toContain('- Monday 2026-11-30: "este lunes", "el lunes", "el lunes que viene", "el próximo lunes"')
+  })
+
+  it('is part of the clock section', () => {
+    expect(receptionistClockSection(saturday, 'Europe/Madrid')).toContain('# What their words mean')
+  })
 })

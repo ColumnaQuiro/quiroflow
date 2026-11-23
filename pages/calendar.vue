@@ -12,6 +12,8 @@ import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import { gridEndHour, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
+import { onlineBookingBands, type PractitionerDay } from '~/utils/calendarBookingWindows'
+import type { OnlineBookingWindows } from '~/utils/bookingSlots'
 import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
@@ -92,7 +94,20 @@ const DAY_ROW_PX = 30
 const WEEK_ROW_PX = 22
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null; class_capacity?: number | null }
+interface AppointmentType {
+  id: string
+  name: string
+  duration_minutes: number
+  color: string
+  default_price_cents: number
+  sort_order: number | null
+  archived_at: string | null
+  class_capacity?: number | null
+  // Missing until the migration adding them to calendar_reference is applied.
+  online_booking_enabled?: boolean | null
+  online_booking_windows?: OnlineBookingWindows | null
+  practitioner_ids?: string[] | null
+}
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string; business_hours?: BusinessHours | null }
 
@@ -167,6 +182,26 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
 const mobileInfoOpen = ref(false)
+// At lg+ the left panel is a permanent 238px column; a clinic with several
+// practitioners side by side wants that width for the agenda. Hidden per
+// device, like the app sidebar's collapse, so it is a convenience and not a
+// setting. Below lg the panel is a drawer and this does not apply.
+const panelHidden = ref(false)
+onMounted(() => {
+  try {
+    panelHidden.value = localStorage.getItem('quiroflow-calendar-panel-hidden') === '1'
+  } catch {
+    // Storage blocked: the panel stays shown.
+  }
+})
+function togglePanel() {
+  panelHidden.value = !panelHidden.value
+  try {
+    localStorage.setItem('quiroflow-calendar-panel-hidden', panelHidden.value ? '1' : '0')
+  } catch {
+    // Storage blocked: hidden for this visit only.
+  }
+}
 // The phone header's "more" menu (view, cash shift, block time, the day's info).
 const phoneMenuOpen = ref(false)
 function phoneMenu(action: () => void) {
@@ -715,6 +750,8 @@ async function loadRangeDetails(token: number, appointmentIds: string[], patient
       p_to: rangeEnd.toISOString(),
       p_appointment_ids: appointmentIds,
       p_patient_ids: patientIds,
+      // Also mark the last visit of a phase before a change of cadence (20261123101831).
+      p_with_phase_end: true,
     } as never,
   )
   if (error) throw error
@@ -1168,7 +1205,7 @@ watch([viewMode, anchorDate, practitionerFilter], () => {
   loadRange()
 })
 
-// A clinic with no rooms (Settings -> Calendar Resources) has one column a
+// A clinic with no rooms (Settings -> Rooms) has one column a
 // day, and it is not "Unassigned": there is nothing to assign a visit to.
 // Headed "Sin asignar", it read as "these visits are missing something" --
 // a clinic with two practitioners and no rooms then made a room per
@@ -1407,6 +1444,55 @@ const closedRectsByDay = computed(() => {
 })
 function closedRectsFor(day: Date) {
   return closedRectsByDay.value.get(toDateKey(day)) ?? []
+}
+
+// The hours kept for booking a type online (utils/calendarBookingWindows),
+// tinted in that type's colour so the front desk sees them before filling
+// them with something else. Who counts is who the hatching counts: the
+// practitioner on their own tab, everyone assigned here on the clinic's --
+// each with the hours they work, since a window is only offered inside them.
+function practitionerDaysFor(date: Date): PractitionerDay[] {
+  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
+  const clinicDay = windowsForDay(date, clinicHours)
+  const pid = singlePractitionerId.value
+  const members = pid ? clinicTeamMembers.value.filter((m) => m.id === pid) : clinicTeamMembers.value
+  return members.map((m) => ({
+    id: m.id,
+    working: !hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(m.business_hours) ? null : practitionerWindowsForDay(clinicDay, m.business_hours, dayKeyFor(date)),
+  }))
+}
+function hhmmMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
+function bookingBandRects(forDate: Date, tops: HourTops) {
+  return onlineBookingBands(appointmentTypes.value, dayKeyFor(forDate), practitionerDaysFor(forDate)).flatMap((band) => {
+    const from = Math.max(0, hhmmMinutes(band.from) - START_HOUR * 60)
+    const to = Math.min(totalMin.value, hhmmMinutes(band.to) - START_HOUR * 60)
+    if (to <= from) return []
+    const top = gridYAt(tops, from)
+    return [{ key: `${band.from}-${band.to}`, top, height: gridYAt(tops, to) - top, color: band.types[0].color, label: band.types.map((x) => x.name).join(' · ') }]
+  })
+}
+const bookingBandsByDay = computed(() => {
+  const tops = topsForView()
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  return new Map(days.map((d) => [toDateKey(d), bookingBandRects(d, tops)]))
+})
+function bookingBandsFor(day: Date) {
+  return bookingBandsByDay.value.get(toDateKey(day)) ?? []
+}
+// A wash of the type's colour, light enough not to drown the visits booked
+// on it, with a solid edge down the day's first column so a pale type still
+// reads against the grid. The edge only there: repeated on every room column
+// it read as stripes rather than one stretch of the day.
+function bookingBandStyle(band: { top: number; height: number; color: string }, firstColumn: boolean) {
+  return {
+    top: `${band.top}px`,
+    height: `${band.height}px`,
+    background: `color-mix(in srgb, ${band.color} 14%, transparent)`,
+    boxShadow: firstColumn ? `inset 3px 0 0 ${band.color}` : undefined,
+  }
 }
 
 // Placeholder visits while a range loads: a few per column at fixed, varied
@@ -3131,6 +3217,22 @@ function showNowLineOn(day: Date) {
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
+        <button
+          type="button"
+          data-cy="calendar-panel-toggle"
+          :aria-pressed="panelHidden"
+          :aria-label="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
+          :title="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
+          class="hidden h-8 w-8 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle lg:order-first lg:flex"
+          @click="togglePanel"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
+            <path d="M5 2v10" />
+            <path v-if="panelHidden" d="M7.5 5.5L9 7l-1.5 1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path v-else d="M9 5.5L7.5 7 9 8.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <!-- The mini-calendar/display panel is a fixed 238px column at lg+
         (below), but that plus the optional flow-tracker column would eat
         most of a phone's width -- so below lg it's an off-canvas drawer
@@ -3310,7 +3412,7 @@ function showNowLineOn(day: Date) {
       below lg (see the Info button above); a permanent column at lg+. -->
       <aside
         class="fixed inset-y-0 left-0 z-40 w-[280px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar transition-transform duration-200 lg:static lg:z-auto lg:w-[238px] lg:translate-x-0"
-        :class="mobileInfoOpen ? 'translate-x-0' : '-translate-x-full'"
+        :class="[mobileInfoOpen ? 'translate-x-0' : '-translate-x-full', panelHidden ? 'lg:hidden' : '']"
       >
         <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
           <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>
@@ -3408,6 +3510,40 @@ function showNowLineOn(day: Date) {
               </span>
             </div>
           </div>
+          <!-- The icons a block draws, in the colours it draws them: the €
+               dot in particular says nothing on its own, and week view shows
+               it instead of the amount. -->
+          <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Icons', 'Iconos') }}</p>
+          <ul class="mt-2 space-y-1.5 text-[12.5px] text-ink-600" data-cy="calendar-icon-key">
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center"><span class="flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-danger-on" aria-hidden="true">€</span></span>
+              {{ t('Owes money (the whole balance)', 'Debe dinero (todo su saldo)') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-ink-500"><CalendarBlockIcon kind="noNext" /></span>
+              {{ t('No next visit booked', 'Sin próxima cita reservada') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-danger-text"><CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" /></span>
+              {{ t('Red flags on the record', 'Señales rojas en la ficha') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-brand-text"><CalendarVisitMarkerIcon /></span>
+              {{ t('Care plan re-exam', 'Revisión del plan de tratamiento') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-warning-text"><CalendarBlockIcon kind="forms" /></span>
+              {{ t('Forms not completed', 'Formularios sin completar') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-warning-accent"><CalendarBlockIcon kind="note" /></span>
+              {{ t('Clinical note', 'Nota clínica') }}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="flex w-4 shrink-0 justify-center text-ink-muted"><CalendarBlockIcon kind="moved" /></span>
+              {{ t('Moved before (times)', 'Movida antes (veces)') }}
+            </li>
+          </ul>
         </div>
       </aside>
 
@@ -3539,6 +3675,9 @@ function showNowLineOn(day: Date) {
                 >
                   <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
                     <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
+                  </div>
+                  <div v-for="band in bookingBandsFor(anchorDate)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2.5 pr-2 pt-1 text-[11.5px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
+                    <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }} · {{ t('online', 'online') }}</span>
                   </div>
                   <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(dayTops, m)}px` }" />
                   <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(dayTops, (h - START_HOUR) * 60)}px` }" />
@@ -3757,6 +3896,9 @@ function showNowLineOn(day: Date) {
                     @click="onColumnClick($event, day, col.id, weekTops)"
                   >
                     <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                    <div v-for="band in bookingBandsFor(day)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2 pr-1 pt-1 text-[11px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
+                      <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }}</span>
+                    </div>
                     <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(weekTops, m)}px` }" />
                     <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(weekTops, (h - START_HOUR) * 60)}px` }" />
 

@@ -205,20 +205,31 @@ export function offeredDate(o: OfferedTime, sentOn: string): string | null {
  * `when`: the day the offer was sent and today, on the clinic's clock. An
  * offer answered the next day used to read "tomorrow at 15:00" here -- a
  * "mañana" a day old, counted again from the day of the answer (19 Nov 2026).
+ *
+ * `by`: who made the offer. A colleague's offer accepted is booked the same
+ * way as the receptionist's own. It used to go to a person every time: a
+ * patient answered "El miércoles 2 me viene genial" to two times a
+ * colleague had offered, and was told "Se lo paso a mi compañera" instead of
+ * having the visit moved (23 Nov 2026).
  */
-export function chosenTimeNote(o: OfferedTime, canBook: boolean, when?: { sentOn: string; today: string }): string {
+export function chosenTimeNote(o: OfferedTime, canBook: boolean, when?: { sentOn: string; today: string }, by: 'you' | 'colleague' = 'you'): string {
   const heading = '# Their answer picks one time'
+  const offered = by === 'colleague' ? 'your colleague offered' : 'you offered'
   const stale = when && when.sentOn < when.today
   const date = stale ? offeredDate(o, when.sentOn) : null
   if (stale && date && date < when.today) {
-    return `${heading}\nTheir latest message picks ${o.time} from the times you offered on ${dayName(when.sentOn)}, which you offered for ${dayName(date)}: that day has passed. Do not book it on another day. Say that time has gone and offer other times.`
+    return `${heading}\nTheir latest message picks ${o.time} from the times ${offered} on ${dayName(when.sentOn)}, which ${offered} for ${dayName(date)}: that day has passed. Do not book it on another day. Say that time has gone and offer other times.`
   }
   const which = date
     ? `${dayName(date)} at ${o.time} (said as "${o.relative === 'hoy' ? 'hoy' : 'mañana'}" in a message sent on ${dayName(when!.sentOn)})`
     : stale
-      ? `${offeredTimeLabel(o)} -- the one coming after ${dayName(when.sentOn)}, the day you offered it, never a week later`
+      ? `${offeredTimeLabel(o)} -- the one coming after ${dayName(when.sentOn)}, the day it was offered, never a week later`
       : offeredTimeLabel(o)
-  return `${heading}\nTheir latest message can only mean one of the times you offered in your last message: ${which}. ${canBook ? 'Book it now with book_appointment (with move_visit_on if it moves a visit they already have) and do not ask them to confirm it again.' : 'Take it as their choice and do not ask them to confirm it again.'}`
+  const whose = by === 'colleague' ? "the times your colleague offered in the clinic's last message" : 'the times you offered in your last message'
+  const book = by === 'colleague'
+    ? 'Book it now yourself with book_appointment (with move_visit_on if it moves a visit they already have), confirm it to them, and do not ask them to confirm it again. If book_appointment says that time is not free or cannot be booked, do not offer other times instead -- your colleague may have made room for it: call hand_over_to_colleague with the day and time they accepted.'
+    : 'Book it now with book_appointment (with move_visit_on if it moves a visit they already have) and do not ask them to confirm it again.'
+  return `${heading}\nTheir latest message can only mean one of ${whose}: ${which}. ${canBook ? book : 'Take it as their choice and do not ask them to confirm it again.'}`
 }
 
 /**
@@ -267,4 +278,31 @@ export function cancelQuestionDue(opts: { askedAt: string; visitStartsAt: string
   const visit = new Date(opts.visitStartsAt).getTime()
   const asked = new Date(opts.askedAt).getTime()
   return visit > now && visit - now <= CANCEL_QUESTION_LEAD_MS && now - asked >= CANCEL_QUESTION_GRACE_MS && visit > asked
+}
+
+/**
+ * The type a time was offered as, from the conversation's recent runs
+ * (receptionist_reply_traces.tool_uses, newest run first): the latest
+ * offer_times that listed that day and time. Null when that time was never
+ * offered, or offered without a type.
+ *
+ * book_appointment holds the booking to it. A lead from WhatsApp, not from an
+ * ad, was quoted the plain first visit at 70 € and booked as the 50 € offer
+ * (10 Nov 2026): the model chose the type twice, once to offer and once to
+ * book, and the two did not agree. Offered as one type, booked as that type.
+ */
+export function offeredTypeAt(runs: { tool_uses: unknown }[], date: string, time: string): string | null {
+  for (const run of runs) {
+    const uses = Array.isArray(run.tool_uses) ? (run.tool_uses as { name?: unknown; input?: unknown }[]) : []
+    for (let i = uses.length - 1; i >= 0; i--) {
+      const use = uses[i]
+      if (use?.name !== 'offer_times') continue
+      const input = (use.input ?? {}) as { times?: unknown; appointment_type?: unknown }
+      const times = Array.isArray(input.times) ? (input.times as { date?: unknown; time?: unknown }[]) : []
+      const listed = times.some((t) => t?.date === date && typeof t?.time === 'string' && t.time.replace(/\*+$/, '') === time)
+      if (!listed) continue
+      return typeof input.appointment_type === 'string' && input.appointment_type.trim() ? input.appointment_type.trim() : null
+    }
+  }
+  return null
 }

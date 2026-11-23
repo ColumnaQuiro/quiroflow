@@ -34,7 +34,7 @@ describe('Deleted visits are not bookings', () => {
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
-      cy.contains('[data-cy=appt-block]', 'Borrada Prueba').find('[data-cy=appt-block-no-next]').should('contain.text', 'No next visit')
+      cy.contains('[data-cy=appt-block]', 'Borrada Prueba').find('[data-cy=appt-block-no-next]').should('have.attr', 'title', 'No next visit booked')
       cy.contains('[data-cy=appt-block]', 'Reservada Prueba').should('exist').find('[data-cy=appt-block-no-next]').should('not.exist')
     })
   })

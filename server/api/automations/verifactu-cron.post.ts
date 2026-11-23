@@ -68,7 +68,9 @@ export default defineEventHandler(async (event) => {
       results.push({ account: row.account_id, ...r })
     } catch (err) {
       // One clinic's failure must not stop the others. The records stay owed
-      // and the next tick tries again; nothing is lost by moving on.
+      // and the next tick tries again; nothing is lost by moving on. Logged,
+      // which also reaches Sentry: a tick's response is read by nobody.
+      console.error(`[verifactu-cron] sending for account ${row.account_id} failed:`, err instanceof Error ? err.message : String(err))
       results.push({
         account: row.account_id,
         error: err instanceof Error ? err.message : String(err),
@@ -106,6 +108,7 @@ export default defineEventHandler(async (event) => {
   try {
     fee = await syncVerifactuFees(supabase)
   } catch (err) {
+    console.error('[verifactu-cron] fee sync failed:', err instanceof Error ? err.message : String(err))
     fee = { error: err instanceof Error ? err.message : String(err) }
   }
 

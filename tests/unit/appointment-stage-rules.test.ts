@@ -210,14 +210,35 @@ describe('Block ladder', () => {
     const l = blockLadder({ ...base, width: 180, noNext: true })
     expect(l.owes).to.equal('meta')
     expect(l.pill, 'narrow: icon only').to.equal('icon')
-    expect(l.noNext, 'rank 9 goes first').to.equal(false)
-    expect(l.moved, 'rank 8 next').to.equal(false)
+    expect(l.moved, 'rank 8 goes first').to.equal(false)
   })
 
   it('wraps rather than drops on a tall block', () => {
     const l = blockLadder({ ...base, width: 180, height: 110, noNext: true })
     expect(l.wrap).to.equal(true)
     expect(l.bono && l.moved && l.noNext).to.equal(true)
+  })
+
+  it('flags "no next visit" as an icon beside the name, on any block with room', () => {
+    // A 30-minute visit: one line. The flag used to be a chip on the detail
+    // line, so a block this size never showed it.
+    const one = blockLadder({ ...base, height: 30, owes: false, note: false, noNext: true, nameText: 'Laura Gómez', pillText: 'Con el profesional' })
+    expect(one.compact).to.equal(true)
+    expect(one.noNext).to.equal(true)
+    expect(blockLadder({ ...base, noNext: false }).noNext, 'only when it applies').to.equal(false)
+    // Room for one icon beside name and label: the forms outrank it, it outranks the note.
+    const tight = blockLadder({ ...base, width: 200, owes: false, noNext: true, nameText: 'Laura Gómez', pillText: 'Llegó' })
+    expect(tight.noNext).to.equal(true)
+    expect(tight.note).to.equal(false)
+    const withForms = blockLadder({ ...base, width: 200, owes: false, forms: true, noNext: true, nameText: 'Laura Gómez', pillText: 'Llegó' })
+    expect(withForms.forms).to.equal(true)
+    expect(withForms.noNext).to.equal(false)
+  })
+
+  it('flags "no next visit" in week view where the short name leaves room', () => {
+    const week = { ...base, density: 'week' as const, height: 59, stage: 'completed' as const, noNext: true, nameText: 'L. Gómez' }
+    expect(blockLadder({ ...week, width: 120 }).noNext).to.equal(true)
+    expect(blockLadder({ ...week, width: 70 }).noNext, 'never at the cost of the name').to.equal(false)
   })
 
   it('draws week blocks with a short name, an icon and a € dot only', () => {

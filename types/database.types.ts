@@ -1753,6 +1753,7 @@ export type Database = {
           online_booking_hide_language_picker: boolean
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
+          online_booking_min_notice_hours: number
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
           online_booking_notify_whatsapp_template_language: string
@@ -1806,6 +1807,8 @@ export type Database = {
           whatsapp_confirmation_template_language: string
           whatsapp_confirmation_template_name: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_invoice_template_language: string
+          whatsapp_invoice_template_name: string | null
           whatsapp_recall_template_language: string
           whatsapp_recall_template_name: string | null
           whatsapp_reminder_template_language: string | null
@@ -1883,6 +1886,7 @@ export type Database = {
           online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          online_booking_min_notice_hours?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -1936,6 +1940,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_invoice_template_language?: string
+          whatsapp_invoice_template_name?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
@@ -2014,6 +2020,7 @@ export type Database = {
           online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          online_booking_min_notice_hours?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -2067,6 +2074,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_invoice_template_language?: string
+          whatsapp_invoice_template_name?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
@@ -2449,6 +2458,7 @@ export type Database = {
           name: string
           online_bookable_by: string
           online_booking_enabled: boolean
+          online_booking_windows: Json | null
           online_bypass_practitioner: boolean
           online_deposit_cents: number | null
           online_description: string | null
@@ -2472,6 +2482,7 @@ export type Database = {
           name: string
           online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_booking_windows?: Json | null
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_description?: string | null
@@ -2495,6 +2506,7 @@ export type Database = {
           name?: string
           online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_booking_windows?: Json | null
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_description?: string | null
@@ -3366,6 +3378,65 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      care_plan_templates: {
+        Row: {
+          account_id: string
+          created_at: string
+          frequency_unit: string
+          frequency_value: number
+          id: string
+          is_maintenance: boolean
+          name: string
+          next_phases: Json
+          payment_kind: string
+          sort_order: number
+          total_visits: number | null
+          updated_at: string
+          visit_markers: Json
+          visits_per_period: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          frequency_unit?: string
+          frequency_value?: number
+          id?: string
+          is_maintenance?: boolean
+          name: string
+          next_phases?: Json
+          payment_kind?: string
+          sort_order?: number
+          total_visits?: number | null
+          updated_at?: string
+          visit_markers?: Json
+          visits_per_period?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          frequency_unit?: string
+          frequency_value?: number
+          id?: string
+          is_maintenance?: boolean
+          name?: string
+          next_phases?: Json
+          payment_kind?: string
+          sort_order?: number
+          total_visits?: number | null
+          updated_at?: string
+          visit_markers?: Json
+          visits_per_period?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "care_plan_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -4947,8 +5018,10 @@ export type Database = {
           description: string
           id: string
           invoice_id: string
+          list_price_cents: number | null
           package_purchase_id: string | null
           price_cents: number
+          price_change_reason: string | null
           quantity: number
           service_id: string | null
         }
@@ -4957,8 +5030,10 @@ export type Database = {
           description: string
           id?: string
           invoice_id: string
+          list_price_cents?: number | null
           package_purchase_id?: string | null
           price_cents?: number
+          price_change_reason?: string | null
           quantity?: number
           service_id?: string | null
         }
@@ -4967,8 +5042,10 @@ export type Database = {
           description?: string
           id?: string
           invoice_id?: string
+          list_price_cents?: number | null
           package_purchase_id?: string | null
           price_cents?: number
+          price_change_reason?: string | null
           quantity?: number
           service_id?: string | null
         }
@@ -8285,6 +8362,7 @@ export type Database = {
           month: string
           replies: number
           stripe_invoice_id: string | null
+          stripe_invoice_item_id: string | null
         }
         Insert: {
           account_id: string
@@ -8294,6 +8372,7 @@ export type Database = {
           month: string
           replies: number
           stripe_invoice_id?: string | null
+          stripe_invoice_item_id?: string | null
         }
         Update: {
           account_id?: string
@@ -8303,6 +8382,7 @@ export type Database = {
           month?: string
           replies?: number
           stripe_invoice_id?: string | null
+          stripe_invoice_item_id?: string | null
         }
         Relationships: [
           {
@@ -11117,6 +11197,14 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      change_invoice_line_price: {
+        Args: {
+          p_line_id: string
+          p_price_cents: number
+          p_reason?: string
+        }
+        Returns: Json
+      }
       charge_visit_to_third_party: {
         Args: {
           p_appointment_id: string
@@ -11331,6 +11419,10 @@ export type Database = {
           user_agent: string
         }[]
       }
+      get_online_booking_min_notice: {
+        Args: { p_clinic_id: string }
+        Returns: number
+      }
       get_patient_access_log: {
         Args: {
           p_account_id: string
@@ -11469,6 +11561,13 @@ export type Database = {
       generate_unique_account_slug: {
         Args: { base_name: string }
         Returns: string
+      }
+      get_appointment_type_booking_windows: {
+        Args: { p_type_ids: string[] }
+        Returns: {
+          appointment_type_id: string
+          online_booking_windows: Json
+        }[]
       }
       get_booking_blocked_times: {
         Args: { p_clinic_id: string; p_from: string; p_to: string }
@@ -11847,7 +11946,7 @@ export type Database = {
         Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
       }
       care_plan_marked_visits: {
-        Args: { p_from?: string; p_to?: string; p_patient_id?: string }
+        Args: { p_from?: string; p_to?: string; p_patient_id?: string; p_with_phase_end?: boolean }
         Returns: {
           appointment_id: string
           patient_id: string
@@ -11860,11 +11959,38 @@ export type Database = {
           expected_type_name: string | null
           appointment_type_id: string | null
           mismatch: boolean
+          /** The phase after this one, on its last visit, when the cadence changes; only with p_with_phase_end (20261123101831). */
+          next_phase: Json | null
         }[]
       }
       care_plan_visit_markers_at: {
-        Args: { p_patient_id: string; p_starts_at: string[]; p_exclude_appointment_id?: string }
-        Returns: { starts_at: string; visit_number: number; label: string | null; expected_appointment_type_id: string | null; expected_type_name: string | null }[]
+        Args: { p_patient_id: string; p_starts_at: string[]; p_exclude_appointment_id?: string; p_with_phase_end?: boolean }
+        Returns: {
+          starts_at: string
+          visit_number: number
+          label: string | null
+          expected_appointment_type_id: string | null
+          expected_type_name: string | null
+          next_phase: Json | null
+        }[]
+      }
+      care_plan_phase_changes: {
+        Args: never
+        Returns: {
+          patient_id: string
+          care_plan_id: string
+          care_plan_name: string
+          visits_per_period: number
+          frequency_value: number
+          frequency_unit: string
+          total_visits: number
+          completed_in_plan: number
+          next_phase: Json
+          last_visit_appointment_id: string | null
+          last_visit_starts_at: string | null
+          last_visit_status: string | null
+          booked_after_last: number
+        }[]
       }
       care_plan_visit_facts: {
         Args: never

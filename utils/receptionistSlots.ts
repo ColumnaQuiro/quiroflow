@@ -9,7 +9,7 @@
 //
 // Pure, with no `~` imports: the app auto-imports this directory too, and in
 // its build `~` resolves to mobile/.
-import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange } from './bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange, type OnlineBookingWindows } from './bookingSlots'
 import { practitionerHoursAt, type BusinessHours, type LocationHours } from './businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from './clinicClock'
 import type { PromptType } from './receptionistTypes'
@@ -36,6 +36,11 @@ export interface SlotType extends PromptType {
   durationByPractitioner?: Record<string, number>
   /** appointment_types.practitioner_ids: only these do it; empty or absent for everyone. */
   practitionerIds?: string[] | null
+  /**
+   * appointment_types.online_booking_windows: offered only at these times, as
+   * on the booking page; null or absent for any free time.
+   */
+  onlineWindows?: OnlineBookingWindows | null
 }
 
 export interface SlotAppointment extends BookingBusyRange {
@@ -194,6 +199,7 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
             busy: busy.get(p.id) ?? [],
             notBefore,
             notAfter: windowEnd,
+            type: { windows: type.onlineWindows, practitionerId: p.id },
           })
           for (const at of slots) {
             starts.add(at.getTime())
@@ -244,7 +250,53 @@ function dayLabel(date: string): string {
 export function receptionistClockSection(now: Date, timeZone: string | null | undefined): string {
   const zone = timeZone || DEFAULT_CLINIC_TIMEZONE
   const date = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })
-  return `# Now\nIt is ${date}, ${clinicTimeLabel(now, zone)} at the clinic (${zone}). Read "today", "tomorrow" and any weekday the patient mentions against this.`
+  return `# Now\nIt is ${date}, ${clinicTimeLabel(now, zone)} at the clinic (${zone}). Read "today", "tomorrow" and any weekday the patient mentions against this.\n\n${receptionistCalendarGuide(now, zone)}`
+}
+
+const WEEKDAYS_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const WEEKDAYS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+
+/**
+ * The next two weeks with the words people use for each day, worked out here
+ * rather than by the model. Left to work it out, it read "¿puede ser este
+ * lunes?", written at 00:13 on a Saturday, as the Monday a week later and
+ * answered about the wrong day (21 Nov 2026); "la semana que viene" had been
+ * read as the week after before that (6 and 7 Nov). Spanish usage:
+ * - "hoy", "mañana", "pasado mañana";
+ * - "este lunes" or "el lunes": the first Monday after today;
+ * - "la semana que viene" / "la próxima semana": Monday to Sunday after the
+ *   current week -- on a Saturday or Sunday, the days just ahead;
+ * - "el lunes que viene" / "el próximo lunes" when that Monday is still in
+ *   the current week is the one point people disagree on: say the date and
+ *   ask.
+ */
+export function receptionistCalendarGuide(now: Date, timeZone: string): string {
+  const today = clinicDateOf(now, timeZone)
+  const weekdayOf = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay()
+  const days: string[] = [today]
+  while (days.length < 15) days.push(nextDate(days[days.length - 1]))
+  // Monday to Sunday of the current week ends on the first Sunday from today.
+  const endOfWeek = days.find((d) => weekdayOf(d) === 0)!
+  const nextWeek = days.slice(days.indexOf(endOfWeek) + 1, days.indexOf(endOfWeek) + 8)
+  const label = (date: string) => `${WEEKDAYS_EN[weekdayOf(date)]} ${date}`
+  const lines = days.map((date, i) => {
+    const words: string[] = []
+    if (i === 0) words.push('hoy')
+    if (i === 1) words.push('mañana')
+    if (i === 2) words.push('pasado mañana')
+    const es = WEEKDAYS_ES[weekdayOf(date)]
+    if (i >= 1 && i <= 7) words.push(`este ${es}`, `el ${es}`)
+    if (date > endOfWeek && date <= nextWeek[nextWeek.length - 1]) words.push(`el ${es} que viene`, `el próximo ${es}`)
+    return `- ${label(date)}${words.length ? `: ${[...new Set(words)].map((w) => `"${w}"`).join(', ')}` : ''}`
+  })
+  return [
+    '# What their words mean',
+    'Use this table for any day they name; never work a date out yourself. When you answer about a day, name it with its date ("el lunes 23 de noviembre"), so a misreading shows at once.',
+    ...lines,
+    `- "esta semana": ${label(today)} to ${label(endOfWeek)}.`,
+    `- "la semana que viene", "la próxima semana": ${label(nextWeek[0])} to ${label(nextWeek[nextWeek.length - 1])}.`,
+    'If what they wrote fits two days (a weekday "que viene" while that day is still this week, or a date that does not match its weekday), say both dates and ask which.',
+  ].join('\n')
 }
 
 /**

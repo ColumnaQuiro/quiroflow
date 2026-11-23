@@ -38,14 +38,17 @@ const quirocitas = useQuirocitasConnection()
 const { copy: quirocitasCopy } = useQuirocitasCopy()
 const { job: quirocitasJob } = useQuirocitasJob()
 const { job: practiceHubJob } = useImportJob('practicehub')
+const quirohiro = useQuirohiroConnection()
+const { job: quirohiroJob } = useImportJob('quirohiro')
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
 function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'patient_docs' | 'patient_files', prefix?: string) {
   return () => {
     const q = supabase.from(table).select('*', { count: 'exact', head: true }).eq('account_id', store.accountId!)
-    // Unprefixed is PracticeHub's (bare numbers): not the "QC-" rows Quirocitas writes.
-    return prefix ? q.like('external_reference', `${prefix}%`) : q.not('external_reference', 'is', null).not('external_reference', 'like', 'QC-%')
+    // Unprefixed is PracticeHub's (bare numbers): not the "QC-" rows Quirocitas
+    // writes, nor QuiroHiro's "QH-".
+    return prefix ? q.like('external_reference', `${prefix}%`) : q.not('external_reference', 'is', null).not('external_reference', 'like', 'QC-%').not('external_reference', 'like', 'QH-%')
   }
 }
 
@@ -185,6 +188,32 @@ const sources = computed<Source[]>(() => [
     ],
   },
   {
+    key: 'quirohiro',
+    label: 'QuiroHiro',
+    sub: quirohiroConnected(quirohiro.value) ? t(`Connected · ${quirohiro.value!.locationName ?? ''}`, `Conectado · ${quirohiro.value!.locationName ?? ''}`) : t('Not connected yet', 'Aún sin conectar'),
+    groups: [
+      {
+        key: 'setup',
+        label: t('Set up', 'Configurar'),
+        note: t('QuiroHiro is read through its own API with a read-only key: patients, appointments, clinical records and notes, in one go, on the server.', 'QuiroHiro se lee con su propia API y una clave de solo lectura: pacientes, citas, fichas clínicas y notas, de una vez, en el servidor.'),
+        steps: [
+          { key: 'general', label: t('Connection', 'Conexión'), hint: t('A read-only key created in QuiroHiro, and the clinic\'s address there.', 'Una clave de solo lectura creada en QuiroHiro, y la dirección de la clínica allí.') },
+          { key: 'full', label: t('Import everything', 'Importar todo'), hint: t('Reads QuiroHiro and imports patients, appointments, records and notes, on the server. You can close the page.', 'Lee QuiroHiro e importa pacientes, citas, fichas y notas, en el servidor. Puedes cerrar la página.') },
+        ],
+      },
+      {
+        key: 'records',
+        label: t('What has come in', 'Lo que ha llegado'),
+        note: t('Counts only: all of it comes in with Import everything.', 'Solo recuentos: todo llega con Importar todo.'),
+        steps: [
+          { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Details, phones and practitioner.', 'Datos, teléfonos y quiropráctico.'), count: counted('patients', 'QH-') },
+          { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits.', 'Visitas pasadas y futuras.'), count: counted('appointments', 'QH-appt-') },
+          { key: 'clinical', label: t('Records and notes', 'Fichas y notas'), hint: t('The clinical custom fields, and notes not written on the day of a visit.', 'Los campos clínicos y las notas no escritas el día de una visita.'), count: counted('contact_log', 'QH-') },
+        ],
+      },
+    ],
+  },
+  {
     key: 'other',
     label: t('Another system', 'Otro sistema'),
     sub: t('Patients from a CSV or Excel file', 'Pacientes desde un archivo CSV o Excel'),
@@ -301,12 +330,13 @@ onBeforeUnmount(stopLiveCount)
 // counts follow its job instead: a few seconds apart while it writes, and
 // once more when it ends.
 let lastJobCount = 0
+const sourceJob = () => (sourceKey.value === 'practicehub' ? practiceHubJob.value : sourceKey.value === 'quirohiro' ? quirohiroJob.value : quirocitasJob.value)
 watch(() => {
-  const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
+  const j = sourceJob()
   return j && [j.status, j.step_index, JSON.stringify(j.progress)].join('|')
 }, () => {
-  if (sourceKey.value !== 'quirocitas' && sourceKey.value !== 'practicehub') return
-  const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
+  if (sourceKey.value === 'other') return
+  const j = sourceJob()
   // A preview writes nothing, so there is nothing to count again.
   if ((j?.options as { dryRun?: boolean } | null)?.dryRun) return
   const active = importJobActive(j)
@@ -320,6 +350,7 @@ onMounted(() => {
   loadSavedPracticeHubConnection()
   loadQuirocitasConnection()
   loadQuirocitasCopy()
+  loadQuirohiroConnection()
   loadCounts()
 })
 // Each source counts its own steps.
@@ -329,11 +360,11 @@ const nf = new Intl.NumberFormat('es-ES')
 function statusOf(step: Step): { text: string; done: boolean } | null {
   if (sourceKey.value === 'other') return null
   if (step.key === 'general') {
-    const saved = sourceKey.value === 'quirocitas' ? quirocitasConnected(quirocitas.value) : !!connection.value
+    const saved = sourceKey.value === 'quirocitas' ? quirocitasConnected(quirocitas.value) : sourceKey.value === 'quirohiro' ? quirohiroConnected(quirohiro.value) : !!connection.value
     return saved ? { text: t('Saved', 'Guardada'), done: true } : { text: t('Not set up yet', 'Aún sin configurar'), done: false }
   }
   if (step.key === 'full') {
-    const j = sourceKey.value === 'practicehub' ? practiceHubJob.value : quirocitasJob.value
+    const j = sourceJob()
     if (j && importJobActive(j)) return { text: t(`Running · ${importJobPercent(j)}%`, `En marcha · ${importJobPercent(j)}%`), done: false }
     if ((j?.options as { dryRun?: boolean } | null)?.dryRun) return j?.status === 'done' ? { text: t('Previewed', 'Vista previa hecha'), done: false } : null
     if (j?.status === 'done' && j.steps.length > 1) return { text: t(`Done ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`, `Hecho el ${new Date(j.finished_at!).toLocaleDateString('es-ES')}`), done: true }
@@ -397,7 +428,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
             {{ t('Bring the clinic’s records across from the system it is leaving. Choose that system, then work through its steps: each group says what has to run first. Every step that writes shows a preview first, and nothing is written until you confirm it.', 'Trae los registros de la clínica desde el sistema que deja. Elige ese sistema y sigue sus pasos: cada grupo indica qué tiene que ir antes. Cada paso que escribe muestra antes una vista previa, y no se escribe nada hasta que lo confirmes.') }}
           </p>
 
-          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button
               v-for="s in sources"
               :key="s.key"
@@ -412,11 +443,12 @@ onBeforeUnmount(() => panelObserver?.disconnect())
               <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] text-[14px] font-bold" :class="s.key !== 'other' ? 'bg-brand-tint text-brand-text' : 'bg-surface-subtle text-ink-muted'" aria-hidden="true">
                 <template v-if="s.key === 'practicehub'">PH</template>
                 <template v-else-if="s.key === 'quirocitas'">QC</template>
+                <template v-else-if="s.key === 'quirohiro'">QH</template>
                 <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" /></svg>
               </span>
               <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                 <strong class="text-[15px] text-ink-900">{{ s.label }}</strong>
-                <span class="truncate text-[12.5px]" :class="(s.key === 'practicehub' && connection) || (s.key === 'quirocitas' && quirocitasConnected(quirocitas)) ? 'text-success-text' : 'text-ink-muted'">{{ s.sub }}</span>
+                <span class="truncate text-[12.5px]" :class="(s.key === 'practicehub' && connection) || (s.key === 'quirocitas' && quirocitasConnected(quirocitas)) || (s.key === 'quirohiro' && quirohiroConnected(quirohiro)) ? 'text-success-text' : 'text-ink-muted'">{{ s.sub }}</span>
               </span>
             </button>
           </div>
@@ -485,6 +517,13 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportQuirocitasStep v-else :kind="activeStep.key as QuirocitasStepKind" />
               </template>
               <ImportStripeSubscriptions v-else-if="sourceKey === 'stripe'" />
+              <template v-else-if="sourceKey === 'quirohiro'">
+                <ImportQuirohiroConnection v-if="activeStep.key === 'general'" />
+                <ImportQuirohiroFullImport v-else-if="activeStep.key === 'full'" />
+                <p v-else class="text-[13.5px] text-ink-muted" data-cy="qh-count-note">
+                  {{ t('This comes in with Import everything, above: there is no separate step for it.', 'Esto llega con Importar todo, arriba: no tiene un paso aparte.') }}
+                </p>
+              </template>
               <ImportGenericCsvPatientsImporter v-else />
               <div v-if="previousStep || nextStep" class="flex flex-wrap items-center justify-between gap-3 border-t border-line-divider pt-4" data-cy="import-step-nav">
                 <button v-if="previousStep" type="button" class="text-[13px] font-medium text-ink-600 hover:underline" data-cy="import-previous-step" @click="stepKey = previousStep.key">

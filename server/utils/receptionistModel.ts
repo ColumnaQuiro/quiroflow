@@ -5,11 +5,12 @@ import { findChiropractor, loadReceptionistCalendar, type OfferedType, type Rece
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
-import { isNoReply } from '~/utils/receptionistAutoReply'
+import { isNoReply, replyActed } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import { receptionistSystemBlocks, withTailBreakpoint, type ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON } from '~/server/utils/receptionistBooking'
-import type { OfferedSlot } from '~/utils/receptionistConversion'
+import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON, type OfferDraft, type OfferHints } from '~/server/utils/receptionistBooking'
+import type { OfferedSlot, SlotLanguage } from '~/utils/receptionistConversion'
+import { confirmationInWords, confirmationIsPlain, offerInWords, wordsMatchOffer, type BookedDetails } from '~/utils/receptionistOffers'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UNEXPLAINED_HANDOVER_REASON } from '~/utils/receptionistFollowThrough'
@@ -45,6 +46,20 @@ export const RECEPTIONIST_MODELS = ['claude-sonnet-5', 'claude-haiku-5-5'] as co
 export function receptionistModelName(): string {
   const configured = String(useRuntimeConfig().receptionistModel ?? '').trim()
   return (RECEPTIONIST_MODELS as readonly string[]).includes(configured) ? configured : RECEPTIONIST_MODELS[0]
+}
+
+/**
+ * The model a reply is tried on once more when the first came back with
+ * nothing to send (runReceptionistModel): the default, when the receptionist
+ * runs on the cheaper one. Null when it already runs on the default.
+ *
+ * Haiku costs about $0.003 a reply and Sonnet about $0.05 (21-23 Nov 2026).
+ * A reply with nothing to send was 2 in 57 on Haiku, each one a patient
+ * passed to a person at night; one more try at Sonnet's price on those is
+ * a tenth of a cent a reply, averaged.
+ */
+export function receptionistFallbackModel(): string | null {
+  return receptionistModelName() === RECEPTIONIST_MODELS[0] ? null : RECEPTIONIST_MODELS[0]
 }
 
 const FIND_FREE_TIMES: Anthropic.Tool = {
@@ -88,6 +103,14 @@ export interface ReceptionistRun {
   choices: 'cancellation_reason' | 'times' | null
   /** The times offer_times was last called with, when the reply books nothing. */
   offeredSlots: OfferedSlot[]
+  /** Those times as an offer the code can book from, to keep once the reply is sent (receptionist_offers). */
+  offer?: OfferDraft | null
+  /** What book_appointment booked or moved in this reply. */
+  booked?: BookedDetails | null
+  /** The model that wrote it, when it was not the one asked for (the fallback). */
+  model?: string
+  /** Written and booked by code, with no model asked (acceptOfferedTime). */
+  inCode?: boolean
   /** cacheWriteTokens is both kinds of write; cacheWrite1hTokens the hour-long ones (clinic and role), which cost 2x input rather than 1.25x. */
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheWrite1hTokens: number; rounds: number }
 }
@@ -191,7 +214,70 @@ export function freeTimesLookup(
  *
  * Throws the SDK's errors, for the caller to word (modelFailureMessage).
  */
-export async function runReceptionistModel(
+/** The words of a turn, without its thinking and tool calls. */
+function textOf(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+}
+
+const EMPTY_REPLY_NOTE = 'Your reply had no text, so nothing would reach them. Write the message to send them now, in Spanish unless they write in another language: if you offered times with offer_times, name those same times in words and ask which they prefer. Do not call offer_times again for them.'
+
+/**
+ * Sends a turn back with a note. A turn with nothing but thinking in it is
+ * not repeated (an assistant turn needs words or a tool call): the note joins
+ * the last message of theirs instead, which may hold tool results.
+ */
+function pushNote(messages: Anthropic.MessageParam[], content: Anthropic.ContentBlock[], note: string): void {
+  if (content.some((block) => block.type === 'text' || block.type === 'tool_use')) {
+    messages.push({ role: 'assistant', content })
+    messages.push({ role: 'user', content: note })
+    return
+  }
+  const last = messages[messages.length - 1]
+  if (last?.role === 'user') {
+    const blocks = typeof last.content === 'string' ? [{ type: 'text' as const, text: last.content }] : [...last.content]
+    messages[messages.length - 1] = { role: 'user', content: [...blocks, { type: 'text', text: note }] }
+  } else {
+    messages.push({ role: 'user', content: note })
+  }
+}
+
+export type ReceptionistRunOptions = Parameters<typeof runOnce>[1]
+
+/**
+ * One reply (runOnce), tried once more on `fallbackModel` when it came back
+ * with nothing to send. Only when the first try did nothing a second could
+ * repeat: no visit booked or cancelled, nobody handed over.
+ */
+export async function runReceptionistModel(client: Anthropic, opts: ReceptionistRunOptions): Promise<ReceptionistRun> {
+  const first = await runOnce(client, opts)
+  const fallback = opts.fallbackModel
+  if (!fallback || fallback === opts.model || !first.refused || first.handedOver || replyActed(first.toolUses)) return first
+  try {
+    const second = await runOnce(client, { ...opts, model: fallback })
+    return {
+      ...second,
+      model: fallback,
+      checks: [...first.checks, 'retried_on_fallback_model', ...second.checks],
+      toolUses: [...first.toolUses, ...second.toolUses],
+      usage: {
+        inputTokens: first.usage.inputTokens + second.usage.inputTokens,
+        outputTokens: first.usage.outputTokens + second.usage.outputTokens,
+        cacheReadTokens: first.usage.cacheReadTokens + second.usage.cacheReadTokens,
+        cacheWriteTokens: first.usage.cacheWriteTokens + second.usage.cacheWriteTokens,
+        cacheWrite1hTokens: first.usage.cacheWrite1hTokens + second.usage.cacheWrite1hTokens,
+        rounds: first.usage.rounds + second.usage.rounds,
+      },
+    }
+  } catch (err) {
+    console.error(`[receptionist] the retry on ${fallback} failed for ${opts.logLabel}:`, (err as Error)?.message ?? err)
+    return first
+  }
+}
+
+async function runOnce(
   client: Anthropic,
   opts: {
     model: string
@@ -206,6 +292,14 @@ export async function runReceptionistModel(
      * person anyway. Its reason comes back as `handedOver`.
      */
     handOver?: boolean
+    /**
+     * A handover decided before the model was asked, with its reason (a
+     * form answer describing a worsening symptom: formSymptomToHandOver).
+     * The reply goes with it whether or not the model called
+     * hand_over_to_colleague, and book_appointment is refused meanwhile.
+     * Only with `handOver`: a draft is read by a person anyway.
+     */
+    mustHandOver?: string | null
     /**
      * Offer book_appointment (receptionistBooking.ts): only when the reply is
      * sent without review, so a calendar change is never made behind a draft
@@ -229,7 +323,21 @@ export async function runReceptionistModel(
      * handler is built by the caller with `onOffered`, which this passes the
      * times to keep for the send.
      */
-    offerTimes?: ((onOffered: (slots: OfferedSlot[]) => void) => (input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    offerTimes?: ((onOffered: (slots: OfferedSlot[], offer?: OfferDraft | null) => void) => (input: unknown, hints?: OfferHints) => Promise<{ content: string; isError: boolean }>) | null
+    /** The language code-written words go out in: an offer or a confirmation the model left unsaid. Spanish when not given. */
+    language?: SlotLanguage
+    /**
+     * Tried once more on this model when the reply comes back with nothing
+     * to send -- refused, withheld by a check, or empty -- and nothing was
+     * done that a second try could do twice (receptionistFallbackModel).
+     */
+    fallbackModel?: string | null
+    /**
+     * A visit the code booked or moved before the model was asked
+     * (acceptOfferedTime), whose confirmation is the model's to word: counted
+     * as this reply's own booking by every check.
+     */
+    alreadyBooked?: { input: Record<string, unknown>; details: BookedDetails } | null
     /** Offer write_back_on (receptionistBooking.ts): same terms as `book`. */
     writeBack?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer stop_earlier_time_offers (receptionistBooking.ts): a clinic offering earlier first visits, same terms as `book`. */
@@ -262,12 +370,19 @@ export async function runReceptionistModel(
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, rounds: 0 }
   let choices: ReceptionistRun['choices'] = null
   let offeredSlots: OfferedSlot[] = []
-  const offerTimes = opts.offerTimes ? opts.offerTimes((slots) => { offeredSlots = slots }) : null
+  // Set from offer_times' handler: declared wide, or it reads as never null here.
+  let offer = null as OfferDraft | null
+  const offerTimes = opts.offerTimes ? opts.offerTimes((slots, resolved) => { offeredSlots = slots; offer = resolved ?? null }) : null
+  // Whose times it last looked up (find_free_times), for offer_times to check the same diary.
+  let lookedUp: OfferHints = {}
+  // What book_appointment booked or moved in this reply.
+  let bookedDetails = (opts.alreadyBooked?.details ?? null) as BookedDetails | null
+  const language: SlotLanguage = opts.language ?? 'es'
   // Times to tap go only with a reply that still offers them: one that booked
   // or moved a visit has nothing left to choose, and "no reply" sends nothing.
   const run = (text: string, refused: boolean): ReceptionistRun => {
     const sent = refused || !text || isNoReply(text) ? null : choices === 'times' && (bookedVisit || !offeredSlots.length) ? null : choices
-    return { text, refused, handedOver, toolUses, checks, usage, choices: sent, offeredSlots: sent === 'times' ? offeredSlots : [] }
+    return { text, refused, handedOver, toolUses, checks, usage, choices: sent, offeredSlots: sent === 'times' ? offeredSlots : [], offer: sent === 'times' ? offer : null, booked: bookedDetails }
   }
   // Every tool it called, in order, for the test panel's trace. The inputs
   // are the model's own (a date range, a time), never the clinic's data.
@@ -294,21 +409,34 @@ export async function runReceptionistModel(
     ...(opts.writeBack ? [WRITE_BACK_ON] : []),
   ]
   let handedOver: string | null = null
+  const mustHandOver = opts.handOver ? opts.mustHandOver?.trim() || null : null
   // A booking's confirmation names its time (and a move, the old one too; a
   // cancellation, the one that was): not an offer, so not counted.
-  let booked = false
+  let booked = Boolean(opts.alreadyBooked)
   // A visit booked or moved in this reply (not one cancelled): nothing is left to tap.
-  let bookedVisit = false
+  let bookedVisit = Boolean(opts.alreadyBooked)
   let rewritten = false
   // The times the booking tools confirmed in this reply, and whether a reply
   // stating a booking they did not make has already been sent back once.
   const done = new Set<string>()
+  if (opts.alreadyBooked) {
+    for (const t of clockTimes(JSON.stringify(opts.alreadyBooked.input))) done.add(t)
+    toolUses.push({ name: 'book_appointment', input: opts.alreadyBooked.input, ok: true })
+  }
   let claimRewritten = false
   // Whether a reply misstating the time of their own visit was sent back once.
   let timeRewritten = false
   // Whether a reply breaking the house style (styleProblems) was already
   // sent back once to be reworded.
   let styleRewritten = false
+  // A finished turn with no words in it. Haiku did this on 22 Nov 2026: it
+  // looked up the days a patient gave, called offer_times with two good
+  // times, and ended the next turn empty -- the times were already "said" to
+  // it. Empty reads as refused, so a move it had done right went to a person
+  // at 23:11 on a Sunday. Sent back once to write the reply; if it is empty
+  // again, the words it wrote beside its last offer_times call go instead.
+  let emptyRewritten = false
+  let offerWords = ''
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -339,13 +467,36 @@ export async function runReceptionistModel(
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
     if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
-      const text = cleanReply(
-        message.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join(''),
-      )
-      const offered = opts.maxTimesPerReply && !booked && !rewritten ? offeredTimeCount(text) : 0
+      let text = cleanReply(textOf(message.content))
+      // No words: what it did says what to send. The times it offered are
+      // data, and so is the visit it booked -- the words are written from
+      // them, at once, rather than asked for again or the person passed on
+      // for want of a sentence.
+      const offering = choices === 'times' && offeredSlots.length > 0 && !bookedVisit
+      if (!text && offering) {
+        text = offerWords && wordsMatchOffer(clockTimes(offerWords), offeredSlots, { standing: opts.standingTimes, max: opts.maxTimesPerReply }) ? offerWords : offerInWords(offer?.slots ?? offeredSlots, language)
+        checks.push(text === offerWords ? 'empty_offer_words_used' : 'empty_offer_in_code')
+      }
+      if (!text && bookedDetails && confirmationIsPlain(bookedDetails)) {
+        text = confirmationInWords(bookedDetails, language)
+        checks.push('empty_confirmation_in_code')
+      }
+      // Empty with nothing to write it from: asked for once more.
+      if (!text && !emptyRewritten) {
+        emptyRewritten = true
+        checks.push('empty_rewritten')
+        pushNote(messages, message.content, EMPTY_REPLY_NOTE)
+        continue
+      }
+      // The words under which the buttons go have to offer those times: one
+      // left out, or more times than the clinic allows, and the words are
+      // written from the buttons instead of sent back to be written again.
+      if (text && offering && !isNoReply(text) && !wordsMatchOffer(clockTimes(text), offeredSlots, { standing: opts.standingTimes, max: opts.maxTimesPerReply })) {
+        text = offerInWords(offer?.slots ?? offeredSlots, language)
+        checks.push('offer_words_in_code')
+      }
+      // Words that go with buttons were checked against them just above.
+      const offered = opts.maxTimesPerReply && !booked && !rewritten && !offering ? offeredTimeCount(text) : 0
       if (opts.maxTimesPerReply && offered > opts.maxTimesPerReply) {
         rewritten = true
         checks.push('times_rewritten')
@@ -408,9 +559,21 @@ export async function runReceptionistModel(
         handedOver = colleaguePromiseReason(promise)
         checks.push('promise_handed_over')
       }
+      // Decided before the model was asked (mustHandOver): it goes to a
+      // person with the reply, whatever the model made of it. Its own reason,
+      // when it gave one, is kept; a "no reply" has nothing to go with.
+      if (mustHandOver && !handedOver && reply && !isNoReply(reply)) {
+        handedOver = mustHandOver
+        checks.push('form_handed_over')
+      }
       return run(reply, false)
     }
 
+    // What it wrote beside an offer: the reply, should the turn after come back empty.
+    if (uses.some((use) => use.name === 'offer_times')) {
+      const words = cleanReply(textOf(message.content))
+      if (words) offerWords = words
+    }
     // The whole turn goes back, thinking blocks included and unchanged, and
     // every result in one message.
     messages.push({ role: 'assistant', content: message.content })
@@ -422,12 +585,18 @@ export async function runReceptionistModel(
       results.push(
         await (async (): Promise<Anthropic.ToolResultBlockParam> => {
         let result: { content: string; isError: boolean }
-        if (use.name === 'book_appointment' && opts.book) {
+        if (use.name === 'book_appointment' && opts.book && mustHandOver) {
+          result = { content: 'Not booked: what they wrote in the clinic\'s form goes to the chiropractor first. Do not say anything is booked and do not offer times: tell them the chiropractor will write to them.', isError: true }
+        } else if (use.name === 'book_appointment' && opts.book) {
           result = await opts.book(use.input).catch((err) => {
             console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
             return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
           })
-          if (!result.isError) { booked = true; bookedVisit = true }
+          if (!result.isError) {
+            booked = true
+            bookedVisit = true
+            bookedDetails = (result as { booked?: BookedDetails }).booked ?? null
+          }
         } else if (use.name === 'cancel_appointment' && opts.cancel) {
           result = await opts.cancel(use.input).catch((err) => {
             console.error('[receptionist] cancel_appointment failed:', (err as Error)?.message ?? err)
@@ -441,7 +610,7 @@ export async function runReceptionistModel(
           })
           if (!result.isError) choices = 'cancellation_reason'
         } else if (use.name === 'offer_times' && offerTimes) {
-          result = await offerTimes(use.input).catch((err) => {
+          result = await offerTimes(use.input, lookedUp).catch((err) => {
             console.error('[receptionist] offer_times failed:', (err as Error)?.message ?? err)
             return { content: 'The buttons cannot be sent. Offer the times in words only.', isError: true }
           })
@@ -482,16 +651,24 @@ export async function runReceptionistModel(
             console.error('[receptionist] find_free_times failed:', (err as Error)?.message ?? err)
             return { content: 'The calendar could not be read. Do not offer a time: say your colleague will confirm an exact time shortly.', isError: true }
           })
+          if (!result.isError) {
+            const looked = (use.input ?? {}) as { any_chiropractor?: unknown; chiropractor?: unknown; for_name?: unknown }
+            lookedUp = { anyChiropractor: looked.any_chiropractor === true, chiropractor: typeof looked.chiropractor === 'string' ? looked.chiropractor : null, forName: typeof looked.for_name === 'string' ? looked.for_name : null }
+          }
         } else if (use.name === 'hand_over_to_colleague' && opts.handOver) {
           const reason = String((use.input as { reason?: unknown })?.reason ?? '').trim().slice(0, 300)
           // The handover stands either way: a reason that says nothing is
           // asked for again, never a cause to lose the handover itself.
           if (handoverReasonSaysNothing(reason)) {
             handedOver = handedOver ?? UNEXPLAINED_HANDOVER_REASON
-            result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in the clinic's language: what the person needs and why you handed it over.`, isError: true }
+            result = { content: `Your colleagues have been told, but "${reason}" tells them nothing. Call hand_over_to_colleague again with the reason as one full sentence in Spanish: what the person needs and why you handed it over.`, isError: true }
           } else {
             handedOver = reason
-            result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
+            // Handed over for what their form said, not for what they asked:
+            // the question still gets its answer in the last message.
+            result = mustHandOver
+              ? { content: 'Done: the chiropractor has been told, and you will not answer in this conversation until someone at the clinic has. Now write your last message, in two parts: first answer what they asked in their last message (a price they asked for, in euros), then tell them you have passed what they described on to the chiropractor, who will write to them. Do not offer times and do not promise when.', isError: false }
+              : { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
           }
         } else {
           result = { content: `There is no tool called ${use.name}.`, isError: true }
@@ -515,7 +692,7 @@ const HAND_OVER: Anthropic.Tool = {
   input_schema: {
     type: 'object',
     properties: {
-      reason: { type: 'string', description: 'For your colleagues, in one short sentence in the clinic\'s language: what they need and why you handed it over.' },
+      reason: { type: 'string', description: 'For your colleagues, in one short sentence in Spanish whatever language the conversation is in: what they need and why you handed it over. It is shown to them as written, after "Motivo:".' },
     },
     required: ['reason'],
     additionalProperties: false,

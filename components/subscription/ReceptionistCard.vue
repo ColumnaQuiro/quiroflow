@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, RECEPTIONIST_TRIAL_REPLIES, receptionistExtraBlocks } from '~/utils/receptionistAllowance'
+import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, RECEPTIONIST_TRIAL_REPLIES, receptionistExtraCents, receptionistExtraReplies } from '~/utils/receptionistAllowance'
 
 // The AI receptionist on the Subscription page: whether the account has it
 // and why, this month's replies against the 1,000 included, and what the
@@ -37,7 +37,8 @@ const trialLimit = RECEPTIONIST_TRIAL_REPLIES
 const shownReplies = computed(() => (onTrialAllowance.value ? (props.trialReplies ?? null) : props.replies))
 const shownOf = computed(() => (onTrialAllowance.value ? trialLimit : RECEPTIONIST_INCLUDED_REPLIES))
 const percent = computed(() => (shownReplies.value === null ? 0 : Math.min(100, Math.round((shownReplies.value / shownOf.value) * 100))))
-const blocks = computed(() => receptionistExtraBlocks(props.replies ?? 0))
+const extra = computed(() => receptionistExtraReplies(props.replies ?? 0))
+const extraCost = computed(() => formatEur(receptionistExtraCents(props.replies ?? 0)))
 const charged = computed(() => props.includedBy === 'growth' || props.includedBy === 'addon')
 
 const pill = computed(() => {
@@ -77,13 +78,13 @@ const pill = computed(() => {
                 : t('Included while the trial lasts, with no charge for replies past the included ones.', 'Incluida mientras dure la prueba, sin cargo por las respuestas de más.') }}
           </template>
           <template v-else>
-            {{ t(`Past the ${included} included, each further 1,000 (or part of one) is ${blockPrice} + IVA, charged at the start of the next month.`, `Pasadas las ${included} incluidas, cada 1.000 más (o parte) son ${blockPrice} + IVA, cobrados a principios del mes siguiente.`) }}
+            {{ t(`Past the ${included} included, each reply is charged at ${blockPrice} + IVA per 1,000, only the ones used, on your next invoice.`, `Pasadas las ${included} incluidas, cada respuesta se cobra a ${blockPrice} + IVA cada 1.000, solo las que se usen, en la próxima factura.`) }}
           </template>
         </p>
-        <p v-if="blocks > 0" class="mt-2 rounded-ctl border border-warning-border bg-warning-bg px-2.5 py-1.5 text-[12px] text-warning-text" data-cy="subscription-receptionist-extra">
+        <p v-if="extra > 0" class="mt-2 rounded-ctl border border-warning-border bg-warning-bg px-2.5 py-1.5 text-[12px] text-warning-text" data-cy="subscription-receptionist-extra">
           {{ charged
-            ? t(`${blocks} extra ${blocks === 1 ? 'block' : 'blocks'} so far this month: ${formatEur(blocks * RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`, `${blocks} ${blocks === 1 ? 'bloque' : 'bloques'} de más este mes: ${formatEur(blocks * RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`)
-            : t(`${blocks} extra ${blocks === 1 ? 'block' : 'blocks'} this month, not charged.`, `${blocks} ${blocks === 1 ? 'bloque' : 'bloques'} de más este mes, sin cargo.`) }}
+            ? t(`${extra.toLocaleString('es-ES')} extra ${extra === 1 ? 'reply' : 'replies'} so far this month: ${extraCost} + IVA.`, `${extra.toLocaleString('es-ES')} ${extra === 1 ? 'respuesta' : 'respuestas'} de más este mes: ${extraCost} + IVA.`)
+            : t(`${extra.toLocaleString('es-ES')} extra ${extra === 1 ? 'reply' : 'replies'} this month, not charged.`, `${extra.toLocaleString('es-ES')} ${extra === 1 ? 'respuesta' : 'respuestas'} de más este mes, sin cargo.`) }}
         </p>
         <NuxtLink to="/growth/receptionist" class="mt-3 inline-flex text-[12.5px] font-semibold text-brand-text hover:text-brand-hover">{{ t('Set it up, and a monthly ceiling →', 'Configurarla, y un tope mensual →') }}</NuxtLink>
       </template>

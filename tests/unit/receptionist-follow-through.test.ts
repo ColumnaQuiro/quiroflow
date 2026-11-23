@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { asksToChangeVisit, asksWhetherToCancel, cancelQuestionDue, offersTimes, chosenOfferedTime, chosenTimeNote, handoverReasonSaysNothing, isUnheardVoiceNote, offeredTimes, sendFailedReason, VOICE_NOTE_REPLY } from '../../utils/receptionistFollowThrough'
 import { BASE_BEHAVIOUR, BASE_ESCALATIONS } from '../../utils/receptionistBaseRules'
 import { CONFIRM_BEFORE_BOOKING, phoneSharersSection } from '../../utils/receptionistTypes'
-import { VOICE_NOTE_TRANSCRIPT_MARK } from '../../utils/receptionistHistory'
+import { COLLEAGUE_MARK, historyMarkersSection, VOICE_NOTE_TRANSCRIPT_MARK } from '../../utils/receptionistHistory'
 
 // What the receptionist decides in code rather than leaving to the prompt
 // (utils/receptionistFollowThrough.ts), from the daily review of 2-6 Nov 2026.
@@ -212,5 +212,35 @@ describe('handoverReasonSaysNothing', () => {
     for (const reason of ['Quiere cancelar', 'Pregunta por una factura de octubre.', 'Wants a refund', 'Llega tarde a su cita de las 15:00 y pregunta si puede venir.']) {
       expect(handoverReasonSaysNothing(reason), reason).toBe(false)
     }
+  })
+})
+
+// A colleague offered two times, the patient took one, and the receptionist
+// handed it back to a person instead of moving the visit (23 Nov 2026).
+describe('A time a colleague offered', () => {
+  const offer = `${COLLEAGUE_MARK}\nBuenos dias, como tendrias el martes 1 a las 19:15? Es lo mas tarde que tengo ese dia, o el miercoles 2 a las 19:30?`
+
+  it('reads the answer as one of the colleague\'s times', () => {
+    expect(chosenOfferedTime(offer, 'El miércoles 2 me viene genial')).toMatchObject({ weekday: 'miercoles', dayOfMonth: 2, time: '19:30' })
+  })
+
+  it('books it, and hands over only if it cannot be booked', () => {
+    const note = chosenTimeNote(chosenOfferedTime(offer, 'El miércoles 2 me viene genial')!, true, undefined, 'colleague')
+    expect(note).toContain('your colleague offered')
+    expect(note).toContain('miercoles 2 at 19:30')
+    expect(note).toContain('Book it now yourself with book_appointment')
+    expect(note).toContain('do not offer other times instead')
+  })
+
+  it('says so in the conversation marks too', () => {
+    const section = historyMarkersSection(true)
+    expect(section).toContain('If the patient accepts a time a colleague offered, book it yourself')
+    expect(section).not.toContain('if the patient accepts a time or an arrangement a colleague offered, call hand_over_to_colleague')
+  })
+
+  it('is unchanged for its own offers', () => {
+    const note = chosenTimeNote(chosenOfferedTime(offer, 'el 2')!, true)
+    expect(note).toContain('the times you offered in your last message')
+    expect(note).not.toContain('hand_over_to_colleague')
   })
 })

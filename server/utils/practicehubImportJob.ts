@@ -6,7 +6,7 @@ import { practiceHubClassicGet } from '~/server/utils/practicehubClassic'
 import { practicehubV3Get } from '~/server/utils/practicehubV3'
 import { dropPracticeHubPass, finishPracticeHubRead, loadPracticeHubPassList, loadPracticeHubSnapshot, savePracticeHubPage } from '~/server/utils/practicehubSnapshotStore'
 import { practiceHubFileServices } from '~/server/utils/practicehubFiles'
-import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
+import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_V3_API_PATHS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
 import type { ImportJob, ImportJobOptions } from '~/server/utils/importJobs'
 
@@ -115,7 +115,7 @@ async function readLists(
         Object.assign(state, { listIndex: (state.listIndex ?? 0) + 1, page: 1, pageCount: undefined, cursor: undefined })
         continue
       }
-      const res = await practicehubV3Get<V3Page>(v3, path, { sort: 'created_at:asc', page_size: '100', cursor: state.cursor ?? '' })
+      const res = await practicehubV3Get<V3Page>(v3, PRACTICEHUB_V3_API_PATHS[path] ?? path, { sort: 'created_at:asc', page_size: '100', cursor: state.cursor ?? '' })
       const rows = res.data ?? []
       await savePracticeHubPage(admin, accountId, state.pass!, path, page, rows)
       if (page === 1) {

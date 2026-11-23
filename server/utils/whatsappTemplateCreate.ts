@@ -342,6 +342,7 @@ const SETTINGS_USES = [
   { name: 'whatsapp_confirmation_template_name', language: 'whatsapp_confirmation_template_language', en: 'Appointment confirmation', es: 'Confirmación de cita' },
   { name: 'whatsapp_reminder_template_name', language: 'whatsapp_reminder_template_language', en: 'Appointment reminder', es: 'Recordatorio de cita' },
   { name: 'whatsapp_recall_template_name', language: 'whatsapp_recall_template_language', en: 'Recall', es: 'Revisión' },
+  { name: 'whatsapp_invoice_template_name', language: 'whatsapp_invoice_template_language', en: 'Receipts and invoices', es: 'Recibos y facturas' },
   { name: 'online_booking_notify_whatsapp_template_name', language: 'online_booking_notify_whatsapp_template_language', en: 'New booking alert', es: 'Aviso de reserva' },
   { name: 'new_lead_notify_whatsapp_template_name', language: 'new_lead_notify_whatsapp_template_language', en: 'New lead alert', es: 'Aviso de lead' },
 ] as const

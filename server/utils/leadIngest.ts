@@ -3,6 +3,7 @@ import { definedOnly } from '~/server/utils/publicApiBody'
 import { insertLead, type LEAD_CHANNELS } from '~/server/utils/leads'
 import { sequenceRunForSamePerson, startLeadSequence } from '~/server/utils/automationEngine'
 import { hasGrowth } from '~/server/utils/requireGrowth'
+import { FOLD_WINDOW_DAYS, whatsAppLeadToFoldInto, type FoldCandidate } from '~/utils/leadFold'
 
 // Filing an enquiry, once it has been read and checked.
 //
@@ -119,44 +120,122 @@ export async function fileLead(supabase: any, accountId: string, lead: LeadToFil
   const existing = await alreadyFiled()
   if (existing) return existing
 
-  const insert = definedOnly({
-    full_name: lead.fullName,
-    phone: lead.phone,
-    email: lead.email,
-    clinic_id: lead.clinicId,
-    channel: lead.channel,
-    source: lead.source,
-    estimated_value_cents: lead.estimatedValueCents,
-    stage: lead.stage,
-    external_id: lead.externalId,
-    external_source: externalSource,
-    // Dated to when they actually agreed, which is when they submitted --
-    // not when the webhook reached us, which can be minutes or hours later.
-    marketing_consent_at: lead.consented ? (lead.occurredAt ?? new Date().toISOString()) : undefined,
-    marketing_consent_source: lead.consented ? (lead.consentSource ?? externalSource ?? 'form') : undefined,
-    // Handed to the receptionist when the clinic has switched it on.
-    //
-    // Leads have always been created 'none', and the only thing that ever
-    // changed that is a button in the Inbox. So the tick that drafts replies
-    // -- which looks for 'handling' -- had nothing to do on any lead in any
-    // clinic, while the switch said the receptionist reads real enquiries.
-    // This is what makes that switch true.
-    ai_state: (await receptionistHandlesNewLeads(supabase, accountId)) ? 'handling' : undefined,
-  })
-
-  const { data: created, error } = await insertLead(supabase, accountId, insert as never, 'id, reference, stage, created_at')
-
-  if (error) {
-    // The same submission delivered twice at once: both passed the check
-    // above, and the unique index let exactly one of them in. That one is
-    // the lead, and this request is the redelivery.
-    if (error.code === '23505') {
-      const raced = await alreadyFiled()
-      if (raced) return raced
-    }
-    throw new Error(error.message)
+  // The person may already be a lead: an ad form that ends in WhatsApp has
+  // them write before the form reaches us (utils/leadFold.ts). Filed onto
+  // that lead instead, everything below -- attribution, answers, alert --
+  // lands where the conversation is, and the receptionist reads it as an ad
+  // lead.
+  const folded = await foldIntoWhatsAppLead()
+  if (folded === 'raced') {
+    const raced = await alreadyFiled()
+    if (raced) return raced
   }
-  const filed = created as { id: string; reference: string; stage: string; created_at: string }
+  const onto = folded && folded !== 'raced' ? folded : null
+  const created = onto ? null : await insertNew()
+  if (created?.deduplicated) return created
+  const filed = (onto ?? created)!
+
+  async function foldIntoWhatsAppLead(): Promise<(FiledLead & { aiHandling: boolean }) | 'raced' | null> {
+    if (!lead.phone) return null
+    const since = new Date(Date.now() - FOLD_WINDOW_DAYS * 86_400_000).toISOString()
+    const { data: candidates, error: readError } = await loose(supabase)
+      .from('leads')
+      .select('id, reference, phone, stage, patient_id, external_source, ai_state, created_at, email, clinic_id')
+      .eq('account_id', accountId)
+      .eq('external_source', 'whatsapp')
+      .is('deleted_at', null)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (readError) {
+      console.error(`[${logTag}] could not look for a WhatsApp lead to file the form onto:`, readError.message)
+      return null
+    }
+    type Candidate = FoldCandidate & { reference: string; ai_state: string | null; email: string | null; clinic_id: string | null }
+    const match = whatsAppLeadToFoldInto((candidates ?? []) as Candidate[], lead.phone)
+    if (!match) return null
+
+    // Only what the WhatsApp message could not have told us. The name is the
+    // one they typed into the form, not their WhatsApp profile's ("Vic" was
+    // greeted instead of the "victoria" she wrote). Channel and stage stay:
+    // the conversation is on WhatsApp, and they have already written. The
+    // external id becomes the form's, so Meta redelivering it finds this
+    // lead; their next message still finds it by its number.
+    const update = definedOnly({
+      full_name: lead.fullName,
+      email: match.email ? undefined : lead.email,
+      clinic_id: match.clinic_id ? undefined : lead.clinicId,
+      source: lead.source,
+      estimated_value_cents: lead.estimatedValueCents,
+      external_id: lead.externalId,
+      external_source: externalSource,
+      marketing_consent_at: lead.consented ? (lead.occurredAt ?? new Date().toISOString()) : undefined,
+      marketing_consent_source: lead.consented ? (lead.consentSource ?? externalSource ?? 'form') : undefined,
+    })
+    // Only while it is still a WhatsApp lead: a second delivery of this form
+    // arriving at the same moment finds it already filed, and is the
+    // redelivery.
+    const { data: updated, error } = await loose(supabase)
+      .from('leads')
+      .update(update as never)
+      .eq('id', match.id)
+      .eq('external_source', 'whatsapp')
+      .select('id')
+    if (error) {
+      console.error(`[${logTag}] could not file the form onto WhatsApp lead`, match.id, error.message)
+      return null
+    }
+    if (!(updated ?? []).length) return 'raced'
+    await loose(supabase).from('lead_events').insert({
+      account_id: accountId,
+      lead_id: match.id,
+      kind: 'note',
+      title: 'Form joined to this conversation',
+      detail: 'They filled in the form and wrote on WhatsApp: one lead, not two.',
+    } as never)
+    return { id: match.id, reference: match.reference, stage: match.stage, created_at: match.created_at, deduplicated: false, aiHandling: match.ai_state === 'handling' }
+  }
+
+  async function insertNew(): Promise<FiledLead> {
+    const insert = definedOnly({
+      full_name: lead.fullName,
+      phone: lead.phone,
+      email: lead.email,
+      clinic_id: lead.clinicId,
+      channel: lead.channel,
+      source: lead.source,
+      estimated_value_cents: lead.estimatedValueCents,
+      stage: lead.stage,
+      external_id: lead.externalId,
+      external_source: externalSource,
+      // Dated to when they actually agreed, which is when they submitted --
+      // not when the webhook reached us, which can be minutes or hours later.
+      marketing_consent_at: lead.consented ? (lead.occurredAt ?? new Date().toISOString()) : undefined,
+      marketing_consent_source: lead.consented ? (lead.consentSource ?? externalSource ?? 'form') : undefined,
+      // Handed to the receptionist when the clinic has switched it on.
+      //
+      // Leads have always been created 'none', and the only thing that ever
+      // changed that is a button in the Inbox. So the tick that drafts replies
+      // -- which looks for 'handling' -- had nothing to do on any lead in any
+      // clinic, while the switch said the receptionist reads real enquiries.
+      // This is what makes that switch true.
+      ai_state: (await receptionistHandlesNewLeads(supabase, accountId)) ? 'handling' : undefined,
+    })
+
+    const { data: created, error } = await insertLead(supabase, accountId, insert as never, 'id, reference, stage, created_at')
+
+    if (error) {
+      // The same submission delivered twice at once: both passed the check
+      // above, and the unique index let exactly one of them in. That one is
+      // the lead, and this request is the redelivery.
+      if (error.code === '23505') {
+        const raced = await alreadyFiled()
+        if (raced) return raced
+      }
+      throw new Error(error.message)
+    }
+    return { ...(created as { id: string; reference: string; stage: string; created_at: string }), deduplicated: false }
+  }
 
   // From here on the lead exists, and nothing may turn that into an error:
   // the caller would retry, meet the lead by external_id and be told
@@ -213,6 +292,21 @@ export async function fileLead(supabase: any, accountId: string, lead: LeadToFil
       .eq('enabled', true)
 
     for (const rule of (rules ?? []) as { id: string; name: string | null }[]) {
+      // One voice per person. Somebody the receptionist is already talking
+      // to on WhatsApp does not also get the welcome drip: the two wrote over
+      // each other, the drip welcoming at 9:00 somebody offered times at
+      // midnight, neither seeing the other (22 Nov 2026). Where the
+      // receptionist is off, the drip is the only one writing, and starts.
+      if (onto?.aiHandling) {
+        await loose(supabase).from('lead_events').insert({
+          account_id: accountId,
+          lead_id: filed.id,
+          kind: 'note',
+          title: 'Automation not started',
+          detail: `"${rule.name ?? 'Automation'}" did not start: the AI receptionist is already answering them on WhatsApp.`,
+        } as never)
+        continue
+      }
       // The same person filling in the form again is a second lead, kept --
       // but not a second copy of a drip they are already part-way through.
       // Said on the new lead's timeline, so nobody wonders why it got nothing.
@@ -243,5 +337,5 @@ export async function fileLead(supabase: any, accountId: string, lead: LeadToFil
     console.error(`[${logTag}] new lead notification failed:`, (err as Error)?.message ?? err)
   }
 
-  return { ...filed, deduplicated: false }
+  return { id: filed.id, reference: filed.reference, stage: filed.stage, created_at: filed.created_at, deduplicated: false }
 }

@@ -9,7 +9,7 @@
 //
 // Pure, with no `~` imports: the app auto-imports this directory too, and in
 // its build `~` resolves to mobile/.
-import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange } from './bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange, type OnlineBookingWindows } from './bookingSlots'
 import { practitionerHoursAt, type BusinessHours, type LocationHours } from './businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from './clinicClock'
 import type { PromptType } from './receptionistTypes'
@@ -36,6 +36,11 @@ export interface SlotType extends PromptType {
   durationByPractitioner?: Record<string, number>
   /** appointment_types.practitioner_ids: only these do it; empty or absent for everyone. */
   practitionerIds?: string[] | null
+  /**
+   * appointment_types.online_booking_windows: offered only at these times, as
+   * on the booking page; null or absent for any free time.
+   */
+  onlineWindows?: OnlineBookingWindows | null
 }
 
 export interface SlotAppointment extends BookingBusyRange {
@@ -194,6 +199,7 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
             busy: busy.get(p.id) ?? [],
             notBefore,
             notAfter: windowEnd,
+            type: { windows: type.onlineWindows, practitionerId: p.id },
           })
           for (const at of slots) {
             starts.add(at.getTime())

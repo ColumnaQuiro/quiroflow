@@ -33,10 +33,63 @@ export function weekdayKeyOf(date: string): string {
   return DAY_KEYS[new Date(`${date}T00:00:00Z`).getUTCDay()]
 }
 
-/** The hours a practitioner works on a calendar date: practitionerWindowsForDay, keyed by the date itself. */
-export function bookingWindowsFor(date: string, clinicHours: BusinessHours | null | undefined, practitionerHours: BusinessHours | null | undefined): [string, string][] {
+/**
+ * appointment_types.online_booking_windows: the times a type can be booked
+ * online (20261122184746_appointment_type_booking_windows.sql), PracticeHub's
+ * "special" slots. Null for whenever the practitioner is free.
+ *
+ * A practitioner with a week of their own in `practitioners` uses it; everyone
+ * else uses `all`. Each week is the shape of clinics.business_hours, and a day
+ * with no window is a day the type is not offered online.
+ */
+export interface OnlineBookingWindows {
+  all?: BusinessHours | null
+  practitioners?: Record<string, BusinessHours> | null
+}
+
+/** Which practitioner, on which type's windows: what narrows the hours to a type's online times. */
+export interface TypeWindowsFor {
+  windows: OnlineBookingWindows | null | undefined
+  practitionerId: string | null | undefined
+}
+
+/**
+ * The windows a type can be booked online on one weekday for one practitioner,
+ * or null when it has none (no restriction). online_booking_windows_on in the
+ * migration is the same rule.
+ */
+export function typeWindowsOn(windows: OnlineBookingWindows | null | undefined, day: string, practitionerId: string | null | undefined): [string, string][] | null {
+  if (!windows || typeof windows !== 'object') return null
+  const own = practitionerId ? windows.practitioners?.[practitionerId] : undefined
+  const week = own && typeof own === 'object' ? own : (windows.all ?? {})
+  const today = week[day]
+  return Array.isArray(today) ? today : []
+}
+
+/** Where two lists of "HH:MM" windows overlap, in order. */
+export function intersectWindows(a: [string, string][], b: [string, string][]): [string, string][] {
+  const out: [string, string][] = []
+  for (const [s1, e1] of a) {
+    for (const [s2, e2] of b) {
+      const s = s1 > s2 ? s1 : s2
+      const e = e1 < e2 ? e1 : e2
+      if (s < e) out.push([s, e])
+    }
+  }
+  return out.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+}
+
+/**
+ * The hours a practitioner works on a calendar date: practitionerWindowsForDay,
+ * keyed by the date itself. With `type`, only the part of them that type can be
+ * booked online in -- the slots then step from the start of that overlap, as
+ * assert_booking_type_window accepts them.
+ */
+export function bookingWindowsFor(date: string, clinicHours: BusinessHours | null | undefined, practitionerHours: BusinessHours | null | undefined, type?: TypeWindowsFor | null): [string, string][] {
   const day = weekdayKeyOf(date)
-  return practitionerWindowsForDay(clinicHours?.[day] ?? [], practitionerHours, day)
+  const working = practitionerWindowsForDay(clinicHours?.[day] ?? [], practitionerHours, day)
+  const only = type ? typeWindowsOn(type.windows, day, type.practitionerId) : null
+  return only ? intersectWindows(working, only) : working
 }
 
 export interface BookingSlotQuery {
@@ -52,6 +105,12 @@ export interface BookingSlotQuery {
   notBefore?: Date
   /** Only starts at or before this, when set (the booking horizon). */
   notAfter?: Date
+  /**
+   * The appointment type's online windows and whose slots these are, for what
+   * a patient is offered. Staff screens leave it out: the desk books a type at
+   * any time.
+   */
+  type?: TypeWindowsFor | null
 }
 
 /**
@@ -67,7 +126,7 @@ export function bookingSlotsForDay(q: BookingSlotQuery): Date[] {
   const notAfter = q.notAfter?.getTime()
   const busy = q.busy.map((b) => ({ start: Date.parse(b.starts_at), end: Date.parse(b.ends_at) }))
   const out: Date[] = []
-  for (const [open, close] of bookingWindowsFor(q.date, q.clinicHours, q.practitionerHours)) {
+  for (const [open, close] of bookingWindowsFor(q.date, q.clinicHours, q.practitionerHours, q.type)) {
     const windowEnd = wallClockToUtc(q.date, close, timeZone)
     for (let cursor = wallClockToUtc(q.date, open, timeZone); cursor + duration <= windowEnd; cursor += duration) {
       if (cursor <= notBefore) continue
@@ -118,7 +177,7 @@ export function staffDayTimes(q: BookingSlotQuery & { extra?: Date[]; earliest?:
   while (first - step >= earliest) first -= step
   const starts = new Set<number>()
   for (let at = first; at + duration <= latest; at += step) starts.add(at)
-  for (const d of bookingSlotsForDay(q)) starts.add(d.getTime())
+  for (const d of bookingSlotsForDay({ ...q, type: null })) starts.add(d.getTime())
   for (const d of q.extra ?? []) starts.add(d.getTime())
   return [...starts]
     .filter((at) => at > notBefore && (q.notAfter === undefined || at <= q.notAfter.getTime()))

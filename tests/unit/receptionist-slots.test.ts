@@ -46,6 +46,11 @@ describe('Receptionist free times', () => {
     ])
   })
 
+  it("offers a type only at its online booking times, as the booking page does", () => {
+    const q: ReceptionistSlotQuery = { ...base, types: [{ id: 't1', name: 'Primera visita', durationMinutes: 60, onlineWindows: { all: { tue: [['10:00', '11:00']] } } }] }
+    expect(days(q)).toEqual([[{ date: '2026-10-06', times: ['10:00'] }]])
+  })
+
   it('leaves out appointments and blocks, the way the public API does', () => {
     const q: ReceptionistSlotQuery = {
       ...base,

@@ -10517,6 +10517,16 @@
   "Bonos & credit": "Pakete und Guthaben",
   "Collect": "Kassieren",
   "Entry": "Buchung",
-  "Nothing of this kind on this account.": "Keine Buchungen dieser Art auf diesem Konto."
+  "Nothing of this kind on this account.": "Keine Buchungen dieser Art auf diesem Konto.",
+  "When it is offered": "Wann er angeboten wird",
+  "At any free time": "Zu jeder freien Zeit",
+  "Online it is only offered inside these times, and only when the practitioner is also working. The team can still book it at any time from the calendar.": "Online wird er nur in diesen Zeiten angeboten, und nur, wenn die behandelnde Person dann auch arbeitet. Das Team kann ihn im Kalender weiterhin jederzeit buchen.",
+  "No times yet: until you add one it is not offered online, except with a practitioner who has times of their own.": "Noch keine Zeiten: Bis Sie eine hinzufügen, wird er online nicht angeboten, außer bei einer behandelnden Person mit eigenen Zeiten.",
+  "Other times for one practitioner": "Andere Zeiten für eine behandelnde Person",
+  "Same as everyone": "Wie bei allen",
+  "Set their own": "Eigene festlegen",
+  "No times yet: it is not offered online with them.": "Noch keine Zeiten: Bei dieser Person wird er online nicht angeboten.",
+  "At any free time in the practitioner's hours. Set times if it is only booked online in certain slots, like first visits.": "Zu jeder freien Zeit in den Arbeitszeiten der behandelnden Person. Legen Sie Zeiten fest, wenn er online nur in bestimmten Terminen gebucht wird, etwa Erstbesuche.",
+  "Only at set times": "Nur zu festen Zeiten"
  }
 }

@@ -2449,6 +2449,7 @@ export type Database = {
           name: string
           online_bookable_by: string
           online_booking_enabled: boolean
+          online_booking_windows: Json | null
           online_bypass_practitioner: boolean
           online_deposit_cents: number | null
           online_description: string | null
@@ -2472,6 +2473,7 @@ export type Database = {
           name: string
           online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_booking_windows?: Json | null
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_description?: string | null
@@ -2495,6 +2497,7 @@ export type Database = {
           name?: string
           online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_booking_windows?: Json | null
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_description?: string | null
@@ -11483,6 +11486,13 @@ export type Database = {
       generate_unique_account_slug: {
         Args: { base_name: string }
         Returns: string
+      }
+      get_appointment_type_booking_windows: {
+        Args: { p_type_ids: string[] }
+        Returns: {
+          appointment_type_id: string
+          online_booking_windows: Json
+        }[]
       }
       get_booking_blocked_times: {
         Args: { p_clinic_id: string; p_from: string; p_to: string }

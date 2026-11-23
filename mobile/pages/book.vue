@@ -67,7 +67,7 @@ interface RescheduleTarget {
   practitioner_id: string
   starts_at: string
   ends_at: string
-  appointment_types: { name: string; online_max_days_ahead: number | null } | null
+  appointment_types: { name: string; online_max_days_ahead: number | null; online_booking_windows?: OnlineBookingWindows | null } | null
   team_members: { full_name: string } | null
 }
 
@@ -105,6 +105,15 @@ const teamMemberId = ref('')
 // The week per location of whoever works at more than one clinic
 // (get_practitioner_location_hours). Empty for everybody else.
 const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+// The times each type can be booked online, for the types that have them
+// (get_appointment_type_booking_windows); a move reads its own type's. Either
+// way they narrow the practitioner's hours to the times the type is offered,
+// as assert_booking_type_window does when it books.
+const typeWindows = ref<Record<string, OnlineBookingWindows>>({})
+const slotTypeWindows = computed(() => ({
+  windows: rescheduleTarget.value ? (rescheduleTarget.value.appointment_types?.online_booking_windows ?? null) : (typeWindows.value[appointmentTypeId.value] ?? null),
+  practitionerId: teamMemberId.value,
+}))
 
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
@@ -179,7 +188,7 @@ onMounted(async () => {
     return
   }
   info.value = parsed
-  await loadLocationHours(parsed)
+  await Promise.all([loadLocationHours(parsed), loadTypeWindows(parsed)])
 
   if (rescheduleId.value) {
     await startReschedule(parsed)
@@ -204,6 +213,15 @@ async function loadLocationHours(parsed: BookingInfo) {
   locationHours.value = (data as unknown as typeof locationHours.value | null) ?? []
 }
 
+// If this fails (or the database predates 20261122184746) every free time is
+// offered as before, and create_patient_booking refuses one outside a window.
+async function loadTypeWindows(parsed: BookingInfo) {
+  const ids = parsed.appointment_types.map((t) => t.id)
+  if (!ids.length) return
+  const { data } = await supabase.rpc('get_appointment_type_booking_windows', { p_type_ids: ids })
+  typeWindows.value = Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_booking_windows as OnlineBookingWindows]))
+}
+
 function onClinicChange() {
   teamMemberId.value = availablePractitioners.value.length === 1 || bypassPractitioner.value ? (availablePractitioners.value[0]?.id ?? '') : ''
 }
@@ -214,7 +232,7 @@ function onClinicChange() {
 async function startReschedule(parsed: BookingInfo) {
   const { data } = await supabase
     .from('appointments')
-    .select('id, clinic_id, practitioner_id, starts_at, ends_at, appointment_types(name, online_max_days_ahead), team_members(full_name)')
+    .select('id, clinic_id, practitioner_id, starts_at, ends_at, appointment_types(name, online_max_days_ahead, online_booking_windows), team_members(full_name)')
     .eq('id', rescheduleId.value!)
     .maybeSingle()
   const target = data as unknown as RescheduleTarget | null
@@ -308,7 +326,7 @@ const calendarDays = computed(() => {
 function dayHasHours(date: Date) {
   const hours = clinic.value?.business_hours
   if (!hours) return false
-  return bookingWindowsFor(calendarDateKey(date), hours, slotPractitioner.value?.business_hours).length > 0
+  return bookingWindowsFor(calendarDateKey(date), hours, slotPractitioner.value?.business_hours, slotTypeWindows.value).length > 0
 }
 
 function prevMonth() {
@@ -376,6 +394,7 @@ const daySlots = computed(() => {
     busy: busyRanges.value,
     notBefore: earliestStart.value,
     notAfter: latestStart.value,
+    type: slotTypeWindows.value,
   })
 })
 

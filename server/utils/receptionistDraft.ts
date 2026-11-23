@@ -366,9 +366,11 @@ export async function draftLeadReply(
 
   // Their answer can only be one of the times it just offered: said so in the
   // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
-  const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ourLast?.automated ? ours.body_preview ?? '' : ''
+  // A colleague's offer as much as its own: accepted, either is booked.
+  const offer = ours && ours.direction === 'outbound' && !ourLast?.automated ? ours.body_preview ?? '' : ''
+  const offeredBy = ours?.sent_by_ai === true ? 'you' as const : 'colleague' as const
   const chosen = offer ? chosenOfferedTime(offer, ordered.slice(lastOutbound + 1).filter((m: { direction: string }) => m.direction === 'inbound').map((m: { body_preview: string | null }) => m.body_preview ?? '').join(' ')) : null
-  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined)}` } : prompt)
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book), ours ? { sentOn: clinicDateOf(new Date(ours.created_at), calendar.timeZone), today: clinicDateOf(new Date(), calendar.timeZone) } : undefined, offeredBy)}` } : prompt)
 
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.

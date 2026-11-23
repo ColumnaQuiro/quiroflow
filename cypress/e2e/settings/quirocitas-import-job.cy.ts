@@ -66,4 +66,39 @@ describe('Quirocitas import running on the server', () => {
       })
     })
   })
+
+  // A slice cut off by the platform (out of time or memory) never reaches its
+  // save and throws nothing, so it used to be retried every two minutes for
+  // ever, the job "running" and every new import refused beside it. Each
+  // slice now marks the job before it works; one that finds the last four
+  // marks never cleared ends the job instead of trying a fifth time.
+  it('ends a job whose slices keep getting cut off, instead of retrying it for ever', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }[]>('db:insertRows', {
+        table: 'import_jobs',
+        rows: [{
+          account_id: account.accountId,
+          clinic_id: account.clinicId,
+          source: 'quirocitas',
+          steps: ['read', 'patients', 'appointments'],
+          step_index: 2,
+          status: 'running',
+          // Four slices claimed it and none of them saved.
+          progress: { unfinished: 4 },
+          locked_until: null,
+          started_by: account.teamMemberId,
+        }],
+      }).then(([job]) => {
+        cy.request({ method: 'POST', url: `/api/import/jobs/${job!.id}/slice`, headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' } })
+          .its('body').should('deep.include', { claimed: true, more: false })
+        cy.task<any[]>('db:selectRows', { table: 'import_jobs', columns: 'status, error, progress, locked_until, finished_at', match: { id: job!.id } }).then(([row]) => {
+          expect(row.status).to.eq('failed')
+          expect(row.error).to.contain('se cortaron antes de terminar')
+          expect(row.progress).not.to.have.property('unfinished')
+          expect(row.locked_until).to.eq(null)
+          expect(row.finished_at).to.be.a('string')
+        })
+      })
+    })
+  })
 })

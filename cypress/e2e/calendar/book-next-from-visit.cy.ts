@@ -3,9 +3,10 @@ import { SEEDED_PRACTITIONER, dateInputValue, seedVisit, todayAt } from '../../s
 
 // "Book next appointment" on an open visit. The end of a visit at the desk
 // is booking the one after it, so the visit's own panel opens the
-// new-appointment panel on the same patient, practitioner and type, a week on
-// at the same time. It is the filled button once the visit is processed and
-// a quiet one before, because some clinics process later.
+// new-appointment panel on the same patient, practitioner and type, at the
+// same time one care-plan interval on, or a week on with no plan. It is the
+// filled button once the visit is processed and a quiet one before, because
+// some clinics process later.
 
 interface Seeded { account: StaffAccount; followUp: string }
 
@@ -36,9 +37,9 @@ function openCalendar(account: StaffAccount) {
   cy.contains('select', 'Work week').select('day')
 }
 
-function nextWeek(): string {
+function inDays(days: number): string {
   const d = new Date()
-  d.setDate(d.getDate() + 7)
+  d.setDate(d.getDate() + days)
   return dateInputValue(d)
 }
 
@@ -60,7 +61,7 @@ describe('Book next appointment, from a visit', () => {
         chosen('[data-cy=create-type]').should('contain.text', 'Revisión')
         chosen('[data-cy=create-practitioner]').should('contain.text', SEEDED_PRACTITIONER)
         cy.get('[data-cy=create-when]').should('contain.text', '10:00')
-        cy.get('input[type=date]').first().should('have.value', nextWeek())
+        cy.get('input[type=date]').first().should('have.value', inDays(7))
       })
     })
   })
@@ -80,6 +81,28 @@ describe('Book next appointment, from a visit', () => {
         chosen('[data-cy=create-type]').should('contain.text', 'Revisión')
         chosen('[data-cy=create-practitioner]').should('contain.text', SEEDED_PRACTITIONER)
         cy.get('[data-cy=create-when]').should('contain.text', '12:30')
+      })
+    })
+  })
+
+  it("starts one care-plan interval on for a patient with a plan, and the date can still be changed", () => {
+    seed().then(({ account, followUp }) => {
+      // Twice a week: a visit every four days.
+      seedVisit(account, null, 'Carla', 'Conplan', 17, 30, { status: 'completed', checkedInAt: todayAt(17, 25), appointmentTypeId: followUp }).then(({ patientId }) => {
+        cy.task('db:createCarePlan', { accountId: account.accountId, patientId, totalVisits: 12, frequencyValue: 1, frequencyUnit: 'week', visitsPerPeriod: 2 })
+        openCalendar(account)
+        cy.contains('[data-cy=appt-block]', 'Carla Conplan').click()
+        cy.get('[data-cy=appt-sheet]').find('[data-cy=book-next]').click()
+
+        cy.get('[data-cy=create-sheet]').should('be.visible').within(() => {
+          cy.get('[data-cy=create-patient-selected]').should('contain.text', 'Carla Conplan')
+          cy.get('input[type=date]').first().should('have.value', inDays(4))
+          cy.get('[data-cy=create-when]').should('contain.text', '17:30')
+          // A suggestion, not a rule: any other day is one edit away.
+          cy.get('input[type=date]').first().clear().type(inDays(9))
+          cy.get('input[type=date]').first().should('have.value', inDays(9))
+          cy.get('[data-cy=create-patient-selected]').should('contain.text', 'Carla Conplan')
+        })
       })
     })
   })

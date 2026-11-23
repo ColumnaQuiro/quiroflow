@@ -438,11 +438,20 @@ const carePlanOptionLabel = computed(() =>
 // (utils/carePlanVisitMarkers.ts), numbered by the database against every
 // visit the patient already has. A single booking keeps the type the desk
 // picked and says so when it is not the plan's; a series ("repeat as the
-// plan") books each re-exam date as the plan's type itself.
-interface BookingMarker { starts_at: string; visit_number: number; label: string | null; expected_appointment_type_id: string | null; expected_type_name: string | null }
+// plan") books each re-exam date as the plan's type itself. The last visit
+// of a phase before a change of cadence comes back the same way, with
+// next_phase set and no type: a highlight that says what comes after.
+interface BookingMarker {
+  starts_at: string
+  visit_number: number
+  label: string | null
+  expected_appointment_type_id: string | null
+  expected_type_name: string | null
+  next_phase?: unknown
+}
 const bookingMarkers = ref<BookingMarker[]>([])
 async function markersFor(patientId: string, starts: Date[]): Promise<BookingMarker[]> {
-  const { data, error: e } = await supabase.rpc('care_plan_visit_markers_at', { p_patient_id: patientId, p_starts_at: starts.map((d) => d.toISOString()) })
+  const { data, error: e } = await supabase.rpc('care_plan_visit_markers_at', { p_patient_id: patientId, p_starts_at: starts.map((d) => d.toISOString()), p_with_phase_end: true })
   if (e) {
     console.error('booking: re-exam visits failed', e)
     return []
@@ -474,7 +483,7 @@ const markerTypeBookable = computed(() => props.appointmentTypes.some((x) => x.i
 const seriesMarkerLine = computed(() =>
   bookingMarkers.value
     .map((m) => {
-      const what = visitMarkerLabel({ label: m.label, expected_type_name: m.expected_type_name }, t)
+      const what = visitMarkerLabel(m, t)
       return `${m.visit_number} (${formatShortDate(m.starts_at)}) · ${what}`
     })
     .join(', '),
@@ -999,7 +1008,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         </div>
         <p v-else-if="isSeries && bookingMarkers.length" class="-mt-3 flex items-start gap-2 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2 text-[12.5px] text-brand-text" data-cy="create-series-markers">
           <CalendarVisitMarkerIcon :size="14" class="mt-0.5" />
-          <span>{{ t(`Re-exam visits in this series: ${seriesMarkerLine}. Booked as the plan's type where it has one.`, `Visitas de revisión en esta serie: ${seriesMarkerLine}. Se reservan con el tipo del plan si lo tiene.`) }}</span>
+          <span>{{ t(`Marked plan visits in this series: ${seriesMarkerLine}. Booked as the plan's type where it has one.`, `Visitas señaladas del plan en esta serie: ${seriesMarkerLine}. Se reservan con el tipo del plan si lo tiene.`) }}</span>
         </p>
 
         <!-- 3. With whom: working hours and bookings decide what is offered -->

@@ -8,6 +8,9 @@
 // one without only highlights it. The numbering and matching live in SQL
 // (care_plan_marked_visits, care_plan_visit_markers_at); markerForVisit is the
 // same rule as care_plan_marker_for, for the plan form's preview.
+import { carePlanCadenceLabel } from './carePlanCadence'
+import { readPhaseChange } from './carePlanPhases'
+
 export interface CarePlanVisitMarker {
   /** The first visit it falls on, 1-based. */
   at: number
@@ -35,12 +38,22 @@ export function markerVisitNumbers(m: CarePlanVisitMarker, count = 3): number[] 
   return Array.from({ length: count }, (_, i) => m.at + i * m.every!)
 }
 
-/** What a marked visit is called: its own label, else its type's name, else "Re-exam". */
+/**
+ * What a marked visit is called: its own label, else its type's name, else
+ * "Re-exam". A visit that ends the phase before a change of cadence
+ * (next_phase, migration care_plan_phase_change_marker) says so, and what
+ * comes after -- on its own when it is not also a re-exam.
+ */
 export function visitMarkerLabel(
-  marker: { label?: string | null; expected_type_name?: string | null } | null | undefined,
+  marker: { label?: string | null; expected_type_name?: string | null; next_phase?: unknown } | null | undefined,
   t: (en: string, es: string) => string,
 ): string {
-  return marker?.label?.trim() || marker?.expected_type_name?.trim() || t('Re-exam', 'Revisión')
+  const own = marker?.label?.trim() || marker?.expected_type_name?.trim()
+  const next = readPhaseChange(marker?.next_phase)
+  if (!next) return own || t('Re-exam', 'Revisión')
+  const cadence = carePlanCadenceLabel(next, t)
+  if (!own) return t(`Last visit of the phase · then ${cadence}`, `Última visita de la fase · después, ${cadence}`)
+  return `${own} · ${t(`last of the phase, then ${cadence}`, `última de la fase; después, ${cadence}`)}`
 }
 
 /** Whole numbers in range, empty labels dropped, at most MAX_VISIT_MARKERS -- what the check constraint accepts. */

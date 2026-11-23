@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanNextPhases, MAX_NEXT_PHASES, nextPhaseLabel, readNextPhases } from '../../utils/carePlanPhases'
+import { cleanNextPhases, MAX_NEXT_PHASES, nextCadenceChange, nextPhaseLabel, readNextPhases, readPhaseChange } from '../../utils/carePlanPhases'
 import { renewalDue } from '../../utils/planRenewal'
 
 const es = (_en: string, es: string) => es
@@ -39,5 +39,29 @@ describe("a care plan's next phases", () => {
     expect(renewalDue({ total_visits: 8 }, 7)).toBe(true)
     expect(renewalDue({ total_visits: 8, next_phases: [weekly] }, 7)).toBe(false)
     expect(renewalDue({ total_visits: 8, next_phases: [] }, 7)).toBe(true)
+  })
+
+  // care_plan_cadence_change: what marks the last visit of a phase.
+  it('is a change of frequency only when the next phase has another cadence', () => {
+    const twiceWeekly = { visits_per_period: 2, frequency_value: 1, frequency_unit: 'week', total_visits: 8 }
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [weekly] })).toEqual(weekly)
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [{ ...weekly, visits_per_period: 2 }] })).toBeNull()
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [{ ...weekly, visits_per_period: 2, frequency_value: 2 }] })?.frequency_value).toBe(2)
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [{ ...weekly, visits_per_period: 2, frequency_unit: 'month' }] })?.frequency_unit).toBe('month')
+    // Only the phase right after counts.
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [{ ...weekly, visits_per_period: 2 }, weekly] })).toBeNull()
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: [] })).toBeNull()
+    expect(nextCadenceChange({ ...twiceWeekly, next_phases: null })).toBeNull()
+    // A plan with no end never reaches a next phase.
+    expect(nextCadenceChange({ ...twiceWeekly, total_visits: null, next_phases: [weekly] })).toBeNull()
+    // visits_per_period missing reads as 1, as the column's default.
+    expect(nextCadenceChange({ frequency_value: 1, frequency_unit: 'week', visits_per_period: null, total_visits: 8, next_phases: [weekly] })).toBeNull()
+  })
+
+  it("reads a marker's next phase, or nothing", () => {
+    expect(readPhaseChange(weekly)).toEqual(weekly)
+    expect(readPhaseChange(null)).toBeNull()
+    expect(readPhaseChange([weekly])).toBeNull()
+    expect(readPhaseChange('weekly')).toBeNull()
   })
 })

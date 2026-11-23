@@ -4,8 +4,10 @@ import { defineConfig } from 'vitest/config'
 // Behaviour evals for the AI receptionist (tests/evals/receptionist): real
 // conversations, invented people, run against the real model. Not unit
 // tests -- they cost money and the model is not deterministic -- so they are
-// kept out of `npm run test:unit` and CI, and run by hand with
-// `npm run eval:receptionist` before a change to the prompt or the rules.
+// kept out of `npm run test:unit`. Run by hand with `npm run eval:receptionist`
+// before a change to the prompt or the rules, and by
+// .github/workflows/receptionist-evals.yml on every pull request that
+// touches the receptionist.
 export default defineConfig({
   esbuild: { tsconfigRaw: '{}' },
   resolve: {

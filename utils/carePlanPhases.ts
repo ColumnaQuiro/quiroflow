@@ -9,7 +9,7 @@
 // Only the last phase may have no end: one before it would never finish, so
 // nothing after it would start. The same rule is the check constraint
 // (care_plan_next_phases_valid), and a plan with no end queues nothing.
-import { carePlanCadenceLabel, type PlanCadence } from './carePlanCadence'
+import { carePlanCadenceLabel, planVisitsPerPeriod, type PlanCadence } from './carePlanCadence'
 
 export interface CarePlanNextPhase extends PlanCadence {
   visits_per_period: number
@@ -52,4 +52,25 @@ export function nextPhaseLabel(p: CarePlanNextPhase, t: (en: string, es: string)
         ? t('1 visit', '1 visita')
         : t(`${p.total_visits} visits`, `${p.total_visits} visitas`)
   return `${carePlanCadenceLabel(p, t)} · ${length}`
+}
+
+/**
+ * The phase a plan goes on to when it goes on to ANOTHER cadence, else null:
+ * the moment the desk has to rebook at a new frequency. A queued phase at the
+ * same cadence changes nothing about the booking, so it is not one. Mirrors
+ * care_plan_cadence_change (migration care_plan_phase_change_marker), which
+ * puts it on the visit numbered total_visits as a marker.
+ */
+export function nextCadenceChange(plan: PlanCadence & { total_visits: number | null; next_phases?: unknown }): CarePlanNextPhase | null {
+  if (plan.total_visits === null) return null
+  const next = readNextPhases(plan.next_phases)[0]
+  if (!next) return null
+  const same =
+    next.visits_per_period === planVisitsPerPeriod(plan) && next.frequency_value === plan.frequency_value && next.frequency_unit === plan.frequency_unit
+  return same ? null : next
+}
+
+/** A marker's next_phase (care_plan_marked_visits, care_plan_visit_markers_at), read safely. */
+export function readPhaseChange(raw: unknown): CarePlanNextPhase | null {
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (readNextPhases([raw])[0] ?? null) : null
 }

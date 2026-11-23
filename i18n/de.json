@@ -1529,7 +1529,11 @@
   "{0}, not compared: {1} has {2} and {3} {4}. Only photos of the same view are compared.": "{0}, nicht verglichen: {1} hat {2} und {3} {4}. Verglichen werden nur Fotos derselben Ansicht.",
   "{0}: the email is not an email address.": "{0}: Die E-Mail ist keine E-Mail-Adresse.",
   "{0}: the WhatsApp is not a phone number.": "{0}: Die WhatsApp-Nummer ist keine Telefonnummer.",
-  "In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers {0}, set in": "Im Format +34… Wenn diese Nummer der Praxis in den letzten 24 Std. nicht geschrieben hat, stellt WhatsApp nur {0} zu, festgelegt unter"
+  "In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers {0}, set in": "Im Format +34… Wenn diese Nummer der Praxis in den letzten 24 Std. nicht geschrieben hat, stellt WhatsApp nur {0} zu, festgelegt unter",
+  "Last visit of the phase · then {0}": "Letzter Termin der Phase · danach {0}",
+  "Marked plan visits in this series: {0}. Booked as the plan's type where it has one.": "Markierte Plantermine in dieser Serie: {0}. Mit dem Termintyp des Plans gebucht, sofern er einen hat.",
+  "last of the phase, then {0}": "letzter der Phase, danach {0}",
+  "{0} at the old frequency": "{0} in der alten Frequenz"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10533,6 +10537,33 @@
   "Set their own": "Eigene festlegen",
   "No times yet: it is not offered online with them.": "Noch keine Zeiten: Bei dieser Person wird er online nicht angeboten.",
   "At any free time in the practitioner's hours. Set times if it is only booked online in certain slots, like first visits.": "Zu jeder freien Zeit in den Arbeitszeiten der behandelnden Person. Legen Sie Zeiten fest, wenn er online nur in bestimmten Terminen gebucht wird, etwa Erstbesuche.",
-  "Only at set times": "Nur zu festen Zeiten"
+  "Only at set times": "Nur zu festen Zeiten",
+  "1 at the old frequency": "1 in der alten Frequenz",
+  "Back to the normal price": "Zurück zum Normalpreis",
+  "Booked after it": "Danach gebucht",
+  "Change price": "Preis ändern",
+  "Changing frequency": "Frequenz ändert sich",
+  "Couldn't load the patients changing frequency.": "Die Patienten mit Frequenzwechsel konnten nicht geladen werden.",
+  "Disability": "Behinderung",
+  "Frequency": "Frequenz",
+  "Hide side panel": "Seitenleiste ausblenden",
+  "Last visit of the phase": "Letzter Termin der Phase",
+  "Minimum notice": "Mindestvorlauf",
+  "No payments by this method on this day.": "Keine Zahlungen mit dieser Zahlungsart an diesem Tag.",
+  "Nobody is about to change frequency": "Bei niemandem steht ein Frequenzwechsel an",
+  "Normal price": "Normalpreis",
+  "Normal price:": "Normalpreis:",
+  "Patients whose care plan phase is about to end and whose next phase has a different frequency. The next phase starts by itself after the last visit; book the visits after it at the new frequency.": "Patienten, deren Behandlungsphase bald endet und deren nächste Phase eine andere Frequenz hat. Die nächste Phase beginnt nach dem letzten Termin von selbst; buchen Sie die folgenden Termine in der neuen Frequenz.",
+  "Reason for the special price": "Grund für den Sonderpreis",
+  "Save price": "Preis speichern",
+  "Seniors": "Senioren",
+  "Show only these payments": "Nur diese Zahlungen anzeigen",
+  "Show side panel": "Seitenleiste einblenden",
+  "Special price (€)": "Sonderpreis (€)",
+  "Student": "Student",
+  "The soonest a patient can book, counted from now. 0 offers the next free time. Your team can still book any time from the calendar.": "Der früheste Termin, den ein Patient buchen kann, ab jetzt gerechnet. Bei 0 wird die nächste freie Zeit angeboten. Ihr Team kann im Kalender weiterhin jederzeit buchen.",
+  "This price can no longer be changed: the receipt has payments or is closed.": "Dieser Preis kann nicht mehr geändert werden: Auf dem Beleg gibt es Zahlungen oder er ist abgeschlossen.",
+  "Why this price? It shows on the receipt": "Warum dieser Preis? Er steht auf dem Beleg",
+  "Your role cannot change prices on receipts.": "Ihre Rolle darf keine Preise auf Belegen ändern."
  }
 }

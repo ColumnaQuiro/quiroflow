@@ -8144,6 +8144,8 @@
   "Tag removed": "Tag entfernt",
   "Tags": "Tags",
   "Tags (all of)": "Tags (alle)",
+  "ID numbers": "Ausweisnummern",
+  "The DNI/NIE (PracticeHub’s \"Social security number\") is only in PracticeHub 2.0’s API. Save a 2.0 key in Settings > Import > Connection and read again to bring it.": "Die Ausweisnummer (die „Sozialversicherungsnummer“ von PracticeHub) gibt es nur in der API von PracticeHub 2.0. Speichern Sie einen 2.0-Schlüssel unter Einstellungen > Import > Verbindung und lesen Sie erneut, um sie zu übernehmen.",
   "Tags are only in PracticeHub 2.0’s API, so they are not included. Save the 2.0 key under Connection and read again to bring them.": "Tags gibt es nur in der API von PracticeHub 2.0, daher sind sie nicht enthalten. Speichern Sie den 2.0-Schlüssel unter Verbindung und lesen Sie erneut, um sie zu übernehmen.",
   "Tags are only in PracticeHub 2.0’s API, which this sync does not read, so new patients come in without them.": "Tags gibt es nur in der 2.0-API von PracticeHub, die diese Synchronisierung nicht liest; neue Patienten kommen daher ohne sie an.",
   "Take a photo": "Foto aufnehmen",

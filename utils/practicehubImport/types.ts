@@ -57,6 +57,7 @@ export const PRACTICEHUB_LISTS = [
   '/care_plans',
   '/patient_logs',
   '/custom_form_responses',
+  '/v3/patients',
 ] as const
 export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
 
@@ -75,7 +76,19 @@ export const PRACTICEHUB_LINK_LISTS: Partial<Record<PracticeHubStepKind, Practic
 // /billable_items, and only 2.0's carries the amounts appointment types are
 // priced from (utils/practicehubTypePrices.ts). A clinic with no 2.0 key
 // saved gets no such list in its copy, and the step that wants it says so.
-export const PRACTICEHUB_V3_LISTS: ReadonlySet<PracticeHubListPath> = new Set<PracticeHubListPath>(['/billable_items'])
+//
+// '/v3/patients' is 2.0's own /patients, kept beside Classic's rather than
+// instead of it: every step is written against Classic's records, and 2.0's
+// are read for the one thing only they carry -- `government_number`, the
+// "Social security number" box on the patient file, which is where a Spanish
+// clinic keeps the DNI/NIE. Classic's /patients does not send it at all, so a
+// clinic of 327 patients with 135 of them filled in arrived with none
+// (23 Nov 2026). It is last in the list so that a read already under way when
+// this shipped keeps its place by index.
+export const PRACTICEHUB_V3_LISTS: ReadonlySet<PracticeHubListPath> = new Set<PracticeHubListPath>(['/billable_items', '/v3/patients'])
+
+/** Where a list is asked for in 2.0's API when that is not its name in the copy. */
+export const PRACTICEHUB_V3_API_PATHS: Partial<Record<PracticeHubListPath, string>> = { '/v3/patients': '/patients' }
 
 export interface PracticeHubSnapshot {
   /** When the read that made this copy finished. */

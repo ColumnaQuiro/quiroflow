@@ -76,7 +76,7 @@ const props = defineProps<{
   /** The audit trail, when whoever opened the panel has already loaded it; absent, the panel reads it. */
   activity?: PanelActivityRow[]
 }>()
-const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
+const emit = defineEmits<{ close: []; changed: []; reschedule: []; 'book-next': [] }>()
 const typeNotes = useAppointmentTypeNotes()
 onMounted(() => typeNotes.load())
 
@@ -1065,13 +1065,35 @@ async function useExpectedType() {
           {{ t('No-show', 'No vino') }}
         </button>
         <span class="grow" />
+        <!-- Before the visit is processed: there, and quiet. Processing comes first. -->
+        <button type="button" data-cy="book-next" data-emphasis="quiet" :title="t('Book next appointment', 'Reservar próxima cita')" :aria-label="t('Book next appointment', 'Reservar próxima cita')" class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl px-2.5 text-[13.5px] font-semibold text-brand-text hover:bg-brand-tint" @click="emit('book-next')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          {{ t('Next appointment', 'Próxima cita') }}
+        </button>
         <button v-if="!noMove" type="button" data-cy="move-appointment" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4" /></svg>
           {{ t('Move…', 'Mover…') }}
         </button>
       </template>
       <p v-else-if="readOnly" class="text-[13px] text-ink-muted" data-cy="appt-read-only">{{ t('Read-only calendar: you can see this appointment but not change it.', 'Calendario de solo lectura: puedes ver esta cita pero no cambiarla.') }}</p>
-      <p v-else class="text-[13px] text-ink-muted">{{ stageLabel(stage) }}</p>
+      <template v-else>
+        <p class="text-[13px] text-ink-muted">{{ stageLabel(stage) }}</p>
+        <span class="grow" />
+        <!-- Once the visit is done, booking the next one is what is left to
+             do here, so it is this screen's filled button. A cancelled or
+             missed visit offers it too, as an outline. -->
+        <button
+          type="button"
+          data-cy="book-next"
+          :data-emphasis="appointment.status === 'completed' ? 'primary' : 'outline'"
+          class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl px-3.5 text-[13.5px]"
+          :class="appointment.status === 'completed' ? 'bg-brand font-bold text-brand-on hover:bg-brand-hover' : 'border border-line-control font-semibold text-ink-700 hover:bg-surface-subtle'"
+          @click="emit('book-next')"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          {{ t('Book next appointment', 'Reservar próxima cita') }}
+        </button>
+      </template>
     </div>
     </template>
   </div>

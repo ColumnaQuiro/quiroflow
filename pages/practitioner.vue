@@ -769,6 +769,7 @@ onMounted(() => warmChunks(() => [
       no-move
       @close="panelInputs = null"
       @changed="onPanelChanged"
+      @book-next="navigateTo({ path: '/calendar', query: { patient: panelInputs!.appointment.patient_id } })"
     />
   </div>
 </template>

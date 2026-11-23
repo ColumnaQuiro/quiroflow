@@ -12,6 +12,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ completed: [] }>()
 
+// The receipt by WhatsApp, beside "Send receipt" (which emails it).
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
+
 const store = useAccountStore()
 const { can } = usePermission()
 const t = useT()
@@ -282,6 +285,20 @@ async function restoreNormalPrice(line: VisitLineItem) {
           >
             {{ sendingInvoice ? t('Sending…', 'Enviando…') : t('Send receipt', 'Enviar recibo') }}
           </button>
+          <template v-if="can('billing_access')">
+            <span v-if="whatsapp.results.value[invoice.id]" class="max-w-[200px] text-[12px]" :class="whatsapp.results.value[invoice.id]!.ok ? 'text-ink-muted' : 'text-danger-text'" data-cy="appt-whatsapp-result">{{ whatsapp.results.value[invoice.id]!.message }}</span>
+            <span v-else :title="whatsapp.reason.value || undefined">
+              <button
+                type="button"
+                data-cy="appt-send-whatsapp"
+                class="-my-1 flex h-8 items-center rounded-ctlSm px-2 text-[12.5px] font-medium text-brand-text hover:bg-brand-tint disabled:opacity-50 touch:h-11"
+                :disabled="!whatsapp.canSend.value || whatsapp.sendingId.value === invoice.id"
+                @click="whatsapp.send('invoice', invoice.id)"
+              >
+                {{ whatsapp.sendingId.value === invoice.id ? t('Sending…', 'Enviando…') : t('WhatsApp', 'WhatsApp') }}
+              </button>
+            </span>
+          </template>
         </div>
       </div>
       <ul class="mt-2 space-y-1">

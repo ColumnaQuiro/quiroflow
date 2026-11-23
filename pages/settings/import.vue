@@ -428,7 +428,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
             {{ t('Bring the clinic’s records across from the system it is leaving. Choose that system, then work through its steps: each group says what has to run first. Every step that writes shows a preview first, and nothing is written until you confirm it.', 'Trae los registros de la clínica desde el sistema que deja. Elige ese sistema y sigue sus pasos: cada grupo indica qué tiene que ir antes. Cada paso que escribe muestra antes una vista previa, y no se escribe nada hasta que lo confirmes.') }}
           </p>
 
-          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <button
               v-for="s in sources"
               :key="s.key"
@@ -444,6 +444,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <template v-if="s.key === 'practicehub'">PH</template>
                 <template v-else-if="s.key === 'quirocitas'">QC</template>
                 <template v-else-if="s.key === 'quirohiro'">QH</template>
+                <template v-else-if="s.key === 'stripe'">S</template>
                 <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" /></svg>
               </span>
               <span class="flex min-w-0 flex-1 flex-col gap-0.5">

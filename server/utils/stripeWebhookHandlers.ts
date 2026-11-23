@@ -188,7 +188,9 @@ export async function handleStripeEvent(
     // on: its history is the clinic's old system's to bring (the PracticeHub
     // ledger import), not this webhook's. A day of slack, so the very invoice
     // that paired it, or the one paid as the import screen ran, still counts.
-    const paidAtUnix = (invoice.status_transitions?.paid_at as number | null | undefined) ?? stripeEvent.created
+    // Stripe always sends `created`; an event built without it (a replayed
+    // fixture) is dated now rather than turning every date below into NaN.
+    const paidAtUnix = (invoice.status_transitions?.paid_at as number | null | undefined) ?? stripeEvent.created ?? Math.floor(Date.now() / 1000)
     if (schedule?.origin === 'imported' && stripeEvent.type === 'invoice.paid' && paidAtUnix * 1000 < new Date(schedule.created_at).getTime() - 24 * 60 * 60 * 1000) {
       return
     }

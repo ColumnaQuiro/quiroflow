@@ -99,6 +99,11 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   // split one payment across methods (part cash, part card) -- see
   // useSplitPayment.
   const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+  // Charging a visit opens on card whenever the clinic takes card: that is how
+  // most visits are paid at the desk. Not the clinic's first method, which is
+  // cash for every clinic as seeded, and Settings has no way to reorder them.
+  // A clinic that has switched card off still gets its own first method.
+  const visitDefaultMethod = computed(() => (paymentMethods.value.some((m) => m.key === 'card') ? 'card' : defaultMethod.value))
   const {
     rows: paymentRows,
     addRow: addPaymentRow,
@@ -331,7 +336,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   // redo it, but only while nobody has touched the form.
   let openedRowsKey = ''
   function openPaymentRows() {
-    paymentRows.value = openingPaymentRows(balanceDueCents.value, spendableCreditCents.value, defaultMethod.value).map((r) => ({
+    paymentRows.value = openingPaymentRows(balanceDueCents.value, spendableCreditCents.value, visitDefaultMethod.value).map((r) => ({
       method: r.method,
       amount: (r.cents / 100).toFixed(2),
     }))
@@ -345,7 +350,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
   // here writes, whatever state the visit is in.
   async function init() {
     await ensurePaymentMethodsLoaded()
-    for (const row of paymentRows.value) if (row.method !== 'credit') row.method = defaultMethod.value
+    for (const row of paymentRows.value) if (row.method !== 'credit') row.method = visitDefaultMethod.value
     const { data: svc } = await supabase.from('services_products').select('id, name, price_cents').order('name')
     services.value = svc ?? []
     await loadAppointmentTiming()

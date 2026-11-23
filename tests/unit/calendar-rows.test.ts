@@ -56,8 +56,31 @@ describe('rows mode', () => {
 
   it('keeps a visit at its own time when the hour has room', () => {
     const tops = gridStretchedTops(150, gridRowsPerHour([90], HOURS), 30)
-    // Alone in a 150px hour, 09:30 is half way down it (less its row).
-    expect(gridStackRows([90], tops, 30)).toEqual([150 + 0.5 * 120])
+    // Alone in a 150px hour, 09:30 is on the 09:30 line the time column
+    // labels -- not a row's height above it, which read as 09:22.
+    expect(gridStackRows([90], tops, 30)).toEqual([gridYAt(tops, 90)])
+  })
+
+  it('puts every visit on its own line when they do not touch', () => {
+    // 19:00, 19:30 and 19:45 in one room, the hour stretched by another
+    // room busier than this one: each on the line labelled with its time.
+    const starts = [11 * 60, 11 * 60 + 30, 11 * 60 + 45]
+    const tops = gridStretchedTops(150, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7], 30)
+    expect(gridStackRows(starts, tops, 30)).toEqual(starts.map((m) => gridYAt(tops, m)))
+  })
+
+  it('pushes a row down only as far as the one above it ends', () => {
+    const tops = gridLinearTops(HOURS, 150)
+    // 09:00 and 09:05: the second cannot sit at 09:05 (12.5px down) under a
+    // 30px row, so it goes straight below it.
+    expect(gridStackRows([60, 65], tops, 30)).toEqual([150, 180])
+  })
+
+  it('pulls a row late in the hour up so it still ends inside it', () => {
+    const tops = gridLinearTops(HOURS, 150)
+    // 09:50 would end at 09:50 + a 30px row = past 10:00.
+    expect(gridStackRows([110], tops, 30)).toEqual([300 - 30])
+    expect(gridStackRows([100, 110], tops, 30)).toEqual([300 - 60, 300 - 30])
   })
 
   it('closes rows up in a full hour, still in start order and inside the hour', () => {

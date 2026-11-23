@@ -213,6 +213,23 @@ const byMethod = computed(() => {
   return [...totals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
 })
 
+// Cash-up is done one drawer at a time -- the cash against the till, the
+// cards against the terminal's slip, the transfers against the bank -- so the
+// table can be narrowed to one method. The tiles above keep the whole day;
+// only the list and its total follow this. Kept when the day changes, so the
+// same method can be walked back through the week.
+const methodFilter = ref('')
+const methodsToday = computed(() => {
+  const seen = new Set(filteredPayments.value.map((row) => row.method))
+  if (methodFilter.value) seen.add(methodFilter.value)
+  return [...seen].sort((a, b) => labelForMethod(a).localeCompare(labelForMethod(b)))
+})
+const tableRows = computed(() => (methodFilter.value ? filteredPayments.value.filter((row) => row.method === methodFilter.value) : filteredPayments.value))
+const tableTotalCents = computed(() => tableRows.value.reduce((sum, row) => sum + row.amount_cents, 0))
+function toggleMethod(method: string) {
+  methodFilter.value = methodFilter.value === method ? '' : method
+}
+
 // Stored keys are not labels: "transfer" and "write_off" were rendered raw in
 // the cards and in every row of the table.
 const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = usePaymentMethods()
@@ -252,10 +269,20 @@ const pdfRoot = ref<HTMLElement | null>(null)
           <p data-test="daily-net-collected" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(netCents) }}</p>
         </ReportsStat>
         <template v-if="!loading">
-          <div v-for="row in byMethod" :key="row.method" class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <button
+            v-for="row in byMethod"
+            :key="row.method"
+            type="button"
+            :aria-pressed="methodFilter === row.method"
+            :data-cy="`daily-method-tile-${row.method}`"
+            class="rounded-card border bg-surface p-4 text-left shadow-card transition-colors hover:border-line-control"
+            :class="methodFilter === row.method ? 'border-brand ring-1 ring-brand' : 'border-line'"
+            :title="t('Show only these payments', 'Ver solo estos pagos')"
+            @click="toggleMethod(row.method)"
+          >
             <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ labelForMethod(row.method) }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(row.cents) }}</p>
-          </div>
+          </button>
           <!-- Deliberately outside "Net collected": this money was collected
           on whatever day the patient paid it in, and counting it again here
           would make the day's takings disagree with the drawer. -->
@@ -265,6 +292,28 @@ const pdfRoot = ref<HTMLElement | null>(null)
             <p class="mt-1 text-[11px] text-ink-faint2">{{ t('Not money in today', 'No es dinero que entra hoy') }}</p>
           </div>
         </template>
+      </div>
+
+      <div v-if="(!loading && methodsToday.length > 1) || methodFilter" class="mt-4 flex flex-wrap items-center gap-2">
+        <span id="method-filter-label" class="text-[12.5px] font-semibold text-ink-muted2">{{ t('Method', 'Método') }}</span>
+        <div role="radiogroup" aria-labelledby="method-filter-label" class="inline-flex flex-wrap gap-0.5 rounded-[9px] bg-chip-bg p-[3px]">
+          <button
+            v-for="m in ['', ...methodsToday]"
+            :key="m || 'all'"
+            type="button"
+            role="radio"
+            :aria-checked="methodFilter === m"
+            :data-cy="`daily-method-${m || 'all'}`"
+            class="rounded-[7px] px-3 py-1 text-[13px] font-semibold transition-colors touch:py-2"
+            :class="methodFilter === m ? 'bg-surface text-ink-900 shadow-sm' : 'text-ink-muted2 hover:text-ink-700'"
+            @click="methodFilter = m"
+          >
+            {{ m ? labelForMethod(m) : t('All', 'Todos') }}
+          </button>
+        </div>
+        <span v-if="methodFilter" data-test="daily-method-total" class="text-[12.5px] text-ink-muted2">
+          {{ t(`${tableRows.length} payments`, `${tableRows.length} pagos`) }} · <span class="font-mono font-semibold text-ink-900">{{ eur(tableTotalCents) }}</span>
+        </span>
       </div>
 
       <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Transactions', 'Transacciones')">
@@ -282,10 +331,12 @@ const pdfRoot = ref<HTMLElement | null>(null)
           </thead>
           <tbody class="divide-y divide-line-row">
             <ReportsTableSkeletonRows v-if="loading" :cols="7" :rows="4" />
-            <tr v-else-if="filteredPayments.length === 0">
-              <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
+            <tr v-else-if="tableRows.length === 0">
+              <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">
+                {{ methodFilter ? t('No payments by this method on this day.', 'Sin pagos con este método este día.') : t('No transactions on this day.', 'Sin transacciones este día.') }}
+              </td>
             </tr>
-            <tr v-for="row in loading ? [] : filteredPayments" :key="row.id">
+            <tr v-for="row in loading ? [] : tableRows" :key="row.id">
               <td class="px-4 py-2.5 font-mono text-[12.5px] text-ink-muted2">{{ time(row.paid_at) }}</td>
               <td class="px-4 py-2.5 text-ink-900">
                 <NuxtLink :to="`/patients/${row.patient_id}`" class="hover:text-brand-text">

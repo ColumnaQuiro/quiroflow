@@ -5,6 +5,7 @@ import {
   creditExceedsSpendable,
   isVisitUpcoming,
   lineItemsTotalCents,
+  linePriceChangeable,
   openingPaymentRows,
   planInvoiceUnderBono,
   practiceHubChargedAtPurchase,
@@ -196,5 +197,40 @@ describe('visitLineMissing', () => {
     // An insurer paying the whole visit leaves the patient's line at 0 € on purpose.
     expect(visitLineMissing({ ...open, chargedToThirdParty: true, lines: [{ price_cents: 0, service_id: null }] })).toBe(false)
     expect(visitLineMissing({ ...open, visitPriceCents: 0, lines: [] })).toBe(false)
+  })
+})
+
+describe('A special price on the visit (seniors, students...)', () => {
+  const visitLine = { service_id: null, package_purchase_id: null }
+  const open = { invoiceStatus: 'unpaid', totalCents: 4500, paymentCount: 0, coveredByBono: false, chargedToThirdParty: false, line: visitLine }
+
+  it('can be set on an open receipt nothing has been paid on', () => {
+    expect(linePriceChangeable(open)).toBe(true)
+  })
+
+  it('is closed once any money is taken -- that payment has its factura', () => {
+    // Part paid: still 'unpaid', but a factura exists for what came in.
+    expect(linePriceChangeable({ ...open, paymentCount: 1 })).toBe(false)
+    expect(linePriceChangeable({ ...open, invoiceStatus: 'paid', paymentCount: 1 })).toBe(false)
+  })
+
+  it('is closed on a paid or void receipt', () => {
+    expect(linePriceChangeable({ ...open, invoiceStatus: 'paid' })).toBe(false)
+    expect(linePriceChangeable({ ...open, invoiceStatus: 'void' })).toBe(false)
+    expect(linePriceChangeable({ ...open, invoiceStatus: null })).toBe(false)
+  })
+
+  it('is open on a free visit\'s 0 € receipt, raised paid with nothing paid on it', () => {
+    expect(linePriceChangeable({ ...open, invoiceStatus: 'paid', totalCents: 0 })).toBe(true)
+  })
+
+  it('is only the visit itself: not a service, not a bono session', () => {
+    expect(linePriceChangeable({ ...open, line: { service_id: 'svc', package_purchase_id: null } })).toBe(false)
+    expect(linePriceChangeable({ ...open, line: { service_id: null, package_purchase_id: 'bono' } })).toBe(false)
+  })
+
+  it('is not offered on a visit drawn from a bono or split with an insurer', () => {
+    expect(linePriceChangeable({ ...open, coveredByBono: true })).toBe(false)
+    expect(linePriceChangeable({ ...open, chargedToThirdParty: true })).toBe(false)
   })
 })

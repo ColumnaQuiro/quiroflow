@@ -1,6 +1,6 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
-import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, newVisitReceiptStatus, openingPaymentRows, receiptStatusAfterLinesChange, visitLineMissing, visitReceiptEditable } from '../utils/visitCharging'
+import { bonoPerSessionCents, creditExceedsSpendable, isVisitUpcoming, lineItemsTotalCents, linePriceChangeable, newVisitReceiptStatus, openingPaymentRows, receiptStatusAfterLinesChange, visitLineMissing, visitReceiptEditable } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 import { ledgerDrawCents } from '../utils/owing'
 import { recordBonoSale, type SoldBono } from '../utils/bonoSale'
@@ -41,7 +41,20 @@ export interface VisitChargingContext {
 }
 
 export interface VisitInvoice { id: string; invoice_number: string; status: string; total_cents: number }
-export interface VisitLineItem { id: string; description: string; quantity: number; price_cents: number; service_id: string | null }
+export interface VisitLineItem {
+  id: string
+  description: string
+  quantity: number
+  price_cents: number
+  service_id: string | null
+  package_purchase_id?: string | null
+  /** The price before a special price was set; null when it never was. */
+  list_price_cents?: number | null
+  price_change_reason?: string | null
+}
+// What the panel reads of a line. One string, so the three reads and inserts
+// cannot come back with different shapes.
+const LINE_COLUMNS = 'id, description, quantity, price_cents, service_id, package_purchase_id, list_price_cents, price_change_reason'
 export interface VisitPaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 export interface VisitServiceOption { id: string; name: string; price_cents: number }
 export interface VisitBonoTemplate { id: string; name: string; session_count: number; price_cents: number; installment_options: unknown }
@@ -297,7 +310,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     chargedToThirdParty.value = false
     if (inv) {
       const [{ data: lines }, { data: pays }, { count: tpCharges, error: tpError }] = await Promise.all([
-        supabase.from('invoice_line_items').select('id, description, quantity, price_cents, service_id').eq('invoice_id', inv.id),
+        supabase.from('invoice_line_items').select(LINE_COLUMNS).eq('invoice_id', inv.id),
         supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', inv.id).order('paid_at', { ascending: false }),
         supabase.from('third_party_charges').select('id', { count: 'exact', head: true }).eq('invoice_id', inv.id).eq('status', 'pending'),
       ])
@@ -435,7 +448,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         quantity: 1,
         price_cents: visitPriceCents.value,
       })
-      .select('id, description, quantity, price_cents, service_id')
+      .select(LINE_COLUMNS)
       .single()
     if (insertError || !data) {
       error.value = insertError?.message ?? t('Could not add the visit.', 'No se ha podido añadir la visita.')
@@ -462,7 +475,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         quantity: 1,
         price_cents: svc.price_cents,
       })
-      .select('id, description, quantity, price_cents, service_id')
+      .select(LINE_COLUMNS)
       .single()
 
     if (data) lineItems.value.push(data)
@@ -474,6 +487,58 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     await supabase.from('invoice_line_items').delete().eq('id', item.id)
     lineItems.value = lineItems.value.filter((l) => l.id !== item.id)
     await recalcInvoiceTotal()
+  }
+
+  // Whether this line can be given a special price (seniors, students...)
+  // before it is charged -- utils/visitCharging linePriceChangeable. Closed
+  // the moment anything has been paid on the receipt.
+  function canChangeLinePrice(line: VisitLineItem): boolean {
+    if (!ctx.can('billing_access') || !invoice.value) return false
+    return linePriceChangeable({
+      invoiceStatus: invoice.value.status,
+      totalCents: invoice.value.total_cents,
+      paymentCount: payments.value.length,
+      coveredByBono: !!packageCoverage.value,
+      chargedToThirdParty: chargedToThirdParty.value,
+      line,
+    })
+  }
+
+  // A special price on the visit's line, with the reason it is kept under.
+  // One call, change_invoice_line_price, which re-checks under a lock that
+  // nothing has been paid on the receipt -- a payment, and with it a factura,
+  // may have been taken from another screen since this one loaded -- and
+  // recomputes the total. Setting the line's original price back is how the
+  // special price is undone. Returns whether it was saved.
+  async function changeLinePrice(line: VisitLineItem, priceCents: number, reason: string | null): Promise<boolean> {
+    if (saving.value || !canChangeLinePrice(line)) return false
+    saving.value = true
+    error.value = ''
+    const { error: rpcError } = await supabase.rpc('change_invoice_line_price', {
+      p_line_id: line.id,
+      p_price_cents: priceCents,
+      p_reason: reason ?? undefined,
+    })
+    saving.value = false
+    if (rpcError) {
+      await loadInvoice()
+      // After the reload, which clears the panel's error.
+      error.value =
+        rpcError.code === '42501'
+          ? t('Your role cannot change prices on receipts.', 'Tu rol no permite cambiar precios en los recibos.')
+          : rpcError.code === '23514'
+            ? t(
+                'This price can no longer be changed: the receipt has payments or is closed.',
+                'Este precio ya no se puede cambiar: el recibo tiene pagos o está cerrado.',
+              )
+            : rpcError.message
+      return false
+    }
+    // A visit made free is settled as it is repriced, and completes the way a
+    // free visit charged from scratch does -- which is exactly what
+    // afterThirdPartyChange does for a visit an insurer covers in full.
+    await afterThirdPartyChange()
+    return true
   }
 
   async function usePackageSession(pkg: VisitBonoOption) {
@@ -892,6 +957,8 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     addVisitLine,
     addLineItem,
     removeLineItem,
+    canChangeLinePrice,
+    changeLinePrice,
     usePackageSession,
     bonoTemplates,
     loadBonoTemplates,

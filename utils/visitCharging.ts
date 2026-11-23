@@ -112,6 +112,47 @@ export function receiptStatusAfterLinesChange(input: { status: string; totalCent
 }
 
 /**
+ * Whether a line on a visit's receipt can be given a special price -- a
+ * senior's, a student's -- before it is charged.
+ *
+ * Stricter than visitReceiptEditable, which lets a line be added to or taken
+ * off a receipt that is part paid. A price is closed as soon as ANY money has
+ * been taken against the receipt: each payment carries its own factura, and a
+ * factura is chain-signed and immutable under VeriFactu, so the price it was
+ * paid against stays the price. change_invoice_line_price refuses the same
+ * cases in the database; this only decides whether to offer it.
+ *
+ * Only the visit's own line (no service, no bono). A bono session is charged
+ * at the bono's rate, and a visit split with an insurer has the patient's
+ * share fixed by that split.
+ */
+export function linePriceChangeable(input: {
+  invoiceStatus: string | null | undefined
+  totalCents: number
+  paymentCount: number
+  coveredByBono: boolean
+  chargedToThirdParty: boolean
+  line: { service_id: string | null; package_purchase_id?: string | null }
+}): boolean {
+  if (input.paymentCount > 0 || input.coveredByBono || input.chargedToThirdParty) return false
+  if (input.line.service_id != null || input.line.package_purchase_id != null) return false
+  if (input.invoiceStatus === 'unpaid') return true
+  // A free visit's receipt is raised paid with nothing paid on it.
+  return input.invoiceStatus === 'paid' && input.totalCents === 0
+}
+
+/**
+ * The quick reasons offered for a special price. `value` is what the line
+ * stores and the receipt prints, so it is Spanish whatever language the
+ * person charging uses: the receipt is the patient's.
+ */
+export const SPECIAL_PRICE_REASONS = [
+  { value: 'Mayores', en: 'Seniors', es: 'Mayores' },
+  { value: 'Estudiante', en: 'Student', es: 'Estudiante' },
+  { value: 'Discapacidad', en: 'Disability', es: 'Discapacidad' },
+] as const
+
+/**
  * Whether an open receipt is missing the visit itself, so the visit's price
  * can be put (back) on it.
  *

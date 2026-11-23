@@ -167,6 +167,26 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
 const mobileInfoOpen = ref(false)
+// At lg+ the left panel is a permanent 238px column; a clinic with several
+// practitioners side by side wants that width for the agenda. Hidden per
+// device, like the app sidebar's collapse, so it is a convenience and not a
+// setting. Below lg the panel is a drawer and this does not apply.
+const panelHidden = ref(false)
+onMounted(() => {
+  try {
+    panelHidden.value = localStorage.getItem('quiroflow-calendar-panel-hidden') === '1'
+  } catch {
+    // Storage blocked: the panel stays shown.
+  }
+})
+function togglePanel() {
+  panelHidden.value = !panelHidden.value
+  try {
+    localStorage.setItem('quiroflow-calendar-panel-hidden', panelHidden.value ? '1' : '0')
+  } catch {
+    // Storage blocked: hidden for this visit only.
+  }
+}
 // The phone header's "more" menu (view, cash shift, block time, the day's info).
 const phoneMenuOpen = ref(false)
 function phoneMenu(action: () => void) {
@@ -715,6 +735,8 @@ async function loadRangeDetails(token: number, appointmentIds: string[], patient
       p_to: rangeEnd.toISOString(),
       p_appointment_ids: appointmentIds,
       p_patient_ids: patientIds,
+      // Also mark the last visit of a phase before a change of cadence (20261123101831).
+      p_with_phase_end: true,
     } as never,
   )
   if (error) throw error
@@ -3131,6 +3153,22 @@ function showNowLineOn(day: Date) {
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
+        <button
+          type="button"
+          data-cy="calendar-panel-toggle"
+          :aria-pressed="panelHidden"
+          :aria-label="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
+          :title="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
+          class="hidden h-8 w-8 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle lg:order-first lg:flex"
+          @click="togglePanel"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
+            <path d="M5 2v10" />
+            <path v-if="panelHidden" d="M7.5 5.5L9 7l-1.5 1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path v-else d="M9 5.5L7.5 7 9 8.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <!-- The mini-calendar/display panel is a fixed 238px column at lg+
         (below), but that plus the optional flow-tracker column would eat
         most of a phone's width -- so below lg it's an off-canvas drawer
@@ -3310,7 +3348,7 @@ function showNowLineOn(day: Date) {
       below lg (see the Info button above); a permanent column at lg+. -->
       <aside
         class="fixed inset-y-0 left-0 z-40 w-[280px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar transition-transform duration-200 lg:static lg:z-auto lg:w-[238px] lg:translate-x-0"
-        :class="mobileInfoOpen ? 'translate-x-0' : '-translate-x-full'"
+        :class="[mobileInfoOpen ? 'translate-x-0' : '-translate-x-full', panelHidden ? 'lg:hidden' : '']"
       >
         <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
           <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>

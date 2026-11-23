@@ -112,7 +112,7 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
-    connected: Boolean(account.stripe_connect_account_id) ? 'connect' : 'legacy',
+    connected: account.stripe_connect_account_id ? 'connect' : 'legacy',
     plans: plans ?? [],
     prices: [...prices.values()].sort((a, b) => b.subscriptions - a.subscriptions),
     subscriptions: rows,

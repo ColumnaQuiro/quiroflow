@@ -84,7 +84,7 @@ export type StripePairDecision =
  */
 export function stripeAutoPairDecision(match: MandateMatch, customer: MatchableCustomer, knownPatientId: string | null): StripePairDecision {
   if (knownPatientId) return { action: 'link', patientId: knownPatientId, by: 'customer' }
-  if (match.patientId) {
+  if (match.patientId !== null) {
     if (match.by === 'name') return { action: 'pending', reason: 'name_only' }
     return { action: 'link', patientId: match.patientId, by: match.by }
   }

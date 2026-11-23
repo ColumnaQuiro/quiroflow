@@ -808,12 +808,21 @@ round trip to work out, neither is discoverable from the code.
   by hand with `force`. Without the `APP_VERSION_BUMP_TOKEN` secret, the
   PR is opened with the workflow's own token and starts no CI: close
   and reopen it.
-- **Both stores are Spain-only** as of 2026-09-13, deliberately -- more
-  countries later. On Apple, "Make this app available in new territories"
-  is still ticked and the API refuses to change it (`appAvailabilities`
-  allows CREATE and GET only); the checkbox only appears inside the Manage
-  Availability wizard's second step, which needs a pending country change
-  to reach. Untick it next time you add a country there.
+- **Both stores sell in Spain, France and Italy** -- Spain-only from
+  2026-09-13, France and Italy added on 2026-11-23 because patients living
+  in Spain keep an Italian or French store account and could not find the
+  app. Add a country by hand: App Store Connect (Apple ID
+  **hola@quiroflow.com**, not hola@columnaquiro.com, which is "not enabled
+  for App Store Connect") → Pricing and Availability → Manage Availability,
+  live within 24 h with no review; Play Console → Production →
+  Países/Territorios → Editar, then send the change from Resumen de
+  publicación, which Google reviews. On Apple, "Make this app available in
+  new territories" may still be ticked and the API refuses to change it
+  (`appAvailabilities` allows CREATE and GET only); the checkbox is
+  supposed to appear inside the Manage Availability wizard's second step,
+  but adding France and Italy showed only a confirm screen without it.
+  Spain stays the storefront the code looks up and links to
+  (`scripts/app-version-bump.mjs`, `utils/appLinks.ts`).
 - **Android builds in GitHub Actions and lands on Play's internal testing
   track, never production.** `.github/workflows/android.yml` runs on every
   push to `main` that touches `mobile/` (the same pushes Xcode Cloud builds

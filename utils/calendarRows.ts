@@ -80,25 +80,49 @@ export function gridRowsPerHour(startMinutes: number[], hours: number): number[]
 /**
  * The top of one row per visit, in start order, inside the hour it starts in.
  *
- * Each sits at its own time as far as the hour's spare room allows: with
- * room to spare a 09:30 visit is at the half-hour line, as on the linear
- * grid; in a full hour the rows close up. Row i of n in an hour of height H
- * goes i rows down plus its fraction of the hour times the room left over
- * (H - n rows), so rows never overlap and the last one still ends inside
- * its hour.
+ * Each sits at its own time -- a 19:30 visit on the 19:30 line, where the
+ * time column labels it -- and moves only as far as it must: down, when it
+ * would overlap the row above it; up, when the rows below it would
+ * otherwise run past the end of the hour. So in an hour with room to spare
+ * every row is exactly where the linear grid would draw it, and in a full
+ * hour the rows close up, still in start order and inside their hour.
+ *
+ * (It used to place row i of n at i rows plus its fraction of the hour's
+ * room left over, which put a lone 09:30 visit at 09:22 and two visits at
+ * 19:00 and 19:30 at 19:00 and ~19:22: never on the line the time column
+ * printed beside them.)
  *
  * `starts` must be sorted. While a drag holds the scale still, a visit can
- * be dragged into an hour that is already full; the room left over is then
- * taken as nothing and that hour's rows run on past its end until the drop.
+ * be dragged into an hour that is already full; its rows are then packed
+ * from the top of the hour and run on past its end until the drop.
  */
 export function gridStackRows(starts: number[], tops: HourTops, rowPx: number): number[] {
   const hours = tops.length - 1
-  const inHour = gridRowsPerHour(starts, hours)
-  const seen = new Array<number>(hours).fill(0)
-  return starts.map((m) => {
-    const h = gridHourOf(m, hours)
-    const spare = Math.max(0, tops[h + 1] - tops[h] - inHour[h] * rowPx)
-    const fraction = Math.min(Math.max((m - h * 60) / 60, 0), 1)
-    return tops[h] + seen[h]++ * rowPx + fraction * spare
-  })
+  const out = new Array<number>(starts.length)
+  // Sorted starts put each hour's visits next to each other.
+  for (let i = 0; i < starts.length;) {
+    const h = gridHourOf(starts[i], hours)
+    let j = i
+    while (j < starts.length && gridHourOf(starts[j], hours) === h) j++
+    const top = tops[h]
+    const end = tops[h + 1]
+    if ((j - i) * rowPx > end - top) {
+      for (let k = i; k < j; k++) out[k] = top + (k - i) * rowPx
+    } else {
+      // Down the hour: at its own time, or just below the row above.
+      for (let k = i; k < j; k++) {
+        const fraction = Math.min(Math.max((starts[k] - h * 60) / 60, 0), 1)
+        const own = top + fraction * (end - top)
+        out[k] = k === i ? own : Math.max(own, out[k - 1] + rowPx)
+      }
+      // Back up it: the last row ends inside the hour, each above clears it.
+      let limit = end - rowPx
+      for (let k = j - 1; k >= i; k--) {
+        out[k] = Math.min(out[k], limit)
+        limit = out[k] - rowPx
+      }
+    }
+    i = j
+  }
+  return out
 }

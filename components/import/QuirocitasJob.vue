@@ -38,6 +38,7 @@ function practiceHubListName(path: string | undefined): string {
     case '/clinical_notes': return t('treatment notes', 'notas de tratamiento')
     case '/care_plans': return t('care plans', 'planes de tratamiento')
     case '/patient_logs': return t('patient logs', 'registros de pacientes')
+    case '/v3/patients': return t('ID numbers', 'DNI / NIE')
     case '/custom_form_responses': return t('form responses', 'respuestas de formularios')
     default: return path ?? ''
   }

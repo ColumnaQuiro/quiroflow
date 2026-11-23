@@ -54,6 +54,8 @@ const props = defineProps<{
    * follow their care plan, once it is loaded and still has visits to book.
    */
   prefillFollowPlan?: boolean
+  /** "Book next appointment" on a visit: start on that visit's type, when it can still be booked. */
+  prefillAppointmentTypeId?: string
   /** The clinic's slot size, for the next-free-times search. */
   slotMinutes?: number
 }>()
@@ -108,7 +110,7 @@ function choosePractitioner(id: string) {
   practitionerChosen.value = true
 }
 
-const appointmentTypeId = ref(props.appointmentTypes[0]?.id ?? '')
+const appointmentTypeId = ref((props.appointmentTypes.find((x) => x.id === props.prefillAppointmentTypeId) ?? props.appointmentTypes[0])?.id ?? '')
 const note = ref('')
 const repeat = ref<'none' | 'daily' | 'weekly' | 'monthly' | 'care_plan'>('none')
 const sendConfirmation = ref(true)

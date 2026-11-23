@@ -191,6 +191,36 @@ export function freeTimesLookup(
  *
  * Throws the SDK's errors, for the caller to word (modelFailureMessage).
  */
+/** The words of a turn, without its thinking and tool calls. */
+function textOf(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+}
+
+const EMPTY_REPLY_NOTE = 'Your reply had no text, so nothing would reach them. Write the message to send them now, in Spanish unless they write in another language: if you offered times with offer_times, name those same times in words and ask which they prefer. Do not call offer_times again for them.'
+
+/**
+ * Sends a turn back with a note. A turn with nothing but thinking in it is
+ * not repeated (an assistant turn needs words or a tool call): the note joins
+ * the last message of theirs instead, which may hold tool results.
+ */
+function pushNote(messages: Anthropic.MessageParam[], content: Anthropic.ContentBlock[], note: string): void {
+  if (content.some((block) => block.type === 'text' || block.type === 'tool_use')) {
+    messages.push({ role: 'assistant', content })
+    messages.push({ role: 'user', content: note })
+    return
+  }
+  const last = messages[messages.length - 1]
+  if (last?.role === 'user') {
+    const blocks = typeof last.content === 'string' ? [{ type: 'text' as const, text: last.content }] : [...last.content]
+    messages[messages.length - 1] = { role: 'user', content: [...blocks, { type: 'text', text: note }] }
+  } else {
+    messages.push({ role: 'user', content: note })
+  }
+}
+
 export async function runReceptionistModel(
   client: Anthropic,
   opts: {
@@ -309,6 +339,14 @@ export async function runReceptionistModel(
   // Whether a reply breaking the house style (styleProblems) was already
   // sent back once to be reworded.
   let styleRewritten = false
+  // A finished turn with no words in it. Haiku did this on 22 Nov 2026: it
+  // looked up the days a patient gave, called offer_times with two good
+  // times, and ended the next turn empty -- the times were already "said" to
+  // it. Empty reads as refused, so a move it had done right went to a person
+  // at 23:11 on a Sunday. Sent back once to write the reply; if it is empty
+  // again, the words it wrote beside its last offer_times call go instead.
+  let emptyRewritten = false
+  let offerWords = ''
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -339,12 +377,17 @@ export async function runReceptionistModel(
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
     if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
-      const text = cleanReply(
-        message.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join(''),
-      )
+      let text = cleanReply(textOf(message.content))
+      if (!text && !emptyRewritten) {
+        emptyRewritten = true
+        checks.push('empty_rewritten')
+        pushNote(messages, message.content, EMPTY_REPLY_NOTE)
+        continue
+      }
+      if (!text && offerWords) {
+        text = offerWords
+        checks.push('empty_offer_words_used')
+      }
       const offered = opts.maxTimesPerReply && !booked && !rewritten ? offeredTimeCount(text) : 0
       if (opts.maxTimesPerReply && offered > opts.maxTimesPerReply) {
         rewritten = true
@@ -411,6 +454,11 @@ export async function runReceptionistModel(
       return run(reply, false)
     }
 
+    // What it wrote beside an offer: the reply, should the turn after come back empty.
+    if (uses.some((use) => use.name === 'offer_times')) {
+      const words = cleanReply(textOf(message.content))
+      if (words) offerWords = words
+    }
     // The whole turn goes back, thinking blocks included and unchanged, and
     // every result in one message.
     messages.push({ role: 'assistant', content: message.content })

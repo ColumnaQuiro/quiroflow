@@ -267,6 +267,10 @@ async function confirmAnnulFactura() {
   await loadFacturas()
 }
 
+// A factura by WhatsApp, beside "Send" (which emails it): disabled, saying
+// why, until the clinic has chosen its template and the patient has a number.
+const whatsapp = useInvoiceWhatsApp(() => props.patientId)
+
 async function sendFactura(id: string) {
   sendingFacturaId.value = id
   try {
@@ -3673,6 +3677,18 @@ const fieldId = useId()
               >
                 {{ sendingFacturaId === f.id ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
               </button>
+              <span v-if="whatsapp.results.value[f.id]" class="max-w-[220px] text-[12px]" :class="whatsapp.results.value[f.id]!.ok ? 'text-ink-faint' : 'text-danger-text'" data-cy="factura-whatsapp-result">{{ whatsapp.results.value[f.id]!.message }}</span>
+              <span v-else :title="whatsapp.reason.value || undefined">
+                <button
+                  type="button"
+                  data-cy="factura-send-whatsapp"
+                  class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
+                  :disabled="!whatsapp.canSend.value || whatsapp.sendingId.value === f.id"
+                  @click="whatsapp.send('factura', f.id)"
+                >
+                  {{ whatsapp.sendingId.value === f.id ? t('Sending…', 'Enviando…') : t('WhatsApp', 'WhatsApp') }}
+                </button>
+              </span>
             </div>
           </li>
         </ul>

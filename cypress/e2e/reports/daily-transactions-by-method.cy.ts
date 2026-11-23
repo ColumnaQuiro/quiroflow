@@ -3,6 +3,9 @@
 // so reception counted the cash rows by eye. The method chips (and the tiles)
 // narrow the table to one method, with its own count and total; the day's
 // tiles keep the whole day.
+// formatEur puts a non-breaking space before the euro sign.
+const eur = (amount: string) => new RegExp(`^${amount}\\s€$`)
+
 describe('The day sheet narrows to one payment method', () => {
   it('lists only the method picked, with its total, and back to all', () => {
     cy.seedStaffAccount().then((account) => {
@@ -14,16 +17,16 @@ describe('The day sheet narrows to one payment method', () => {
 
           cy.login(account.email, account.password)
           cy.visit('/reports/daily-transactions')
-          cy.get('[data-test=daily-net-collected]').should('have.text', '315,00 €')
+          cy.get('[data-test=daily-net-collected]').invoke('text').should('match', eur('315,00'))
           cy.contains('td', 'Carmen Efectivo').should('be.visible')
           cy.contains('td', 'Tomás Tarjeta').should('be.visible')
 
           cy.get('[data-cy=daily-method-cash]').click()
           cy.contains('td', 'Tomás Tarjeta').should('not.exist')
           cy.get('tbody tr').should('have.length', 2)
-          cy.get('[data-test=daily-method-total]').should('contain.text', '2 payments').and('contain.text', '75,00 €')
+          cy.get('[data-test=daily-method-total]').should('contain.text', '2 payments').and('contain.text', '75,00')
           // The day's figure is the day's, whatever the table shows.
-          cy.get('[data-test=daily-net-collected]').should('have.text', '315,00 €')
+          cy.get('[data-test=daily-net-collected]').invoke('text').should('match', eur('315,00'))
 
           // The tile is the same switch.
           cy.get('[data-cy=daily-method-tile-card]').click()

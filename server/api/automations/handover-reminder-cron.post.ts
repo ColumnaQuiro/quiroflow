@@ -7,6 +7,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { handOverUnansweredCancelQuestions } from '~/server/utils/receptionistPendingCancel'
 import { resumeHeldReplies } from '~/server/utils/receptionistHeld'
 import { runDueFollowUps } from '~/server/utils/receptionistFollowUps'
+import { handOverAcceptedUnbooked } from '~/server/utils/receptionistOffers'
 
 // One more push for a handover nobody has answered.
 //
@@ -57,6 +58,14 @@ export default defineEventHandler(async (event) => {
     return [] as { key: string; outcome: string }[]
   })
 
+  // A time somebody accepted from the receptionist's offer that the diary
+  // does not have, with nobody having answered them: a person is told
+  // (receptionistOffers.ts).
+  const acceptedUnbooked = await handOverAcceptedUnbooked(supabase, now).catch((err) => {
+    console.error('[handover-reminder-cron] could not check the accepted times:', (err as Error)?.message ?? err)
+    return [] as { key: string; outcome: string }[]
+  })
+
   // What the receptionist owes somebody: the nudge the morning after times
   // nobody answered, and the day it agreed to write on (receptionistFollowUps.ts).
   const followUps = await runDueFollowUps(event, supabase, now).catch((err) => {
@@ -79,7 +88,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Could not read handover tasks' })
   }
   const rows = tasks ?? []
-  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[], cancelQuestions, heldReplies, followUps }
+  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[], cancelQuestions, heldReplies, followUps, acceptedUnbooked }
 
   const accountIds = [...new Set(rows.map((t) => t.account_id))]
   const since = rows.reduce((min, t) => (t.created_at < min ? t.created_at : min), rows[0]!.created_at)
@@ -121,7 +130,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // The ids, not just counts: a background job nobody watches.
-  return { reminded, answered, cancelQuestions, heldReplies, followUps }
+  return { reminded, answered, cancelQuestions, heldReplies, followUps, acceptedUnbooked }
 })
 
 /**

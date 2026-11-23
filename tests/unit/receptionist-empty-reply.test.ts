@@ -58,27 +58,36 @@ function run(turns: Turn[]) {
 }
 
 describe('a reply that comes back with no words', () => {
-  it('is sent back once to be written, and the written reply goes out with its times', async () => {
-    const { promise, seen } = run([offerTurn(''), empty, { stop_reason: 'end_turn', content: [{ type: 'text', text: OFFER }] }])
+  it('is written from the times it offered, at once, without asking the model again', async () => {
+    const { promise, seen } = run([offerTurn(''), empty])
     const result = await promise
     expect(result.refused).toBe(false)
-    expect(result.text).toBe(OFFER)
-    expect(result.checks).toContain('empty_rewritten')
+    expect(result.text).toBe('Tengo el martes 1 de diciembre a las 19:15 o el jueves 3 de diciembre a las 18:30. ¿Cuál te viene mejor?')
+    expect(result.checks).toEqual(['empty_offer_in_code'])
     expect(result.choices).toBe('times')
     expect(result.offeredSlots).toHaveLength(2)
-    // The note rides on the last message of theirs: a turn of thinking alone is not repeated.
-    const last = seen[2]!.at(-1) as { role: string; content: { type: string; text?: string }[] }
-    expect(last.role).toBe('user')
-    expect(last.content.some((block) => block.type === 'text' && /no text/.test(block.text ?? ''))).toBe(true)
+    // Two requests: the one that offered, and the one that came back empty.
+    expect(seen).toHaveLength(2)
   })
 
-  it('uses the words written beside offer_times when the second try is empty too', async () => {
-    const { promise } = run([offerTurn(OFFER), empty, empty])
+  it('uses the words written beside offer_times when they name those same times', async () => {
+    const { promise } = run([offerTurn(OFFER), empty])
     const result = await promise
     expect(result.refused).toBe(false)
     expect(result.text).toBe(OFFER)
-    expect(result.checks).toEqual(expect.arrayContaining(['empty_rewritten', 'empty_offer_words_used']))
+    expect(result.checks).toEqual(['empty_offer_words_used'])
     expect(result.choices).toBe('times')
+  })
+
+  it('is sent back once to be written when there is nothing to write it from', async () => {
+    const { promise, seen } = run([empty, { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Abrimos de lunes a viernes.' }] }])
+    const result = await promise
+    expect(result.text).toBe('Abrimos de lunes a viernes.')
+    expect(result.checks).toContain('empty_rewritten')
+    // The note rides on the last message of theirs: a turn of thinking alone is not repeated.
+    const last = seen[1]!.at(-1) as { role: string; content: { type: string; text?: string }[] }
+    expect(last.role).toBe('user')
+    expect(last.content.some((block) => block.type === 'text' && /no text/.test(block.text ?? ''))).toBe(true)
   })
 
   it('is still handed over when there is nothing to send at all', async () => {

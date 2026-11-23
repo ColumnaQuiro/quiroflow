@@ -86,6 +86,13 @@ const WEEK_MIN_AVAILABILITY_PX = 16
 // slivers too narrow to read at all. Day view's room columns are wider
 // than week view's, so it tolerates a couple more lanes before that kicks in.
 const DAY_MAX_LANES = 6
+// A strip down the right of every column that no visit is drawn over, the way
+// Google Calendar and PracticeHub keep one: a card used to fill the column
+// from edge to edge, so a taken time had no bare grid left to click, and a
+// second visit at that time could only be booked from the "+ New appointment"
+// button. Narrower in the week views, whose columns go down to 76px.
+const DAY_GUTTER_PX = 20
+const WEEK_GUTTER_PX = 10
 const WEEK_MAX_LANES = 4
 const OVERFLOW_CHIP_PX = 20
 // Rows mode (stackMode below): each visit one line, under the compact
@@ -1641,12 +1648,14 @@ const STAGE_KEY: AppointmentStage[] = ['pending', 'online', 'resched', 'confirme
 // time-based top/height -- unlike a cascade, lanes never overlap each
 // other, so there's no need to crop height or stack z-index to keep a
 // block from hiding the one behind it.
+// The lanes share what is left of the column beside its gutter.
+const gutterPx = computed(() => (viewMode.value === 'day' ? DAY_GUTTER_PX : WEEK_GUTTER_PX))
 function columnStyle(block: LayoutBlock, top: number, height: number) {
   const totalCols = Math.max(block._totalCols, 1)
-  const widthPct = 100 / totalCols
+  const lanes = `(100% - ${gutterPx.value}px)`
   return {
-    left: `calc(${block._col * widthPct}% + 2px)`,
-    width: `calc(${widthPct}% - 4px)`,
+    left: `calc(${lanes} * ${block._col / totalCols} + 2px)`,
+    width: `calc(${lanes} / ${totalCols} - 4px)`,
     top: `${top}px`,
     height: `${height}px`,
     zIndex: '10',
@@ -2603,16 +2612,30 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
 
 // Wraps openEditModal so the click the browser synthesizes right after a
 // real drag doesn't reopen the modal the drag was meant to replace.
-function handleAppointmentClick(appt: AppointmentRow) {
+function handleAppointmentClick(appt: AppointmentRow, e?: MouseEvent) {
   if (dragMoved.value) {
     dragMoved.value = false
     return
   }
   // A slot click while reschedule-mode is active is what moves the
   // appointment -- opening some other appointment's edit modal mid-pick
-  // would be a confusing second interaction on top of that.
-  if (reschedulingAppointment.value) return
+  // would be a confusing second interaction on top of that. The click is not
+  // lost either: it picks the slot under the card, which then asks about the
+  // clash like any other move onto a taken time. It used to do nothing, so a
+  // visit could not be moved beside another one this way at all.
+  if (reschedulingAppointment.value) {
+    if (e && appt.id !== reschedulingAppointment.value.id) pickSlotUnder(e)
+    return
+  }
   openEditModal(appt)
+}
+// The slot of the column a click on a card landed in.
+function pickSlotUnder(e: MouseEvent) {
+  const colEl = (e.currentTarget as HTMLElement | null)?.closest<HTMLElement>('[data-cal-col]')
+  const c = gridColumns.value.find((g) => g.dayKey === colEl?.dataset.dayKey && g.roomId === colEl?.dataset.roomId)
+  if (!colEl || !c) return
+  const min = snapMin(e.clientY - colEl.getBoundingClientRect().top, topsForView())
+  pickRescheduleSlot(c.day, slotLabel(min), c.roomId === '__none' ? null : c.roomId)
 }
 
 const { fire } = useAutomations()
@@ -2784,6 +2807,9 @@ interface Cell { col: number; min: number }
 const focusCell = ref<Cell | null>(null)
 const hoverCell = ref<Cell | null>(null)
 const gridHasFocus = ref(false)
+// The focus cell was put there by a finger's first tap, not by the keyboard:
+// it is a slot about to be booked, not a visit being selected.
+const focusByTouch = ref(false)
 let lastPointerType = 'mouse'
 
 function colIndex(dayKey: string, roomId: string) {
@@ -2852,7 +2878,23 @@ function createGhostFor(dayKey: string, roomId: string) {
   if (!modalOpen.value || modalMode.value !== 'create' || !prefill.value) return null
   if (prefill.value.date !== dayKey || (prefill.value.roomId || '__none') !== roomId) return null
   const [h, m] = prefill.value.time.split(':').map(Number)
-  return { min: h * 60 + m - START_HOUR * 60, label: prefill.value.time }
+  const min = h * 60 + m - START_HOUR * 60
+  // Over a taken slot the full-width marker would hide the visit already
+  // there; the gutter carries it instead (gutterMarkFor).
+  const taken = !!appointmentAtCell({ col: colIndex(dayKey, roomId), min })
+  return { min, label: prefill.value.time, taken }
+}
+// The gutter beside a taken slot: outlined where a click (or a second tap)
+// would book another visit at that time, solid while that one is being booked.
+function gutterMarkFor(dayKey: string, roomId: string): { min: number; solid: boolean } | null {
+  const creating = createGhostFor(dayKey, roomId)
+  if (creating) return creating.taken ? { min: creating.min, solid: true } : null
+  if (readOnly.value || reschedulingAppointment.value || modalOpen.value) return null
+  const cell = gridHasFocus.value && focusCell.value ? (focusByTouch.value ? focusCell.value : null) : hoverCell.value
+  if (!cell) return null
+  const c = gridColumns.value[cell.col]
+  if (!c || c.dayKey !== dayKey || c.roomId !== roomId || !appointmentAtCell(cell)) return null
+  return { min: cell.min, solid: false }
 }
 function ghostFor(dayKey: string, roomId: string) {
   const cell = ghostCell.value
@@ -2865,7 +2907,7 @@ function ghostFor(dayKey: string, roomId: string) {
 // The appointment under the keyboard's cell is "selected": ringed, and the
 // one Enter opens.
 const selectedApptId = computed(() => {
-  if (!gridHasFocus.value || !focusCell.value) return null
+  if (!gridHasFocus.value || !focusCell.value || focusByTouch.value) return null
   return appointmentAtCell(focusCell.value)?.id ?? null
 })
 
@@ -2918,6 +2960,7 @@ function onColumnClick(e: MouseEvent, day: Date, roomId: string, tops: HourTops)
     const same = focusCell.value?.col === cell.col && focusCell.value?.min === cell.min && gridHasFocus.value
     focusCell.value = cell
     gridHasFocus.value = true
+    focusByTouch.value = true
     if (!same) return
   }
   // Arrow keys carry on from wherever the mouse last booked.
@@ -2982,6 +3025,7 @@ function onGridFocus() {
 }
 function activateKeyboardFocus() {
   gridHasFocus.value = true
+  focusByTouch.value = false
   if (!focusCell.value) {
     // Start where the day is: now, if it is on screen, else the first hour
     // anybody works.
@@ -3026,7 +3070,8 @@ function onGridKeydown(e: KeyboardEvent) {
       // visit that is on its way. The cursor still moves.
       if (loading.value) return
       const appt = appointmentAtCell(cell)
-      if (appt) handleAppointmentClick(appt)
+      // Picking a new time for a visit: Enter picks the cell, taken or not.
+      if (appt && !reschedulingAppointment.value) handleAppointmentClick(appt)
       else {
         const c = gridColumns.value[cell.col]
         if (reschedulingAppointment.value) pickRescheduleSlot(c.day, slotLabel(cell.min), c.roomId === '__none' ? null : c.roomId)
@@ -3041,6 +3086,7 @@ function onGridKeydown(e: KeyboardEvent) {
       return
   }
   e.preventDefault()
+  focusByTouch.value = false
   focusCell.value = next
   nextTick(() => document.querySelector('[data-grid-focus]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
 }
@@ -3799,7 +3845,7 @@ function showNowLineOn(day: Date) {
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
                       :style="apptStyle(appt, dayTops, DAY_MIN_BLOCK_PX, 1, 2)"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
-                      @click.stop="handleAppointmentClick(appt)"
+                      @click.stop="handleAppointmentClick(appt, $event)"
                       @pointerenter="onBlockPointerEnter(appt, $event)"
                       @pointermove="onBlockPointerMove(appt, $event)"
                       @pointerleave="cancelHoverShow"
@@ -3835,12 +3881,24 @@ function showNowLineOn(day: Date) {
                   </template>
                   <template v-for="g in [createGhostFor(toDateKey(anchorDate), col.id)]" :key="`new-${col.id}`">
                     <div
-                      v-if="g"
+                      v-if="g && !g.taken"
                       data-cy="create-ghost"
                       class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
                       :style="{ top: `${slotTop(dayTops, g.min) + 1}px`, height: `${slotHeight(dayTops, g.min) - 3}px` }"
                     >
                       {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
+                    </div>
+                  </template>
+                  <template v-for="g in [gutterMarkFor(toDateKey(anchorDate), col.id)]" :key="`gutter-${col.id}`">
+                    <div
+                      v-if="g"
+                      data-cy="gutter-ghost"
+                      :data-solid="g.solid || undefined"
+                      class="pointer-events-none absolute right-0.5 z-[15] flex items-center justify-center rounded-[5px] border-2 border-brand text-[13px] font-semibold leading-none"
+                      :class="g.solid ? 'bg-brand text-brand-on' : 'bg-surface text-brand-text'"
+                      :style="{ top: `${slotTop(dayTops, g.min) + 1}px`, height: `${slotHeight(dayTops, g.min) - 3}px`, width: `${DAY_GUTTER_PX - 3}px` }"
+                    >
+                      +
                     </div>
                   </template>
                   </template>
@@ -4031,7 +4089,7 @@ function showNowLineOn(day: Date) {
                         :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
                         :style="apptStyle(appt, weekTops, WEEK_MIN_BLOCK_PX, 0, 2)"
                         @pointerdown="startAppointmentDrag(appt, 'move', $event)"
-                        @click.stop="handleAppointmentClick(appt)"
+                        @click.stop="handleAppointmentClick(appt, $event)"
                         @pointerenter="onBlockPointerEnter(appt, $event)"
                         @pointermove="onBlockPointerMove(appt, $event)"
                         @pointerleave="cancelHoverShow"
@@ -4064,12 +4122,24 @@ function showNowLineOn(day: Date) {
                     </template>
                     <template v-for="g in [createGhostFor(toDateKey(day), col.id)]" :key="`new-${toDateKey(day)}-${col.id}`">
                       <div
-                        v-if="g"
+                        v-if="g && !g.taken"
                         data-cy="create-ghost"
                         class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-brand-on"
                         :style="{ top: `${slotTop(weekTops, g.min)}px`, height: `${slotHeight(weekTops, g.min) - 2}px` }"
                       >
                         {{ g.label }}
+                      </div>
+                    </template>
+                    <template v-for="g in [gutterMarkFor(toDateKey(day), col.id)]" :key="`gutter-${toDateKey(day)}-${col.id}`">
+                      <div
+                        v-if="g"
+                        data-cy="gutter-ghost"
+                        :data-solid="g.solid || undefined"
+                        class="pointer-events-none absolute right-px z-[15] flex items-center justify-center rounded-[4px] border-2 border-brand text-[11px] font-semibold leading-none"
+                        :class="g.solid ? 'bg-brand text-brand-on' : 'bg-surface text-brand-text'"
+                        :style="{ top: `${slotTop(weekTops, g.min)}px`, height: `${slotHeight(weekTops, g.min) - 2}px`, width: `${WEEK_GUTTER_PX - 2}px` }"
+                      >
+                        +
                       </div>
                     </template>
                     </template>

@@ -1,8 +1,9 @@
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { formatEur } from '~/utils/billing'
 import { countryByCode } from '~/utils/countries'
+import { nationalIdAnswer } from '~/utils/docFields'
 import { LANGUAGES } from '~/utils/languages'
-import { practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
 // The Patients step of the PracticeHub import: who to create, who to update
@@ -60,10 +61,11 @@ export interface PracticeHubExistingPatient {
   created_at: string
   balance_cents: number
   photo_storage_path: string | null
+  national_id: string | null
 }
 
 export const PRACTICEHUB_EXISTING_PATIENT_COLUMNS =
-  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path'
+  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id'
 
 export interface PracticeHubFieldDiff { field: string; from: string; to: string }
 
@@ -192,6 +194,7 @@ export function practiceHubPatientFieldLabel(field: string, t: T): string {
     case 'balance_cents': return t('Balance', 'Saldo')
     case 'created_at': return t('Patient since', 'Paciente desde')
     case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
+    case 'national_id': return 'DNI / NIE'
     case 'phone': return t('Phone', 'Teléfono')
     default: return field
   }
@@ -250,6 +253,14 @@ export function practiceHubPatientUpdate(
   if (realCreatedAt && new Date(realCreatedAt).getTime() !== new Date(existing.created_at).getTime()) {
     updates.created_at = realCreatedAt
     diff.push({ field: 'created_at', from: show('created_at', existing.created_at), to: show('created_at', realCreatedAt) })
+  }
+
+  // The DNI/NIE is not PracticeHub's to overwrite: it only fills a blank one.
+  // One already on the profile was typed here or came from a signed form,
+  // and it is what the patient's facturas carry.
+  if (incoming.national_id && !existing.national_id?.trim()) {
+    updates.national_id = incoming.national_id
+    diff.push({ field: 'national_id', from: blank(existing.national_id), to: incoming.national_id })
   }
 
   // A patient matched by email only (e.g. created directly in QuiroFlow)
@@ -358,6 +369,10 @@ export function practiceHubPatientsDiff(rows: CsvRow[], existingPatients: Practi
       preferred_language: practiceHubLanguage(row['Preferred Language'] || ''),
       notes: practiceHubPatientNotes(row),
       external_reference: externalRef || null,
+      // PracticeHub's "Social security number", held to the same rule as a
+      // DNI typed into a form here. Always a key, null when there is none:
+      // see created_at above on why a bulk insert must not carry undefined.
+      national_id: nationalIdAnswer(row['Government Number']),
       marketing_channels: practiceHubMarketingChannels(row),
       default_practitioner_id: opts.practitionerFor(row['Default Practitioner'] || ''),
     }
@@ -438,7 +453,11 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
   const referralSources = practiceHubList<PHNamed>(snapshot, '/referral_sources')
   // Tags are only in PracticeHub 2.0's API, which the job does not read:
   // no tagsByPatientNumber, so they come across empty (see the warning).
-  const rows = practiceHubPatientRows(phPatients, { practitioners, referralSources })
+  // The DNI/NIE is only in 2.0's /patients, which the read copies when the
+  // clinic has saved a 2.0 key. Without one the list is not in the copy, the
+  // patients arrive without it, and the plan says so below.
+  const v3Patients = snapshot.lists['/v3/patients'] as PHV3Patient[] | undefined
+  const rows = practiceHubPatientRows(phPatients, { practitioners, referralSources, governmentNumberById: practiceHubGovernmentNumbers(v3Patients ?? []) })
   const numberCountries = practiceHubNumberCountries(phPatients)
   // The CSV's "Patient Number" holds a custom reference (DNI, passport) for
   // the patients who have one; the API rows already carry the real number,
@@ -525,6 +544,10 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
       'Tags are only in PracticeHub 2.0’s API, which this sync does not read, so new patients come in without them.',
       'Las etiquetas solo están en la API de PracticeHub 2.0, que esta sincronización no lee, así que los pacientes nuevos llegan sin ellas.',
     ),
+    ...(v3Patients ? [] : [t(
+      'The DNI/NIE (PracticeHub’s "Social security number") is only in PracticeHub 2.0’s API. Save a 2.0 key in Settings > Import > Connection and read again to bring it.',
+      'El DNI/NIE (el «Número de la seguridad social» de PracticeHub) solo está en la API de PracticeHub 2.0. Guarda una clave 2.0 en Ajustes > Importar > Conexión y vuelve a leer para traerlo.',
+    )]),
     // A patient with no clinic is invisible on the main Patients list once
     // its clinic filter applies, with no error anywhere.
     ...(!ctx.clinicId && toImport.length ? [t(

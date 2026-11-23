@@ -1379,7 +1379,7 @@ const slotMarks = computed(() => {
   return marks
 })
 
-// Which hours are hatched as "nobody working".
+// Which hours are greyed out as "nobody working".
 //
 // On one practitioner's tab that is their own schedule (Settings -> Team),
 // with the clinic's hours standing in only for someone who never set any. On
@@ -3756,7 +3756,7 @@ function showNowLineOn(day: Date) {
                   @pointerleave="hoverCell = null"
                   @click="onColumnClick($event, anchorDate, col.id, dayTops)"
                 >
-                  <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
+                  <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-closed pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] font-medium text-ink-450" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
                     <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
                   </div>
                   <div v-for="band in bookingBandsFor(anchorDate)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2.5 pr-2 pt-1 text-[11.5px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
@@ -3990,7 +3990,7 @@ function showNowLineOn(day: Date) {
                     @pointerleave="hoverCell = null"
                     @click="onColumnClick($event, day, col.id, weekTops)"
                   >
-                    <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                    <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-closed pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
                     <div v-for="band in bookingBandsFor(day)" :key="band.key" data-cy="online-booking-window" class="pointer-events-none absolute left-0 right-0 flex items-start pl-2 pr-1 pt-1 text-[11px] font-semibold text-ink-500" :style="bookingBandStyle(band, ci === 0)">
                       <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }}</span>
                     </div>
@@ -4024,7 +4024,7 @@ function showNowLineOn(day: Date) {
                         <span class="max-w-full truncate font-semibold text-ink-700">{{ blockLabelLines(block)[0] }}</span>
                         <span v-if="blockLabelLines(block)[1]" class="max-w-full truncate">{{ blockLabelLines(block)[1] }}</span>
                       </span>
-                      <span v-else class="font-mono">{{ t('Blocked', 'Bloqueado') }}</span>
+                      <span v-else class="max-w-full truncate rounded-[4px] bg-surface px-1 py-px font-mono text-ink-700">{{ t('Blocked', 'Bloqueado') }}</span>
                     </div>
 
                     <div
@@ -4278,14 +4278,17 @@ function showNowLineOn(day: Date) {
 </template>
 
 <style scoped>
-/* Hours nobody works: diagonal stripes in two surface tokens, so they read
-   as "not bookable" in both themes without borrowing a status colour. */
-.cal-hatch {
-  background: repeating-linear-gradient(135deg, rgb(var(--color-chip-bg)) 0 5px, rgb(var(--color-surface-subtle)) 5px 11px);
+/* Hours nobody works: a flat grey clearly below the white of bookable time.
+   It used to be faint stripes, which sat within a few units of the surface
+   and shared their pattern with blocks, so the three states ran together. */
+.cal-closed {
+  background: rgb(var(--color-cal-closed));
 }
-/* A deliberate block (training, lunch) -- the same stripes, a touch stronger,
-   with an outline, so it reads as placed rather than as the day's edge. */
+/* A deliberate block (leave, training, lunch): stripes over the surface and
+   an outline, so it reads as placed -- unlike the flat grey of closed hours
+   and unlike plain bookable time. Its label sits on a solid chip. */
 .cal-blocked {
-  background: repeating-linear-gradient(135deg, rgb(var(--color-chip-bg)) 0 6px, rgb(var(--color-surface)) 6px 12px);
+  border-color: rgb(var(--color-cal-block-border));
+  background: repeating-linear-gradient(135deg, rgb(var(--color-cal-block-stripe)) 0 4px, rgb(var(--color-surface)) 4px 10px);
 }
 </style>

@@ -191,6 +191,7 @@ const sources = computed<Source[]>(() => [
           { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Details, phones and practitioner.', 'Datos, teléfonos y quiropráctico.'), count: counted('patients', 'QH-') },
           { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits.', 'Visitas pasadas y futuras.'), count: counted('appointments', 'QH-appt-') },
           { key: 'clinical', label: t('Records and notes', 'Fichas y notas'), hint: t('The clinical custom fields, and notes not written on the day of a visit.', 'Los campos clínicos y las notas no escritas el día de una visita.'), count: counted('contact_log', 'QH-') },
+          { key: 'ledger', label: t('Payments and bonos', 'Pagos y bonos'), hint: t('Only for a clinic that charges through QuiroHiro.', 'Solo para una clínica que cobra con QuiroHiro.'), count: counted('payments', 'QH-') },
         ],
       },
     ],

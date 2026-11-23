@@ -18,6 +18,8 @@ const saveError = ref('')
 const disconnecting = ref(false)
 
 const SCOPES = ['calendars.readonly', 'calendars/events.readonly', 'contacts.readonly', 'users.readonly', 'locations.readonly', 'locations/customFields.readonly']
+// Only if the clinic charges through QuiroHiro: without them, everything but payments comes in.
+const MONEY_SCOPES = ['invoices.readonly', 'payments/transactions.readonly']
 
 async function load() {
   loading.value = true
@@ -69,6 +71,10 @@ async function disconnect() {
         {{ t('Under Scopes, tick these six (all "Ver", read-only):', 'En Ámbitos, marca estos seis (todos «Ver», de solo lectura):') }}
         <span class="mt-1 flex flex-wrap gap-1">
           <code v-for="s in SCOPES" :key="s" class="rounded bg-surface-subtle px-1.5 py-0.5 text-[12px] text-ink-700">{{ s }}</code>
+        </span>
+        <span class="mt-1.5 block">{{ t('If the clinic charges or sells bonos through QuiroHiro, tick these two as well, for its payments and invoices:', 'Si la clínica cobra o vende bonos con QuiroHiro, marca también estos dos, para sus pagos y facturas:') }}</span>
+        <span class="mt-1 flex flex-wrap gap-1">
+          <code v-for="s in MONEY_SCOPES" :key="s" class="rounded bg-surface-subtle px-1.5 py-0.5 text-[12px] text-ink-700">{{ s }}</code>
         </span>
       </li>
       <li>{{ t('Click Create, copy the token it shows (it starts with "pit-") and paste it below, with the address of any QuiroHiro page.', 'Pulsa Crear, copia el token que aparece (empieza por «pit-») y pégalo abajo, con la dirección de cualquier página de QuiroHiro.') }}</li>

@@ -48,7 +48,7 @@ function practiceHubListName(path: string | undefined): string {
 function quirohiroListName(index: number): string {
   return [
     t('team', 'equipo'), t('calendars', 'calendarios'), t('custom fields', 'campos personalizados'), t('custom fields', 'campos personalizados'),
-    t('contacts', 'contactos'), t('appointments', 'citas'), t('notes', 'notas'),
+    t('contacts', 'contactos'), t('appointments', 'citas'), t('invoices', 'facturas'), t('payments', 'pagos'), t('notes', 'notas'),
   ][index] ?? ''
 }
 

@@ -43,11 +43,11 @@ async function go(dryRun: boolean) {
 <template>
   <div class="space-y-4" data-cy="qh-full">
     <ImportIntro
-      :lead="t('Reads QuiroHiro and brings it across: patients, appointments, and each patient\'s clinical record and visit notes, in that order. It runs on QuiroFlow\'s server, so you can close this page; you get an email when it is done.', 'Lee QuiroHiro y lo trae: pacientes, citas, y la ficha clínica y las notas de visita de cada paciente, en ese orden. Se hace en el servidor de QuiroFlow, así que puedes cerrar esta página; te llega un email cuando termine.')"
+      :lead="t('Reads QuiroHiro and brings it across: patients, appointments, each patient\'s clinical record and visit notes, and payments, in that order. It runs on QuiroFlow\'s server, so you can close this page; you get an email when it is done.', 'Lee QuiroHiro y lo trae: pacientes, citas, la ficha clínica y las notas de visita de cada paciente, y los pagos, en ese orden. Se hace en el servidor de QuiroFlow, así que puedes cerrar esta página; te llega un email cuando termine.')"
       :notes="[
         { title: t('Safe to run again.', 'Se puede repetir.'), body: t('Running it again brings across only what changed in QuiroHiro since: nothing is duplicated, and what QuiroFlow has already changed (a visit moved or checked in here) is kept.', 'Al repetirla solo trae lo que haya cambiado en QuiroHiro desde entonces: no se duplica nada, y se respeta lo que ya se haya cambiado en QuiroFlow (una visita movida o registrada aquí).') },
         { title: t('Notes find their visit.', 'Las notas van a su visita.'), body: t('A note written on the day of a visit becomes that visit\'s note; one written on another day goes on the patient\'s history. The clinical custom fields become one record per patient.', 'Una nota escrita el día de una visita queda como nota de esa visita; una escrita otro día va al historial del paciente. Los campos clínicos personalizados quedan en una ficha por paciente.') },
-        { title: t('No money.', 'Sin dinero.'), body: t('QuiroHiro holds no payments or invoices for the clinic, so there are none to bring.', 'QuiroHiro no guarda pagos ni facturas de la clínica, así que no hay nada que traer.') },
+        { title: t('Payments, invoices and bonos.', 'Pagos, facturas y bonos.'), body: t('If the clinic charges through QuiroHiro and the key has the two payment permissions, its invoices, payments and bonos come in last. A clinic that keeps its money elsewhere (a spreadsheet) has none there to bring.', 'Si la clínica cobra con QuiroHiro y la clave tiene los dos permisos de pagos, sus facturas, pagos y bonos llegan al final. Una clínica que lleva el dinero en otro sitio (un Excel) no tiene nada que traer de ahí.') },
       ]"
     />
 

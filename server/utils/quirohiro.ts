@@ -33,6 +33,9 @@ export const QUIROHIRO_SCOPES = [
   'locations/customFields.readonly',
 ] as const
 
+/** Only for payments and invoices: a token without them imports everything else. */
+export const QUIROHIRO_MONEY_SCOPES = ['invoices.readonly', 'payments/transactions.readonly'] as const
+
 export interface QuirohiroConnection { token: string; locationId: string }
 
 export class QuirohiroError extends Error {

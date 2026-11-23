@@ -8,6 +8,7 @@ const REASONS: [prefix: string, en: string, es: string][] = [
   ['That time is no longer available', 'That time is no longer available. Please choose another.', 'Esa hora ya no está disponible. Elige otra.'],
   ['That time is not available for booking', 'That time is not available. Please choose another.', 'Esa hora no está disponible. Elige otra.'],
   ['Cannot book a time in the past', 'That time has already passed. Please choose another.', 'Esa hora ya ha pasado. Elige otra.'],
+  ['That time is too soon to book online', 'That time is too soon to book from the app. Please choose a later one.', 'Esa hora es demasiado pronto para reservarla desde la app. Elige una más adelante.'],
   ['That date is too far in advance', 'That date is too far ahead to book from the app.', 'Esa fecha está demasiado lejos para reservarla desde la app.'],
   ['Please choose a time further ahead', 'Please choose a time further ahead, or contact the clinic.', 'Elige una hora más adelante o contacta con la clínica.'],
   ['Too close to the appointment', 'It is too close to the appointment to change it here — please contact the clinic.', 'Queda muy poco para la cita para cambiarla desde aquí: contacta con la clínica.'],

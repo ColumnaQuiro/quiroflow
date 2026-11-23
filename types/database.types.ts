@@ -1753,6 +1753,7 @@ export type Database = {
           online_booking_hide_language_picker: boolean
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
+          online_booking_min_notice_hours: number
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
           online_booking_notify_whatsapp_template_language: string
@@ -1883,6 +1884,7 @@ export type Database = {
           online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          online_booking_min_notice_hours?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -2014,6 +2016,7 @@ export type Database = {
           online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          online_booking_min_notice_hours?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -5009,8 +5012,10 @@ export type Database = {
           description: string
           id: string
           invoice_id: string
+          list_price_cents: number | null
           package_purchase_id: string | null
           price_cents: number
+          price_change_reason: string | null
           quantity: number
           service_id: string | null
         }
@@ -5019,8 +5024,10 @@ export type Database = {
           description: string
           id?: string
           invoice_id: string
+          list_price_cents?: number | null
           package_purchase_id?: string | null
           price_cents?: number
+          price_change_reason?: string | null
           quantity?: number
           service_id?: string | null
         }
@@ -5029,8 +5036,10 @@ export type Database = {
           description?: string
           id?: string
           invoice_id?: string
+          list_price_cents?: number | null
           package_purchase_id?: string | null
           price_cents?: number
+          price_change_reason?: string | null
           quantity?: number
           service_id?: string | null
         }
@@ -11134,6 +11143,14 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      change_invoice_line_price: {
+        Args: {
+          p_line_id: string
+          p_price_cents: number
+          p_reason?: string
+        }
+        Returns: Json
+      }
       charge_visit_to_third_party: {
         Args: {
           p_appointment_id: string
@@ -11347,6 +11364,10 @@ export type Database = {
           team_member_id: string
           user_agent: string
         }[]
+      }
+      get_online_booking_min_notice: {
+        Args: { p_clinic_id: string }
+        Returns: number
       }
       get_patient_access_log: {
         Args: {
@@ -11871,7 +11892,7 @@ export type Database = {
         Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
       }
       care_plan_marked_visits: {
-        Args: { p_from?: string; p_to?: string; p_patient_id?: string }
+        Args: { p_from?: string; p_to?: string; p_patient_id?: string; p_with_phase_end?: boolean }
         Returns: {
           appointment_id: string
           patient_id: string
@@ -11884,11 +11905,38 @@ export type Database = {
           expected_type_name: string | null
           appointment_type_id: string | null
           mismatch: boolean
+          /** The phase after this one, on its last visit, when the cadence changes; only with p_with_phase_end (20261123101831). */
+          next_phase: Json | null
         }[]
       }
       care_plan_visit_markers_at: {
-        Args: { p_patient_id: string; p_starts_at: string[]; p_exclude_appointment_id?: string }
-        Returns: { starts_at: string; visit_number: number; label: string | null; expected_appointment_type_id: string | null; expected_type_name: string | null }[]
+        Args: { p_patient_id: string; p_starts_at: string[]; p_exclude_appointment_id?: string; p_with_phase_end?: boolean }
+        Returns: {
+          starts_at: string
+          visit_number: number
+          label: string | null
+          expected_appointment_type_id: string | null
+          expected_type_name: string | null
+          next_phase: Json | null
+        }[]
+      }
+      care_plan_phase_changes: {
+        Args: never
+        Returns: {
+          patient_id: string
+          care_plan_id: string
+          care_plan_name: string
+          visits_per_period: number
+          frequency_value: number
+          frequency_unit: string
+          total_visits: number
+          completed_in_plan: number
+          next_phase: Json
+          last_visit_appointment_id: string | null
+          last_visit_starts_at: string | null
+          last_visit_status: string | null
+          booked_after_last: number
+        }[]
       }
       care_plan_visit_facts: {
         Args: never

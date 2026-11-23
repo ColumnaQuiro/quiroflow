@@ -192,6 +192,10 @@ const locationHours = ref<{ team_member_id: string; clinic_id: string; business_
 // (get_appointment_type_booking_windows). A type missing here is offered
 // whenever its practitioner is free.
 const typeWindows = ref<Record<string, OnlineBookingWindows>>({})
+// accounts.online_booking_min_notice_hours (get_online_booking_min_notice):
+// nothing is offered sooner than this many hours from now, and the database
+// refuses it too. 0 when the read fails, as before the setting existed.
+const minNoticeHours = ref(0)
 const typeWindowsFor = (memberId: string | null | undefined) => ({ windows: typeWindows.value[appointmentTypeId.value] ?? null, practitionerId: memberId })
 // Everybody on the page, with the hours they work at the clinic chosen
 // (practitionerHoursAt). Somebody at the clinic all week and at a second
@@ -340,6 +344,7 @@ const BOOKING_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
   'That phone number does not look right': { es: 'Ese número no parece correcto. Revíselo, por favor.', en: 'That number does not look right. Please check it.', fr: 'Ce numéro ne semble pas correct. Veuillez le vérifier.' },
   'First name required': { es: 'Indique su nombre.', en: 'Please enter your first name.', fr: 'Veuillez indiquer votre prénom.' },
   'That time is no longer available': { es: 'Esa hora ya no está disponible. Elija otra, por favor.', en: 'That time is no longer available. Please choose another.', fr: 'Ce créneau n’est plus disponible. Veuillez en choisir un autre.' },
+  'That time is too soon to book online': { es: 'Esa hora es demasiado pronto para reservar online. Elija una más adelante, por favor.', en: 'That time is too soon to book online. Please choose a later one.', fr: 'Ce créneau est trop proche pour réserver en ligne. Veuillez en choisir un plus tard.' },
   'Cannot book a time in the past': { es: 'Esa hora ya ha pasado. Elija otra, por favor.', en: 'That time has already passed. Please choose another.', fr: 'Ce créneau est déjà passé. Veuillez en choisir un autre.' },
   'That date is too far in advance to book online': { es: 'Esa fecha está demasiado lejos para reservar online. Elija una más cercana, por favor.', en: 'That date is too far ahead to book online. Please choose an earlier one.', fr: 'Cette date est trop éloignée pour réserver en ligne. Veuillez en choisir une plus proche.' },
   'That class is not on at that time': { es: 'Esa clase no se imparte a esa hora.', en: 'That class is not on at that time.', fr: 'Ce cours n’a pas lieu à cette heure-là.' },
@@ -643,6 +648,12 @@ const latestStart = computed(() => {
   return new Date(Date.now() + days * 86400000)
 })
 const lastBookableDate = computed(() => clinicDateOf(latestStart.value, clinicTimeZone.value))
+// The soonest start offered: now plus the clinic's minimum notice. A function,
+// not a computed, so it is "now" each time slots are built rather than when
+// the page loaded.
+function earliestStart(): Date {
+  return new Date(Date.now() + minNoticeHours.value * 3600000)
+}
 // "Hasta el 5 de febrero", for a month shown past the last bookable day.
 const lastBookableLabel = computed(() => {
   const [year, month, day] = lastBookableDate.value.split('-').map(Number)
@@ -770,6 +781,7 @@ function slotsForMember(
     practitionerHours: memberBusinessHours,
     durationMinutes: effectiveDurationMinutes.value,
     busy,
+    notBefore: earliestStart(),
     notAfter: latestStart.value,
     // Only at the times the type is booked online, when it has them.
     type: typeWindowsFor(memberId),
@@ -1151,7 +1163,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value; minNoticeHours?: number }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1194,15 +1206,17 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
   // a window -- a wasted form, never a booking at the wrong time.
   const shared = parsed.team_members.filter((m) => m.clinic_ids.length > 1).map((m) => m.id)
   const typeIds = parsed.appointment_types.map((t) => t.id)
-  const [perLocation, windows] = await Promise.all([
+  const [perLocation, windows, noticeHours] = await Promise.all([
     shared.length
       ? supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never).then(({ data }) => (data as unknown as typeof locationHours.value | null) ?? [])
       : Promise.resolve([] as typeof locationHours.value),
     typeIds.length
       ? supabase.rpc('get_appointment_type_booking_windows', { p_type_ids: typeIds }).then(({ data }) => Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_booking_windows as OnlineBookingWindows])))
       : Promise.resolve({} as typeof typeWindows.value),
+    // Every location is the same account, so any of them answers.
+    supabase.rpc('get_online_booking_min_notice', { p_clinic_id: parsed.clinics[0].id }).then(({ data }) => data ?? 0),
   ])
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows, minNoticeHours: noticeHours }
 })
 
 if (import.meta.server) {
@@ -1227,6 +1241,7 @@ function applyBooking(payload: BookingPayload | null) {
   info.value = parsed
   locationHours.value = payload.locationHours ?? []
   typeWindows.value = payload.typeWindows ?? {}
+  minNoticeHours.value = payload.minNoticeHours ?? 0
   // The embedding site's language, now that the clinic's settings say
   // whether to follow it. Here so that the server's HTML is in it already.
   if (!queryLang && siteLang && parsed.account.online_booking_hide_language_picker) lang.value = siteLang

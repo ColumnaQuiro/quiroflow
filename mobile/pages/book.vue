@@ -110,6 +110,9 @@ const locationHours = ref<{ team_member_id: string; clinic_id: string; business_
 // way they narrow the practitioner's hours to the times the type is offered,
 // as assert_booking_type_window does when it books.
 const typeWindows = ref<Record<string, OnlineBookingWindows>>({})
+// accounts.online_booking_min_notice_hours: nothing sooner than this many
+// hours from now is offered, and the database refuses it too.
+const minNoticeHours = ref(0)
 const slotTypeWindows = computed(() => ({
   windows: rescheduleTarget.value ? (rescheduleTarget.value.appointment_types?.online_booking_windows ?? null) : (typeWindows.value[appointmentTypeId.value] ?? null),
   practitionerId: teamMemberId.value,
@@ -188,7 +191,7 @@ onMounted(async () => {
     return
   }
   info.value = parsed
-  await Promise.all([loadLocationHours(parsed), loadTypeWindows(parsed)])
+  await Promise.all([loadLocationHours(parsed), loadTypeWindows(parsed), loadMinNotice(parsed)])
 
   if (rescheduleId.value) {
     await startReschedule(parsed)
@@ -220,6 +223,14 @@ async function loadTypeWindows(parsed: BookingInfo) {
   if (!ids.length) return
   const { data } = await supabase.rpc('get_appointment_type_booking_windows', { p_type_ids: ids })
   typeWindows.value = Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_booking_windows as OnlineBookingWindows]))
+}
+
+// If this fails (or the database predates 20261123101508) the soonest free
+// time is offered as before, and the booking functions refuse one inside the
+// notice.
+async function loadMinNotice(parsed: BookingInfo) {
+  const { data } = await supabase.rpc('get_online_booking_min_notice' as never, { p_clinic_id: parsed.clinics[0].id } as never)
+  minNoticeHours.value = typeof data === 'number' ? data : 0
 }
 
 function onClinicChange() {
@@ -288,9 +299,11 @@ const lastBookableDate = computed(() => clinicDateOf(latestStart.value, clinicTi
 // reschedule_patient_appointment refuses a new time inside the clinic's
 // change notice ("Please choose a time further ahead"), and this page offered
 // those times all the same. The earliest start it will take, when moving.
-const earliestStart = computed(() =>
-  rescheduleTarget.value ? new Date(Date.now() + (info.value?.settings?.change_notice_hours ?? 0) * 3600000) : new Date(),
-)
+// The clinic's minimum notice for online booking applies to both.
+const earliestStart = computed(() => {
+  const notice = Math.max(minNoticeHours.value, rescheduleTarget.value ? (info.value?.settings?.change_notice_hours ?? 0) : 0)
+  return new Date(Date.now() + notice * 3600000)
+})
 const lastBookableDay = computed(() => {
   const d = new Date(latestStart.value)
   d.setHours(23, 59, 59, 999)

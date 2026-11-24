@@ -24,6 +24,7 @@ function fakeSupabase(tables: Record<string, Row[]>, settle: { pending: number; 
     const match = (r: Row) => q.filters.every(([kind, col, v]) =>
       kind === 'eq' ? r[col] === v
         : kind === 'is' ? (r[col] ?? null) === v
+          : kind === 'not' ? (r[col] ?? null) !== v
           : String(r[col] ?? '').startsWith(String(v).replace(/%$/, '')))
     const run = () => {
       if (q.op === 'insert') {
@@ -49,6 +50,7 @@ function fakeSupabase(tables: Record<string, Row[]>, settle: { pending: number; 
       eq: filter('eq'),
       is: filter('is'),
       like: filter('like'),
+      not: (col: string, _op: string, v: unknown) => { q.filters.push(['not', col, v]); return b },
       range: (a: number, z: number) => { q.range = [a, z]; return b },
       then: (ok: (v: unknown) => unknown, no: (e: unknown) => unknown) => Promise.resolve().then(run).then(ok, no),
     }
@@ -284,5 +286,28 @@ describe('the Ledger step on the server', () => {
     expect(p.total).toBe(0)
     await p.apply(() => {}, () => false)
     expect(settle.calls).toHaveLength(0)
+  })
+
+  it('adopts a Stripe charge the webhook already booked instead of creating the PracticeHub payment again', async () => {
+    const tables = clinic()
+    // The Stripe sync booked p2's 100,00 a day before PracticeHub stamped it.
+    tables.payments!.push({ id: 'stripe-1', account_id: ACCOUNT, external_reference: null, stripe_invoice_id: 'in_1', patient_id: 'p2', amount_cents: 10000, paid_at: '2026-09-08T09:00:00Z', method: 'card' })
+    const p = await plan(tables)
+    expect(p.warnings.some((w) => w.includes('1 payments are Stripe charges already recorded here'))).toBe(true)
+    await p.apply(() => {}, () => false)
+    const mine = tables.payments!.filter((x) => x.account_id === ACCOUNT)
+    // One payment for that money, now carrying PracticeHub's reference.
+    expect(mine.filter((x) => x.patient_id === 'p2').map((x) => [x.id, x.external_reference])).toEqual([['stripe-1', 'phpay-702']])
+    // And the next run sees it as imported.
+    const again = await plan(tables)
+    expect(again.rows.some((r) => String(r.what).startsWith('Payment'))).toBe(false)
+  })
+
+  it('does not adopt a booked charge of a different amount or a week away', async () => {
+    const tables = clinic()
+    tables.payments!.push({ id: 'stripe-1', account_id: ACCOUNT, external_reference: null, stripe_invoice_id: 'in_1', patient_id: 'p2', amount_cents: 9000, paid_at: '2026-09-09T09:00:00Z', method: 'card' })
+    tables.payments!.push({ id: 'stripe-2', account_id: ACCOUNT, external_reference: null, stripe_invoice_id: 'in_2', patient_id: 'p2', amount_cents: 10000, paid_at: '2026-09-16T14:40:00Z', method: 'card' })
+    await (await plan(tables)).apply(() => {}, () => false)
+    expect(tables.payments!.find((x) => x.external_reference === 'phpay-702')?.id).not.toMatch(/^stripe-/)
   })
 })

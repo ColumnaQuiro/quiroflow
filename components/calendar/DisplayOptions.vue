@@ -8,7 +8,7 @@ import { STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 // beside the grid; nobody reads a legend all day, so it no longer costs the
 // grid that width.
 
-export type DisplayKey = 'privacyMode' | 'showAvailability' | 'showCancelled' | 'hideRescheduled' | 'hideDeleted'
+export type DisplayKey = 'privacyMode' | 'showAvailability' | 'showCancelled' | 'hideRescheduled' | 'hideDeleted' | 'openHoursOnly'
 
 defineProps<{
   settings: Record<DisplayKey, boolean>

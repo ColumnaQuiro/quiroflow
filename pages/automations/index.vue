@@ -37,6 +37,8 @@ interface Row {
   segment_last_run_at: string | null
   /** A capped one-off send with people left for another day. */
   carryingOver: boolean
+  /** Why it cannot be switched on, [en, es] each: empty when it can (or is on). */
+  blockers?: [string, string][]
 }
 interface Stats {
   inside: number
@@ -215,41 +217,63 @@ function third(r: Row): { value: string; label: string } {
 }
 
 // ---- switching on and off
+// Optimistic: the switch moves at once and moves back if the server refuses.
+// Switching on says first what will happen (AutomationsActivateDialog, or the
+// segment's own count); pausing is always safe, so it just happens.
 const toggling = ref<string | null>(null)
 const problems = ref<{ ruleId: string; list: Problem[] } | null>(null)
 const segmentFor = ref<Row | null>(null)
-async function toggle(r: Row) {
-  if (lockedLead(r) || toggling.value) return
-  if (!r.enabled && r.trigger_event === 'segment') {
-    segmentFor.value = r
-    return
-  }
+const activateFor = ref<Row | null>(null)
+/** Why this row's switch cannot be switched on, in words; '' when it can. */
+function blockedReason(r: Row) {
+  if (isActive(r)) return ''
+  if (lockedLead(r)) return t('Lead automations need Growth', 'Las automatizaciones de leads necesitan Growth')
+  const first = r.blockers?.[0]
+  if (!first) return ''
+  const more = (r.blockers?.length ?? 0) - 1
+  return t(first[0], first[1]) + (more > 0 ? t(` (and ${more} more)`, ` (y ${more} más)`) : '')
+}
+function toggle(r: Row) {
+  if (toggling.value || blockedReason(r)) return
+  if (r.enabled) return setEnabled(r, false)
+  if (r.trigger_event === 'segment') segmentFor.value = r
+  else activateFor.value = r
+}
+async function setEnabled(r: Row, on: boolean) {
   toggling.value = r.id
+  r.enabled = on
   try {
-    await useStaffFetch(`/api/automations/${r.id}/enabled`, { method: 'POST', body: { enabled: !r.enabled } })
-    r.enabled = !r.enabled
+    await useStaffFetch(`/api/automations/${r.id}/enabled`, { method: 'POST', body: { enabled: on } })
+    if (on) r.blockers = []
+    showToast(on ? t(`"${r.name}" is on`, `«${r.name}» activada`) : t(`"${r.name}" is paused`, `«${r.name}» pausada`))
   } catch (e: any) {
+    r.enabled = !on
     if (e?.data?.data?.problems) problems.value = { ruleId: r.id, list: e.data.data.problems }
     else showToast(serverMessage(e) ?? t('Could not change it.', 'No se ha podido cambiar.'), 'error')
   } finally {
     toggling.value = null
   }
 }
+function confirmActivate() {
+  const r = activateFor.value
+  activateFor.value = null
+  if (r) setEnabled(r, true)
+}
 async function activateSegment(testMode: boolean) {
   const r = segmentFor.value
   if (!r) return
+  segmentFor.value = null
+  if (!testMode || r.dry_run) return setEnabled(r, true)
+  // Test mode is a change to the automation, not only to the switch: saved
+  // whole, then the list reloaded to show it.
   toggling.value = r.id
+  r.enabled = true
   try {
-    if (testMode && !r.dry_run) {
-      const full = await useStaffFetch<{ rule: any; steps: any[] }>(`/api/automations/${r.id}`)
-      await useStaffFetch(`/api/automations/${r.id}`, { method: 'PUT', body: { rule: { ...full.rule, dry_run: true }, steps: full.steps, enabled: true } })
-    } else {
-      await useStaffFetch(`/api/automations/${r.id}/enabled`, { method: 'POST', body: { enabled: true } })
-    }
-    segmentFor.value = null
+    const full = await useStaffFetch<{ rule: any; steps: any[] }>(`/api/automations/${r.id}`)
+    await useStaffFetch(`/api/automations/${r.id}`, { method: 'PUT', body: { rule: { ...full.rule, dry_run: true }, steps: full.steps, enabled: true } })
     await load()
   } catch (e: any) {
-    segmentFor.value = null
+    r.enabled = false
     if (e?.data?.data?.problems) problems.value = { ruleId: r.id, list: e.data.data.problems }
     else showToast(serverMessage(e) ?? t('Could not switch it on.', 'No se ha podido activar.'), 'error')
   } finally {
@@ -383,20 +407,16 @@ function hideBanner() {
           <p v-else-if="visible.length === 0" class="px-4 py-8 text-center text-[13px] text-ink-muted">{{ t('No automation matches.', 'Ninguna automatización coincide.') }}</p>
 
           <div v-for="r in visible" :key="r.id" class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line-row px-4 py-3 last:border-0" :data-test="`rule-${r.id}`">
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="isActive(r)"
-              :aria-label="t('Active', 'Activa')"
-              :disabled="lockedLead(r) || toggling === r.id"
-              :title="lockedLead(r) ? t('Lead automations need Growth', 'Las automatizaciones de leads necesitan Growth') : undefined"
-              class="relative h-[26px] w-11 shrink-0 rounded-full disabled:cursor-not-allowed disabled:opacity-50"
-              :class="isActive(r) ? 'bg-brand' : 'bg-line-control'"
+            <!-- A fixed width, so the names line up whether it says Activa or Pausada. -->
+            <AutomationsEnabledSwitch
+              class="w-[104px]"
+              :on="isActive(r)"
+              :disabled="!!blockedReason(r)"
+              :reason="blockedReason(r)"
+              :busy="toggling === r.id"
               data-test="rule-toggle"
-              @click="toggle(r)"
-            >
-              <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="isActive(r) ? 'translate-x-[18px]' : 'translate-x-0'" />
-            </button>
+              @toggle="toggle(r)"
+            />
             <NuxtLink :to="`/automations/${r.id}`" class="flex min-w-0 flex-1 flex-col gap-1" data-test="rule-link">
               <span class="flex flex-wrap items-center gap-1.5">
                 <strong class="truncate text-[14px] text-ink-900">{{ r.name }}</strong>
@@ -408,6 +428,7 @@ function hideBanner() {
                 <UiPill v-if="lockedLead(r)" tone="neutral">{{ t('Paused · no Growth', 'Pausada · sin Growth') }}</UiPill>
               </span>
               <span class="truncate text-[12.5px] text-ink-muted">{{ subline(r).join(' · ') }}</span>
+              <span v-if="blockedReason(r) && !lockedLead(r)" class="text-[12.5px] text-warning-text" data-test="rule-blocked">{{ t('Cannot be switched on yet:', 'Aún no se puede activar:') }} {{ blockedReason(r) }}</span>
             </NuxtLink>
             <div class="grid shrink-0 grid-cols-3 gap-4 text-left sm:w-[330px]" data-test="rule-stats">
               <span class="flex flex-col">
@@ -438,6 +459,18 @@ function hideBanner() {
       @draft="router.push(`/automations/${problems.ruleId}`)"
       @review="problems = null"
       @goto="(id) => router.push(`/automations/${problems!.ruleId}${id ? `?step=${id}` : ''}`)"
+    />
+    <AutomationsActivateDialog
+      v-if="activateFor"
+      :name="activateFor.name"
+      :trigger-event="activateFor.trigger_event"
+      :filters="activateFor.filters"
+      :lookup="lookup"
+      :is-marketing="activateFor.is_marketing"
+      :dry-run="activateFor.dry_run"
+      :inside="activateFor.usesRuns ? (stats[activateFor.id]?.inside ?? 0) : 0"
+      @confirm="confirmActivate"
+      @cancel="activateFor = null"
     />
     <AutomationsSegmentActivateDialog
       v-if="segmentFor"

@@ -243,6 +243,22 @@ export function useAutomationBuilder() {
     history.value = []
   }
 
+  /**
+   * The on/off switch, flipped on an automation already saved: what is saved,
+   * not an edit. The baseline and the undo history take the same value, so it
+   * neither shows "Unsaved changes" nor comes back with Undo -- and any edit
+   * made meanwhile stays an edit.
+   */
+  function markEnabled(value: boolean) {
+    const withIt = (state: string) => (state ? JSON.stringify({ ...JSON.parse(state), enabled: value }) : state)
+    restoring = true
+    draft.value.enabled = value
+    original.value = withIt(original.value)
+    lastState = withIt(lastState)
+    history.value = history.value.map(withIt)
+    nextTick(() => (restoring = false))
+  }
+
   // ------------------------------------------------------------ loading
   async function loadLookups() {
     const [types, members, roles, memberships, docs, forms, patientTypes, programs, schedules] = await Promise.all([
@@ -587,6 +603,7 @@ export function useAutomationBuilder() {
     setTrigger,
     save,
     discard,
+    markEnabled,
   }
 }
 

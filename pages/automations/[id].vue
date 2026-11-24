@@ -3,6 +3,7 @@ import { BUILDER_KEY, isBroadcastRule, newBroadcastDraft, useAutomationBuilder }
 import { OUTLETS } from '~/utils/automationCatalog'
 import { outletLabel, stepTitle } from '~/utils/automationDescribe'
 import { chainOf, type Problem } from '~/utils/automationTree'
+import { serverMessage } from '~/utils/serverMessage'
 
 // One automation: the canvas (Flow), who is in it (People), what it did
 // (History) and its settings. One draft for all four, one Save.
@@ -125,24 +126,55 @@ function gotoStep(stepId: string | null) {
 }
 
 // ---- switching on and off
+// Switching on says first what will happen -- a group (segment) counts who
+// matches, anything else says what starts it. Pausing just happens. On a
+// saved automation with nothing unsaved the switch moves at once and moves
+// back if the server refuses; otherwise switching is saving the draft.
 const segmentDialog = ref(false)
-async function toggleEnabled() {
-  const target = !b.draft.value.enabled
-  if (target && b.draft.value.rule.trigger_event === 'segment') {
-    segmentDialog.value = true
+const activateDialog = ref(false)
+const toggling = ref(false)
+const noGrowth = computed(() => b.isLead.value && !b.hasGrowth.value)
+/** Why it cannot be switched on, in words; '' when it can, or is on. */
+const switchReason = computed(() => {
+  if (noGrowth.value) return t('Lead automations need Growth', 'Las automatizaciones de leads necesitan Growth')
+  if (b.draft.value.enabled) return ''
+  const first = b.problems.value[0]
+  if (!first) return ''
+  const more = b.problems.value.length - 1
+  return t(first.message[0], first.message[1]) + (more > 0 ? t(` (and ${more} more)`, ` (y ${more} más)`) : '')
+})
+function toggleEnabled() {
+  if (b.draft.value.enabled) return setEnabled(false)
+  if (switchReason.value) {
+    problems.value = b.problems.value.length ? b.problems.value : null
     return
   }
+  if (b.draft.value.rule.trigger_event === 'segment') segmentDialog.value = true
+  else activateDialog.value = true
+}
+async function setEnabled(target: boolean) {
   if (b.isNew.value || b.dirty.value) return saveWith({ enabled: target })
+  const id = b.ruleId.value!
+  const before = b.draft.value.enabled
+  b.markEnabled(target)
+  toggling.value = true
   try {
-    await useStaffFetch(`/api/automations/${b.ruleId.value}/enabled`, { method: 'POST', body: { enabled: target } })
-    b.draft.value.enabled = target
+    await useStaffFetch(`/api/automations/${id}/enabled`, { method: 'POST', body: { enabled: target } })
     forgetList()
-    await b.load(b.ruleId.value!, { silent: true })
     showToast(target ? t('Switched on', 'Activada') : t('Paused', 'Pausada'))
+    // Re-read for what the server set beside it; not over edits made meanwhile.
+    if (b.ruleId.value === id && !b.dirty.value) await b.load(id, { silent: true })
   } catch (e: any) {
+    if (b.ruleId.value === id) b.markEnabled(before)
     if (e?.data?.data?.problems) problems.value = e.data.data.problems
-    else showToast(t('Could not change it.', 'No se ha podido cambiar.'), 'error')
+    else showToast(serverMessage(e) ?? t('Could not change it.', 'No se ha podido cambiar.'), 'error')
+  } finally {
+    toggling.value = false
   }
+}
+function confirmActivate() {
+  activateDialog.value = false
+  setEnabled(true)
 }
 async function activateSegment(testMode: boolean) {
   segmentDialog.value = false
@@ -200,9 +232,9 @@ onUnmounted(() => {
 
 // ---- header
 const statusLabel = computed(() => {
-  if (b.isLead.value && !b.hasGrowth.value) return t('Paused · no Growth', 'Pausada · sin Growth')
+  if (noGrowth.value) return t('Paused · no Growth', 'Pausada · sin Growth')
   if (b.isNew.value) return t('Draft', 'Borrador')
-  return b.draft.value.enabled ? t('Active', 'Activa') : t('Paused', 'Pausada')
+  return ''
 })
 // What paused means, on hover: it stops the people inside too, not only the door.
 const statusHint = computed(() =>
@@ -278,20 +310,24 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           data-test="automation-name"
           @input="b.updateRule({ name: ($event.target as HTMLInputElement).value })"
         />
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="b.draft.value.enabled"
-          :disabled="!b.loaded.value || (b.isLead.value && !b.hasGrowth.value) || b.saving.value"
-          class="flex h-8 items-center gap-2 rounded-pill border px-2.5 text-[12.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-60 touch:h-11"
-          :class="b.draft.value.enabled && !(b.isLead.value && !b.hasGrowth.value) ? 'border-success-border bg-success-bg text-success-text' : 'border-chip-border bg-chip-bg text-chip-text'"
-          :title="statusHint"
+        <AutomationsEnabledSwitch
+          :on="b.draft.value.enabled && !noGrowth"
+          :label="statusLabel"
+          :disabled="!b.loaded.value || !!switchReason"
+          :reason="switchReason"
+          :hint="statusHint"
+          :busy="toggling || b.saving.value"
           data-test="automation-enabled"
-          @click="toggleEnabled"
-        >
-          <span class="h-2 w-2 rounded-full" :class="b.draft.value.enabled ? 'bg-success-accent' : 'bg-ink-faint3'" />
-          {{ statusLabel }}
-        </button>
+          @toggle="toggleEnabled"
+        />
+        <!-- Why it cannot be switched on, one click away: hover is no help on a tablet. -->
+        <button
+          v-if="b.loaded.value && switchReason && !noGrowth"
+          type="button"
+          class="h-8 rounded-pill border border-warning-border bg-warning-bg px-2.5 text-[12.5px] font-semibold text-warning-text touch:h-11"
+          data-test="automation-enabled-why"
+          @click="problems = b.problems.value"
+        >{{ t('What is missing?', '¿Qué falta?') }}</button>
         <UiPill v-if="b.draft.value.rule.dry_run" tone="info">{{ t('Test mode', 'Modo prueba') }}</UiPill>
         <span class="ml-auto hidden text-[12px] text-ink-muted md:inline" data-test="saved-at">{{ b.dirty.value ? t('Unsaved changes', 'Cambios sin guardar') : savedText }}</span>
         <UiBtn class="hidden sm:inline-flex" data-test="send-test" @click="sendTestOpen = true">{{ t('Send test', 'Enviar prueba') }}</UiBtn>
@@ -402,6 +438,18 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       @draft="b.dirty.value || b.isNew.value ? saveAsDraft() : (problems = null)"
       @review="gotoStep(problems![0]?.stepId ?? null)"
       @goto="gotoStep"
+    />
+    <AutomationsActivateDialog
+      v-if="activateDialog"
+      :name="b.draft.value.rule.name"
+      :trigger-event="b.draft.value.rule.trigger_event"
+      :filters="b.draft.value.rule.filters"
+      :lookup="b.lookup.value"
+      :is-marketing="b.draft.value.rule.is_marketing"
+      :dry-run="b.draft.value.rule.dry_run"
+      :inside="inside"
+      @confirm="confirmActivate"
+      @cancel="activateDialog = false"
     />
     <AutomationsSegmentActivateDialog
       v-if="segmentDialog"

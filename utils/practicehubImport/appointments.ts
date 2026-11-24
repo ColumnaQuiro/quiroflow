@@ -359,10 +359,29 @@ export async function withConcurrency<T>(items: T[], n: number, run: (item: T) =
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { for (let x; (x = queue.shift()) !== undefined;) await run(x) }))
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Where each of `n` equal slices of the uuid space begins. Postgres orders uuids as their hex reads, so these compare as ids do. */
+export function uuidSliceStarts(n: number): string[] {
+  return Array.from({ length: n }, (_, i) => `${Math.floor((i * 2 ** 32) / n).toString(16).padStart(8, '0')}-0000-0000-0000-000000000000`)
+}
+
 /**
  * Every row of `table` in the account, 1,000 at a time (PostgREST stops at
- * 1,000 without saying so). Service role: the account filter is the only
- * thing keeping another clinic's rows out.
+ * 1,000 without saying so), in id order. Service role: the account filter is
+ * the only thing keeping another clinic's rows out.
+ *
+ * A table that fits in one page is one request. A larger one is NOT read with
+ * `offset`: Postgres has to fetch every row an offset skips before it can
+ * skip it, so page sixty of a clinic's appointments read sixty thousand rows
+ * to return a thousand -- ~70,000 buffers a page on production, six pages at
+ * a time, and the heaviest thing the database did (23 Nov 2026). Ids are
+ * random uuids, so the id space is cut into equal slices of roughly a page
+ * each instead, and every slice is read from where it starts: each request
+ * touches the rows it returns and no others, and they still go several at a
+ * time. A slice that holds more than a page is continued from its last id, so
+ * nothing depends on the ids actually being evenly spread -- only the number
+ * of requests does.
  */
 export async function readAllForAccount<T>(
   supabase: Admin,
@@ -371,28 +390,58 @@ export async function readAllForAccount<T>(
   columns: string,
   refine?: (q: any) => any,
 ): Promise<T[]> {
+  // Slices are continued from the last id read, so the id is always asked for
+  // and taken off again when the caller did not.
+  const asksForId = columns.split(',').some((c) => c.trim() === 'id')
+  const selected = asksForId ? columns : `id, ${columns}`
+  const strip = (rows: any[]): T[] => (asksForId ? rows : rows.map(({ id: _id, ...rest }) => rest)) as T[]
+  const query = (count: boolean) => {
+    const q = (supabase.from(table as never) as any).select(selected, count ? { count: 'exact' } : undefined).eq('account_id', accountId)
+    return refine ? refine(q) : q
+  }
   const page = async (from: number, count: boolean) => {
-    let q = (supabase.from(table as never) as any).select(columns, count ? { count: 'exact' } : undefined).eq('account_id', accountId)
-    if (refine) q = refine(q)
-    const { data, error, count: total } = await q.order('id').range(from, from + PRACTICEHUB_PAGE - 1)
+    const { data, error, count: total } = await query(count).order('id').range(from, from + PRACTICEHUB_PAGE - 1)
     if (error) throw new Error(`${table}: ${error.message}`)
-    return { rows: (data ?? []) as T[], total: total as number | null | undefined }
+    return { rows: (data ?? []) as any[], total: total as number | null | undefined }
   }
   const first = await page(0, true)
-  if (first.rows.length < PRACTICEHUB_PAGE) return first.rows
-  const pages: T[][] = [first.rows]
-  if (first.total == null) {
-    for (let from = PRACTICEHUB_PAGE; ; from += PRACTICEHUB_PAGE) {
-      const next = await page(from, false)
-      pages.push(next.rows)
-      if (next.rows.length < PRACTICEHUB_PAGE) break
+  if (first.rows.length < PRACTICEHUB_PAGE) return strip(first.rows)
+
+  // No count, or ids that are not uuids: by offset, as before.
+  if (first.total == null || !UUID.test(String(first.rows[0]?.id))) {
+    const pages: any[][] = [first.rows]
+    if (first.total == null) {
+      for (let from = PRACTICEHUB_PAGE; ; from += PRACTICEHUB_PAGE) {
+        const next = await page(from, false)
+        pages.push(next.rows)
+        if (next.rows.length < PRACTICEHUB_PAGE) break
+      }
+      return strip(pages.flat())
     }
-    return pages.flat()
+    const starts: number[] = []
+    for (let from = PRACTICEHUB_PAGE; from < first.total; from += PRACTICEHUB_PAGE) starts.push(from)
+    await withConcurrency(starts, 6, async (from) => { pages[from / PRACTICEHUB_PAGE] = (await page(from, false)).rows })
+    return strip(pages.flat())
   }
-  const starts: number[] = []
-  for (let from = PRACTICEHUB_PAGE; from < first.total; from += PRACTICEHUB_PAGE) starts.push(from)
-  await withConcurrency(starts, 6, async (from) => { pages[from / PRACTICEHUB_PAGE] = (await page(from, false)).rows })
-  return pages.flat()
+
+  // Aim under a page per slice, so that most slices are one request.
+  const starts = uuidSliceStarts(Math.ceil(first.total / (PRACTICEHUB_PAGE * 0.7)))
+  const slices: any[][] = []
+  await withConcurrency(starts.map((_, i) => i), 6, async (i) => {
+    const rows: any[] = []
+    for (let after: string | null = null; ;) {
+      let q = query(false)
+      q = after ? q.gt('id', after) : q.gte('id', starts[i])
+      if (i + 1 < starts.length) q = q.lt('id', starts[i + 1])
+      const { data, error } = await q.order('id').limit(PRACTICEHUB_PAGE)
+      if (error) throw new Error(`${table}: ${error.message}`)
+      rows.push(...(data ?? []))
+      if (!data || data.length < PRACTICEHUB_PAGE) break
+      after = String(data[data.length - 1].id)
+    }
+    slices[i] = rows
+  })
+  return strip(slices.flat())
 }
 
 /** The clinic's time zone, which PracticeHub's appointment times are the wall clock of. */

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, TablesInsert, TablesUpdate } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { quiroflowKeeps } from '~/utils/importAppointmentGuard'
+import { readAllForAccount } from '~/utils/practicehubImport/appointments'
 import {
   qcPatientRef,
   quirocitasAppointmentRows,
@@ -108,31 +109,9 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
   const eurFormat = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const eur = (c: number) => `${eurFormat.format(c / 100)} €`
 
-  // PostgREST stops at 1,000 rows per request without saying so. The first
-  // page says how many there are, and the rest are asked for several at a
-  // time: one after another, a clinic's 60,000 appointments were sixty round
-  // trips and most of a slice gone before a step had planned anything.
+  // Every row of one of the account's tables; readAllForAccount says how.
   async function readAll<T>(table: string, columns: string, refPrefix?: string): Promise<T[]> {
-    const PAGE = 1000
-    const page = async (from: number, count: boolean) => {
-      let q = (supabase.from(table as never) as any).select(columns, count ? { count: 'exact' } : undefined).eq('account_id', accountId).order('id').range(from, from + PAGE - 1)
-      if (refPrefix) q = q.like('external_reference', `${refPrefix}%`)
-      const { data, error, count: total } = await q
-      if (error) throw new Error(error.message)
-      return { rows: (data ?? []) as T[], total: total as number | null | undefined }
-    }
-    const first = await page(0, true)
-    if (first.rows.length < PAGE) return first.rows
-    const pages: T[][] = [first.rows]
-    if (first.total == null) {
-      // No count came back: one page after another, as before.
-      for (let from = PAGE; ; from += PAGE) { const next = await page(from, false); pages.push(next.rows); if (next.rows.length < PAGE) break }
-      return pages.flat()
-    }
-    const starts: number[] = []
-    for (let from = PAGE; from < first.total; from += PAGE) starts.push(from)
-    await withConcurrency(starts, 6, async (from) => { pages[from / PAGE] = (await page(from, false)).rows })
-    return pages.flat()
+    return readAllForAccount<T>(supabase, accountId, table, columns, refPrefix ? (q) => q.like('external_reference', `${refPrefix}%`) : undefined)
   }
 
   async function patientIds() {

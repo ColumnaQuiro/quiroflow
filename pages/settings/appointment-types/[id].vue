@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Json, TablesUpdate } from '~/types/database.types'
 import { formatEur } from '~/utils/billing'
-import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
+import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
 import { DURATION_MAX, DURATION_MIN, TYPE_STAGES, centsToInput, parseEurosToCents, parseMinutes, typeProblems } from '~/utils/appointmentTypes'
 import { receptionistOffersType } from '~/utils/receptionistTypes'
 import type { BusinessHours } from '~/utils/businessHours'
@@ -466,14 +466,6 @@ const WHO = computed(() => [
   { value: 'new_patients', label: t('New patients only', 'Solo pacientes nuevos') },
   { value: 'existing_patients', label: t('Existing patients only', 'Solo pacientes actuales') },
 ])
-const swatches = computed(() => {
-  const list = CALENDAR_PALETTE.map((c) => ({ hex: c.hex, label: t(c.en, c.es) }))
-  // A colour picked before the palette existed stays selectable, so opening
-  // the page and saving something else does not repaint the type.
-  const current = saved.value?.color
-  if (current && !isPaletteColor(current)) list.unshift({ hex: current, label: t('Current colour', 'Color actual') })
-  return list
-})
 function appointmentsText(n: number) {
   return n === 1 ? t('1 appointment', '1 cita') : t(`${n.toLocaleString('es-ES')} appointments`, `${n.toLocaleString('es-ES')} citas`)
 }
@@ -574,24 +566,13 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 </label>
               </div>
               <div class="flex flex-col gap-2">
-                <span id="color-label" class="text-[13px] font-semibold text-ink-700">{{ t('Colour in the calendar', 'Color en el calendario') }}</span>
-                <div role="radiogroup" aria-labelledby="color-label" class="flex flex-wrap gap-2">
-                  <button
-                    v-for="c in swatches"
-                    :key="c.hex"
-                    type="button"
-                    role="radio"
-                    data-cy="type-color"
-                    :data-color="c.hex"
-                    :aria-checked="form.color.toLowerCase() === c.hex.toLowerCase()"
-                    :aria-label="c.label"
-                    :title="c.label"
-                    class="h-9 touch:h-11 w-9 touch:w-11 rounded-ctl"
-                    :class="form.color.toLowerCase() === c.hex.toLowerCase() ? 'border-[3px] border-ink-900' : 'border border-line'"
-                    :style="{ background: c.hex }"
-                    @click="form.color = c.hex"
-                  />
-                </div>
+                <span class="text-[13px] font-semibold text-ink-700">{{ t('Colour in the calendar', 'Color en el calendario') }}</span>
+                <CalendarColorPicker
+                  v-model="form.color"
+                  :label="t('Colour in the calendar', 'Color en el calendario')"
+                  swatch-cy="type-color"
+                  :preview="{ title: t('Patient name', 'Nombre del paciente'), meta: `10:00 · ${form.name || t('Appointment type', 'Tipo de cita')}` }"
+                />
               </div>
               <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                 {{ t('Treatment stage', 'Etapa del tratamiento') }}

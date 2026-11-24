@@ -2,7 +2,6 @@
 import type { UiLanguage } from '~/utils/uiLanguage'
 import type { BusinessHours } from '~/utils/businessHours'
 import { hasBusinessHoursConfigured } from '~/utils/businessHours'
-import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
 import { formatTime } from '~/utils/billing'
 
 // "Mi cuenta": the signed-in person's own page. Design: the "QuiroFlow Mi
@@ -191,16 +190,6 @@ const initials = computed(
       .join('') || '?',
 )
 const firstName = computed(() => fullName.value.trim().split(/\s+/)[0] ?? '')
-// A colour chosen before the palette existed is kept, and shown as its own
-// selected swatch, rather than silently swapped for the nearest palette one.
-const customColor = computed(() => (savedColor.value && !isPaletteColor(savedColor.value) ? savedColor.value : null))
-const swatches = computed(() => [
-  ...CALENDAR_PALETTE.map((c) => ({ hex: c.hex, label: t(c.en, c.es) })),
-  ...(customColor.value ? [{ hex: customColor.value, label: t('Custom', 'Personalizado') }] : []),
-])
-function isChosen(hex: string) {
-  return color.value.toLowerCase() === hex.toLowerCase()
-}
 
 // Working hours: this person's own when an owner has set them; otherwise they
 // follow the clinic's, as the calendar does (practitionerWindowsForDay).
@@ -454,23 +443,9 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
 
             <fieldset class="flex flex-col gap-3">
               <legend class="mb-2 text-[13px] font-semibold text-ink-700">{{ t('Your colour on the calendar', 'Tu color en el calendario') }}</legend>
-              <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
-                <div role="radiogroup" :aria-label="t('Colour', 'Color')" class="grid grid-cols-5 gap-1.5 self-start" data-cy="account-palette">
-                  <button
-                    v-for="s in swatches"
-                    :key="s.hex"
-                    type="button"
-                    role="radio"
-                    :aria-checked="isChosen(s.hex)"
-                    :aria-label="s.label"
-                    :title="s.label"
-                    :data-color="s.hex"
-                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl bg-surface"
-                    :class="isChosen(s.hex) ? 'border-2 border-ink-900' : 'border border-line-control hover:border-line-controlHover'"
-                    @click="color = s.hex"
-                  >
-                    <span class="h-6 w-6 rounded-full" :style="{ background: s.hex }" />
-                  </button>
+              <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
+                <div class="self-start" data-cy="account-palette">
+                  <CalendarColorPicker v-model="color" :label="t('Colour', 'Color')" />
                 </div>
                 <div class="flex flex-1 flex-col gap-1.5" aria-hidden="true">
                   <span class="text-[12px] text-ink-muted">{{ t('How it looks on the calendar', 'Así se ve en el calendario') }}</span>
@@ -486,7 +461,6 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                   </span>
                 </div>
               </div>
-              <span class="text-[12px] text-ink-muted">{{ t('No red: on the calendar, red means money owed.', 'Sin rojo: en el calendario el rojo significa dinero pendiente.') }}</span>
             </fieldset>
 
             <div class="flex flex-col gap-2" data-cy="account-hours">

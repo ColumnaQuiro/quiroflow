@@ -85,7 +85,16 @@ describe('Appointment types', () => {
         cy.get('[data-cy=type-save-bar]').should('be.visible')
         cy.get('[data-cy=type-duration]').clear().type('50')
         cy.get('[data-cy=type-price]').clear().type('70,00')
+        // A free colour from the system picker: chosen as Custom, and a red
+        // one is warned about (red means money owed), not refused. The native
+        // input sits invisible under the Custom swatch (pointer-events: none),
+        // standing in for the system picker, hence force.
+        cy.get('[data-cy=color-custom-input]').invoke('val', '#e11d48').trigger('input', { force: true })
+        cy.get('[data-cy=color-custom]').should('have.attr', 'aria-checked', 'true').and('contain.text', '#e11d48')
+        cy.get('[data-cy=color-warning]').should('contain.text', 'money owed')
         cy.get('[data-cy=type-color][data-color="#14b8a6"]').click().should('have.attr', 'aria-checked', 'true')
+        cy.get('[data-cy=color-warning]').should('not.exist')
+        cy.get('[data-cy=color-custom]').should('have.attr', 'aria-checked', 'false')
         cy.get('[data-cy=type-stage]').select('first_visit')
         cy.get('[data-cy=type-online]').click().should('have.attr', 'aria-checked', 'true')
         cy.get('[data-cy=type-bookable-by][data-value=new_patients]').click().should('have.attr', 'aria-checked', 'true')

@@ -34,8 +34,8 @@ const formError = ref('')
 function validate(): string {
   const url = baseUrl.value.trim().replace(/\/$/, '')
   if (url && !/^https:\/\/[^/]+$/i.test(url)) return t('The PracticeHub URL is the https:// address of your PracticeHub, for example https://your-clinic.practicehub.io', 'La URL de PracticeHub es la dirección https:// de tu PracticeHub, por ejemplo https://your-clinic.practicehub.io')
-  if (apiKey.value.trim().startsWith('phk_')) return t('That is a PracticeHub 2.0 key (it starts with phk_), so it goes in the "PracticeHub 2.0 API key" field below.', 'Esa es una clave de PracticeHub 2.0 (empieza por phk_), así que va en el campo "Clave API de PracticeHub 2.0" de abajo.')
-  if (v3ApiKey.value.trim() && !v3ApiKey.value.trim().startsWith('phk_')) return t('The PracticeHub 2.0 key starts with phk_. The Classic key goes in the API key field above.', 'La clave de PracticeHub 2.0 empieza por phk_. La clave Classic va en el campo Clave API de arriba.')
+  if (apiKey.value.trim().startsWith('phk_')) return t('That is a PracticeHub API key (it starts with phk_), so it goes in the "PracticeHub API key" field below.', 'Esa es una clave de la PracticeHub API (empieza por phk_), así que va en el campo "Clave de la PracticeHub API" de abajo.')
+  if (v3ApiKey.value.trim() && !v3ApiKey.value.trim().startsWith('phk_')) return t('The PracticeHub API key starts with phk_. The Legacy API key goes in the field above.', 'La clave de la PracticeHub API empieza por phk_. La clave de la Legacy API va en el campo de arriba.')
   return ''
 }
 
@@ -114,7 +114,7 @@ async function checkV3() {
     checkResult.value = await useStaffFetch('/api/import/practicehub-v3-check')
   } catch (e: any) {
     checkResult.value = null
-    checkError.value = importErrorText(e, t, { en: 'Could not reach PracticeHub 2.0 with this key.', es: 'No se pudo conectar con PracticeHub 2.0 con esta clave.' })
+    checkError.value = importErrorText(e, t, { en: 'Could not reach the PracticeHub API with this key.', es: 'No se pudo conectar con la PracticeHub API con esta clave.' })
   } finally {
     checking.value = false
   }
@@ -177,7 +177,7 @@ const fieldId = useId()
         />
       </div>
       <div>
-        <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API key', 'Clave API') }}</label>
+        <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('Legacy API key', 'Clave de la Legacy API') }}</label>
         <input :id="`${fieldId}-apiKey`"
           v-model="apiKey"
           type="password"
@@ -192,10 +192,10 @@ const fieldId = useId()
           <span v-if="classicCheck" class="text-sm text-success-text" data-cy="ph-check-result">{{ classicCheckText }}</span>
           <span v-else-if="classicCheckError" class="text-sm text-danger-text" data-cy="ph-check-error">{{ classicCheckError }}</span>
         </div>
-        <p class="mt-1 text-xs text-ink-muted2">{{ hasStoredKey ? t('A key is saved. Leave this empty to keep it, or paste a new one to replace it. This is the Classic key, which every step uses; a key starting with phk_ goes in the 2.0 field below.', 'Hay una clave guardada. Déjalo vacío para conservarla, o pega una nueva para sustituirla. Es la clave Classic, la que usan todos los pasos; una clave que empieza por phk_ va en el campo 2.0 de abajo.') : t('The Classic key, which every step uses. It does not start with phk_: that one goes in the 2.0 field below.', 'La clave Classic, la que usan todos los pasos. No empieza por phk_: esa va en el campo 2.0 de abajo.') }}</p>
+        <p class="mt-1 text-xs text-ink-muted2">{{ hasStoredKey ? t('A key is saved. Leave this empty to keep it, or paste a new one to replace it. This is the Legacy API key, which every step uses; a key starting with phk_ goes in the PracticeHub API key field below.', 'Hay una clave guardada. Déjalo vacío para conservarla, o pega una nueva para sustituirla. Es la clave de la Legacy API, la que usan todos los pasos; una clave que empieza por phk_ va en el campo Clave de la PracticeHub API de abajo.') : t('The Legacy API key, which every step uses. It does not start with phk_: that one goes in the PracticeHub API key field below.', 'La clave de la Legacy API, la que usan todos los pasos. No empieza por phk_: esa va en el campo Clave de la PracticeHub API de abajo.') }}</p>
       </div>
       <div>
-        <label :for="`${fieldId}-v3ApiKey`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub 2.0 API key', 'Clave API de PracticeHub 2.0') }}</label>
+        <label :for="`${fieldId}-v3ApiKey`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub API key', 'Clave de la PracticeHub API') }}</label>
         <input :id="`${fieldId}-v3ApiKey`"
           v-model="v3ApiKey"
           type="password"
@@ -204,7 +204,7 @@ const fieldId = useId()
           :placeholder="hasStoredV3Key ? '••••••••••••••••••••' : 'phk_…'"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
-        <p class="mt-1 text-xs text-ink-muted2">{{ t('Optional. The new API, for clinics on PracticeHub 2.0 or about to switch; Patients also reads tags through it. A separate key, starting phk_, from the same Developers → API Keys page.', 'Opcional. La API nueva, para clínicas en PracticeHub 2.0 o a punto de pasarse; Pacientes también lee las etiquetas con ella. Una clave aparte, que empieza por phk_, de la misma página Developers → API Keys.') }}</p>
+        <p class="mt-1 text-xs text-ink-muted2">{{ t('Optional. PracticeHub’s new API, for clinics on PracticeHub 2.0 or about to switch; Patients also reads tags through it. A separate key, starting phk_, from the same Developers → API Keys page.', 'Opcional. La API nueva de PracticeHub, para clínicas en PracticeHub 2.0 o a punto de pasarse; Pacientes también lee las etiquetas con ella. Una clave aparte, que empieza por phk_, de la misma página Developers → API Keys.') }}</p>
         <div v-if="hasStoredV3Key" class="mt-2 flex flex-wrap items-center gap-2">
           <button type="button" class="rounded-md border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-50" :disabled="checking" data-cy="ph-v3-check" @click="checkV3">
             {{ checking ? t('Checking…', 'Comprobando…') : t('Test connection', 'Probar conexión') }}

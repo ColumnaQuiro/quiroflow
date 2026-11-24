@@ -220,8 +220,8 @@ export const planAppointmentTypes: PracticeHubStepPlanner = async (ctx, snapshot
     warnings: [
       ...[practiceHubUnpricedTypesWarning(candidates.filter((c) => c.unpriced).map((c) => c.name), t)].filter((w): w is string => w !== null),
       ...(!services ? [t(
-        'Prices are not brought across: PracticeHub only gives them through its 2.0 API, and this copy has none. Add the phk_ key under Connection and sync again; it fills in every price still at 0.',
-        'Los precios no se traen: PracticeHub solo los da por su API 2.0 y esta copia no los tiene. Añade la clave phk_ en Conexión y vuelve a sincronizar; completará los precios que sigan a 0.',
+        'Prices are not brought across: PracticeHub only gives them through the PracticeHub API, and this copy has none. Add the PracticeHub API key under Connection and sync again; it fills in every price still at 0.',
+        'Los precios no se traen: PracticeHub solo los da por la PracticeHub API y esta copia no los tiene. Añade la clave de la PracticeHub API en Conexión y vuelve a sincronizar; completará los precios que sigan a 0.',
       )] : []),
       ...(toRelink ? [t(
         'Relinking replaces the type a visit has here with the one PracticeHub gives it, even if someone changed it in QuiroFlow.',

@@ -594,8 +594,8 @@ const fieldId = useId()
         </p>
         <p v-if="tagsUnavailable" class="mt-1 text-[12.5px] text-warning-text" data-cy="ph-patients-no-tags">
           {{ t(
-            'Tags are only in PracticeHub 2.0’s API, so they are not included. Save the 2.0 key under Connection and read again to bring them.',
-            'Las etiquetas solo están en la API de PracticeHub 2.0, así que no se incluyen. Guarda la clave 2.0 en Conexión y vuelve a leer para traerlas.',
+            'Tags are only in the PracticeHub API, so they are not included. Save the PracticeHub API key under Connection and read again to bring them.',
+            'Las etiquetas solo están en la PracticeHub API, así que no se incluyen. Guarda la clave de la PracticeHub API en Conexión y vuelve a leer para traerlas.',
           ) }}
         </p>
         <p v-if="unmatchedPractitioners.length > 0" class="mt-1 text-[12.5px] text-warning-text" data-cy="ph-patients-unmatched-practitioners">

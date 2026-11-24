@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   // refused with a bare 401, so say so here instead.
   const v3ApiKey = (body?.v3ApiKey ?? '').trim()
   if (v3ApiKey && !v3ApiKey.startsWith('phk_')) {
-    throw createError({ statusCode: 400, statusMessage: 'The PracticeHub 2.0 key starts with phk_. Create one in PracticeHub under Developers > API Keys.' })
+    throw createError({ statusCode: 400, statusMessage: 'The PracticeHub API key starts with phk_. Create one in PracticeHub under Developers > API Keys.' })
   }
   if (baseUrl && !/^https:\/\/[^/]+$/i.test(baseUrl)) {
     throw createError({ statusCode: 400, statusMessage: 'The PracticeHub address is the https:// address of your PracticeHub, e.g. https://your-clinic.practicehub.io' })

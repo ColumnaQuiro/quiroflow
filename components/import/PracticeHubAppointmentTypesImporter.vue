@@ -382,12 +382,12 @@ const introNotes = computed(() => [
           {{
             pricesUnavailable === 'no_v3_key'
               ? t(
-                  'Prices are not brought across: PracticeHub only gives them through its 2.0 API. Add the phk_ key under Connection and run this step again; it fills in every price still at 0.',
-                  'Los precios no se traen: PracticeHub solo los da por su API 2.0. Añade la clave phk_ en Conexión y vuelve a ejecutar este paso; completará los precios que sigan a 0.',
+                  'Prices are not brought across: PracticeHub only gives them through the PracticeHub API. Add the PracticeHub API key under Connection and run this step again; it fills in every price still at 0.',
+                  'Los precios no se traen: PracticeHub solo los da por la PracticeHub API. Añade la clave de la PracticeHub API en Conexión y vuelve a ejecutar este paso; completará los precios que sigan a 0.',
                 )
               : t(
-                  'PracticeHub 2.0 did not answer for the prices, so none are brought across this time. Run this step again later; it fills in every price still at 0.',
-                  'PracticeHub 2.0 no respondió al pedir los precios, así que esta vez no se traen. Vuelve a ejecutar este paso más tarde; completará los precios que sigan a 0.',
+                  'The PracticeHub API did not answer for the prices, so none are brought across this time. Run this step again later; it fills in every price still at 0.',
+                  'La PracticeHub API no respondió al pedir los precios, así que esta vez no se traen. Vuelve a ejecutar este paso más tarde; completará los precios que sigan a 0.',
                 )
           }}
         </p>

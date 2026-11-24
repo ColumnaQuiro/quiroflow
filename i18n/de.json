@@ -10772,6 +10772,10 @@
   "not asked \"how did we do?\" in the last": "nicht nach „Wie war es?“ gefragt in den letzten",
   "visits (0 = never), this one included": "Behandlungen (0 = nie), diese mitgezählt",
   "years. Patients with no date of birth do not match.": "Jahre. Patienten ohne Geburtsdatum passen nicht.",
+  "Without this, notes do not appear on the record or the appointment. Includes \"See progress\".": "Ohne dies erscheinen Notizen weder in der Akte noch beim Termin. Schließt „Fortschritt ansehen“ ein.",
+  "See progress": "Fortschritt ansehen",
+  "The Progress tab on the record: the pain curve, what was adjusted at each visit, posture assessments and their reports. Read only: taking an assessment or sending it to the patient needs \"See visit notes\".": "Der Reiter Fortschritt in der Akte: die Schmerzkurve, was bei jedem Termin justiert wurde, Haltungsanalysen und ihre Berichte. Nur lesen: Eine Analyse erstellen oder an den Patienten senden erfordert „Behandlungsnotizen ansehen“.",
+  "Sees progress": "Sieht den Fortschritt",
   "WhatsApp only takes MP4 videos. A .mov from an iPhone has to be exported as MP4 first.": "WhatsApp akzeptiert nur MP4-Videos. Eine .mov-Datei vom iPhone muss zuerst als MP4 exportiert werden.",
   "WhatsApp only takes JPEG or PNG images.": "WhatsApp akzeptiert nur JPEG- oder PNG-Bilder.",
   "WhatsApp only takes PDF documents here.": "WhatsApp akzeptiert hier nur PDF-Dokumente."

@@ -185,6 +185,22 @@ export async function requireAllPermissions(event: H3Event, permKeys: string[]) 
 }
 
 /**
+ * At least one of the keys, for something two permissions each grant on
+ * their own -- the posture reports, which "See progress" opens and "See visit
+ * notes" includes. Reports the first key when none is held.
+ */
+export async function requireAnyPermission(event: H3Event, permKeys: string[]) {
+  const { supabase, teamMember, subscription } = await requireActiveAccount(event)
+  if (!teamMember.is_owner) {
+    const results = await Promise.all(
+      permKeys.map((permKey) => supabase.rpc('has_permission', { target_account_id: teamMember.account_id, perm_key: permKey })),
+    )
+    if (!results.some((r) => r.data)) throw createError({ statusCode: 403, statusMessage: `Missing permission: ${permKeys[0]}` })
+  }
+  return { supabase, teamMember, subscription }
+}
+
+/**
  * For endpoints that exist only to serve a Settings page: requires
  * `settings_access` as well as the specific permission.
  *

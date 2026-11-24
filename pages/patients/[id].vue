@@ -168,9 +168,9 @@ const canMessage = computed(() => !!patient.value && !patient.value.is_minor)
 const tabs = computed(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
   { key: 'clinical', label: t('Clinical', 'Clínico') },
-  // Pain visit by visit (visit_pain_scores) -- clinical, so under the visit
-  // notes permission like the notes themselves.
-  ...(can('visit_notes_access') ? [{ key: 'progress', label: t('Progress', 'Progreso') }] : []),
+  // Pain visit by visit, what was adjusted, posture: "See progress"
+  // (progress_access), which "See visit notes" includes.
+  ...(can('progress_access') || can('visit_notes_access') ? [{ key: 'progress', label: t('Progress', 'Progreso') }] : []),
   { key: 'appointments', label: t('Appointments', 'Citas') },
   // billing_history_view ("See billing history"): the whole ledger -- every
   // receipt, payment, bono and the statement -- lives on this tab. Stored and

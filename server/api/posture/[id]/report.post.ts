@@ -10,9 +10,9 @@ export default defineEventHandler(async (event) => {
   const assessmentId = getRouterParam(event, 'id')
   if (!assessmentId) throw createError({ statusCode: 400, statusMessage: 'Missing assessment id' })
 
-  // The report is clinical: the permission that opens the visit notes and
-  // takes the photos, and then this patient specifically.
-  const { supabase, teamMember } = await requirePermission(event, 'visit_notes_access')
+  // Reading what is on the Progreso tab: "See progress", or "See visit
+  // notes", which includes it -- and then this patient specifically.
+  const { supabase, teamMember } = await requireAnyPermission(event, ['progress_access', 'visit_notes_access'])
   const { data: row } = await supabase
     .from('posture_assessments')
     .select('patient_id')

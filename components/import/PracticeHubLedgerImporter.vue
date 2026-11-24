@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { linkInvoicesToAppointments, type LinkableAppointment, type LinkableInvoice } from '~/utils/importInvoiceLink'
-import { practiceHubCents as centsOf, practiceHubInvoiceNumber, practiceHubPaymentMethodKey } from '~/utils/practicehubImport/ledger'
+import { adoptBookedStripeCharges, practiceHubCents as centsOf, practiceHubInvoiceNumber, practiceHubPaymentMethodKey, type StripeBookedCharge } from '~/utils/practicehubImport/ledger'
 // Imports PracticeHub's ledger as PracticeHub actually keeps it: one invoice
 // per visit, one payment per payment, and no invented link between them.
 //
@@ -64,6 +64,10 @@ const invoicesToCreate = ref<InvoiceCandidate[]>([])
 const invoicesToLink = ref<{ id: string; appointmentId: string }[]>([])
 const linkedInvoices = ref(0)
 const paymentsToCreate = ref<PaymentCandidate[]>([])
+// PracticeHub payments that are a Stripe charge the Stripe sync already
+// booked: the booked payment takes the PracticeHub reference instead of a
+// second payment being created (utils/practicehubImport/ledger.ts).
+const paymentsToAdopt = ref<{ paymentId: string; ref: string }[]>([])
 const skipped = ref({ invoicesAlready: 0, paymentsAlready: 0, invoicesUnmatched: 0, paymentsUnmatched: 0 })
 const phTotals = ref({ invoicedCents: 0, paidCents: 0 })
 const importedInvoices = ref(0)
@@ -160,7 +164,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       'id, external_reference, appointment_id, patient_id, created_at',
     )
     const haveInvoiceRefs = new Set(ourInvoices.map((i) => i.external_reference).filter(Boolean) as string[])
-    const ourPayments = await loadAllOurRows<{ external_reference: string | null }>('payments', 'external_reference')
+    const ourPayments = await loadAllOurRows<StripeBookedCharge & { external_reference: string | null; stripe_invoice_id: string | null }>(
+      'payments',
+      'id, external_reference, stripe_invoice_id, patient_id, amount_cents, paid_at, method',
+    )
+    const stripeBooked = ourPayments.filter((p) => p.stripe_invoice_id && !p.external_reference)
     const havePaymentRefs = new Set(ourPayments.map((p) => p.external_reference).filter(Boolean) as string[])
 
     phase.value = t('Loading PracticeHub invoices…', 'Cargando facturas de PracticeHub…')
@@ -248,7 +256,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     invoicesToCreate.value = invoices
-    paymentsToCreate.value = payments
+    const { adopt, rest } = adoptBookedStripeCharges(payments, stripeBooked)
+    paymentsToCreate.value = rest
+    paymentsToAdopt.value = adopt
     stage.value = 'preview'
   } catch (err) {
     runError.value = importErrorText(err, t, { en: 'Could not read PracticeHub. Nothing was written; try again.', es: 'No se pudo leer PracticeHub. No se escribió nada; vuelve a intentarlo.' })
@@ -333,6 +343,11 @@ async function runImport() {
       progress.value = { ...progress.value, done: progress.value.done + chunk.length }
     }
 
+    for (const adopt of paymentsToAdopt.value) {
+      const { error } = await supabase.from('payments').update({ external_reference: adopt.ref }).eq('id', adopt.paymentId).is('external_reference', null)
+      if (error) importErrors.value.push(t(`A Stripe charge was not matched to PracticeHub payment ${adopt.ref}: ${error.message}`, `Un cobro de Stripe no se emparejó con el pago de PracticeHub ${adopt.ref}: ${error.message}`))
+    }
+
     phase.value = t('Settling what the payments cover…', 'Saldando lo que cubren los pagos…')
     // Sets invoice status only -- no payment is allocated, split or otherwise
     // touched. See the migration for why the pairing is deliberately not made.
@@ -415,6 +430,9 @@ const money = (cents: number) => `${formatEur(cents)}`
         </p>
         <p v-if="skipped.invoicesAlready || skipped.paymentsAlready" class="mt-1">
           {{ t(`Already imported, so skipped: ${skipped.invoicesAlready} invoices, ${skipped.paymentsAlready} payments.`, `Ya importados, se omiten: ${skipped.invoicesAlready} facturas, ${skipped.paymentsAlready} pagos.`) }}
+        </p>
+        <p v-if="paymentsToAdopt.length" class="mt-1">
+          {{ t(`${paymentsToAdopt.length} payments are Stripe charges already recorded here by the Stripe sync, so they are matched to those instead of created again.`, `${paymentsToAdopt.length} pagos son cobros de Stripe ya registrados aquí por la sincronización de Stripe, así que se emparejan con ellos en vez de crearse otra vez.`) }}
         </p>
         <p v-if="invoicesToLink.length" class="mt-1" data-cy="ledger-invoices-to-link">
           {{ t(`${invoicesToLink.length} invoices already imported without their visit will be linked to it now.`, `${invoicesToLink.length} facturas ya importadas sin su visita se vincularán ahora a ella.`) }}

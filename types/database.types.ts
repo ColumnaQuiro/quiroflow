@@ -7894,12 +7894,14 @@ export type Database = {
       payment_schedules: {
         Row: {
           account_id: string
+          adopted_membership: boolean
           created_at: string
           gocardless_mandate_id: string | null
           gocardless_subscription_id: string | null
           id: string
           installments_paid: number
           installments_total: number | null
+          origin: string
           interval: string
           interval_count: number
           package_purchase_id: string | null
@@ -7912,12 +7914,14 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          adopted_membership?: boolean
           created_at?: string
           gocardless_mandate_id?: string | null
           gocardless_subscription_id?: string | null
           id?: string
           installments_paid?: number
           installments_total?: number | null
+          origin?: string
           interval?: string
           interval_count?: number
           package_purchase_id?: string | null
@@ -7930,12 +7934,14 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          adopted_membership?: boolean
           created_at?: string
           gocardless_mandate_id?: string | null
           gocardless_subscription_id?: string | null
           id?: string
           installments_paid?: number
           installments_total?: number | null
+          origin?: string
           interval?: string
           interval_count?: number
           package_purchase_id?: string | null
@@ -8014,6 +8020,7 @@ export type Database = {
           patient_id: string
           purpose: string | null
           stripe_payment_intent_id: string | null
+          stripe_invoice_id: string | null
         }
         Insert: {
           account_id: string
@@ -8030,6 +8037,7 @@ export type Database = {
           patient_id: string
           purpose?: string | null
           stripe_payment_intent_id?: string | null
+          stripe_invoice_id?: string | null
         }
         Update: {
           account_id?: string
@@ -8046,6 +8054,7 @@ export type Database = {
           patient_id?: string
           purpose?: string | null
           stripe_payment_intent_id?: string | null
+          stripe_invoice_id?: string | null
         }
         Relationships: [
           {
@@ -9539,6 +9548,45 @@ export type Database = {
             columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stripe_membership_prices: {
+        Row: {
+          account_id: string
+          created_at: string
+          membership_id: string
+          stripe_price_id: string
+          stripe_product_id: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          membership_id: string
+          stripe_price_id: string
+          stripe_product_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          membership_id?: string
+          stripe_price_id?: string
+          stripe_product_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_membership_prices_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_membership_prices_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
             referencedColumns: ["id"]
           },
         ]

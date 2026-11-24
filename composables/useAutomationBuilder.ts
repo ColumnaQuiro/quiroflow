@@ -167,6 +167,10 @@ export function useAutomationBuilder() {
 
   const lookup = ref<NameLookup>(emptyLookup())
   const templates = ref<WhatsAppTemplate[]>([])
+  // Meta has them but has not approved them: just created, back in review
+  // after an edit, rejected or paused. Not offered to pick, but a step that
+  // already sends one is told it is waiting, not that it does not exist.
+  const templatesInReview = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
   // With their blocks: a branch can ask about an answer, and offers the
   // questions of the form it is about.
@@ -199,7 +203,7 @@ export function useAutomationBuilder() {
     return ((JSON.parse(original.value) as Draft).steps.find((s) => s.id === id) ?? null)
   }
 
-  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length ? (templates.value as never) : null))
+  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length || templatesInReview.value.length ? ([...templates.value, ...templatesInReview.value] as never) : null))
 
   // ------------------------------------------------------------ undo
   const history = ref<string[]>([])
@@ -314,8 +318,9 @@ export function useAutomationBuilder() {
 
   async function loadTemplates() {
     try {
-      const res = await useStaffFetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
+      const res = await useStaffFetch<{ templates: WhatsAppTemplate[]; inReview?: WhatsAppTemplate[] }>('/api/whatsapp/templates')
       templates.value = res.templates
+      templatesInReview.value = res.inReview ?? []
       templatesError.value = ''
       lookup.value = { ...lookup.value, templates: res.templates }
     } catch (e) {
@@ -578,6 +583,7 @@ export function useAutomationBuilder() {
     delayNowWaits,
     lookup,
     templates,
+    templatesInReview,
     templatesError,
     docTemplates,
     leadQuestions,

@@ -79,10 +79,17 @@ function templateCreated(created: { name: string }) {
 const editingTemplate = ref<Template | null>(null)
 const justEdited = ref('')
 function templateEdited(edited: EditedTemplateResult) {
+  const changed = editingTemplate.value
   editingTemplate.value = null
   justCreated.value = ''
   justDeleted.value = ''
   justEdited.value = edited.name
+  // Meta reviews it again from now on. Shown so at once, rather than offering
+  // a second edit Meta would refuse while its list catches up.
+  if (changed) {
+    templates.value = templates.value.filter((x) => x !== changed)
+    inReview.value = [...inReview.value.filter((x) => x !== changed), { ...changed, status: 'PENDING', rejectedReason: null }]
+  }
   loadTemplates()
 }
 const editBlocker = (tpl: Template) => templateEditBlocker(tpl)
@@ -228,6 +235,18 @@ function templateBody(name: string, lang: string) {
 // flagged, rather than silently vanishing from the picker.
 function isKnownTemplate(name: string, lang: string) {
   return templates.value.some((x) => x.name === name && x.language === lang)
+}
+// The chosen one when Meta has it but not approved -- in review after an
+// edit, rejected, paused: still there, but not sendable until approved.
+function chosenInReview(use: TemplateUse) {
+  return use.name.value ? (inReview.value.find((x) => x.name === use.name.value && x.language === use.lang.value) ?? null) : null
+}
+// The chosen one, when it can be edited from here: Edit sits beside the
+// message it changes, not only in the list further up.
+function editableChoice(use: TemplateUse) {
+  if (!use.name.value) return null
+  const tpl = templates.value.find((x) => x.name === use.name.value && x.language === use.lang.value) ?? chosenInReview(use)
+  return tpl && !editBlocker(tpl) ? tpl : null
 }
 // The receipt goes in the template's document header, so one without it is
 // refused at send time. Said here, where it is chosen, rather than only then.
@@ -385,7 +404,9 @@ async function save() {
                   <span class="text-ink-muted">· {{ tpl.language }}</span>
                   <UiPill :tone="tpl.status === 'REJECTED' || tpl.status === 'DISABLED' ? 'danger' : 'warning'" dot>{{ reviewLabel(tpl.status) }}</UiPill>
                   <span v-if="tpl.rejectedReason" class="text-[12px] text-ink-muted">{{ t(templateRejectionReason(tpl.rejectedReason).en, templateRejectionReason(tpl.rejectedReason).es) }}</span>
-                  <!-- A rejection is fixed by changing it, not by starting again under a new name. -->
+                  <!-- A rejection is fixed by changing it, not by starting again under a new name.
+                  When it cannot be changed (Meta is still reviewing it), say why rather than only hide Edit. -->
+                  <span v-if="editBlocker(tpl)" class="text-[12px] text-ink-muted" data-cy="whatsapp-template-edit-blocked">{{ t(editBlocker(tpl)!.en, editBlocker(tpl)!.es) }}</span>
                   <button v-if="!editBlocker(tpl)" type="button" class="text-[12.5px] font-semibold text-brand hover:underline" :data-template-edit="tpl.name" data-cy="whatsapp-template-edit" @click="editingTemplate = tpl">
                     {{ t('Edit', 'Editar') }}
                   </button>
@@ -406,7 +427,7 @@ async function save() {
               <details v-if="templates.length" class="group border-t border-line-row" data-cy="whatsapp-templates-all">
                 <summary class="flex min-h-[44px] cursor-pointer list-none items-center gap-2 px-[18px] text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
-                  {{ t(`Approved templates (${templates.length})`, `Plantillas aprobadas (${templates.length})`) }}
+                  {{ t(`Approved templates (${templates.length}): edit or delete`, `Plantillas aprobadas (${templates.length}): editar o eliminar`) }}
                 </summary>
                 <ul class="flex flex-col pb-1">
                   <li v-for="tpl in templates" :key="tpl.name + tpl.language" class="flex flex-wrap items-start gap-x-3 gap-y-1 border-t border-line-row px-[18px] py-2.5 text-[13px]" :data-template-row="tpl.name">
@@ -462,7 +483,7 @@ async function save() {
                   >
                     <option value="">{{ t('None — not sent', 'Ninguna — no se envía') }}</option>
                     <option v-if="u.name.value && !isKnownTemplate(u.name.value, u.lang.value)" :value="useKey(u.name.value, u.lang.value)">
-                      {{ u.name.value }} · {{ u.lang.value }} · {{ t('not in Meta’s list', 'no está en Meta') }}
+                      {{ u.name.value }} · {{ u.lang.value }} · {{ chosenInReview(u) ? reviewLabel(chosenInReview(u)!.status) : t('not in Meta’s list', 'no está en Meta') }}
                     </option>
                     <option v-for="tpl in templates" :key="tpl.name + tpl.language" :value="useKey(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category }}</option>
                   </select>
@@ -471,6 +492,12 @@ async function save() {
                     <input v-model="u.lang.value" type="text" placeholder="es" :aria-label="t(`${u.title}: language`, `${u.title}: idioma`)" :class="[inputClass, 'w-16 text-center']" />
                   </div>
                   <p v-if="templateBody(u.name.value, u.lang.value)" class="line-clamp-2 text-[12.5px] leading-snug text-ink-500">“{{ templateBody(u.name.value, u.lang.value) }}”</p>
+                  <p v-if="chosenInReview(u)" class="text-[12.5px] font-semibold leading-snug text-warning-text" data-cy="whatsapp-use-in-review">
+                    {{ t(`This template is not approved at Meta right now (${reviewLabel(chosenInReview(u)!.status)}), so this message may not be sent until it is.`, `Esta plantilla no está aprobada en Meta ahora mismo (${reviewLabel(chosenInReview(u)!.status)}), así que puede que este mensaje no se envíe hasta que lo esté.`) }}
+                  </p>
+                  <button v-if="editableChoice(u)" type="button" class="self-start text-[12.5px] font-semibold text-brand hover:underline" data-cy="whatsapp-use-edit" @click="editingTemplate = editableChoice(u)">
+                    {{ t('Edit this template', 'Editar esta plantilla') }}
+                  </button>
                   <p v-if="lacksDocumentHeader(u)" class="text-[12.5px] font-semibold leading-snug text-warning-text" data-cy="whatsapp-invoice-template-no-document">
                     {{ t('This template has no document header, so the PDF cannot be attached. Choose one whose header is a document.', 'Esta plantilla no tiene cabecera de documento, así que no se puede adjuntar el PDF. Elige una cuya cabecera sea un documento.') }}
                   </p>

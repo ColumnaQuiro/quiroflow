@@ -1,68 +1,5 @@
--- Two role permissions that were missing from Settings > Roles: each feature
--- sat behind another switch that never mentioned it.
---
--- progress_access: "Ver progreso", the patient record's Progreso tab.
--- leads_access:    "Ver leads", Growth's Leads board and lead conversations.
---
--- ============================================================ progress_access
---
---
--- The tab -- the pain curve (visit_pain_scores), what was adjusted at each
--- visit (visit_listings), posture and squat assessments and the comparisons
--- sent to the patient -- sat behind visit_notes_access, in the app and in
--- every one of those tables' policies. So a clinic could not let reception
--- see how a patient is progressing without also handing them every clinical
--- note, and Settings > Roles never mentioned the tab at all: it was looked
--- for there and not found.
---
--- progress_access is READ access to that tab. Taking an assessment, scoring
--- pain, sending a comparison to the patient and deleting anything stay where
--- they were (visit_notes_access / _edit / _delete). visit_notes_access keeps
--- including it -- a role that reads the notes reads the progress made under
--- them -- which is why every select policy below is "either", and why no role
--- that sees the tab today stops seeing it.
-
--- ------------------------------------------------------------ existing roles
-
--- Every role that sees the tab today keeps a stored true, so the editor
--- shows what is in force; every other role gets an explicit false.
-update public.account_roles
-set permissions = permissions || jsonb_build_object(
-  'progress_access', coalesce((permissions->>'visit_notes_access')::boolean, false)
-)
-where not (permissions ? 'progress_access');
-
--- ------------------------------------------------------------ read policies
-
-drop policy if exists "staff select visit_pain_scores" on public.visit_pain_scores;
-create policy "staff select visit_pain_scores" on public.visit_pain_scores for select
-  using (
-    public.is_account_member(account_id)
-    and (public.has_permission(account_id, 'progress_access') or public.has_permission(account_id, 'visit_notes_access'))
-  );
-
-drop policy if exists "staff select visit_listings" on public.visit_listings;
-create policy "staff select visit_listings" on public.visit_listings for select
-  using (
-    public.is_account_member(account_id)
-    and (public.has_permission(account_id, 'progress_access') or public.has_permission(account_id, 'visit_notes_access'))
-  );
-
-drop policy if exists "staff select posture_assessments" on public.posture_assessments;
-create policy "staff select posture_assessments" on public.posture_assessments for select
-  using (
-    public.is_account_member(account_id)
-    and (public.has_permission(account_id, 'progress_access') or public.has_permission(account_id, 'visit_notes_access'))
-  );
-
-drop policy if exists "staff select posture_comparisons" on public.posture_comparisons;
-create policy "staff select posture_comparisons" on public.posture_comparisons for select
-  using (
-    public.is_account_member(account_id)
-    and (public.has_permission(account_id, 'progress_access') or public.has_permission(account_id, 'visit_notes_access'))
-  );
-
--- ============================================================ leads_access
+-- leads_access: "Ver leads", a role permission of its own for the lead side
+-- of Growth.
 --
 -- The Leads board, a lead's drawer and thread, converting a lead, lead
 -- conversations in the Inbox, and sending a lead WhatsApp -- all behind
@@ -89,10 +26,9 @@ where not (permissions ? 'leads_access');
 
 -- ------------------------------------------------------------ restated
 
--- New accounts: seed_account_roles as 20261109181443 left it, with
--- progress_access as visit_notes_access (Owner and Practitioner on, Front
--- Desk off) and leads_access as communication_config (Owner only), so a new
--- clinic starts exactly where an existing one is after the updates above.
+-- New accounts: seed_account_roles as 20261124175452 left it, with
+-- leads_access as communication_config (Owner only), so a new clinic starts
+-- exactly where an existing one is after the update above.
 create or replace function public.seed_account_roles(target_account_id uuid)
 returns uuid
 language plpgsql

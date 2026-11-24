@@ -48,6 +48,7 @@ export interface RolePermissions {
   visit_notes_scope: Scope2
   visit_notes_edit: boolean
   visit_notes_delete: boolean
+  progress_access: boolean
   docs_files_scope: Scope2
 }
 
@@ -94,6 +95,7 @@ export const EMPTY_PERMISSIONS: RolePermissions = {
   visit_notes_scope: 'own',
   visit_notes_edit: false,
   visit_notes_delete: false,
+  progress_access: false,
   docs_files_scope: 'own',
 }
 
@@ -246,7 +248,19 @@ export function permissionGroups(t: T): PermissionGroup[] {
           key: 'visit_notes_access',
           label: t('See visit notes', 'Ver notas de visita'),
           short: t('See notes', 'Ver notas'),
-          description: t('Without this, notes do not appear on the record or the appointment.', 'Sin esto, las notas no aparecen en la ficha ni en la cita.'),
+          description: t(
+            'Without this, notes do not appear on the record or the appointment. Includes "See progress".',
+            'Sin esto, las notas no aparecen en la ficha ni en la cita. Incluye «Ver progreso».',
+          ),
+        },
+        {
+          kind: 'toggle',
+          key: 'progress_access',
+          label: t('See progress', 'Ver progreso'),
+          description: t(
+            'The Progress tab on the record: the pain curve, what was adjusted at each visit, posture assessments and their reports. Read only: taking an assessment or sending it to the patient needs "See visit notes".',
+            'La pestaña Progreso de la ficha: la curva de dolor, lo ajustado en cada visita, las valoraciones posturales y sus informes. Solo lectura: hacer una valoración o enviarla al paciente necesita «Ver notas de visita».',
+          ),
         },
         {
           kind: 'toggle',
@@ -509,6 +523,7 @@ export function summaryChips(p: RolePermissions, t: T): string[] {
   else if (p.billing_access) chips.push(t('Charge', 'Cobrar'))
   if (p.inbox_access) chips.push(t('Inbox', 'Bandeja de entrada'))
   if (!p.visit_notes_access) chips.push(t('No clinical notes', 'Sin notas clínicas'))
+  if (!p.visit_notes_access && p.progress_access) chips.push(t('Sees progress', 'Ve el progreso'))
   if (p.reports_access) chips.push(p.reports_own_only ? t('Reports: only their own', 'Informes: solo los suyos') : t('Reports', 'Informes'))
   if (p.settings_access) {
     const areas = [

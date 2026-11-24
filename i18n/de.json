@@ -10764,6 +10764,10 @@
   "days, by any automation": "Tagen, von keiner Automatisierung",
   "not asked \"how did we do?\" in the last": "nicht nach „Wie war es?“ gefragt in den letzten",
   "visits (0 = never), this one included": "Behandlungen (0 = nie), diese mitgezählt",
-  "years. Patients with no date of birth do not match.": "Jahre. Patienten ohne Geburtsdatum passen nicht."
+  "years. Patients with no date of birth do not match.": "Jahre. Patienten ohne Geburtsdatum passen nicht.",
+  "Without this, notes do not appear on the record or the appointment. Includes \"See progress\".": "Ohne dies erscheinen Notizen weder in der Akte noch beim Termin. Schließt „Fortschritt ansehen“ ein.",
+  "See progress": "Fortschritt ansehen",
+  "The Progress tab on the record: the pain curve, what was adjusted at each visit, posture assessments and their reports. Read only: taking an assessment or sending it to the patient needs \"See visit notes\".": "Der Reiter Fortschritt in der Akte: die Schmerzkurve, was bei jedem Termin justiert wurde, Haltungsanalysen und ihre Berichte. Nur lesen: Eine Analyse erstellen oder an den Patienten senden erfordert „Behandlungsnotizen ansehen“.",
+  "Sees progress": "Sieht den Fortschritt"
  }
 }

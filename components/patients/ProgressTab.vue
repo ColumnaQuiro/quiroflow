@@ -7,7 +7,8 @@ import { listingSummary, sideLettersFor, type Listings } from '../../utils/spina
 // they started, where they are and the care plan they are on. "Informe de
 // revisión" turns the same page into the PDF handed over at the re-exam
 // (utils/reportPdf: the figures and the table as text, the curve as an image).
-// Under the visit notes permissions, like everything else clinical.
+// Read with "See progress" (progress_access) or "See visit notes", which
+// includes it; everything that writes stays under the visit notes keys.
 //
 // Also the staff app's Progreso tab (mobile/pages/patients/[id].vue), which
 // passes `can`. So nothing here may reach what only the web has: its account

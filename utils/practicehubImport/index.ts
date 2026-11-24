@@ -3,6 +3,7 @@ import { planAppointmentTypes } from './appointmentTypes'
 import { planBonos } from './bonos'
 import { planCarePlans, planPatientLogs, planStickyNotes, planTreatmentNotes } from './clinical'
 import { planFileAttachments } from './files'
+import { planExercises } from './exercises'
 import { planCustomFormResponses } from './forms'
 import { planLedger } from './ledger'
 import { planPatients } from './patients'
@@ -27,6 +28,7 @@ const PLANNERS: Record<PracticeHubStepKind, PracticeHubStepPlanner> = {
   patient_logs: planPatientLogs,
   sticky_notes: planStickyNotes,
   custom_form_responses: planCustomFormResponses,
+  exercises: planExercises,
   profile_photos: planPracticeHubProfilePhotos,
   file_attachments: planFileAttachments,
 }

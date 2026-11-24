@@ -97,6 +97,7 @@ export function importJobStepLabel(step: string, t: T, source?: string): string 
     case 'patient_logs': return t('Patient logs', 'Registros de pacientes')
     case 'sticky_notes': return t('Sticky notes', 'Notas adhesivas')
     case 'custom_form_responses': return t('Form responses', 'Respuestas de formularios')
+    case 'exercises': return t('Exercises', 'Ejercicios')
     case 'profile_photos': return t('Profile photos', 'Fotos de perfil')
     case 'file_attachments': return t('Files', 'Archivos')
     case 'clinical': return source === 'quirohiro' ? t('Clinical records and notes', 'Fichas y notas clínicas') : t('Clinical history and calls', 'Historial clínico y llamadas')

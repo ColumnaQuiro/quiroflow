@@ -1580,7 +1580,11 @@
   "{0} before, at {1}": "{0} vorher, um {1}",
   "{0} h": "{0} Std.",
   "{0} later": "{0} später",
-  "This file is {0} MB and WhatsApp takes at most {1} MB. Compress it (a shorter or lower-quality export) and try again.": "Diese Datei ist {0} MB groß, WhatsApp akzeptiert höchstens {1} MB. Komprimiere sie (kürzer oder in geringerer Qualität) und versuche es erneut."
+  "This file is {0} MB and WhatsApp takes at most {1} MB. Compress it (a shorter or lower-quality export) and try again.": "Diese Datei ist {0} MB groß, WhatsApp akzeptiert höchstens {1} MB. Komprimiere sie (kürzer oder in geringerer Qualität) und versuche es erneut.",
+  "{0} exercises given to patients were skipped: their patient is not here yet. Run Patients, then this step again.": "{0} zugewiesene Übungen wurden übersprungen: Ihr Patient ist noch nicht hier. Importieren Sie die Patienten und führen Sie diesen Schritt erneut aus.",
+  "Library exercises {0}-{1} were not saved: {2}": "Bibliotheksübungen {0}-{1} wurden nicht gespeichert: {2}",
+  "\"{0}\" could not be linked to PracticeHub: {1}": "„{0}“ konnte nicht mit PracticeHub verknüpft werden: {1}",
+  "Patients' exercises {0}-{1} were not saved: {2}": "Patientenübungen {0}-{1} wurden nicht gespeichert: {2}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -7005,7 +7009,6 @@
   "Readings from Education, sent in this order. Anything the patient already has is not sent again.": "Lektüren aus Aufklärung, in dieser Reihenfolge gesendet. Was der Patient schon hat, wird nicht erneut gesendet.",
   "Reading…": "Wird gelesen…",
   "Reads as red: on the calendar, red means money owed.": "Wirkt rot: Im Kalender bedeutet Rot offene Beträge.",
-  "Reads PracticeHub and brings everything across: patients, appointments, payments and invoices, bonos, clinical notes, care plans, logs, form responses, profile photos and files, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Liest PracticeHub und übernimmt alles: Patienten, Termine, Zahlungen und Rechnungen, Pakete, klinische Notizen, Behandlungspläne, Protokolle, Formularantworten, Profilfotos und Dateien, in dieser Reihenfolge. Das läuft auf dem Server von QuiroFlow, du kannst diese Seite also schließen; du bekommst eine E-Mail, sobald es fertig ist.",
   "Reads PracticeHub and runs every step below on the server, except Signed forms. You can close the page.": "Liest PracticeHub und führt alle Schritte unten auf dem Server aus, außer Unterschriebene Formulare. Du kannst die Seite schließen.",
   "Reads Quirocitas and imports everything in one go: patients, appointments, clinical history, bonos, payments and files, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Liest Quirocitas und importiert alles in einem Durchgang: Patienten, Termine, Krankengeschichte, Pakete, Zahlungen und Dateien, in dieser Reihenfolge. Es läuft auf dem Server von QuiroFlow, Sie können diese Seite also schließen; Sie erhalten eine E-Mail, wenn es fertig ist.",
   "Reads Quirocitas and runs every step below, on the server. You can close the page.": "Liest Quirocitas und führt alle Schritte darunter auf dem Server aus. Sie können die Seite schließen.",
@@ -10781,6 +10784,21 @@
   "WhatsApp, templates, saved replies, documents, automations and all of Growth. Includes \"See leads\".": "WhatsApp, Vorlagen, gespeicherte Antworten, Dokumente, Automatisierungen und ganz Growth. Schließt „Leads ansehen“ ein.",
   "WhatsApp only takes MP4 videos. A .mov from an iPhone has to be exported as MP4 first.": "WhatsApp akzeptiert nur MP4-Videos. Eine .mov-Datei vom iPhone muss zuerst als MP4 exportiert werden.",
   "WhatsApp only takes JPEG or PNG images.": "WhatsApp akzeptiert nur JPEG- oder PNG-Bilder.",
-  "WhatsApp only takes PDF documents here.": "WhatsApp akzeptiert hier nur PDF-Dokumente."
+  "WhatsApp only takes PDF documents here.": "WhatsApp akzeptiert hier nur PDF-Dokumente.",
+  "Reads PracticeHub and brings everything across: patients, appointments, payments and invoices, bonos, clinical notes, care plans, logs, form responses, exercises, profile photos and files, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Liest PracticeHub und übernimmt alles: Patienten, Termine, Zahlungen und Rechnungen, Pakete, klinische Notizen, Behandlungspläne, Protokolle, Formularantworten, Übungen, Profilfotos und Dateien, in dieser Reihenfolge. Das läuft auf dem Server von QuiroFlow, du kannst diese Seite also schließen; du bekommst eine E-Mail, sobald es fertig ist.",
+  "Brings PracticeHub's exercise library into Exercises, and gives each patient the exercises they had there, with any notes written for them. Their videos come as links: YouTube and Vimeo play inside the patient app.": "Übernimmt die Übungsbibliothek aus PracticeHub in Übungen und weist jedem Patienten die Übungen zu, die er dort hatte, mit den für ihn geschriebenen Notizen. Videos kommen als Link: YouTube und Vimeo laufen direkt in der Patienten-App.",
+  "Patients first.": "Zuerst die Patienten.",
+  "A patient's exercises are only given once that patient is here: run Patients before this.": "Die Übungen eines Patienten werden erst zugewiesen, wenn dieser Patient hier ist: Importieren Sie zuerst die Patienten.",
+  "It brings only what is new. An exercise of the same name already in your library is used, not doubled, and nothing you have changed here is overwritten.": "Es wird nur Neues übernommen. Gibt es in Ihrer Bibliothek schon eine Übung mit demselben Namen, wird diese verwendet statt verdoppelt, und nichts, was Sie hier geändert haben, wird überschrieben.",
+  "No notification.": "Keine Benachrichtigung.",
+  "Patients are not sent anything when their exercises arrive.": "Patienten erhalten nichts, wenn ihre Übungen ankommen.",
+  "Import exercises": "Übungen importieren",
+  "It reads PracticeHub again first, which takes a few minutes on a large clinic. You can close this page.": "Zuerst wird PracticeHub erneut gelesen, was bei einer großen Praxis einige Minuten dauert. Sie können diese Seite schließen.",
+  "exercises": "Übungen",
+  "The exercise library, and the exercises each patient had. Runs on the server; needs Patients first.": "Die Übungsbibliothek und die Übungen jedes Patienten. Läuft auf dem Server; erfordert zuerst Patienten.",
+  "New in the library": "Neu in der Bibliothek",
+  "Already in the library": "Bereits in der Bibliothek",
+  "To give to patients": "Patienten zuzuweisen",
+  "Already given": "Bereits zugewiesen"
  }
 }

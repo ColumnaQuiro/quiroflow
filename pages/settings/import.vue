@@ -43,7 +43,7 @@ const { job: quirohiroJob } = useImportJob('quirohiro')
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
-function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'patient_docs' | 'patient_files', prefix?: string) {
+function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'patient_docs' | 'patient_files' | 'exercises', prefix?: string) {
   return () => {
     const q = supabase.from(table).select('*', { count: 'exact', head: true }).eq('account_id', store.accountId!)
     // Unprefixed is PracticeHub's (bare numbers): not the "QC-" rows Quirocitas
@@ -112,6 +112,7 @@ const sources = computed<Source[]>(() => [
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders.', 'Recordatorios de recepción.') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form.', 'También crea una plantilla de documento por formulario.'), count: counted('patient_docs', 'PH-form-') },
           { key: 'signed_forms', label: t('Signed forms', 'Formularios firmados'), hint: t('Each form’s signed original as a PDF, with its signature and drawings. Runs on the server; needs Form responses first.', 'El original firmado de cada formulario en PDF, con su firma y sus dibujos. Funciona en el servidor; requiere antes Respuestas de formularios.'), count: counted('patient_files', 'PH-form-pdf-') },
+          { key: 'exercises', label: t('Exercises', 'Ejercicios'), hint: t('The exercise library, and the exercises each patient had. Runs on the server; needs Patients first.', 'La biblioteca de ejercicios y los que tenía cada paciente. Funciona en el servidor; requiere antes Pacientes.'), count: counted('exercises', 'PH-exercise-') },
           { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs, straight from PracticeHub’s API. Skips every file already here.', 'Escaneos, fotos y PDF, directo desde la API de PracticeHub. Se salta los que ya están aquí.'), count: () => counted('patient_files')().not('storage_path', 'is', null) },
         ],
       },
@@ -510,6 +511,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportPracticeHubCarePlansImporter v-else-if="activeStep.key === 'care_plans'" />
                 <ImportPracticeHubCustomFormResponsesImporter v-else-if="activeStep.key === 'custom_form_responses'" />
                 <ImportPracticeHubSignedForms v-else-if="activeStep.key === 'signed_forms'" />
+                <ImportPracticeHubExercisesImporter v-else-if="activeStep.key === 'exercises'" />
                 <ImportPracticeHubFilesImporter v-else-if="activeStep.key === 'file_attachments'" />
               </template>
               <template v-else-if="sourceKey === 'quirocitas'">

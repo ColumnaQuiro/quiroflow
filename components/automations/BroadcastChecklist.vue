@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { stepTitle, triggerDetail, filtersText } from '~/utils/automationDescribe'
-import { asAudienceRef } from '~/utils/automationAudience'
+import { asAudienceRef, asPatientIds } from '~/utils/automationAudience'
 import { chainOf } from '~/utils/automationTree'
 import { HINT } from '~/utils/automationUi'
 
@@ -36,6 +36,8 @@ const who = computed(() => {
     const excluded = (segment.value?.exclude ?? []).length
     return `${kind} «${audienceName.value ?? '…'}»${excluded ? t(`, leaving out ${excluded}`, `, excepto ${excluded}`) : ''}`
   }
+  const picked = asPatientIds(segment.value?.patient_ids).length
+  if (picked) return picked === 1 ? t('1 patient chosen', '1 paciente elegido') : t(`${picked} patients chosen`, `${picked} pacientes elegidos`)
   const f = filtersText(t, segment.value?.filters ?? {}, b.lookup.value)
   return f || null
 })
@@ -86,7 +88,7 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
         <span :class="[TICK, done.who.value ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint']" aria-hidden="true"><template v-if="done.who.value"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></template><template v-else>1</template></span>
         <strong class="text-[14px] text-ink-900">{{ t('Who', 'A quién') }}</strong>
         <UiBtn size="sm" variant="ghost" data-test="broadcast-change-who" @click="b.selection.value = { kind: 'trigger' }">{{ done.who.value ? t('Change', 'Cambiar') : t('Choose', 'Elegir') }}</UiBtn>
-        <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ who ?? t('Nobody chosen yet: a list, a segment, or filters.', 'Aún nadie: una lista, un segmento o unos filtros.') }}</span>
+        <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ who ?? t('Nobody chosen yet: patients, a list, a segment, or filters.', 'Aún nadie: unos pacientes, una lista, un segmento o unos filtros.') }}</span>
         <span v-if="rule.is_marketing" class="col-start-2 col-end-4 text-[12px] text-ink-muted">{{ t('Marketing: only patients who accepted it receive it.', 'Comercial: solo lo reciben los pacientes que lo aceptaron.') }}</span>
       </section>
 

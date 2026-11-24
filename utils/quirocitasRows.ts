@@ -27,8 +27,9 @@ export interface QuirocitasLedgerMonth {
   month: string
   rows: number
   /** What the page printed under the month, and what its rows add up to. */
-  printed: { cash: number | null; card: number | null; transfer: number | null }
-  summed: { cash: number; card: number; transfer: number }
+  /** `bizum` only where the page has that column, and only on copies read since it was kept. */
+  printed: { cash: number | null; card: number | null; transfer: number | null; bizum?: number | null }
+  summed: { cash: number; card: number; transfer: number; bizum?: number }
   /**
    * Where its columns were read from (parseQuirocitasCajaMonth's layout), so a
    * clinic whose page is laid out differently says how without anyone needing
@@ -436,6 +437,8 @@ export interface QuirocitasBonoRow {
   isClosed: boolean
   /** Whether the purchase date comes from the payment in the cash ledger, or was worked back from the expiry. */
   dateFromLedger: boolean
+  /** Used up, with no session count in its type or name: imported as 1 of 1, since Quirocitas cannot say how many it held. */
+  sizeUnknown: boolean
 }
 
 /** Owners of each cita id and each (unique) name, for placing ledger rows on a patient. */
@@ -458,7 +461,7 @@ export function quirocitasOwners(s: QuirocitasSnapshot) {
   }
 }
 
-const ledgerAmount = (r: QuirocitasLedgerRow) => (r.cash ?? 0) + (r.card ?? 0) + (r.transfer ?? 0)
+const ledgerAmount = (r: QuirocitasLedgerRow) => (r.cash ?? 0) + (r.card ?? 0) + (r.transfer ?? 0) + (r.bizum ?? 0)
 
 /**
  * Each bono once, however many family members' records list it.
@@ -514,7 +517,16 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, toda
   for (const [bonoId, { bono, ids }] of [...holders].sort((a, b) => Number(a[0]) - Number(b[0]))) {
     const type = types.get(bono.name.toLowerCase())
     if (type?.kind === 'debt') { skippedDebt.push(bonoId); continue }
-    const total = type?.sessions || Number(bono.name.match(/(\d+)\s*$/)?.[1]) || bono.remaining
+    // How many sessions it held: its type's, else the number its name ends in.
+    // A type set up with no count ("Genérico", a gift bono) and a name with no
+    // number leave only what is left, which is 0 once it is used up -- and a
+    // bono of 0 sessions breaks package_purchases' check (sessions_total > 0),
+    // failing the whole batch it is written in. One clinic's 620 such bonos
+    // took its other 1,750 down with them. The visit list says a visit was
+    // paid with "a bono", not which one, so the real count cannot be worked
+    // out: such a bono comes in with at least 1, and the step says so.
+    const known = type?.sessions || Number(bono.name.match(/(\d+)\s*$/)?.[1]) || 0
+    const total = Math.max(known, bono.remaining, 1)
     const expires = quirocitasDate(bono.expires)
     const amount = cents(bono.paid + bono.owed)
     // The sale: a ledger row naming this bono, for one of its holders, on or
@@ -545,8 +557,9 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, toda
       ownerRef: qcPatientRef(owner),
       sharedWithRefs: ids.filter((i) => i !== owner).map(qcPatientRef),
       name: bono.name,
-      sessionsTotal: Math.max(total, bono.remaining),
-      sessionsUsed: Math.max(0, Math.max(total, bono.remaining) - bono.remaining),
+      sessionsTotal: total,
+      sessionsUsed: Math.max(0, total - bono.remaining),
+      sizeUnknown: !known && bono.remaining <= 0,
       priceCents: amount,
       owedCents: cents(bono.owed),
       purchasedAt,
@@ -574,7 +587,7 @@ export interface QuirocitasChargeRow {
 export interface QuirocitasPaymentRow {
   ref: string
   patientRef: string
-  method: 'cash' | 'card' | 'transfer'
+  method: 'cash' | 'card' | 'transfer' | 'bizum'
   amountCents: number
   paidAt: string
   /** The visit charge it pays, or the bono it buys. */
@@ -674,7 +687,7 @@ export function quirocitasLedgerRows(s: QuirocitasSnapshot, bonoOfSale: Map<Quir
       perCita.set(citaId, (perCita.get(citaId) ?? 0) + 1)
     } else if (row.bonoPaymentId) key = `pb${row.bonoPaymentId}`
     else {
-      const what = `r${(quirocitasDate(row.date) ?? row.date).replace(/-/g, '')}-${owner}-${fnv([row.name, row.note, row.cash, row.card, row.transfer, row.debt, row.value].join('|'))}`
+      const what = `r${(quirocitasDate(row.date) ?? row.date).replace(/-/g, '')}-${owner}-${fnv([row.name, row.note, row.cash, row.card, row.transfer, row.debt, row.value, ...(row.bizum ? [row.bizum] : [])].join('|'))}`
       const n = perRow.get(what) ?? 0
       perRow.set(what, n + 1)
       key = n ? `${what}-${n}` : what
@@ -699,7 +712,7 @@ export function quirocitasLedgerRows(s: QuirocitasSnapshot, bonoOfSale: Map<Quir
     }
     // Which bono a sale bought, from the matching done for the bonos.
     const bonoRef = bonoOfSale.get(row) ?? null
-    for (const method of ['cash', 'card', 'transfer'] as const) {
+    for (const method of ['cash', 'card', 'transfer', 'bizum'] as const) {
       const amount = cents(row[method])
       if (amount <= 0) continue
       payments.push({ ref: `QC-pay-${key}-${method}`, patientRef, method, amountCents: amount, paidAt: at, chargeRef, bonoRef })
@@ -744,7 +757,7 @@ export function quirocitasFileRows(r: QuirocitasRecord): QuirocitasFileRow[] {
 /** Months whose rows do not add up to what Quirocitas printed under them. */
 //
 // Cash is checked against cash. The other methods are checked as a set: the
-// page totals them by slot (its second and third payment method), and copies
+// page totals them by slot (its second, third... payment method), and copies
 // read before the slots were matched to the header's columns stored slot 2
 // as "card" whatever it was -- one clinic's transfers, every month. What
 // matters is that every euro the page printed was read into some column; the
@@ -755,9 +768,9 @@ export function quirocitasLedgerMismatches(s: Pick<QuirocitasSnapshot, 'ledgerMo
   return s.ledgerMonths.filter((m) => {
     if (m.printed.cash !== null && off(m.printed.cash, m.summed.cash)) return true
     // A page that prints no method totals at all has nothing to check them by.
-    if (m.printed.card === null && m.printed.transfer === null) return false
-    const printed = nonZero([m.printed.card, m.printed.transfer])
-    const summed = nonZero([m.summed.card, m.summed.transfer])
+    if (m.printed.card === null && m.printed.transfer === null && (m.printed.bizum ?? null) === null) return false
+    const printed = nonZero([m.printed.card, m.printed.transfer, m.printed.bizum ?? null])
+    const summed = nonZero([m.summed.card, m.summed.transfer, m.summed.bizum ?? null])
     return printed.length !== summed.length || printed.some((p, i) => off(p, summed[i]!))
   })
 }

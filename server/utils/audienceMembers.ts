@@ -1,4 +1,4 @@
-import type { AudienceRef } from '~/utils/automationAudience'
+import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from '~/utils/automationAudience'
 
 // Who is in a saved audience -- a patient list, or a segment's snapshot
 // (refreshed every 15 minutes and whenever the segment is saved) -- read
@@ -49,4 +49,27 @@ export function audienceEntriesSince(service: any, audience: AudienceRef, since:
 export async function audienceExists(service: any, audience: AudienceRef): Promise<boolean> {
   const { data } = await service.from(audience.kind === 'list' ? 'patient_lists' : 'patient_segments').select('id').eq('id', audience.id).maybeSingle()
   return !!data
+}
+
+/**
+ * Who a group send is aimed at when it names its people instead of asking
+ * filters: a saved list or segment, or patients chosen one by one
+ * (segment.patient_ids), less whoever is in any excluded audience. Null when
+ * it names neither, and its filters decide. The list wins over a stale
+ * selection, as the builder shows one or the other.
+ *
+ * These are only ever intersected with the rule's own account's patients,
+ * within the send's gates (consent, archived, minors), never used alone.
+ */
+export async function namedRecipients(service: any, segment: { audience?: unknown; exclude?: unknown; patient_ids?: unknown } | null | undefined): Promise<Set<string> | null> {
+  const audience = asAudienceRef(segment?.audience)
+  const exclude = asAudienceRefs(segment?.exclude)
+  if (audience) return audienceMemberIds(service, audience, exclude)
+  const picked = asPatientIds(segment?.patient_ids)
+  if (!picked.length) return null
+  const ids = new Set(picked)
+  for (const ex of exclude) {
+    for (const m of await pagedRpc<{ patient_id: string }>(service, 'audience_members', { p_kind: ex.kind, p_id: ex.id })) ids.delete(m.patient_id)
+  }
+  return ids
 }

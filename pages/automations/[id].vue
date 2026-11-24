@@ -40,6 +40,7 @@ function setTab(next: Tab) {
 // taken once, so a reload is a blank automation rather than the draft again.
 const aiDraft = useAiAutomationDraft()
 const fromAi = ref(false)
+const broadcastRecipients = useBroadcastRecipients()
 
 async function init() {
   // The automation first: it is what the canvas waits on, so its requests go
@@ -48,8 +49,11 @@ async function init() {
   const pending = idParam.value === 'new' && route.query.from === 'ai' ? aiDraft.value : null
   aiDraft.value = null
   fromAi.value = !!pending
+  // "Send a message" on the Patients page: the people it had selected, taken once.
+  const recipients = idParam.value === 'new' && route.query.from === 'patients' ? broadcastRecipients.value : null
+  broadcastRecipients.value = null
   const loading = idParam.value === 'new'
-    ? b.initNew(pending ?? (route.query.kind === 'broadcast' ? newBroadcastDraft(t('New send', 'Nuevo envío')) : undefined), { unsaved: !!pending })
+    ? b.initNew(pending ?? (route.query.kind === 'broadcast' ? newBroadcastDraft(t('New send', 'Nuevo envío'), recipients) : undefined), { unsaved: !!pending || !!recipients })
     : b.load(idParam.value)
   b.loadLookups()
   b.loadTemplates()
@@ -450,6 +454,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
     <AutomationsSegmentActivateDialog
       v-if="segmentDialog"
       :filters="b.draft.value.rule.segment?.filters ?? {}"
+      :named="b.draft.value.rule.segment"
       :is-marketing="b.draft.value.rule.is_marketing"
       :schedule="b.draft.value.rule.segment?.schedule"
       :daily-limit="b.draft.value.rule.segment?.daily_limit ?? null"

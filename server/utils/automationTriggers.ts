@@ -7,6 +7,8 @@ import { DEFAULT_CLINIC_TIMEZONE, startOfLocalDate } from '~/utils/clinicClock'
 import { localParts } from '~/utils/automationTiming'
 import type { CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
 import { LEAD_STOP_STAGES } from '~/utils/automationCatalog'
+import { PATIENT_FOR_RULE_COLUMNS, rulesForRaisedEvent, rulesOnMoment, type AtomRule } from '~/server/utils/automationAtomRules'
+import { isDateAtom, type TriggerAtom } from '~/utils/automationTrigger'
 
 // Triggers raised on the server, for events that already happen there: a
 // satisfaction answer, a tag an automation adds, a lead moved, a form found
@@ -17,13 +19,10 @@ import { LEAD_STOP_STAGES } from '~/utils/automationCatalog'
 // Best-effort, like fire.post.ts: the action that raised the event already
 // happened, and an automation that fails must not undo or block it.
 
-/** The patient columns a rule's actions read -- the select fire.post.ts makes. */
-export const PATIENT_FOR_RULE_COLUMNS =
-  'id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, preferred_language'
-
 /**
- * Every enabled rule of the account on this event, whose own trigger setting
- * takes it (`matches`) and whose "only if" filters the patient passes.
+ * Every enabled rule of the account on this event's atom, whose own trigger
+ * setting (its atom's options) takes it (`matches`) and whose "only if"
+ * filters the patient passes.
  * `skipRuleId` keeps an automation from starting itself: a rule that adds a
  * tag and also starts on that tag would otherwise loop.
  */
@@ -36,8 +35,8 @@ export async function firePatientTrigger(
   opts: { appointmentId?: string; matches?: (filters: Record<string, unknown>) => boolean; skipRuleId?: string } = {},
 ): Promise<number> {
   try {
-    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', event).eq('enabled', true)
-    const chosen = ((rules ?? []) as { id: string; filters: Record<string, unknown> | null }[]).filter((r) => r.id !== opts.skipRuleId && (!opts.matches || opts.matches(r.filters ?? {})))
+    const rules = await rulesForRaisedEvent(service, accountId, event)
+    const chosen = rules.filter((r) => r.id !== opts.skipRuleId && (!opts.matches || opts.matches(r.atom.options)))
     if (!chosen.length) return 0
     const { data: patient } = await service.from('patients').select(PATIENT_FOR_RULE_COLUMNS).eq('id', patientId).eq('account_id', accountId).maybeSingle()
     if (!patient) return 0
@@ -65,10 +64,10 @@ export async function fireLeadStageTrigger(service: any, accountId: string, lead
   // run started now would be cancelled before its first step.
   if (LEAD_STOP_STAGES.includes(stage)) return 0
   try {
-    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', 'lead.stage_changed').eq('enabled', true)
+    const rules = await rulesForRaisedEvent(service, accountId, 'lead.stage_changed')
     let fired = 0
-    for (const rule of (rules ?? []) as { id: string; filters: Record<string, unknown> | null }[]) {
-      if (rule.id === opts.skipRuleId || !triggerStageMatches(rule.filters, stage)) continue
+    for (const rule of rules) {
+      if (rule.id === opts.skipRuleId || !triggerStageMatches(rule.atom.options, stage)) continue
       await startLeadSequence(service, accountId, rule.id, leadId, origin)
       fired += 1
     }
@@ -95,9 +94,9 @@ const DOCS_PER_TICK = 200
  * rule on does not message everyone who ever signed a consent.
  */
 export async function enrolCompletedDocs(service: any, origin: string): Promise<number> {
-  const { data: rules } = await service.from('automation_rules').select('id, account_id, filters, created_at').eq('trigger_event', 'doc.completed').eq('enabled', true)
+  const rules = (await rulesOnMoment(service, 'form', 'completed')).filter((r) => !isDateAtom(r.atom))
   let fired = 0
-  for (const rule of (rules ?? []) as { id: string; account_id: string; filters: Record<string, unknown> | null; created_at: string }[]) {
+  for (const rule of rules) {
     try {
       // A minute's grace before the rule's creation: completed_at can be
       // written by another machine's clock (a tablet, an import), and a form
@@ -110,7 +109,7 @@ export async function enrolCompletedDocs(service: any, origin: string): Promise<
         .gte('completed_at', since)
         .order('completed_at')
         .limit(DOCS_PER_TICK)
-      const candidates = ((docs ?? []) as { id: string; patient_id: string; template_id: string | null }[]).filter((d) => triggerDocMatches(rule.filters, d.template_id))
+      const candidates = ((docs ?? []) as { id: string; patient_id: string; template_id: string | null }[]).filter((d) => triggerDocMatches(rule.atom.options, d.template_id))
       if (!candidates.length) continue
       const { data: done } = await service.from('automation_doc_sends').select('doc_id').eq('rule_id', rule.id).in('doc_id', candidates.map((d) => d.id))
       const seen = new Set(((done ?? []) as { doc_id: string }[]).map((d) => d.doc_id))
@@ -131,7 +130,7 @@ export async function enrolCompletedDocs(service: any, origin: string): Promise<
   return fired
 }
 
-type ScanRule = { id: string; account_id: string; filters: Record<string, unknown> | null; created_at: string }
+type ScanRule = Pick<AtomRule, 'id' | 'account_id' | 'filters' | 'created_at'>
 
 /** Where a scan starts for a rule: two days back at most, and not before the rule existed (less a minute for clocks). */
 function scanSince(rule: ScanRule): string {
@@ -149,9 +148,9 @@ function scanSince(rule: ScanRule): string {
  * and satisfaction triggers use it.
  */
 export async function enrolCarePlanMilestones(service: any, origin: string): Promise<number> {
-  const { data: rules } = await service.from('automation_rules').select('id, account_id, filters, created_at').eq('trigger_event', 'care_plan.milestone').eq('enabled', true)
+  const rules = await rulesOnMoment(service, 'care_plan', 'milestone')
   let fired = 0
-  for (const rule of (rules ?? []) as ScanRule[]) {
+  for (const rule of rules) {
     try {
       const { data: visits } = await service
         .from('appointments')
@@ -190,7 +189,7 @@ export async function enrolCarePlanMilestones(service: any, origin: string): Pro
           .order('id')
         const k = ((counted ?? []) as { id: string }[]).findIndex((a) => a.id === visit.id) + 1
         if (k < 1) continue
-        if (!triggerCarePlanMatches(rule.filters, k, { total_visits: plan.total_visits, markers: (plan.visit_markers ?? []) as CarePlanVisitMarker[] })) continue
+        if (!triggerCarePlanMatches(rule.atom.options, k, { total_visits: plan.total_visits, markers: (plan.visit_markers ?? []) as CarePlanVisitMarker[] })) continue
         const { error: claimError } = await service.from('automation_rule_sends').insert({ rule_id: rule.id, appointment_id: visit.id })
         if (claimError) continue
         const { data: patient } = await service.from('patients').select(PATIENT_FOR_RULE_COLUMNS).eq('id', visit.patient_id).maybeSingle()
@@ -213,9 +212,9 @@ export async function enrolCarePlanMilestones(service: any, origin: string): Pro
  * automation_bono_sends claims each (rule, bono) once.
  */
 export async function enrolBonosRunningLow(service: any, origin: string): Promise<number> {
-  const { data: rules } = await service.from('automation_rules').select('id, account_id, filters, created_at').eq('trigger_event', 'bono.running_low').eq('enabled', true)
+  const rules = await rulesOnMoment(service, 'bono', 'running_low')
   let fired = 0
-  for (const rule of (rules ?? []) as ScanRule[]) {
+  for (const rule of rules) {
     try {
       const { data: used } = await service
         .from('package_sessions')
@@ -233,7 +232,7 @@ export async function enrolBonosRunningLow(service: any, origin: string): Promis
       for (const bono of (bonos ?? []) as { id: string; patient_id: string; sessions_total: number; sessions_used: number; is_closed: boolean | null }[]) {
         if (seen.has(bono.id) || bono.is_closed) continue
         const left = Math.max(0, bono.sessions_total - bono.sessions_used)
-        if (!triggerBonoMatches(rule.filters, left)) continue
+        if (!triggerBonoMatches(rule.atom.options, left)) continue
         const { error: claimError } = await service.from('automation_bono_sends').insert({ rule_id: rule.id, purchase_id: bono.id, account_id: rule.account_id })
         if (claimError) continue
         const { data: patient } = await service.from('patients').select(PATIENT_FOR_RULE_COLUMNS).eq('id', bono.patient_id).maybeSingle()
@@ -271,15 +270,11 @@ function latest(max: string, e: { entered_at: string }): string {
  * Runs are created due and walked by the same tick, as the group send does.
  */
 export async function enrolAudienceEntries(service: any, origin: string): Promise<number> {
-  const { data: rules } = await service
-    .from('automation_rules')
-    .select('id, account_id, filters, is_marketing, segment_last_run_at')
-    .eq('trigger_event', 'audience.entered')
-    .eq('enabled', true)
+  const rules = await rulesOnMoment(service, 'patient', 'entered_audience')
   let enrolled = 0
-  for (const rule of (rules ?? []) as { id: string; account_id: string; filters: Record<string, unknown> | null; is_marketing: boolean; segment_last_run_at: string | null }[]) {
+  for (const rule of rules) {
     try {
-      const audience = asAudienceRef(rule.filters?.trigger_audience)
+      const audience = asAudienceRef(rule.atom.options.trigger_audience)
       if (!audience) continue
       const first = !rule.segment_last_run_at
       let entries: { patient_id: string; entered_at: string }[]
@@ -290,7 +285,7 @@ export async function enrolAudienceEntries(service: any, origin: string): Promis
         // empty audience, a minute back, so nobody added while the rule was
         // being switched on falls between two clocks.
         const current = await audienceMembersNow(service, audience)
-        entries = rule.filters?.include_current === true ? current : []
+        entries = rule.atom.options.include_current === true ? current : []
         cursor = current.reduce(latest, new Date(Date.now() - 60_000).toISOString())
       } else {
         entries = await audienceEntriesSince(service, audience, rule.segment_last_run_at!)
@@ -343,18 +338,20 @@ const DATE_TRIGGER_FROM_HOUR = 9
  * from it. A date edited to another day can start the rule again for it.
  */
 export async function enrolDateTriggers(service: any, origin: string, now = new Date()): Promise<number> {
-  const { data: rules } = await service.from('automation_rules').select('id, account_id, filters, is_marketing').eq('trigger_event', 'patient.date').eq('enabled', true)
+  const rules = (await Promise.all(DATE_MOMENTS.map(([subject, moment]) => rulesOnMoment(service, subject, moment)))).flat().filter((r) => isDateAtom(r.atom))
   let fired = 0
-  for (const rule of (rules ?? []) as { id: string; account_id: string; filters: Record<string, unknown> | null; is_marketing: boolean }[]) {
+  for (const rule of rules) {
+    const settings = dateSettingsOf(rule.atom)
+    if (!settings) continue
     try {
       const { data: clinic } = await service.from('clinics').select('timezone').eq('account_id', rule.account_id).is('archived_at', null).order('created_at').limit(1).maybeSingle()
       const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
       const local = localParts(now, tz)
       if (local.minutes < DATE_TRIGGER_FROM_HOUR * 60) continue
       const today = local.date
-      const day = dateTriggerSourceDate(rule.filters, today)
+      const day = dateTriggerSourceDate(settings, today)
       if (!day) continue
-      const source = String(rule.filters?.trigger_date)
+      const source = String(settings.trigger_date)
       const hits = await dateSourceRows(service, rule.account_id, source, day, tz)
       if (!hits.length) continue
       const { data: done } = await service.from('automation_date_sends').select('source_id').eq('rule_id', rule.id).eq('on_date', today).in('source_id', hits.map((h) => h.sourceId))
@@ -374,6 +371,36 @@ export async function enrolDateTriggers(service: any, origin: string, now = new 
     }
   }
   return fired
+}
+
+/** The atoms read from a date on the record, each day from 09:00. */
+const DATE_MOMENTS: [string, string][] = [
+  ['patient', 'last_visit'],
+  ['patient', 'date_field'],
+  ['membership', 'started'],
+  ['care_plan', 'started'],
+]
+
+/**
+ * A date atom in the words dateTriggerSourceDate and dateSourceRows read --
+ * which date, how many days, before or after -- or null for one with no date
+ * to read (a date field not chosen yet).
+ */
+export function dateSettingsOf(atom: TriggerAtom): { trigger_date: string; trigger_days: number; trigger_when?: 'before' } | null {
+  const t = atom.timing
+  if (!t || t.unit !== 'days') return null
+  const source =
+    atom.subject === 'patient' && atom.moment === 'last_visit'
+      ? 'last_visit'
+      : atom.subject === 'membership' && atom.moment === 'started'
+        ? 'membership_start'
+        : atom.subject === 'care_plan' && atom.moment === 'started'
+          ? 'care_plan_start'
+          : atom.subject === 'patient' && atom.moment === 'date_field' && typeof atom.options.trigger_date === 'string'
+            ? (atom.options.trigger_date as string)
+            : null
+  if (!source) return null
+  return { trigger_date: source, trigger_days: t.amount, ...(t.direction === 'before' ? { trigger_when: 'before' as const } : {}) }
 }
 
 /** The rows whose date is `day` (YYYY-MM-DD, clinic time), each with the patient it belongs to. */
@@ -428,8 +455,8 @@ async function dateSourceRows(service: any, accountId: string, source: string, d
 export async function fireReferredVisitTrigger(service: any, accountId: string, appointmentId: string, origin: string): Promise<number> {
   const event = 'referral.visit_completed'
   try {
-    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', event).eq('enabled', true)
-    if (!rules?.length) return 0
+    const rules = await rulesForRaisedEvent(service, accountId, event)
+    if (!rules.length) return 0
     // Read here rather than taken from the caller: only a visit of this
     // account that really is completed, and its patient as the record says.
     const { data: visit } = await service.from('appointments').select('id, patient_id').eq('id', appointmentId).eq('account_id', accountId).eq('status', 'completed').is('deleted_at', null).maybeSingle()
@@ -440,7 +467,7 @@ export async function fireReferredVisitTrigger(service: any, accountId: string, 
     const { data: referrer } = await service.from('patients').select(PATIENT_FOR_RULE_COLUMNS).eq('id', referrerId).eq('account_id', accountId).maybeSingle()
     if (!referrer) return 0
     let fired = 0
-    for (const rule of rules as { id: string; filters: Record<string, unknown> | null }[]) {
+    for (const rule of rules) {
       if (!(await ruleFiltersMatch(service, referred.id, rule.filters as AutomationFilters, visit.id))) continue
       const { error: claimError } = await service.from('automation_rule_sends').insert({ rule_id: rule.id, appointment_id: visit.id })
       if (claimError) continue

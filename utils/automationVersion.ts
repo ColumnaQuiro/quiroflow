@@ -15,7 +15,11 @@
 // Computed from the rows exactly as PostgREST returns them, on both sides, so
 // the browser and the server agree without either trusting the other's copy.
 
-const RULE_FIELDS = ['name', 'trigger_event', 'filters', 'is_marketing', 'dry_run', 'entry_mode', 'exit_on', 'quiet_hours', 'segment'] as const
+// `trigger` is the atom (utils/automationTrigger.ts); `trigger_event` is what
+// the engine derives from it, kept for the rows and crons that still read it.
+// Both are here: a trigger, timing or filter changed in another tab moves
+// one of them, and that is a conflict like any other edit.
+const RULE_FIELDS = ['name', 'trigger', 'trigger_event', 'filters', 'is_marketing', 'dry_run', 'entry_mode', 'exit_on', 'quiet_hours', 'segment'] as const
 const STEP_FIELDS = ['id', 'action_type', 'position', 'config', 'parent_id', 'branch'] as const
 
 /** JSON with object keys sorted, so key order in a jsonb column never matters. */

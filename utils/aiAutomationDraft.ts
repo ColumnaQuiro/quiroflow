@@ -1,5 +1,5 @@
 import { EXIT_EVENTS, LEAD_STAGE_OPTIONS, TRIGGERS, VARIABLE_SOURCES, WAIT_EVENTS, isLeadTrigger, triggerDef } from './automationCatalog'
-import { newStepId, normalizePositions, type DraftRule, type DraftStep } from './automationTree'
+import { withAtom, newStepId, normalizePositions, type DraftRule, type DraftStep } from './automationTree'
 import { AI_EMAIL_DRAFT_SCHEMA, cleanAiEmailDraft } from './aiEmailDraft'
 import type { AiFormLanguage } from './aiFormDraft'
 
@@ -219,8 +219,10 @@ export function cleanAiAutomationDraft(
 
   const rule: DraftRule = {
     name: clip(str(obj.name).replace(/\s+/g, ' ').trim(), 120) || 'Automatización',
-    trigger_event: trigger,
-    filters,
+    // The model is offered the old trigger names (they describe themselves);
+    // the draft carries the atom each one is, and the filters that make it
+    // behave as that trigger did (utils/automationTrigger.ts).
+    ...withAtom({ trigger_event: trigger, filters }),
     is_marketing: obj.is_marketing === true,
     // Never sends for real until someone says so: test mode is a separate
     // switch, and the draft is not enabled at all.

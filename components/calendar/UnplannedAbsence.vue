@@ -54,7 +54,7 @@ const result = ref<{ moved: Visit[]; cancelled: Visit[]; kept: { visit: Visit; w
 onMounted(async () => {
   const [{ data: team }, { count }] = await Promise.all([
     supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).is('deleted_at', null).order('full_name'),
-    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger_event', 'appointment.cancelled').eq('enabled', true),
+    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger->>subject', 'appointment').eq('trigger->>moment', 'cancelled').eq('enabled', true),
   ])
   practitioners.value = (team as Member[] | null) ?? []
   notifiesOnCancel.value = (count ?? 0) > 0

@@ -35,7 +35,7 @@ async function write() {
       body: {
         description: description.value,
         language: preference.value,
-        trigger: b.draft.value.rule.trigger_event,
+        trigger: b.draft.value.rule.trigger,
         marketing: !!b.draft.value.rule.is_marketing,
         leadFields: fields.value.filter((f) => f.group === 'lead').map((f) => ({ key: f.key, label: f.label })),
       },

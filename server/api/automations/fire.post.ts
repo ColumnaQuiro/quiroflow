@@ -4,6 +4,7 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
 import { fireReferredVisitTrigger } from '~/server/utils/automationTriggers'
 import { triggerTagMatches, triggerTypeMatches } from '~/utils/automationTriggerMatch'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 // Fires every enabled automation_rule matching a trigger event -- called
 // from the client right after the underlying action already happened (a
@@ -61,12 +62,7 @@ export default defineEventHandler(async (event) => {
     await fireReferredVisitTrigger(service, accountId, body.appointmentId, origin)
   }
 
-  const { data: rules } = await supabase
-    .from('automation_rules')
-    .select('id, name, filters')
-    .eq('account_id', accountId)
-    .eq('trigger_event', body.triggerEvent)
-    .eq('enabled', true)
+  const rules = await rulesForRaisedEvent(supabase, accountId, body.triggerEvent)
 
   if (!rules || rules.length === 0) return { fired: 0 }
 
@@ -81,8 +77,8 @@ export default defineEventHandler(async (event) => {
   const isTagEvent = body.triggerEvent === 'patient.tag_added' || body.triggerEvent === 'patient.tag_removed'
   const isTypeEvent = body.triggerEvent === 'patient.type_added' || body.triggerEvent === 'patient.type_removed'
   for (const rule of rules) {
-    if (isTagEvent && !triggerTagMatches(rule.filters as Record<string, unknown>, String(body.tag ?? ''))) continue
-    if (isTypeEvent && !triggerTypeMatches(rule.filters as Record<string, unknown>, String(body.typeId ?? ''))) continue
+    if (isTagEvent && !triggerTagMatches(rule.atom.options, String(body.tag ?? ''))) continue
+    if (isTypeEvent && !triggerTypeMatches(rule.atom.options, String(body.typeId ?? ''))) continue
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, body.appointmentId))) continue
     await dispatchPatientRule(supabase, service, accountId, rule.id, patient, origin, body.appointmentId, body)
     fired += 1

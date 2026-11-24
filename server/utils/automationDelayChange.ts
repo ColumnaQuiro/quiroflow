@@ -1,3 +1,4 @@
+import { ruleAtom } from '~/utils/automationTrigger'
 // The patient rules whose behaviour the automation engine changed.
 //
 // Until the engine, a `delay` step in a PATIENT rule was ignored: the sender
@@ -35,14 +36,16 @@ export interface DelayChangedRule {
 export async function rulesWhoseDelayNowWaits(supabase: any, accountId: string): Promise<DelayChangedRule[]> {
   const { data: delays } = await supabase
     .from('automation_actions')
-    .select('rule_id, automation_rules!inner(id, name, trigger_event, enabled)')
+    .select('rule_id, automation_rules!inner(id, name, trigger_event, trigger, enabled)')
     .eq('account_id', accountId)
     .eq('action_type', 'delay')
-    .neq('automation_rules.trigger_event', 'lead.created')
 
   const byRule = new Map<string, DelayChangedRule>()
   for (const row of delays ?? []) {
-    const rule = row.automation_rules as { id: string; name: string; trigger_event: string; enabled: boolean }
+    const rule = row.automation_rules as { id: string; name: string; trigger_event: string; trigger: unknown; enabled: boolean }
+    // A new lead's drip always waited (the lead runner honoured its delays).
+    const atom = ruleAtom(rule)
+    if (atom.subject === 'lead' && atom.moment === 'created') continue
     const current = byRule.get(rule.id) ?? { id: rule.id, name: rule.name, triggerEvent: rule.trigger_event, enabled: rule.enabled, delays: 0 }
     current.delays += 1
     byRule.set(rule.id, current)

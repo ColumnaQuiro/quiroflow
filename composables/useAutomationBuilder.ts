@@ -2,8 +2,9 @@ import type { TemplateSendValues } from '~/utils/whatsappTemplateDraft'
 import { starterEmailDesign } from '~/utils/emailDesign'
 import type { DocField } from '~/utils/docFields'
 import type { InjectionKey } from 'vue'
-import { OUTLETS, isLeadTrigger } from '~/utils/automationCatalog'
-import { chainOf, findProblems, newStepId, normalizePositions, subtreeIds, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { OUTLETS } from '~/utils/automationCatalog'
+import { chainOf, findProblems, newStepId, normalizePositions, subtreeIds, withAtom, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { defaultFiltersFor, isGroupAtom, isLeadAtom, momentDef, ruleAtom, type TriggerAtom } from '~/utils/automationTrigger'
 import { emptyLookup, type NameLookup } from '~/utils/automationDescribe'
 import type { InsertPoint } from '~/utils/automationLayout'
 import { serverMessage } from '~/utils/serverMessage'
@@ -77,7 +78,7 @@ export type Selection = { kind: 'trigger' } | { kind: 'step'; id: string } | { k
 
 const blankRule = (): DraftRule => ({
   name: '',
-  trigger_event: 'appointment.completed',
+  trigger: { subject: 'appointment', moment: 'completed', timing: null, options: {} },
   filters: {},
   is_marketing: false,
   dry_run: false,
@@ -134,14 +135,17 @@ export function newBroadcastDraft(name: string, to?: BroadcastRecipients | null)
   const audience = to && 'audience' in to ? to.audience : null
   const patientIds = to && 'patientIds' in to ? asPatientIds(to.patientIds) : []
   return {
-    rule: { ...blankRule(), name, trigger_event: 'segment', is_marketing: true, entry_mode: 'once_ever', segment: { filters: {}, audience, exclude: [], patient_ids: patientIds, schedule: { kind: 'once' }, reentry_days: null } },
+    rule: { ...blankRule(), name, trigger: { subject: 'group', moment: 'scheduled', timing: null, options: {} }, is_marketing: true, entry_mode: 'once_ever', segment: { filters: {}, audience, exclude: [], patient_ids: patientIds, schedule: { kind: 'once' }, reentry_days: null } },
     steps: [{ id: crypto.randomUUID(), action_type: 'email', position: 0, parent_id: null, branch: null, config: defaultConfig('email') }],
   }
 }
 
 /** Whether a rule is a one-off send: a group, checked once. */
-export const isBroadcastRule = (rule: { trigger_event: string; segment?: { schedule?: { kind?: string } | null } | null }) =>
-  rule.trigger_event === 'segment' && rule.segment?.schedule?.kind === 'once'
+export const isBroadcastRule = (rule: { trigger?: unknown; trigger_event?: string | null; segment?: { schedule?: { kind?: string } | null } | null }) =>
+  isGroupAtom(ruleAtom(rule)) && rule.segment?.schedule?.kind === 'once'
+/** The "only if" filters about the appointment the moment brought: meaningless without one. */
+const APPOINTMENT_FILTER_KEYS = ['appointment_type_id', 'appointment_type_ids', 'practitioner_ids', 'no_prior_appointments', 'appointment_statuses', 'appointment_sources', 'appointment_clinic_ids', 'reminder_unanswered', 'visit_number']
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function useAutomationBuilder() {
@@ -188,7 +192,7 @@ export function useAutomationBuilder() {
 
   const snapshot = () => JSON.stringify(draft.value)
   const dirty = computed(() => loaded.value && snapshot() !== original.value)
-  const isLead = computed(() => isLeadTrigger(draft.value.rule.trigger_event))
+  const isLead = computed(() => isLeadAtom(draft.value.rule.trigger))
   const stepsById = computed(() => new Map(draft.value.steps.map((s) => [s.id, s])))
 
   /** Steps added, removed or changed since the last save -- "you have changes in 2 steps". */
@@ -346,7 +350,7 @@ export function useAutomationBuilder() {
     if (!UUID.test(id)) return null
     const accountId = store.accountId ?? ''
     const [rule, steps] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
       supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', id).eq('account_id', accountId).order('position'),
     ])
     if (rule.error) throw rule.error
@@ -412,7 +416,7 @@ export function useAutomationBuilder() {
         else missing.value = true
         return
       }
-      const { enabled, created_at, segment_last_run_at, ...rest } = tree.rule
+      const { enabled, created_at, segment_last_run_at, ...stored } = tree.rule
       // Not part of the version (the engine sets it, not an edit): kept current
       // even by a re-read that leaves the draft alone.
       lastRunAt.value = segment_last_run_at ?? null
@@ -422,13 +426,15 @@ export function useAutomationBuilder() {
       // change elsewhere their next save says so (`conflict`) rather than
       // having a refresh quietly throw them away.
       if (silent && (dirty.value || (tree.version === version.value && enabled === draft.value.enabled))) return
+      // The atom, and the "only if" filters without the old trigger settings.
+      const rest = withAtom(stored as { trigger?: unknown; trigger_event?: string; filters?: Record<string, any> } & Record<string, any>)
       // Replacing the draft under a loaded canvas is not an edit to undo.
       if (silent) restoring = true
       draft.value = {
         rule: {
           name: rest.name ?? '',
-          trigger_event: rest.trigger_event,
-          filters: rest.filters ?? {},
+          trigger: rest.trigger,
+          filters: rest.filters,
           is_marketing: rest.is_marketing ?? false,
           dry_run: rest.dry_run ?? false,
           entry_mode: rest.entry_mode ?? 'every_time',
@@ -461,7 +467,8 @@ export function useAutomationBuilder() {
     ruleId.value = null
     version.value = null
     lastRunAt.value = null
-    draft.value = from ? { rule: clone(from.rule), enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
+    // A template or an AI draft may name an old trigger: it gets its atom here.
+    draft.value = from ? { rule: { ...(withAtom(clone(from.rule)) as DraftRule), trigger_event: undefined }, enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
     stats.value = { rule: null, steps: {} }
     hasGrowth.value = store.hasGrowthAddon
     loaded.value = true
@@ -524,15 +531,35 @@ export function useAutomationBuilder() {
     selection.value = { kind: 'step', id: copyId }
   }
 
-  /** Steps that only make sense in a lead rule go when the trigger stops being one. */
-  function setTrigger(event: string) {
+  /**
+   * A new trigger. The "only if" filters a moment cannot use go (an
+   * appointment's type for a birthday), and the ones a timed appointment
+   * moment starts with come (only booked visits before one starts). Steps
+   * that only make sense in a lead rule go when the trigger stops being one.
+   */
+  function setTrigger(atom: TriggerAtom) {
     const wasLead = isLead.value
-    updateRule({ trigger_event: event, ...(isLeadTrigger(event) ? { entry_mode: 'once_ever' } : {}) })
-    if (event === 'segment' && !draft.value.rule.segment) {
+    const before = draft.value.rule.trigger
+    const lead = isLeadAtom(atom)
+    const momentChanged = before.subject !== atom.subject || before.moment !== atom.moment
+    let filters = draft.value.rule.filters
+    if (momentChanged) {
+      const def = momentDef(atom.subject, atom.moment)
+      const kept = { ...filters }
+      if (!def?.appointmentContext) for (const k of APPOINTMENT_FILTER_KEYS) delete kept[k]
+      delete kept.appointment_statuses
+      filters = { ...kept, ...defaultFiltersFor(atom) }
+    } else if (atom.subject === 'invoice' && !!atom.timing !== !!before.timing) {
+      // An invoice counted from its date starts as a payment reminder.
+      const { invoice_unpaid: _, ...kept } = filters
+      filters = { ...kept, ...defaultFiltersFor(atom) }
+    }
+    updateRule({ trigger: atom, filters, ...(lead ? { entry_mode: 'once_ever' } : {}) })
+    if (isGroupAtom(atom) && !draft.value.rule.segment) {
       updateRule({ segment: { filters: {}, schedule: { kind: 'weekly', weekday: 1, time: '10:00' }, reentry_days: null }, entry_mode: 'once_ever' })
     }
-    if (event !== 'segment' && draft.value.rule.segment) updateRule({ segment: null })
-    if (wasLead && !isLeadTrigger(event)) {
+    if (!isGroupAtom(atom) && draft.value.rule.segment) updateRule({ segment: null })
+    if (wasLead && !lead) {
       for (const s of draft.value.steps.filter((x) => x.action_type === 'lead_stage' || x.action_type === 'lead_assign')) removeStep(s.id)
       updateRule({ exit_on: draft.value.rule.exit_on.filter((e) => e !== 'lead.converted') })
     }

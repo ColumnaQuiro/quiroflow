@@ -2,6 +2,7 @@ import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 type Service = ReturnType<typeof serverSupabaseServiceRole<Database>>
 
@@ -32,7 +33,7 @@ export async function applyBookingReferral(service: Service, accountId: string, 
   if (!set?.length) return false
 
   try {
-    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', 'patient.referred').eq('enabled', true)
+    const rules = await rulesForRaisedEvent(service, accountId, 'patient.referred')
     for (const rule of rules ?? []) {
       if (!(await ruleFiltersMatch(service, referrer.id, rule.filters as AutomationFilters))) continue
       await dispatchPatientRule(service, service, accountId, rule.id, referrer, origin, undefined, { triggerEvent: 'patient.referred', patientId: referrer.id })

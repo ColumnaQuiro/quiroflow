@@ -6,7 +6,9 @@ import { requirePermission } from '~/server/utils/requirePermission'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { aiFormLanguage } from '~/utils/aiFormDraft'
 import { AI_EMAIL_DRAFT_SCHEMA, AI_EMAIL_MAX_DESCRIPTION, aiEmailDraftSystemPrompt, aiEmailDraftUserMessage, cleanAiEmailDraft } from '~/utils/aiEmailDraft'
-import { EMAIL_MERGE_FIELDS, triggerDef, triggerTitle } from '~/utils/automationCatalog'
+import { EMAIL_MERGE_FIELDS } from '~/utils/automationCatalog'
+import { asTriggerAtom, atomFromLegacy, atomProblem, isGroupAtom } from '~/utils/automationTrigger'
+import { atomTitle } from '~/utils/automationTriggerText'
 
 // The email editor's "Write with AI" (automations and one-off sends): what
 // the email is for, in; an email as editor blocks, out (utils/aiEmailDraft.ts).
@@ -19,7 +21,7 @@ const LIMITS = { perHour: 30, perDay: 100 }
 interface Body {
   description?: unknown
   language?: unknown
-  /** The automation's trigger_event; 'segment' (or nothing) for a send to a group. */
+  /** The automation's trigger: its atom (an old trigger name is read too); a group send's, or nothing, for a send to a group. */
   trigger?: unknown
   marketing?: unknown
   /** A lead automation's questions, which an email may merge in: { key, label }. */
@@ -37,7 +39,8 @@ export default defineEventHandler(async (event) => {
   if (!description) throw createError({ statusCode: 400, statusMessage: 'Say what the email is for' })
   if (description.length > AI_EMAIL_MAX_DESCRIPTION) throw createError({ statusCode: 400, statusMessage: 'That description is too long' })
 
-  const triggerEvent = typeof body.trigger === 'string' && triggerDef(body.trigger) && body.trigger !== 'segment' ? body.trigger : null
+  const atom = asTriggerAtom(body.trigger) ?? (typeof body.trigger === 'string' ? atomFromLegacy(body.trigger, {}).trigger : null)
+  const triggerText = atom && !isGroupAtom(atom) && !atomProblem(atom) ? atomTitle(english, atom) : null
   // The merge fields every email has, plus a lead automation's own answers.
   // Only word-character keys: anything else could not be a merge token.
   const leadFields = (Array.isArray(body.leadFields) ? body.leadFields : [])
@@ -59,7 +62,7 @@ export default defineEventHandler(async (event) => {
       maxTokens: 8000,
       system: aiEmailDraftSystemPrompt({
         language: aiFormLanguage(body.language),
-        trigger: triggerEvent ? triggerTitle(english, triggerEvent) : null,
+        trigger: triggerText,
         marketing: body.marketing === true,
         fields,
       }),

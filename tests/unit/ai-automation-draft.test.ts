@@ -111,9 +111,17 @@ describe('cleanAiAutomationDraft', () => {
 
   it('sets the trigger\'s own number, and falls back to a working value', () => {
     const base = { name: 'x', trigger_tag: '', is_marketing: false, entry_mode: 'every_time', exit_on: [], steps: [step({ type: 'tag', tag: 't' })] }
-    expect(cleanAiAutomationDraft({ ...base, trigger: 'appointment.hours_before', trigger_number: 48 }, CTX).rule.filters).to.deep.equal({ hours_before: 48 })
-    expect(cleanAiAutomationDraft({ ...base, trigger: 'invoice.overdue', trigger_number: -3 }, CTX).rule.filters).to.deep.equal({ days_overdue: 7 })
-    expect(cleanAiAutomationDraft({ ...base, trigger: 'patient.tag_added', trigger_number: 0, trigger_tag: 'vip' }, CTX).rule.filters).to.deep.equal({ trigger_tag: 'vip' })
+    // The number lands in the trigger's timing (or option), and what the old
+    // trigger decided by itself becomes an "only if" filter.
+    const reminder = cleanAiAutomationDraft({ ...base, trigger: 'appointment.hours_before', trigger_number: 48 }, CTX).rule
+    expect(reminder.trigger).to.deep.include({ subject: 'appointment', moment: 'start', timing: { amount: 48, unit: 'hours', direction: 'before' } })
+    expect(reminder.filters).to.deep.equal({ appointment_statuses: ['booked'], reminder_unanswered: true })
+    const unpaid = cleanAiAutomationDraft({ ...base, trigger: 'invoice.overdue', trigger_number: -3 }, CTX).rule
+    expect(unpaid.trigger.timing).to.deep.equal({ amount: 7, unit: 'days', direction: 'after' })
+    expect(unpaid.filters).to.deep.equal({ invoice_unpaid: true })
+    const tagged = cleanAiAutomationDraft({ ...base, trigger: 'patient.tag_added', trigger_number: 0, trigger_tag: 'vip' }, CTX).rule
+    expect(tagged.trigger.options).to.deep.equal({ trigger_tag: 'vip' })
+    expect(tagged.filters).to.deep.equal({})
   })
 
   it('refuses lead triggers and lead steps to a clinic without Growth', () => {

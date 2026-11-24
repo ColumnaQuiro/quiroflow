@@ -5,7 +5,8 @@ import { tryFetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
 import { templateMediaFiles } from '~/server/utils/whatsappTemplateMedia'
 import { allTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
-import { EXIT_EVENTS, isLeadTrigger, triggerDef } from '~/utils/automationCatalog'
+import { EXIT_EVENTS } from '~/utils/automationCatalog'
+import { atomProblem, isGroupAtom, isLeadAtom, ruleAtom, ruleColumnsForAtom } from '~/utils/automationTrigger'
 import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from '~/utils/automationAudience'
 import { audienceExists } from '~/server/utils/audienceMembers'
 import {
@@ -14,6 +15,7 @@ import {
   successorInNewTree,
   normalizePositions,
   structuralErrors,
+  withAtom,
   type DraftRule,
   type DraftStep,
   type Problem,
@@ -34,7 +36,7 @@ import { isValidQuietHours } from '~/utils/automationTiming'
 // and when people are on a removed step, it asks what to do with them.
 
 export const RULE_COLUMNS =
-  'id, account_id, name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at, created_by'
+  'id, account_id, name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at, created_by'
 export const STEP_COLUMNS = 'id, rule_id, action_type, position, config, parent_id, branch'
 
 export interface StoredRule extends DraftRule {
@@ -53,7 +55,7 @@ export async function loadRuleTree(supabase: any, accountId: string, ruleId: str
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
   if (!rule) return null
   return {
-    rule: rule as StoredRule,
+    rule: withAtom(rule) as StoredRule,
     steps: ((steps ?? []) as DraftStep[]).map((s) => ({ ...s, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null })),
   }
 }
@@ -65,10 +67,15 @@ const plainObject = (v: unknown): v is Record<string, any> => !!v && typeof v ==
 /** The rule fields from a request body, each checked and defaulted; a 400 for anything that cannot be meant. */
 export function sanitizeRule(body: any): DraftRule {
   if (!plainObject(body)) throw createError({ statusCode: 400, statusMessage: 'rule is required' })
-  const trigger = String(body.trigger_event ?? '')
-  if (!triggerDef(trigger)) throw createError({ statusCode: 400, statusMessage: `Unknown trigger "${trigger}"` })
+  // The atom, or -- from a caller that only knows them -- an old trigger name
+  // and its settings, which become the atom and its filters.
+  const raw = withAtom({ trigger: body.trigger, trigger_event: typeof body.trigger_event === 'string' ? body.trigger_event : '', filters: plainObject(body.filters) ? body.filters : {} })
+  const atom = raw.trigger
+  const issue = atomProblem(atom)
+  if (issue) throw createError({ statusCode: 400, statusMessage: `Invalid trigger: ${issue[0]}` })
+  if (JSON.stringify(atom).length > 5_000) throw createError({ statusCode: 400, statusMessage: 'trigger is too large' })
 
-  const filters = plainObject(body.filters) ? body.filters : {}
+  const filters = raw.filters
   if (JSON.stringify(filters).length > 20_000) throw createError({ statusCode: 400, statusMessage: 'filters are too large' })
 
   const exitOn = Array.isArray(body.exit_on)
@@ -79,7 +86,7 @@ export function sanitizeRule(body: any): DraftRule {
     : null
 
   let segment: DraftRule['segment'] = null
-  if (trigger === 'segment') {
+  if (isGroupAtom(atom)) {
     const raw = plainObject(body.segment) ? body.segment : {}
     const schedule = plainObject(raw.schedule) ? raw.schedule : { kind: 'weekly', weekday: 1, time: '10:00' }
     segment = {
@@ -103,7 +110,7 @@ export function sanitizeRule(body: any): DraftRule {
 
   // A lead gets a drip once: the unique (rule_id, lead_id) index says so
   // whatever the column holds, so the column says it too.
-  const entryMode = isLeadTrigger(trigger)
+  const entryMode = isLeadAtom(atom)
     ? 'once_ever'
     : ['every_time', 'one_at_a_time', 'once_ever'].includes(body.entry_mode)
       ? body.entry_mode
@@ -111,7 +118,7 @@ export function sanitizeRule(body: any): DraftRule {
 
   return {
     name: String(body.name ?? '').trim().slice(0, 160),
-    trigger_event: trigger,
+    trigger: atom,
     filters,
     is_marketing: body.is_marketing === true,
     dry_run: body.dry_run === true,
@@ -156,7 +163,7 @@ export async function ruleProblems(supabase: any, accountId: string, rule: Draft
   // brings its own file or place is not told it is missing one.
   const templates = listed ? await withTemplateFills(accountId, listed) : null
   const problems = findProblems(rule, steps, templates)
-  if (isLeadTrigger(rule.trigger_event) || steps.some((s) => s.action_type === 'lead_stage' || s.action_type === 'lead_assign')) {
+  if (isLeadAtom(rule.trigger) || steps.some((s) => s.action_type === 'lead_stage' || s.action_type === 'lead_assign')) {
     const { data: subscription } = await supabase.from('subscriptions').select('plan_id, growth_addon, status, comped').eq('account_id', accountId).maybeSingle()
     if (!hasGrowth(subscription)) {
       problems.unshift({ stepId: null, message: ['Lead automations are part of Growth, which is not on this subscription.', 'Las automatizaciones de leads son de Growth, que no está en esta suscripción.'] })
@@ -165,7 +172,7 @@ export async function ruleProblems(supabase: any, accountId: string, rule: Draft
   // A list or segment deleted since it was chosen: say so, rather than run
   // an audience of nobody. Read with the caller's client, so it is the
   // caller's own list too.
-  const named = [asAudienceRef(rule.segment?.audience), asAudienceRef(rule.filters?.trigger_audience), ...asAudienceRefs(rule.segment?.exclude), ...asAudienceRefs(rule.filters?.in_audiences), ...asAudienceRefs(rule.filters?.not_in_audiences)].filter((x): x is AudienceRef => !!x)
+  const named = [asAudienceRef(rule.segment?.audience), asAudienceRef(rule.trigger?.options?.trigger_audience), ...asAudienceRefs(rule.segment?.exclude), ...asAudienceRefs(rule.filters?.in_audiences), ...asAudienceRefs(rule.filters?.not_in_audiences)].filter((x): x is AudienceRef => !!x)
   for (const ref of named) {
     if (!(await audienceExists(supabase, ref))) {
       problems.unshift({ stepId: null, message: ['A list or segment this automation names no longer exists. Choose another.', 'Una lista o un segmento que usa esta automatización ya no existe. Elige otro.'] })
@@ -235,7 +242,7 @@ export async function saveRuleTree(opts: {
   const { supabase, service, accountId } = opts
   const steps = normalizePositions(opts.steps)
 
-  const structural = structuralErrors(steps, opts.rule.trigger_event)
+  const structural = structuralErrors(steps, isLeadAtom(opts.rule.trigger))
   if (structural.length > 0) throw createError({ statusCode: 400, statusMessage: structural.join(' ') })
 
   // Nothing in the schema stops a step's parent being in another rule, or an
@@ -297,10 +304,14 @@ export async function saveRuleTree(opts: {
   }
 
   // ---- the rule row
+  // The atom, and beside it the old trigger name and settings for code that
+  // only knows those (utils/automationTrigger.ts: ruleColumnsForAtom).
+  const columns = ruleColumnsForAtom(opts.rule.trigger, opts.rule.filters)
   const payload = {
     name: opts.rule.name || 'Automation',
-    trigger_event: opts.rule.trigger_event,
-    filters: opts.rule.filters,
+    trigger: columns.trigger,
+    trigger_event: columns.trigger_event,
+    filters: columns.filters,
     is_marketing: opts.rule.is_marketing,
     dry_run: opts.rule.dry_run,
     entry_mode: opts.rule.entry_mode,
@@ -313,13 +324,14 @@ export async function saveRuleTree(opts: {
   // it was on: it enrols at its next scheduled time, which is what the
   // activation dialog promises. A one-off segment runs at the next tick.
   const turningOnRecurringSegment =
-    enabled && !existingRule?.enabled && opts.rule.trigger_event === 'segment' && opts.rule.segment?.schedule?.kind !== 'once'
+    enabled && !existingRule?.enabled && isGroupAtom(opts.rule.trigger) && opts.rule.segment?.schedule?.kind !== 'once'
   // "Enters a list or segment": back on after a pause, or aimed at another
   // audience, it starts counting entries from now (see enabled.post.ts).
+  const entersAudience = opts.rule.trigger.subject === 'patient' && opts.rule.trigger.moment === 'entered_audience'
   const audienceChanged =
-    opts.rule.trigger_event === 'audience.entered' &&
+    entersAudience &&
     !!existingRule?.segment_last_run_at &&
-    ((enabled && !existingRule.enabled) || JSON.stringify(asAudienceRef(existingRule.filters?.trigger_audience)) !== JSON.stringify(asAudienceRef(opts.rule.filters?.trigger_audience)))
+    ((enabled && !existingRule.enabled) || JSON.stringify(asAudienceRef(ruleAtom(existingRule).options.trigger_audience)) !== JSON.stringify(asAudienceRef(opts.rule.trigger.options.trigger_audience)))
   const ruleWrite = opts.ruleId
     ? await supabase
         .from('automation_rules')

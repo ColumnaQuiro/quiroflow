@@ -51,6 +51,8 @@ async function patient(opts: {
   recallDismissedAt?: string
   /** "Referido por": the patient who referred them. */
   referredByPatientId?: string
+  /** Brought in by an import (patients.external_reference). */
+  externalReference?: string
 }) {
   const row = check(
     await admin
@@ -71,6 +73,7 @@ async function patient(opts: {
         ...(opts.recallSnoozedUntil ? { recall_snoozed_until: opts.recallSnoozedUntil } : {}),
         ...(opts.recallDismissedAt ? { recall_status: 'dismissed', recall_dismissed_at: opts.recallDismissedAt } : {}),
         ...(opts.referredByPatientId ? { referred_by_patient_id: opts.referredByPatientId } : {}),
+        ...(opts.externalReference ? { external_reference: opts.externalReference } : {}),
       })
       .select('id')
       .single(),

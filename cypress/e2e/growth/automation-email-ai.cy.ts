@@ -41,7 +41,7 @@ describe('Writing an automation email with AI', () => {
     cy.get('[data-test="email-ai-go"]').should('be.disabled')
     cy.get('[data-test="email-ai-description"]').type('Agradece su primera visita')
     cy.get('[data-test="email-ai-go"]').click()
-    cy.wait('@draft').its('request.body').should('deep.include', { description: 'Agradece su primera visita', trigger: 'appointment.completed', marketing: false })
+    cy.wait('@draft').its('request.body').should('deep.include', { description: 'Agradece su primera visita', trigger: { subject: 'appointment', moment: 'completed', timing: null, options: {} }, marketing: false })
 
     // A new email already has words in it, so it asks first, like a template.
     cy.get('[data-test="email-template-confirm"]').should('be.visible')

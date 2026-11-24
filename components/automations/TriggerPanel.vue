@@ -1,30 +1,70 @@
 <script setup lang="ts">
-import { DATE_SOURCE_LABELS, ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
+import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, say, weekdayName } from '~/utils/automationCatalog'
+import { TRIGGER_SUBJECTS, defaultAtom, momentDef, momentsOf, type TimingUnit, type TriggerAtom, type TriggerSubject, type TriggerTiming } from '~/utils/automationTrigger'
+import { timingText } from '~/utils/automationTriggerText'
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import type { AudienceRef } from '~/utils/automationAudience'
 
-// The trigger: what starts the automation, "only if" filters, and who can
-// enter again -- or, for a segment, which patients and when, with a live
-// count of who matches today.
+// The trigger: what starts the automation -- a subject, a moment of it and,
+// where it makes sense, a timing (utils/automationTrigger.ts) -- the "only if"
+// filters, and who can enter again; or, for a segment, which patients and
+// when, with a live count of who matches today.
 
 const b = useBuilder()
 const t = useT()
 
 const rule = computed(() => b.draft.value.rule)
-const def = computed(() => triggerDef(rule.value.trigger_event))
-const isSegment = computed(() => rule.value.trigger_event === 'segment')
+const atom = computed(() => rule.value.trigger)
+const def = computed(() => momentDef(atom.value.subject, atom.value.moment))
+const key = computed(() => `${atom.value.subject}.${atom.value.moment}`)
+const isSegment = computed(() => atom.value.subject === 'group')
+
+function chooseSubject(subject: string) {
+  if (subject === 'group') return b.setTrigger(defaultAtom('group', 'scheduled'))
+  const first = momentsOf(subject)[0]
+  if (first) b.setTrigger(defaultAtom(subject as TriggerSubject, first.moment))
+}
+function chooseMoment(moment: string) {
+  b.setTrigger(defaultAtom(atom.value.subject, moment))
+}
+function setAtom(patch: Partial<TriggerAtom>) {
+  b.setTrigger({ ...atom.value, ...patch })
+}
+/** The moment's own setting; an empty choice is no key at all. */
+function setOptions(patch: Record<string, unknown>) {
+  const next: Record<string, unknown> = { ...atom.value.options, ...patch }
+  for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '') delete next[k]
+  setAtom({ options: next })
+}
+function setSendTo(referrer: boolean) {
+  const { send_to: _, ...rest } = atom.value
+  b.setTrigger(referrer ? { ...rest, send_to: 'referrer' } : rest)
+}
+
+// ---- timing
+const units = computed<TimingUnit[]>(() => (def.value?.kind === 'event' ? ['minutes', 'hours', 'days'] : (def.value?.units ?? ['days'])))
+const directions = computed(() => (def.value?.kind === 'event' ? ['after'] : (def.value?.directions ?? ['after'])))
+const unitLabel = (u: TimingUnit) => (u === 'minutes' ? t('minutes', 'minutos') : u === 'hours' ? t('hours', 'horas') : t('days', 'días'))
+function setTimed(on: boolean) {
+  if (!on) return setAtom({ timing: null })
+  setAtom({ timing: def.value?.kind === 'event' ? { amount: 2, unit: 'hours', direction: 'after' } : { amount: 7, unit: 'days', direction: 'after' } })
+}
+function setTiming(patch: Partial<TriggerTiming>) {
+  const next: TriggerTiming = { ...(atom.value.timing ?? { amount: 1, unit: units.value[0] ?? 'days', direction: 'after' }), ...patch }
+  if (next.unit !== 'days' || !next.at) delete next.at
+  setAtom({ timing: next })
+}
+const timingHint = computed(() => {
+  if (!atom.value.timing || !def.value) return ''
+  if (def.value.kind === 'event') return t('. The "only if" filters are asked again when the wait ends.', '. Los filtros «solo si» se vuelven a comprobar al acabar la espera.')
+  if (key.value === 'appointment.start' && atom.value.timing.at) return t(", clinic time. Checked from that time for 20 minutes.", ', hora de la clínica. Se comprueba desde esa hora durante 20 minutos.')
+  return ''
+})
 const lockedLead = computed(() => b.isLead.value && !b.hasGrowth.value)
 const totals = computed(() => b.stats.value.rule)
 
 function setFilters(filters: Record<string, any>) {
   b.updateRule({ filters })
-}
-function setNumberFilter(key: 'hours_before' | 'days_after' | 'days_overdue' | 'hours_after', raw: string, fallback: number) {
-  b.updateRule({ filters: { ...rule.value.filters, [key]: Math.max(1, Math.round(Number(raw) || fallback)) } })
-}
-// Every Nth visit; 0 turns it off, leaving the first visit only.
-function setEveryVisits(raw: string) {
-  b.updateRule({ filters: { ...rule.value.filters, every_visits: Math.max(0, Math.round(Number(raw) || 0)) } })
 }
 
 // ---- segment
@@ -37,24 +77,19 @@ function setSchedule(patch: Record<string, any>) {
 }
 const recurring = computed(() => segment.value.schedule?.kind !== 'once')
 
-// "A date on the record": which date, and the clinic's own date fields
-// (Settings > Patient fields) as further choices.
+// "Reaches a date on their record": the clinic's own date fields
+// (Settings > Patient fields).
 const supabase = useSupabaseClient()
 const dateFields = ref<{ id: string; label: string }[]>([])
 watch(
-  () => rule.value.trigger_event,
-  async (event) => {
-    if (event !== 'patient.date' || dateFields.value.length) return
+  key,
+  async (k) => {
+    if (k !== 'patient.date_field' || dateFields.value.length) return
     const { data } = await supabase.from('patient_attributes').select('id, label').eq('kind', 'date').is('archived_at', null).order('position')
     dateFields.value = (data ?? []) as { id: string; label: string }[]
   },
   { immediate: true },
 )
-function setDateSource(source: string) {
-  // "Before" only for a date field; anything else counts forward.
-  setFilters({ ...rule.value.filters, trigger_date: source, trigger_days: rule.value.filters.trigger_days ?? 7, ...(source.startsWith('field:') ? {} : { trigger_when: undefined }) })
-}
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // Who a group goes to: patients matching filters, a saved list or segment
 // (with others left out), or patients chosen one by one. The mode is shown
@@ -62,7 +97,7 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 // segment when it has something in it.
 type WhoMode = 'filters' | 'saved' | 'patients'
 const whoChoice = ref<WhoMode | null>(null)
-watch(() => rule.value.trigger_event, () => (whoChoice.value = null))
+watch(() => atom.value.subject, () => (whoChoice.value = null))
 const who = computed<WhoMode>(() => (segment.value.audience ? 'saved' : segment.value.patient_ids?.length ? 'patients' : (whoChoice.value ?? 'filters')))
 const savedAudienceMode = computed(() => who.value === 'saved')
 function setWho(mode: WhoMode) {
@@ -148,80 +183,69 @@ watch(
       <p :class="HINT">{{ t('This automation is paused and kept exactly as it is. It works again as soon as Growth is on.', 'Esta automatización está pausada y guardada tal cual. Vuelve a funcionar al activar Growth.') }}</p>
     </div>
 
-    <label :class="LABEL">
-      {{ t('When…', 'Cuando…') }}
-      <select :class="FIELD" :value="rule.trigger_event" data-test="trigger-select" @change="b.setTrigger(($event.target as HTMLSelectElement).value)">
-        <optgroup v-for="g in TRIGGER_GROUPS" :key="g.key" :label="say(t, g.label)">
-          <option
-            v-for="tr in TRIGGERS.filter((x) => x.group === g.key)"
-            :key="tr.value"
-            :value="tr.value"
-            :disabled="tr.growth && !b.hasGrowth.value && rule.trigger_event !== tr.value"
-          >{{ say(t, tr.sentence) }}{{ tr.growth ? ' · GROWTH' : '' }}</option>
-        </optgroup>
-      </select>
-    </label>
-    <p v-if="def" :class="HINT">{{ say(t, def.description) }}</p>
+    <div class="grid grid-cols-2 gap-2.5">
+      <label :class="LABEL">
+        {{ t('When…', 'Cuando…') }}
+        <select :class="FIELD" :value="atom.subject" data-test="trigger-subject" @change="chooseSubject(($event.target as HTMLSelectElement).value)">
+          <option v-for="s in TRIGGER_SUBJECTS" :key="s.subject" :value="s.subject" :disabled="s.growth && !b.hasGrowth.value && atom.subject !== s.subject">{{ say(t, s.label) }}{{ s.growth ? ' · GROWTH' : '' }}</option>
+          <option value="group">{{ t('A group of patients (a send)', 'Un grupo de pacientes (un envío)') }}</option>
+        </select>
+      </label>
+      <label v-if="!isSegment" :class="LABEL">
+        <span class="invisible" aria-hidden="true">·</span>
+        <select :class="FIELD" :value="atom.moment" :aria-label="t('What happens', 'Qué ocurre')" data-test="trigger-moment" @change="chooseMoment(($event.target as HTMLSelectElement).value)">
+          <option v-for="m in momentsOf(atom.subject)" :key="m.moment" :value="m.moment">{{ say(t, m.label) }}</option>
+        </select>
+      </label>
+    </div>
+    <p v-if="def && !isSegment" :class="HINT">{{ say(t, def.hint) }}</p>
 
-    <label v-if="rule.trigger_event === 'appointment.hours_before'" :class="LABEL">
-      {{ t('Hours before the appointment', 'Horas antes de la cita') }}
-      <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.hours_before ?? 24" data-test="trigger-hours-before" @input="setNumberFilter('hours_before', ($event.target as HTMLInputElement).value, 24)" />
-      <span :class="HINT">{{ t('For a second reminder at another time, create another automation on this trigger.', 'Para un segundo recordatorio en otro momento, crea otra automatización con este disparador.') }}</span>
-    </label>
-    <!-- On unless switched off (server/utils/evaluateAutomationFilters.ts):
-    off is for an automation here that is not a reminder. -->
-    <label v-if="rule.trigger_event === 'appointment.hours_before'" class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
-      <input
-        type="checkbox"
-        class="mt-0.5 h-4 w-4 accent-brand"
-        :checked="rule.filters.skip_if_answered !== false"
-        data-test="trigger-skip-if-answered"
-        @change="setFilters({ ...rule.filters, skip_if_answered: ($event.target as HTMLInputElement).checked })"
-      />
+    <!-- When, relative to the moment -->
+    <div v-if="def && !isSegment" class="flex flex-col gap-2" data-test="trigger-timing">
+      <span v-if="def.kind !== 'date'" :class="SEGMENT_WRAP" role="group" :aria-label="t('When it starts', 'Cuándo empieza')">
+        <button type="button" :class="segmentBtn(!atom.timing)" :aria-pressed="!atom.timing" data-test="trigger-timing-now" @click="setTimed(false)">{{ t('As it happens', 'En el momento') }}</button>
+        <button type="button" :class="segmentBtn(!!atom.timing)" :aria-pressed="!!atom.timing" data-test="trigger-timing-later" @click="setTimed(true)">{{ def.kind === 'event' ? t('Some time later', 'Un tiempo después') : t('Counting from its date', 'Contando desde su fecha') }}</button>
+      </span>
+      <div v-if="atom.timing" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+        <input type="number" min="0" :class="FIELD_NUMBER" :value="atom.timing.amount" :aria-label="t('How long', 'Cuánto')" data-test="trigger-amount" @input="setTiming({ amount: Math.max(0, Math.round(Number(($event.target as HTMLInputElement).value) || 0)) })" />
+        <select :class="[FIELD, 'w-28']" :value="atom.timing.unit" :aria-label="t('Unit', 'Unidad')" data-test="trigger-unit" @change="setTiming({ unit: ($event.target as HTMLSelectElement).value as TimingUnit })">
+          <option v-for="u in units" :key="u" :value="u">{{ unitLabel(u) }}</option>
+        </select>
+        <span v-if="directions.length > 1" :class="SEGMENT_WRAP" role="group" :aria-label="t('Before or after', 'Antes o después')">
+          <button type="button" :class="segmentBtn(atom.timing.direction === 'before')" :aria-pressed="atom.timing.direction === 'before'" data-test="trigger-before" @click="setTiming({ direction: 'before' })">{{ t('before', 'antes') }}</button>
+          <button type="button" :class="segmentBtn(atom.timing.direction === 'after')" :aria-pressed="atom.timing.direction === 'after'" data-test="trigger-after" @click="setTiming({ direction: 'after' })">{{ t('after', 'después') }}</button>
+        </span>
+        <span v-else>{{ t('after', 'después') }}</span>
+      </div>
+      <label v-if="atom.timing && def.allowsAt && atom.timing.unit === 'days'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+        <input type="checkbox" class="h-4 w-4 accent-brand" :checked="!!atom.timing.at" data-test="trigger-at-on" @change="setTiming({ at: ($event.target as HTMLInputElement).checked ? '09:00' : null })" />
+        {{ t('At a time of day', 'A una hora del día') }}
+        <input v-if="atom.timing.at" type="time" step="300" :class="[FIELD, 'w-28']" :value="atom.timing.at" data-test="trigger-at" @change="setTiming({ at: ($event.target as HTMLInputElement).value || '09:00' })" />
+      </label>
+      <p v-if="atom.timing" :class="HINT" data-test="trigger-timing-text">{{ timingText(t, atom, rule.filters) }}{{ timingHint }}</p>
+    </div>
+
+    <!-- The moment's own setting -->
+    <label v-if="key === 'appointment.completed'" class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
+      <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="atom.send_to === 'referrer'" data-test="trigger-send-to-referrer" @change="setSendTo(($event.target as HTMLInputElement).checked)" />
       <span>
-        {{ t('Not if they have already answered an earlier reminder (confirmed or asked to change the appointment)', 'No si ya ha contestado a un recordatorio anterior (confirmado o pedido cambiar la cita)') }}
-        <span :class="['block', HINT]">{{ t('So a second reminder does not ask again what the first already got an answer to. Confirming when the appointment was booked does not count.', 'Así un segundo recordatorio no vuelve a preguntar lo que el primero ya respondió. Confirmar al reservar la cita no cuenta.') }}</span>
+        {{ t('Send it to whoever referred them', 'Enviarla a quien le refirió') }}
+        <span :class="['block', HINT]">{{ t('For thanking a referrer once the person they sent has come in. The filters still look at the referred patient and their visit: "Visit number" = first for the first visit only.', 'Para dar las gracias a quien refirió cuando ha venido la persona que envió. Los filtros siguen mirando al paciente referido y su cita: «Número de visita» = primera para solo la primera.') }}</span>
       </span>
     </label>
-    <label v-if="rule.trigger_event === 'appointment.review_request'" :class="LABEL">
-      {{ t('Days after the visit', 'Días después de la cita') }}
-      <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_after ?? 2" data-test="trigger-days-after" @input="setNumberFilter('days_after', ($event.target as HTMLInputElement).value, 2)" />
-    </label>
-    <template v-if="rule.trigger_event === 'appointment.satisfaction'">
-      <label :class="LABEL">
-        {{ t('Hours after the visit', 'Horas después de la visita') }}
-        <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.hours_after ?? 2" data-test="trigger-hours-after" @input="setNumberFilter('hours_after', ($event.target as HTMLInputElement).value, 2)" />
-      </label>
-      <label class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
-        <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="rule.filters.first_visit !== false" data-test="trigger-first-visit" @change="setFilters({ ...rule.filters, first_visit: ($event.target as HTMLInputElement).checked })" />
-        <span>{{ t('After the first visit', 'Tras la primera visita') }}</span>
-      </label>
-      <label :class="LABEL">
-        {{ t('And every … visits (0 = never)', 'Y cada … visitas (0 = nunca)') }}
-        <input type="number" min="0" :class="FIELD_NUMBER" :value="rule.filters.every_visits ?? 10" data-test="trigger-every-visits" @input="setEveryVisits(($event.target as HTMLInputElement).value)" />
-        <span :class="HINT">{{ t('Never more than once a month per patient, whatever these say.', 'Nunca más de una vez al mes por paciente, digan lo que digan estos ajustes.') }}</span>
-      </label>
-    </template>
-    <label v-if="rule.trigger_event === 'invoice.overdue'" :class="LABEL">
-      {{ t('Days after the invoice, still unpaid', 'Días después de la factura, sin pagar') }}
-      <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_overdue ?? 7" data-test="trigger-days-overdue" @input="setNumberFilter('days_overdue', ($event.target as HTMLInputElement).value, 7)" />
-      <span :class="HINT">{{ t('Only invoices that reach this many days from now on: switching it on does not message old debts. For a second reminder, create another automation with more days.', 'Solo las facturas que cumplan estos días a partir de ahora: activarla no avisa de deudas antiguas. Para un segundo recordatorio, crea otra automatización con más días.') }}</span>
-    </label>
-
-    <label v-if="rule.trigger_event === 'patient.tag_added' || rule.trigger_event === 'patient.tag_removed'" :class="LABEL">
+    <label v-if="key === 'patient.tag_added' || key === 'patient.tag_removed'" :class="LABEL">
       {{ t('Which tag', 'Qué etiqueta') }}
-      <input :class="FIELD" :value="rule.filters.trigger_tag ?? ''" :placeholder="t('Any tag', 'Cualquier etiqueta')" data-test="trigger-tag" @input="setFilters({ ...rule.filters, trigger_tag: ($event.target as HTMLInputElement).value })" />
+      <input :class="FIELD" :value="atom.options.trigger_tag ?? ''" :placeholder="t('Any tag', 'Cualquier etiqueta')" data-test="trigger-tag" @input="setOptions({ trigger_tag: ($event.target as HTMLInputElement).value })" />
       <span :class="HINT">{{ t('Capitals do not matter. Left empty, any tag starts it.', 'Da igual mayúsculas o minúsculas. Si se deja vacía, la inicia cualquier etiqueta.') }}</span>
     </label>
-    <label v-if="rule.trigger_event === 'patient.type_added' || rule.trigger_event === 'patient.type_removed'" :class="LABEL">
+    <label v-if="key === 'patient.type_added' || key === 'patient.type_removed'" :class="LABEL">
       {{ t('Which type', 'Qué tipo') }}
       <select
         :class="FIELD"
-        :value="rule.filters.trigger_type_id ?? ''"
+        :value="atom.options.trigger_type_id ?? ''"
         data-test="trigger-patient-type"
         @change="
-          setFilters({
-            ...rule.filters,
+          setOptions({
             trigger_type_id: ($event.target as HTMLSelectElement).value || undefined,
             trigger_type_name: (b.lookup.value.patientTypes ?? []).find((x) => x.id === ($event.target as HTMLSelectElement).value)?.name || undefined,
           })
@@ -232,86 +256,68 @@ watch(
       </select>
       <span :class="HINT">{{ t('Patient types are set up in Settings > Patient types.', 'Los tipos de paciente se crean en Ajustes › Tipos de paciente.') }}</span>
     </label>
-    <div v-if="rule.trigger_event === 'satisfaction.answered'" :class="LABEL">
+    <div v-if="key === 'rating.answered'" :class="LABEL">
       {{ t('With a score of', 'Con una nota de') }}
       <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Score', 'Nota')">
-        <button v-for="o in [{ v: '', l: t('Any', 'Cualquiera') }, { v: 'high', l: '4-5' }, { v: 'low', l: '1-3' }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_score ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_score ?? '') === o.v" :data-test="`trigger-score-${o.v || 'any'}`" @click="setFilters({ ...rule.filters, trigger_score: o.v || undefined })">{{ o.l }}</button>
+        <button v-for="o in [{ v: '', l: t('Any', 'Cualquiera') }, { v: 'high', l: '4-5' }, { v: 'low', l: '1-3' }]" :key="o.v" type="button" :class="segmentBtn((atom.options.trigger_score ?? '') === o.v)" :aria-pressed="(atom.options.trigger_score ?? '') === o.v" :data-test="`trigger-score-${o.v || 'any'}`" @click="setOptions({ trigger_score: o.v || undefined })">{{ o.l }}</button>
       </span>
-      <span :class="HINT">{{ t('Their first answer only: changing the score afterwards does not start it again.', 'Solo su primera respuesta: cambiar la nota después no la inicia otra vez.') }}</span>
     </div>
-    <div v-if="rule.trigger_event === 'doc.completed'" :class="LABEL">
+    <div v-if="key === 'form.completed' || key === 'form.sent'" :class="LABEL">
       {{ t('Which forms', 'Qué formularios') }}
       <AutomationsMultiPick
-        :model-value="(rule.filters.trigger_doc_template_ids as string[] | undefined) ?? []"
+        :model-value="(atom.options.trigger_doc_template_ids as string[] | undefined) ?? []"
         :options="b.docTemplates.value.map((d) => ({ value: d.id, label: d.title }))"
         :placeholder="t('Any form', 'Cualquier formulario')"
         test-id="trigger-doc-templates"
-        @update:model-value="setFilters({ ...rule.filters, trigger_doc_template_ids: $event.length ? $event : undefined })"
+        @update:model-value="setOptions({ trigger_doc_template_ids: $event.length ? $event : undefined })"
       />
-      <span :class="HINT">{{ t('Forms completed before it is switched on, or more than two days ago, do not start it.', 'Los formularios completados antes de activarla, o hace más de dos días, no la inician.') }}</span>
+      <span :class="HINT">{{ t('Forms from before it is switched on, or more than two days ago, do not start it.', 'Los formularios de antes de activarla, o de hace más de dos días, no la inician.') }}</span>
     </div>
-    <label v-if="rule.trigger_event === 'lead.stage_changed'" :class="LABEL">
+    <label v-if="key === 'lead.stage_changed'" :class="LABEL">
       {{ t('Moved to', 'Movido a') }}
-      <select :class="FIELD" :value="rule.filters.trigger_lead_stage ?? ''" data-test="trigger-lead-stage" @change="setFilters({ ...rule.filters, trigger_lead_stage: ($event.target as HTMLSelectElement).value || undefined })">
+      <select :class="FIELD" :value="atom.options.trigger_lead_stage ?? ''" data-test="trigger-lead-stage" @change="setOptions({ trigger_lead_stage: ($event.target as HTMLSelectElement).value || undefined })">
         <option value="">{{ t('Any stage', 'Cualquier etapa') }}</option>
         <option v-for="o in LEAD_STAGE_OPTIONS.filter((x) => !LEAD_STOP_STAGES.includes(x.value))" :key="o.value" :value="o.value">{{ say(t, o.label) }}</option>
       </select>
       <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
     </label>
-
-    <template v-if="rule.trigger_event === 'patient.date'">
-      <label :class="LABEL">
-        {{ t('Counting from', 'Contando desde') }}
-        <select :class="FIELD" :value="rule.filters.trigger_date ?? ''" data-test="trigger-date-source" @change="setDateSource(($event.target as HTMLSelectElement).value)">
-          <option value="" disabled>{{ t('Choose a date', 'Elige una fecha') }}</option>
-          <option v-for="(label, key) in DATE_SOURCE_LABELS" :key="key" :value="key">{{ capitalize(say(t, label)) }}</option>
-          <optgroup v-if="dateFields.length" :label="t('Your date fields', 'Tus campos de fecha')">
-            <option v-for="f in dateFields" :key="f.id" :value="`field:${f.id}`">{{ f.label }}</option>
-          </optgroup>
-        </select>
-      </label>
-      <div class="flex flex-wrap items-end gap-2.5">
-        <label :class="LABEL">
-          {{ t('Days', 'Días') }}
-          <input type="number" min="0" max="3650" :class="FIELD_NUMBER" :value="rule.filters.trigger_days ?? 7" data-test="trigger-date-days" @input="setFilters({ ...rule.filters, trigger_days: Math.max(0, Math.min(3650, Math.round(Number(($event.target as HTMLInputElement).value) || 0))) })" />
-        </label>
-        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Before or after', 'Antes o después')">
-          <button type="button" :class="segmentBtn(rule.filters.trigger_when !== 'before')" :aria-pressed="rule.filters.trigger_when !== 'before'" data-test="trigger-date-after" @click="setFilters({ ...rule.filters, trigger_when: undefined })">{{ t('after', 'después') }}</button>
-          <button type="button" :class="segmentBtn(rule.filters.trigger_when === 'before')" :aria-pressed="rule.filters.trigger_when === 'before'" :disabled="!String(rule.filters.trigger_date ?? '').startsWith('field:')" class="disabled:cursor-not-allowed disabled:opacity-50" data-test="trigger-date-before" @click="setFilters({ ...rule.filters, trigger_when: 'before' })">{{ t('before', 'antes') }}</button>
-        </span>
-      </div>
-      <span :class="HINT">{{ t('Each day from 9:00, clinic time. "Before" is for a date field of your own, which can hold a date still to come. After the last visit: only for whoever has not been back since.', 'Cada día desde las 9:00, hora de la clínica. «Antes» es para un campo de fecha propio, que puede tener una fecha por venir. Tras la última visita: solo para quien no ha vuelto desde entonces.') }}</span>
-    </template>
-    <template v-if="rule.trigger_event === 'audience.entered'">
+    <label v-if="key === 'patient.date_field'" :class="LABEL">
+      {{ t('Which date', 'Qué fecha') }}
+      <select :class="FIELD" :value="atom.options.trigger_date ?? ''" data-test="trigger-date-field" @change="setOptions({ trigger_date: ($event.target as HTMLSelectElement).value || undefined })">
+        <option value="" disabled>{{ dateFields.length ? t('Choose a date field', 'Elige un campo de fecha') : t('No date fields yet (Settings > Patient fields)', 'Aún no hay campos de fecha (Ajustes › Campos del paciente)') }}</option>
+        <option v-for="f in dateFields" :key="f.id" :value="`field:${f.id}`">{{ f.label }}</option>
+      </select>
+    </label>
+    <template v-if="key === 'patient.entered_audience'">
       <div :class="LABEL">
         {{ t('The list or segment', 'La lista o el segmento') }}
-        <AutomationsAudiencePicker :model-value="(rule.filters.trigger_audience as AudienceRef | undefined) ?? null" test-id="trigger-audience" @update:model-value="setFilters({ ...rule.filters, trigger_audience: $event ?? undefined })" />
+        <AutomationsAudiencePicker :model-value="(atom.options.trigger_audience as AudienceRef | undefined) ?? null" test-id="trigger-audience" @update:model-value="setOptions({ trigger_audience: $event ?? undefined })" />
       </div>
       <label class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
-        <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="rule.filters.include_current === true" data-test="trigger-include-current" @change="setFilters({ ...rule.filters, include_current: ($event.target as HTMLInputElement).checked || undefined })" />
+        <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="atom.options.include_current === true" data-test="trigger-include-current" @change="setOptions({ include_current: ($event.target as HTMLInputElement).checked || undefined })" />
         <span>
           {{ t('Also the people already in it, when it is switched on', 'También quienes ya están, al activarla') }}
           <span :class="['block', HINT]">{{ t('Otherwise only those who enter from then on. Paused and switched back on, it carries on from that moment: whoever entered meanwhile is not enrolled late.', 'Si no, solo los que entren desde entonces. Si se pausa y se vuelve a activar, sigue desde ese momento: quienes entraron mientras tanto no se inscriben tarde.') }}</span>
         </span>
       </label>
     </template>
-    <template v-if="rule.trigger_event === 'care_plan.milestone'">
+    <template v-if="key === 'care_plan.milestone'">
       <div :class="LABEL">
         {{ t('When', 'Cuándo') }}
         <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Milestone', 'Hito')">
-          <button v-for="o in [{ v: '', l: t('Re-exam is next', 'Toca revisión') }, { v: 'finished', l: t('Plan finished', 'Plan terminado') }, { v: 'visit', l: t('Visit number', 'Visita número') }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_milestone ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_milestone ?? '') === o.v" :data-test="`trigger-milestone-${o.v || 'reexam'}`" @click="setFilters({ ...rule.filters, trigger_milestone: o.v || undefined })">{{ o.l }}</button>
+          <button v-for="o in [{ v: '', l: t('Re-exam is next', 'Toca revisión') }, { v: 'finished', l: t('Plan finished', 'Plan terminado') }, { v: 'visit', l: t('Visit number', 'Visita número') }]" :key="o.v" type="button" :class="segmentBtn((atom.options.trigger_milestone ?? '') === o.v)" :aria-pressed="(atom.options.trigger_milestone ?? '') === o.v" :data-test="`trigger-milestone-${o.v || 'reexam'}`" @click="setOptions({ trigger_milestone: o.v || undefined })">{{ o.l }}</button>
         </span>
-        <span :class="HINT">{{ (rule.filters.trigger_milestone ?? '') === '' ? t('After the visit before one the plan marks as a re-exam, so it can be booked in time.', 'Tras la visita anterior a una que el plan marca como revisión, para que dé tiempo a reservarla.') : rule.filters.trigger_milestone === 'finished' ? t("After the plan's last visit.", 'Tras la última visita del plan.') : t('After that visit of the plan, counting as the plan does: no cancelled or missed ones.', 'Tras esa visita del plan, contando como el plan: sin las canceladas ni las de no asistió.') }}</span>
+        <span :class="HINT">{{ (atom.options.trigger_milestone ?? '') === '' ? t('After the visit before one the plan marks as a re-exam, so it can be booked in time.', 'Tras la visita anterior a una que el plan marca como revisión, para que dé tiempo a reservarla.') : atom.options.trigger_milestone === 'finished' ? t("After the plan's last visit.", 'Tras la última visita del plan.') : t('After that visit of the plan, counting as the plan does: no cancelled or missed ones.', 'Tras esa visita del plan, contando como el plan: sin las canceladas ni las de no asistió.') }}</span>
       </div>
-      <label v-if="rule.filters.trigger_milestone === 'visit'" :class="LABEL">
+      <label v-if="atom.options.trigger_milestone === 'visit'" :class="LABEL">
         {{ t('Visit number', 'Visita número') }}
-        <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.trigger_visit_number ?? 6" data-test="trigger-visit-number" @input="setFilters({ ...rule.filters, trigger_visit_number: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+        <input type="number" min="1" :class="FIELD_NUMBER" :value="atom.options.trigger_visit_number ?? 6" data-test="trigger-visit-number" @input="setOptions({ trigger_visit_number: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
       </label>
     </template>
-    <div v-if="rule.trigger_event === 'bono.running_low'" :class="LABEL">
+    <div v-if="key === 'bono.running_low'" :class="LABEL">
       {{ t('Sessions left', 'Sesiones restantes') }}
       <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Sessions left', 'Sesiones restantes')">
-        <button v-for="n in [0, 1, 2, 3]" :key="n" type="button" :class="segmentBtn((rule.filters.trigger_sessions_left ?? 1) === n)" :aria-pressed="(rule.filters.trigger_sessions_left ?? 1) === n" :data-test="`trigger-sessions-left-${n}`" @click="setFilters({ ...rule.filters, trigger_sessions_left: n })">{{ n === 0 ? t('Used up', 'Agotado') : n }}</button>
+        <button v-for="n in [0, 1, 2, 3]" :key="n" type="button" :class="segmentBtn((atom.options.trigger_sessions_left ?? 1) === n)" :aria-pressed="(atom.options.trigger_sessions_left ?? 1) === n" :data-test="`trigger-sessions-left-${n}`" @click="setOptions({ trigger_sessions_left: n })">{{ n === 0 ? t('Used up', 'Agotado') : n }}</button>
       </span>
       <span :class="HINT">{{ t('Once per bono. Sessions brought in by an import do not count.', 'Una vez por bono. Las sesiones traídas por una importación no cuentan.') }}</span>
     </div>
@@ -441,6 +447,7 @@ watch(
           :model-value="rule.filters"
           mode="trigger"
           :appointment-context="def?.appointmentContext ?? false"
+          :atom="atom"
           test-prefix="trigger-filter"
           @update:model-value="setFilters"
         />

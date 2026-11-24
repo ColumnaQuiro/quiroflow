@@ -40,7 +40,7 @@ async function load() {
   const [{ data: r }, { data: o }, { count }] = await Promise.all([
     supabase.from('satisfaction_surveys').select(SELECT).gte('sent_at', since).order('sent_at', { ascending: false }),
     supabase.from('satisfaction_surveys').select(SELECT).lte('score', 3).is('resolved_at', null).order('answered_at', { ascending: false }).limit(50),
-    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger_event', 'appointment.satisfaction'),
+    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger->>subject', 'appointment').eq('trigger->>moment', 'end').not('filters->not_rated_days', 'is', null),
   ])
   recent.value = (r as unknown as Survey[] | null) ?? []
   open.value = (o as unknown as Survey[] | null) ?? []

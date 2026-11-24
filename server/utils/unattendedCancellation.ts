@@ -2,6 +2,7 @@ import { automationEvent, dispatchPatientRule } from '~/server/utils/automationE
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 /**
  * What follows a cancellation nobody at the desk made -- the patient tapping
@@ -37,12 +38,7 @@ export async function afterUnattendedCancellation(service: any, origin: string, 
       .eq('id', patientId)
       .maybeSingle()
     if (!patient) return
-    const { data: rules } = await service
-      .from('automation_rules')
-      .select('id, filters')
-      .eq('account_id', accountId)
-      .eq('trigger_event', 'appointment.cancelled')
-      .eq('enabled', true)
+    const rules = await rulesForRaisedEvent(service, accountId, 'appointment.cancelled')
     for (const rule of rules ?? []) {
       if (!(await ruleFiltersMatch(service, patient.id, rule.filters as AutomationFilters, appointmentId))) continue
       await dispatchPatientRule(service, service, accountId, rule.id, patient, origin, appointmentId, {

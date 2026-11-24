@@ -4712,7 +4712,7 @@
   "Income paid": "Eingenommener Umsatz",
   "Income paid by month": "Eingenommener Umsatz pro Monat",
   "Income paid by practitioner": "Eingenommener Umsatz nach Behandler",
-  "Income paid ÷ completed visits (the dashboard called this PVA)": "Eingenommener Umsatz ÷ erledigte Behandlungen (die Übersicht nannte das PVA)",
+  "What each completed visit was worth: the bono session it used, or else its invoice. Visits with neither (membership, not charged) are left out": "Was jede erledigte Behandlung wert war: die verwendete Bono-Sitzung, sonst ihre Rechnung. Behandlungen ohne beides (Mitgliedschaft, nicht abgerechnet) zählen nicht",
   "Income per new patient": "Einnahmen pro Neupatient",
   "Income, visits and retention at a glance": "Einnahmen, Behandlungen und Bindung auf einen Blick",
   "Income, visits, new patients and conversion": "Umsatz, Behandlungen, Neupatienten und Konversion",

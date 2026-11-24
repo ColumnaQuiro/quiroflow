@@ -18,6 +18,7 @@ function data(appts: Appt[]): ReportData {
     leads: () => ({ leads: [], spend: [], defaultValueCents: null }),
     recalls: [],
     carePlans: [],
+    visitValues: () => new Map(),
     names: { member: new Map([['a', 'Ana'], ['b', 'Bea']]), clinic: new Map(), type: new Map(), service: new Map(), package: new Map(), method: (k) => k },
   }
 }

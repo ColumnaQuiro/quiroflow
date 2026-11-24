@@ -3,6 +3,7 @@ import { installmentPlanOf } from './bonoInstallments'
 import { classifyPaymentForFilter, practitionerForPayment } from './incomeAttribution'
 import { isReceipt } from './paymentReceipts'
 import { LEAD_FUNNEL_STAGES, leadReach, type LeadFunnelStage } from './leadReach'
+import { averageVisitValueCents } from './visitValue'
 import type { SplitKey } from './reportBlocks'
 
 // Every metric a report page can show, and how each is computed.
@@ -146,6 +147,11 @@ export interface ReportData {
   leads: (from: Date, to: Date) => { leads: LeadRow[]; spend: SpendRow[]; defaultValueCents: number | null }
   recalls: RecallRow[]
   carePlans: RecallRow[]
+  /**
+   * Appointment id -> what that visit was worth in cents (utils/visitValue.ts),
+   * for at least the visits starting in the period. Visits with no value are absent.
+   */
+  visitValues: (from: Date, to: Date) => Map<string, number>
   names: Names
 }
 
@@ -158,7 +164,7 @@ export interface Names {
   method: (key: string) => string
 }
 
-export type Need = 'appts' | 'money' | 'patients' | 'bonos' | 'memberships' | 'whatsapp' | 'leads' | 'recalls' | 'carePlans'
+export type Need = 'appts' | 'money' | 'patients' | 'bonos' | 'memberships' | 'whatsapp' | 'leads' | 'recalls' | 'carePlans' | 'visitValues'
 
 export interface Ctx {
   from: Date
@@ -930,15 +936,22 @@ export const METRICS: MetricDef[] = [
     key: 'income_per_visit',
     area: 'money',
     label: ['Average income per visit', 'Ingreso medio por visita'],
-    description: ['Income paid ÷ completed visits (the dashboard called this PVA)', 'Ingresos cobrados ÷ visitas completadas (el panel lo llamaba PVA)'],
+    description: [
+      'What each completed visit was worth: the bono session it used, or else its invoice. Visits with neither (membership, not charged) are left out',
+      'Lo que valió cada visita completada: la sesión de bono que usó o, si no, su factura. Sin contar las que no tienen ninguna (cuota, sin cobrar)',
+    ],
     unit: 'eur',
     splits: ['none', 'month', 'practitioner', 'clinic'],
-    needs: ['money', 'appts'],
+    needs: ['appts', 'visitValues'],
+    // Not takings ÷ visits, which it was until Nov 2026: a bono is paid when
+    // it is bought, so a month using bonos bought earlier read far below the
+    // cheapest session. See utils/visitValue.ts.
     value: (data, ctx) => {
-      const visits = filteredAppts(data, ctx).filter((a) => a.status === 'completed' && inRange(a.at, ctx)).length
-      if (visits === 0) return null
-      const paid = filteredPayments(data, ctx).payments.filter((p) => isReceipt(p.method)).reduce((s, p) => s + p.amount_cents, 0)
-      return Math.round(paid / visits)
+      const visits = filteredAppts(data, ctx).filter((a) => a.status === 'completed' && inRange(a.at, ctx))
+      return averageVisitValueCents(
+        visits.map((a) => a.id),
+        data.visitValues(ctx.from, ctx.to),
+      )
     },
   },
   {

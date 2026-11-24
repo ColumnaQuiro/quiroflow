@@ -1,27 +1,21 @@
 <script setup lang="ts">
 import { formatEurFromAmount } from '../../utils/billing'
-import { isReceipt } from '../../utils/paymentReceipts'
+import { averageVisitValueCents, visitValues, type VisitInvoiceRow, type VisitSessionRow } from '../../utils/visitValue'
 import type { DateRange } from '../../composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
 interface VisitStats { visits: number; patients: number; returning: number }
-interface PaymentRow {
-  amount_cents: number
-  method: string
-  invoice_id: string | null
-  invoices?: { status: string; appointments?: { status: string; practitioner_id: string | null; clinic_id: string | null } | null } | null
-}
 
 const t = useT()
 const supabase = useSupabaseClient()
 const stats = ref<VisitStats>({ visits: 0, patients: 0, returning: 0 })
-const payments = ref<PaymentRow[]>([])
+const incomePerVisitCents = ref<number | null>(null)
 const statsLoading = ref(true)
-const paymentsLoading = ref(true)
-const loading = computed(() => statsLoading.value || paymentsLoading.value)
+const valuesLoading = ref(true)
+const loading = computed(() => statsLoading.value || valuesLoading.value)
 const latestStats = useLatestRun()
-const latestPayments = useLatestRun()
+const latestValues = useLatestRun()
 
 // The visits, the patients in them and how many had been before are counted
 // in the database (dashboard_visit_stats). They used to be cut in memory out
@@ -42,34 +36,40 @@ async function loadStats() {
   statsLoading.value = false
 }
 
-async function loadPayments() {
-  const isStale = latestPayments.start()
-  paymentsLoading.value = true
+// What the period's completed visits were worth -- the bono session each one
+// used, else its invoice -- rather than what was taken in the period, which
+// counted a bono's money in the month it was bought and its visits in the
+// months it was used. See utils/visitValue.ts; the Reports metric of the
+// same name reads the same rule.
+async function loadVisitValues() {
+  const isStale = latestValues.start()
+  valuesLoading.value = true
   const { from, to } = rangeBounds(props.dateRange)
-  // With a practitioner or clinic chosen, a payment counts only when its
-  // invoice is for a completed visit of theirs. The visit comes embedded
-  // under the invoice; it used to be looked up in every completed visit and
-  // every invoice the clinic has, both paged in full for this one walk.
-  // Without a filter nothing reads the visit, so it is not asked for.
-  const filtered = !!props.practitionerId || !!props.clinicId
-  const invoice = filtered ? 'invoices!payments_invoice_id_fkey(status, appointments!invoices_appointment_id_fkey(status, practitioner_id, clinic_id))' : 'invoices!payments_invoice_id_fkey(status)'
-  const p = await fetchAllRows<PaymentRow>((f, t) =>
-    supabase
-      .from('payments')
-      .select(`amount_cents, method, invoice_id, ${invoice}`)
-      .gte('paid_at', from.toISOString())
-      .lte('paid_at', to.toISOString())
-      .range(f, t) as unknown as PromiseLike<{ data: PaymentRow[] | null; error: unknown }>,
-  )
+  const visitsOf = <Q extends { eq: (c: string, v: string) => Q; gte: (c: string, v: string) => Q; lte: (c: string, v: string) => Q; is: (c: string, v: null) => Q }>(q: Q) => {
+    let out = q.eq('appointments.status', 'completed').is('appointments.deleted_at', null).gte('appointments.starts_at', from.toISOString()).lte('appointments.starts_at', to.toISOString())
+    if (props.practitionerId) out = out.eq('appointments.practitioner_id', props.practitionerId)
+    if (props.clinicId) out = out.eq('appointments.clinic_id', props.clinicId)
+    return out
+  }
+  const [sessions, invoices] = await Promise.all([
+    fetchAllRows<VisitSessionRow>(
+      (f, t) =>
+        visitsOf(supabase.from('package_sessions').select('appointment_id, amount_cents, appointments!package_sessions_appointment_id_fkey!inner(id)'))
+          .order('id')
+          .range(f, t) as unknown as PromiseLike<{ data: VisitSessionRow[] | null; error: unknown }>,
+    ),
+    fetchAllRows<VisitInvoiceRow>(
+      (f, t) =>
+        visitsOf(supabase.from('invoices').select('appointment_id, total_cents, status, appointments!invoices_appointment_id_fkey!inner(id)'))
+          .neq('status', 'void')
+          .order('id')
+          .range(f, t) as unknown as PromiseLike<{ data: VisitInvoiceRow[] | null; error: unknown }>,
+    ),
+  ])
   if (isStale()) return
-  // The void rule moved out of the query when the join went from inner to
-  // left: a payment with no invoice has nothing to void and must survive it.
-  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
-  // Credit and write-off rows settle an invoice without money arriving, and
-  // this figure is money -- see utils/paymentReceipts. Dropped here rather
-  // than at each total, because every number on this widget is takings.
-  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
-  paymentsLoading.value = false
+  const values = visitValues(sessions, invoices)
+  incomePerVisitCents.value = averageVisitValueCents(values.keys(), values)
+  valuesLoading.value = false
 }
 // Returned, not just started: Vue's error handling reaches a hook's failure
 // only through the promise the hook hands back. Started and dropped, a failed
@@ -79,30 +79,10 @@ async function loadPayments() {
 // QUIROFLOW-APP-5 had to go on from Google Play's test devices on /numbers.
 // Every other widget passes its load straight to onMounted, so this is
 // the one that was missing.
-const load = () => Promise.all([loadStats(), loadPayments()])
+const load = () => Promise.all([loadStats(), loadVisitValues()])
 onMounted(load)
-// Both follow whose figures these are as well as the period now: the counts
-// are per period, and the payments carry their visit only under a filter.
+// Both follow whose figures these are as well as the period now.
 watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
-
-const filteredPayments = computed(() => {
-  if (!props.practitionerId && !props.clinicId) return payments.value
-  return payments.value.filter((p) => {
-    const appt = p.invoices?.appointments
-    if (!appt || appt.status !== 'completed') return false
-    if (props.practitionerId && appt.practitioner_id !== props.practitionerId) return false
-    if (props.clinicId && appt.clinic_id !== props.clinicId) return false
-    return true
-  })
-})
-
-// Euros taken per completed visit. Not PVA: PVA is visits per new patient
-// (Statistics), and this used to be called that too.
-const incomePerVisit = computed(() => {
-  const totalCents = filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0)
-  if (stats.value.visits === 0) return null
-  return totalCents / 100 / stats.value.visits
-})
 
 const retentionRate = computed(() => {
   if (stats.value.patients === 0) return null
@@ -124,7 +104,7 @@ const retentionRate = computed(() => {
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Average income per visit', 'Ingreso medio por visita') }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">{{ incomePerVisit !== null ? formatEurFromAmount(incomePerVisit) : '—' }}</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ incomePerVisitCents !== null ? formatEurFromAmount(incomePerVisitCents / 100) : '—' }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
       <!-- What retentionRate measures: of the patients seen in the period,

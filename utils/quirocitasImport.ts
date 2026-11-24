@@ -630,7 +630,13 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const ledger = quirocitasLedgerRows(s, bonoOfSale, zone)
     const charges = ledger.charges.filter((c) => patients.has(c.patientRef) && appts.has(c.appointmentRef) && !haveInvoices.has(c.ref))
     const chargesWaiting = ledger.charges.filter((c) => !patients.has(c.patientRef) || !appts.has(c.appointmentRef)).length
-    const payments = ledger.payments.filter((p) => patients.has(p.patientRef) && !havePayments.has(p.ref) && (!p.chargeRef || haveInvoices.has(p.chargeRef) || charges.some((c) => c.ref === p.chargeRef)))
+    // A set, not charges.some(...) per payment: on a clinic's first ledger
+    // import no invoice exists yet, so every payment scanned every charge --
+    // nine years of a busy clinic's cash book is billions of comparisons, and
+    // the plan never finished inside a slice (24 Nov 2026: four slices cut off
+    // in a row, nothing written).
+    const chargeRefs = new Set(charges.map((c) => c.ref))
+    const payments = ledger.payments.filter((p) => patients.has(p.patientRef) && !havePayments.has(p.ref) && (!p.chargeRef || haveInvoices.has(p.chargeRef) || chargeRefs.has(p.chargeRef)))
     // Bizum is asked for only where the ledger has some: most clinics' pages
     // have no such column.
     const usedMethods = new Set<QuirocitasPaymentRow['method']>(['cash', 'card', 'transfer', ...payments.map((p) => p.method)])

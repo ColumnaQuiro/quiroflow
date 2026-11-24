@@ -1574,7 +1574,11 @@
   "{0} payments or invoices name no contact and are left out.": "{0} Zahlungen oder Rechnungen nennen keinen Kontakt und werden ausgelassen.",
   "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} Rechnungen und Zahlungen gehören zu nicht importierten Patienten: Führen Sie zuerst Patienten aus oder wählen Sie „Alle“.",
   "Pick a date: {0}": "Datum wählen: {0}",
-  "{0} used-up bonos ({1}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.": "{0} aufgebrauchte Bonos ({1}) haben in Quirocitas keine Sitzungsanzahl: Sie werden geschlossen importiert, als 1 von 1 Sitzung."
+  "{0} used-up bonos ({1}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.": "{0} aufgebrauchte Bonos ({1}) haben in Quirocitas keine Sitzungsanzahl: Sie werden geschlossen importiert, als 1 von 1 Sitzung.",
+  "Switch on \"{0}\"?": "„{0}“ aktivieren?",
+  " (and {0} more)": " (und {0} weitere)",
+  "\"{0}\" is on": "„{0}“ aktiviert",
+  "\"{0}\" is paused": "„{0}“ pausiert"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10765,6 +10769,16 @@
   "Who is in the clinic, and today in numbers": "Wer in der Praxis ist, und der Tag in Zahlen",
   "In the clinic": "In der Praxis",
   "Display and key": "Anzeige und Legende",
-  "Today in the clinic": "Heute in der Praxis"
+  "Today in the clinic": "Heute in der Praxis",
+  "From now on, every new lead that meets this enters and receives its steps:": "Ab jetzt durchläuft jeder neue Lead, der dies erfüllt, die Schritte:",
+  "From now on, every patient who meets this enters and receives its steps:": "Ab jetzt durchläuft jeder Patient, der dies erfüllt, die Schritte:",
+  "already inside carries on from the step where it stopped.": "die bereits drin war, macht beim Schritt weiter, an dem sie stehen blieb.",
+  "already inside carry on from the step where they stopped.": "die bereits drin waren, machen beim Schritt weiter, an dem sie stehen blieben.",
+  "Test mode: nothing is sent to anyone. What would have been sent is recorded so you can check it.": "Testmodus: Es wird nichts an niemanden gesendet. Was gesendet worden wäre, wird zum Prüfen gespeichert.",
+  "It is marketing: each channel only reaches people who accepted it.": "Es ist Marketing: Jeder Kanal erreicht nur, wer ihm zugestimmt hat.",
+  "Click to pause it": "Klicken, um sie zu pausieren",
+  "Click to switch it on": "Klicken, um sie zu aktivieren",
+  "What is missing?": "Was fehlt?",
+  "Cannot be switched on yet:": "Kann noch nicht aktiviert werden:"
  }
 }

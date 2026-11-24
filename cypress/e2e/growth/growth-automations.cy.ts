@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The Automations list -- what Campaigns and Growth > Automations were.
 //
 // The old Growth canvas spec asserted that the canvas drew the account's real
@@ -156,6 +157,78 @@ describe('Automations list', () => {
     cy.visit('/automations')
     cy.get('nav').contains('a', 'Automations').should('have.attr', 'href', '/automations')
     cy.get('nav').contains('a', 'Campaigns').should('not.exist')
+  })
+
+  describe('switching on and off', () => {
+    it('says what will happen before switching on, and pauses without asking', () => {
+      cy.task<{ id: string }>('auto:createFlowRule', { accountId: account.accountId, name: 'Tras la visita', triggerEvent: 'appointment.completed', enabled: false, dryRun: false, steps: [{ type: 'tag', config: { tag: 'x' } }] }).then((rule) => {
+        cy.visit('/automations')
+        const row = `[data-test="rule-${rule.id}"]`
+        cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'false').and('not.be.disabled')
+        cy.get(`${row} [data-test="enabled-label"]`).should('have.text', 'Paused')
+
+        // On: a dialog says what starts it, and nothing changes until confirmed.
+        cy.get(`${row} [data-test="rule-toggle"]`).click()
+        cy.get('[data-test="activate-when"]').should('contain', 'Appointment completed')
+        cy.get('[data-cy="confirm-dialog-cancel"]').click()
+        cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'false')
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', false)
+
+        cy.get(`${row} [data-test="rule-toggle"]`).click()
+        cy.get('[data-cy="confirm-dialog-confirm"]').click()
+        cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'true')
+        cy.get(`${row} [data-test="enabled-label"]`).should('have.text', 'Active')
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', true)
+
+        // Off: no question asked.
+        cy.get(`${row} [data-test="rule-toggle"]`).click()
+        cy.get('[data-test="activate-dialog"]').should('not.exist')
+        cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'false')
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', false)
+
+        // The builder's header has the same switch and the same dialog.
+        cy.intercept('PUT', `/api/automations/${rule.id}`).as('put')
+        cy.visit(`/automations/${rule.id}`)
+        cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false').click()
+        cy.get('[data-test="activate-when"]').should('contain', 'Appointment completed')
+        cy.get('[data-cy="confirm-dialog-confirm"]').click()
+        cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
+        // Switching is not an edit: nothing waits to be saved, and nothing
+        // was auto-saved for it.
+        autoSaved()
+        cy.get('@put.all').should('have.length', 0)
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', true)
+        cy.get('[data-test="automation-enabled"]').click()
+        cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false')
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', false)
+      })
+    })
+
+    it('moves at once, and moves back when the server refuses', () => {
+      cy.task<{ id: string }>('auto:createFlowRule', { accountId: account.accountId, name: 'Encendida', triggerEvent: 'appointment.completed', enabled: true, steps: [{ type: 'tag', config: { tag: 'x' } }] }).then((rule) => {
+        cy.intercept('POST', `/api/automations/${rule.id}/enabled`, { statusCode: 500, body: { statusMessage: 'boom' }, delay: 800 }).as('enabled')
+        cy.visit('/automations')
+        const toggle = `[data-test="rule-${rule.id}"] [data-test="rule-toggle"]`
+        cy.get(toggle).should('have.attr', 'aria-checked', 'true').click()
+        cy.get(toggle).should('have.attr', 'aria-checked', 'false')
+        cy.wait('@enabled')
+        cy.get(toggle).should('have.attr', 'aria-checked', 'true')
+        cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', true)
+      })
+    })
+
+    it('cannot be switched on with something missing, and says what', () => {
+      cy.task<{ id: string }>('auto:createFlowRule', { accountId: account.accountId, name: 'Sin plantilla', triggerEvent: 'appointment.completed', enabled: false, steps: [{ type: 'whatsapp_template', config: {} }] }).then((rule) => {
+        cy.visit('/automations')
+        cy.get(`[data-test="rule-${rule.id}"] [data-test="rule-toggle"]`).should('be.disabled')
+        cy.get(`[data-test="rule-${rule.id}"] [data-test="rule-blocked"]`).should('contain', 'A WhatsApp step has no template chosen')
+
+        cy.visit(`/automations/${rule.id}`)
+        cy.get('[data-test="automation-enabled"]').should('be.disabled')
+        cy.get('[data-test="automation-enabled-why"]').click()
+        cy.get('[data-test="problems-list"]').should('contain', 'A WhatsApp step has no template chosen')
+      })
+    })
   })
 
   describe('without Growth', () => {

@@ -1236,6 +1236,7 @@
   "{0} months, since {1}": "{0} meses, desde {1}",
   "{0} more appointments at this time": "Mais {0} marcações a esta hora",
   "{0} more appointments at this time. Click to see them all in Day view.": "Mais {0} marcações a esta hora. Clique para as ver todas na vista Dia.",
+  "{0} more appointments at this time. Click to see them.": "Mais {0} marcações a esta hora. Clique para as ver.",
   "{0} more booked": "Mais {0} marcadas",
   "{0} more — keep typing to narrow it down.": "Mais {0} — continue a escrever para filtrar.",
   "{0} moved.": "{0} movidas.",
@@ -1576,7 +1577,11 @@
   "{0} payments or invoices name no contact and are left out.": "{0} pagamentos ou faturas não têm contacto e ficam de fora.",
   "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos».",
   "Pick a date: {0}": "Escolher data: {0}",
-  "{0} used-up bonos ({1}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.": "{0} bonos já gastos ({1}) não têm número de sessões no Quirocitas: são importados fechados, como 1 sessão de 1."
+  "{0} used-up bonos ({1}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.": "{0} bonos já gastos ({1}) não têm número de sessões no Quirocitas: são importados fechados, como 1 sessão de 1.",
+  "Switch on \"{0}\"?": "Ativar «{0}»?",
+  " (and {0} more)": " (e mais {0})",
+  "\"{0}\" is on": "«{0}» ativada",
+  "\"{0}\" is paused": "«{0}» em pausa"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -1714,6 +1719,7 @@
   "1 month": "1 mês",
   "1 more appointment at this time": "Mais 1 marcação a esta hora",
   "1 more appointment at this time. Click to see it in Day view.": "Mais 1 marcação a esta hora. Clique para a ver na vista Dia.",
+  "1 more appointment at this time. Click to see it.": "Mais 1 marcação a esta hora. Clique para a ver.",
   "1 new": "1 novo",
   "1 of unlimited": "1 de ilimitadas",
   "1 patient": "1 paciente",
@@ -4567,6 +4573,7 @@
   "Hide past appointments": "Ocultar marcações anteriores",
   "Hide quick findings": "Ocultar achados rápidos",
   "Hide rescheduled": "Ocultar reagendadas",
+  "Opening hours only": "Só o horário de abertura",
   "Hide the done ones": "Ocultar as feitas",
   "Hide the list": "Ocultar a lista",
   "Hide the video": "Ocultar o vídeo",
@@ -10772,11 +10779,22 @@
   "Only for a clinic that charges through QuiroHiro.": "Só para uma clínica que cobra com o QuiroHiro.",
   "Invoices paid since": "Faturas pagas desde então",
   "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "O QuiroHiro não conta as sessões dos pacotes: as usadas são as visitas a que cada paciente veio desde o dia da compra, do pacote mais antigo ao mais recente. Cada pacote foi cobrado na venda, por isso as sessões gastas aqui não cobram mais nada.",
+  "No patient": "Sem paciente",
   "Key": "Legenda",
   "Whose agenda": "Agenda de",
   "Who is in the clinic, and today in numbers": "Quem está na clínica, e o dia em números",
   "In the clinic": "Na clínica",
   "Display and key": "Visualização e legenda",
-  "Today in the clinic": "Hoje na clínica"
+  "Today in the clinic": "Hoje na clínica",
+  "From now on, every new lead that meets this enters and receives its steps:": "A partir de agora, cada novo lead que cumpra isto entra e recebe os seus passos:",
+  "From now on, every patient who meets this enters and receives its steps:": "A partir de agora, cada paciente que cumpra isto entra e recebe os seus passos:",
+  "already inside carries on from the step where it stopped.": "que já estava dentro continua a partir do passo em que ficou.",
+  "already inside carry on from the step where they stopped.": "que já estavam dentro continuam a partir do passo em que ficaram.",
+  "Test mode: nothing is sent to anyone. What would have been sent is recorded so you can check it.": "Modo de teste: não é enviado nada a ninguém. Fica registado o que teria sido enviado para que o possa rever.",
+  "It is marketing: each channel only reaches people who accepted it.": "É marketing: cada canal só chega a quem o aceitou.",
+  "Click to pause it": "Clique para a pausar",
+  "Click to switch it on": "Clique para a ativar",
+  "What is missing?": "O que falta?",
+  "Cannot be switched on yet:": "Ainda não pode ser ativada:"
  }
 }

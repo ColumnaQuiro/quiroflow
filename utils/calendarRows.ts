@@ -37,6 +37,43 @@ export function gridEndHour(closingTimes: string[], visitEndMinutes: number[], f
   return Math.min(24, Math.ceil(end / 60))
 }
 
+/** The hours the grid spans when it shows only the opening hours ("Solo
+ *  horario de apertura"): from the first hour anyone on screen starts to the
+ *  last hour anyone ends, over the days on screen, widened to take in every
+ *  visit drawn there -- a visit booked before opening must never fall off the
+ *  top. The default grid runs 08:00 to closing whatever the hours are, so a
+ *  clinic that opens at 16:00 on Tuesdays faces eight grey hours before its
+ *  first patient.
+ *
+ *  `windows` are the working windows ("HH:MM" pairs) of the days on screen;
+ *  `visits` are [start, end] minutes from midnight of the day each starts on.
+ *  Null when there is nothing to fit to (nobody works those days and nothing
+ *  is booked), so the caller keeps its usual range rather than a zero-hour
+ *  grid. */
+export function gridOpenHourRange(windows: [string, string][], visits: [number, number][]): { start: number; end: number } | null {
+  let from = Infinity
+  let to = -Infinity
+  const minutes = (t: string) => {
+    const [h, m] = t.split(':').map(Number)
+    return Number.isFinite(h) ? h * 60 + (Number.isFinite(m) ? m : 0) : NaN
+  }
+  for (const [a, b] of windows) {
+    const s = minutes(a)
+    const e = minutes(b)
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) continue
+    from = Math.min(from, s)
+    to = Math.max(to, e)
+  }
+  for (const [s, e] of visits) {
+    from = Math.min(from, s)
+    to = Math.max(to, Math.max(e, s))
+  }
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null
+  const start = Math.max(0, Math.floor(from / 60))
+  const end = Math.min(24, Math.max(start + 1, Math.ceil(to / 60)))
+  return { start, end }
+}
+
 export function gridLinearTops(hours: number, hourPx: number): HourTops {
   return Array.from({ length: hours + 1 }, (_, i) => i * hourPx)
 }

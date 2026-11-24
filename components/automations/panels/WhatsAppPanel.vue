@@ -22,6 +22,13 @@ const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, pat
 const key = (name: string, language: string) => `${name}::${language}`
 const current = computed(() => b.templates.value.find((x) => x.name === config.value.template_name && x.language === (config.value.template_language || 'es')) ?? null)
 const currentKey = computed(() => (current.value ? key(current.value.name, current.value.language) : ''))
+// The step's template when Meta has it but not approved -- back in review
+// after an edit, say: still this step's, and said so, rather than looking unchosen.
+const currentInReview = computed(() =>
+  current.value ? null : (b.templatesInReview.value.find((x) => x.name === config.value.template_name && x.language === (config.value.template_language || 'es')) ?? null),
+)
+const reviewWord = (status: string) =>
+  status === 'REJECTED' ? t('rejected', 'rechazada') : status === 'PAUSED' ? t('paused', 'pausada') : status === 'DISABLED' ? t('disabled', 'desactivada') : t('in review', 'en revisión')
 
 // Every language Meta has approved this template in.
 const languages = computed(() => (current.value ? b.templates.value.filter((x) => x.name === current.value!.name).map((x) => x.language) : []))
@@ -199,7 +206,9 @@ function templateCreated(created: { name: string }) {
 // ---- or the chosen one changed, without leaving the automation
 const editing = ref(false)
 const edited = ref('')
-const editBlocker = computed(() => (current.value ? templateEditBlocker({ ...current.value, buttons: current.value.buttons ?? [] }) : null))
+// Approved or not: a rejected one is fixed from here too.
+const editable = computed(() => current.value ?? currentInReview.value)
+const editBlocker = computed(() => (editable.value ? templateEditBlocker({ ...editable.value, buttons: editable.value.buttons ?? [] }) : null))
 function templateEdited(result: EditedTemplateResult) {
   editing.value = false
   submitted.value = ''
@@ -223,16 +232,19 @@ function templateEdited(result: EditedTemplateResult) {
         <option v-for="tpl in b.templates.value" :key="key(tpl.name, tpl.language)" :value="key(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category === 'MARKETING' ? t('Marketing', 'Marketing') : tpl.category === 'UTILITY' ? t('Utility', 'Servicio') : tpl.category }}</option>
       </select>
     </label>
+    <p v-if="currentInReview" :class="WARN" data-test="template-in-review">
+      {{ t(`"${currentInReview.name}" is not approved at Meta right now (${reviewWord(currentInReview.status)}). Until it is, this step may not send.`, `«${currentInReview.name}» no está aprobada en Meta ahora mismo (${reviewWord(currentInReview.status)}). Hasta que lo esté, puede que este paso no se envíe.`) }}
+    </p>
     <button v-if="!b.templatesError.value" type="button" :class="LINK_BTN" class="-mt-2" data-test="template-create" @click="creating = true">+ {{ t('Create a new template', 'Crear una plantilla nueva') }}</button>
     <p v-if="submitted" :class="NOTE" data-test="template-submitted">
       {{ t(`"${submitted}" was sent to Meta for review. It appears in the list above once approved, usually within minutes.`, `«${submitted}» se ha enviado a Meta para revisión. Aparecerá en la lista de arriba cuando la aprueben, normalmente en unos minutos.`) }}
     </p>
-    <button v-if="current && !editBlocker" type="button" :class="LINK_BTN" class="-mt-3" data-test="template-edit" @click="editing = true">{{ t('Edit this template', 'Editar esta plantilla') }}</button>
+    <button v-if="editable && !editBlocker" type="button" :class="LINK_BTN" class="-mt-3" data-test="template-edit" @click="editing = true">{{ t('Edit this template', 'Editar esta plantilla') }}</button>
     <p v-if="edited" :class="NOTE" data-test="template-edited">
       {{ t(`The change to "${edited}" was sent to Meta. It reviews it again, usually within minutes.`, `El cambio en «${edited}» se ha enviado a Meta. La vuelve a revisar, normalmente en unos minutos.`) }}
     </p>
     <SettingsWhatsAppTemplateDialog v-if="creating" @close="creating = false" @created="templateCreated" />
-    <SettingsWhatsAppTemplateDialog v-if="editing && current" :template="{ ...current, buttons: current.buttons ?? [] }" @close="editing = false" @edited="templateEdited" />
+    <SettingsWhatsAppTemplateDialog v-if="editing && editable" :template="{ ...editable, buttons: editable.buttons ?? [] }" @close="editing = false" @edited="templateEdited" />
     <label v-if="!b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
       <input type="checkbox" class="mt-0.5" :checked="config.purpose === 'recall'" data-test="purpose-recall" @change="set({ purpose: ($event.target as HTMLInputElement).checked ? 'recall' : undefined })" />
       <span class="flex flex-col gap-0.5">

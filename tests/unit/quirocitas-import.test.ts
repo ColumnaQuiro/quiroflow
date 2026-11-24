@@ -383,6 +383,29 @@ describe('quirocitas rows', () => {
     })
   })
 
+  describe('a bono whose number of sessions Quirocitas does not know', () => {
+    // A type set up with no count ("Genérico", a gift bono) and a name with no
+    // number in it: used up, it read as 0 sessions, which package_purchases
+    // refuses -- and the refusal took every bono in the same batch with it.
+    const bono = (name: string, remaining: number) => {
+      const s = snapshot()
+      s.patients[101]!.ficha.bonos = [{ id: '900', name, remaining, expires: '31-07-2026', owed: 0, paid: 0, status: 'pasado' }]
+      return quirocitasBonoRows(s, zone, '2026-11-17').rows[0]!
+    }
+
+    it('comes in used up as 1 of 1, never 0, and says so', () => {
+      expect(bono('Genérico', 0)).toMatchObject({ sessionsTotal: 1, sessionsUsed: 1, isClosed: true, sizeUnknown: true })
+    })
+
+    it('keeps what is left when there is some', () => {
+      expect(bono('Genérico', 3)).toMatchObject({ sessionsTotal: 3, sessionsUsed: 0, sizeUnknown: false })
+    })
+
+    it('still takes the count from a name that ends in one', () => {
+      expect(bono('Bono 12', 0)).toMatchObject({ sessionsTotal: 12, sessionsUsed: 12, sizeUnknown: false })
+    })
+  })
+
   describe('which patients a read fetches', () => {
     const ids = ['101', '102', '103']
     const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), version: QUIROCITAS_COPY_VERSION, ...over })

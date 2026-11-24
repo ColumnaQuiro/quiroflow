@@ -437,6 +437,8 @@ export interface QuirocitasBonoRow {
   isClosed: boolean
   /** Whether the purchase date comes from the payment in the cash ledger, or was worked back from the expiry. */
   dateFromLedger: boolean
+  /** Used up, with no session count in its type or name: imported as 1 of 1, since Quirocitas cannot say how many it held. */
+  sizeUnknown: boolean
 }
 
 /** Owners of each cita id and each (unique) name, for placing ledger rows on a patient. */
@@ -515,7 +517,16 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, toda
   for (const [bonoId, { bono, ids }] of [...holders].sort((a, b) => Number(a[0]) - Number(b[0]))) {
     const type = types.get(bono.name.toLowerCase())
     if (type?.kind === 'debt') { skippedDebt.push(bonoId); continue }
-    const total = type?.sessions || Number(bono.name.match(/(\d+)\s*$/)?.[1]) || bono.remaining
+    // How many sessions it held: its type's, else the number its name ends in.
+    // A type set up with no count ("Genérico", a gift bono) and a name with no
+    // number leave only what is left, which is 0 once it is used up -- and a
+    // bono of 0 sessions breaks package_purchases' check (sessions_total > 0),
+    // failing the whole batch it is written in. One clinic's 620 such bonos
+    // took its other 1,750 down with them. The visit list says a visit was
+    // paid with "a bono", not which one, so the real count cannot be worked
+    // out: such a bono comes in with at least 1, and the step says so.
+    const known = type?.sessions || Number(bono.name.match(/(\d+)\s*$/)?.[1]) || 0
+    const total = Math.max(known, bono.remaining, 1)
     const expires = quirocitasDate(bono.expires)
     const amount = cents(bono.paid + bono.owed)
     // The sale: a ledger row naming this bono, for one of its holders, on or
@@ -546,8 +557,9 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, toda
       ownerRef: qcPatientRef(owner),
       sharedWithRefs: ids.filter((i) => i !== owner).map(qcPatientRef),
       name: bono.name,
-      sessionsTotal: Math.max(total, bono.remaining),
-      sessionsUsed: Math.max(0, Math.max(total, bono.remaining) - bono.remaining),
+      sessionsTotal: total,
+      sessionsUsed: Math.max(0, total - bono.remaining),
+      sizeUnknown: !known && bono.remaining <= 0,
       priceCents: amount,
       owedCents: cents(bono.owed),
       purchasedAt,

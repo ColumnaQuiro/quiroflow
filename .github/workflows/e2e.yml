@@ -461,7 +461,41 @@ jobs:
           fi
           exit 1
 
-      - uses: actions/download-artifact@v4
+      # "Ready" above means the build's upload step reported success, and the
+      # artifact can still be missing from the listing for a few seconds
+      # after that. On 24 Nov 2026 five runs in two hours lost one shard each
+      # to "Artifact not found for name: e2e-app" with the build green, ~95s
+      # into the wait. So the download itself is retried: no extra API polls
+      # (see the budget note above), and a real failure still fails the
+      # third attempt with download-artifact's own error.
+      - name: Download the app
+        id: download-app-1
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
+
+      - name: Give the artifact time to be listed
+        if: steps.download-app-1.outcome == 'failure'
+        run: sleep 15
+
+      - name: Download the app (second try)
+        id: download-app-2
+        if: steps.download-app-1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
+
+      - name: Give the artifact longer to be listed
+        if: steps.download-app-2.outcome == 'failure'
+        run: sleep 45
+
+      - name: Download the app (last try)
+        if: steps.download-app-2.outcome == 'failure'
+        uses: actions/download-artifact@v4
         with:
           name: e2e-app
           path: .output

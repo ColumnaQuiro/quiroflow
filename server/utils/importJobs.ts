@@ -367,7 +367,7 @@ async function readSlice(
       if (!restart && !saved) { restart = true; partial.ledger = []; partial.months = []; continue }
       let read: Awaited<ReturnType<QuirocitasClient['ledger']>>
       try {
-        read = await client.ledger(saved ? JSON.parse(saved) : null, LEDGER_MONTHS_PER_CALL)
+        read = await client.ledger(saved ? JSON.parse(saved) : null, LEDGER_MONTHS_PER_CALL, deadline)
       } catch (e) {
         if (!(e instanceof QuirocitasLedgerError)) throw e
         // The ledger page is not one this reader can take money from, and
@@ -394,14 +394,17 @@ async function readSlice(
       p.ledgerStarted = true
       for (const m of months) {
         partial.ledger.push(...m.rows)
-        const sum = (k: 'cash' | 'card' | 'transfer') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
+        const sum = (k: 'cash' | 'card' | 'transfer' | 'bizum') => Math.round(m.rows.reduce((a, r) => a + (r[k] ?? 0), 0) * 100) / 100
         // client.ledger throws on a month it could not name, so each has one.
         partial.months.push({
-          month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer') },
+          month: m.month!, rows: m.rows.length, printed: m.totals, summed: { cash: sum('cash'), card: sum('card'), transfer: sum('transfer'), bizum: sum('bizum') },
           columns: m.layout.columns, fromTotals: m.layout.fromTotals,
           ...(partial.months.length ? {} : { header: m.layout.header, inputs: m.layout.inputs }),
         })
       }
+      // A clinic whose ◄ goes back a day can stop between two months, having
+      // read none: where it stands is in the cursor, and the next call goes on.
+      if (!months.length) continue
       const last = months[months.length - 1]!.month!
       p.month = last
       p.done = partial.months.length

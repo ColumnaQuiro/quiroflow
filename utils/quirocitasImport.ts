@@ -18,6 +18,7 @@ import {
   quirocitasRecordsReadThisPass,
   quirocitasVisitNotes,
   type QuirocitasAppointmentRow,
+  type QuirocitasPaymentRow,
   type QuirocitasSnapshot,
 } from '~/utils/quirocitasRows'
 
@@ -100,7 +101,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
   const statusName = (status: string) =>
     status === 'completed' ? t('Completed', 'Completada') : status === 'cancelled' ? t('Cancelled', 'Cancelada') : status === 'no_show' ? t('Missed', 'No presentado') : t('Booked', 'Reservada')
   const methodName = (method: string) =>
-    method === 'cash' ? t('Cash', 'Efectivo') : method === 'card' ? t('Card', 'Tarjeta') : method === 'transfer' ? t('Transfer', 'Transferencia') : method
+    method === 'cash' ? t('Cash', 'Efectivo') : method === 'card' ? t('Card', 'Tarjeta') : method === 'transfer' ? t('Transfer', 'Transferencia') : method === 'bizum' ? t('Bizum', 'Bizum') : method
   // Formatters are built once and reused. `toLocaleString` with options
   // builds a new one on every call, and a large clinic's plan formats a
   // hundred thousand rows. A clinic with 85,000 appointments spent 4.7 s of
@@ -558,6 +559,15 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
       warnings: [
         ...(rows.length > ready.length ? [t(`${nf.format(rows.length - ready.length)} bonos belong to patients not imported yet: run Patients first.`, `${nf.format(rows.length - ready.length)} bonos son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
         ...(inserts.some((b) => !b.dateFromLedger) ? [t('* No sale for this bono in the cash ledger: its purchase date is worked back from when it expires.', '* No hay venta de este bono en la caja: su fecha de compra se calcula desde su caducidad.')] : []),
+        ...(() => {
+          const unknown = inserts.filter((b) => b.sizeUnknown)
+          if (!unknown.length) return []
+          const names = [...new Set(unknown.map((b) => b.name))].slice(0, 4).join(', ')
+          return [t(
+            `${nf.format(unknown.length)} used-up bonos (${names}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.`,
+            `${nf.format(unknown.length)} bonos ya gastados (${names}) no tienen número de sesiones en Quirocitas: se importan cerrados, como 1 sesión de 1.`,
+          )]
+        })(),
       ],
       total: inserts.length + updates.length + missingLinks.length,
       async apply(progress, shouldStop) {
@@ -615,13 +625,16 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const havePayments = new Set((await readAll<{ external_reference: string }>('payments', 'external_reference', 'QC-pay-')).map((p) => p.external_reference))
     const logged = new Set((await readAll<{ external_reference: string }>('contact_log', 'external_reference', 'QC-factura-')).map((l) => l.external_reference))
     const { data: methods } = await supabase.from('payment_methods').select('key').eq('account_id', accountId)
-    const missingMethods = (['cash', 'card', 'transfer'] as const).filter((k) => !(methods ?? []).some((m) => m.key === k))
 
     const { bonoOfSale } = quirocitasBonoRows(s, zone)
     const ledger = quirocitasLedgerRows(s, bonoOfSale, zone)
     const charges = ledger.charges.filter((c) => patients.has(c.patientRef) && appts.has(c.appointmentRef) && !haveInvoices.has(c.ref))
     const chargesWaiting = ledger.charges.filter((c) => !patients.has(c.patientRef) || !appts.has(c.appointmentRef)).length
     const payments = ledger.payments.filter((p) => patients.has(p.patientRef) && !havePayments.has(p.ref) && (!p.chargeRef || haveInvoices.has(p.chargeRef) || charges.some((c) => c.ref === p.chargeRef)))
+    // Bizum is asked for only where the ledger has some: most clinics' pages
+    // have no such column.
+    const usedMethods = new Set<QuirocitasPaymentRow['method']>(['cash', 'card', 'transfer', ...payments.map((p) => p.method)])
+    const missingMethods = [...usedMethods].filter((k) => !(methods ?? []).some((m) => m.key === k))
     const paymentsWaiting = ledger.payments.filter((p) => !havePayments.has(p.ref)).length - payments.length
     const invoiceNotes = ledger.invoiceNotes.filter((n) => patients.has(n.patientRef) && !logged.has(n.ref))
     const bonosMissing = payments.filter((p) => p.bonoRef && !bonoIds.has(p.bonoRef)).length

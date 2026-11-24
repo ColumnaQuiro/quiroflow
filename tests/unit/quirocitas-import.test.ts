@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parseQuirocitasBonoTypes,
   parseQuirocitasCajaMonth,
@@ -6,8 +6,10 @@ import {
   parseQuirocitasHistory,
   parseQuirocitasInvoice,
   parseQuirocitasPatientList,
+  quirocitasCajaButton,
   quirocitasCajaFormBody,
 } from '../../utils/quirocitasPages'
+import { QuirocitasClient, QuirocitasLedgerError } from '../../server/utils/quirocitas'
 import {
   quirocitasAppointmentRows,
   quirocitasBonoRows,
@@ -381,6 +383,29 @@ describe('quirocitas rows', () => {
     })
   })
 
+  describe('a bono whose number of sessions Quirocitas does not know', () => {
+    // A type set up with no count ("Genérico", a gift bono) and a name with no
+    // number in it: used up, it read as 0 sessions, which package_purchases
+    // refuses -- and the refusal took every bono in the same batch with it.
+    const bono = (name: string, remaining: number) => {
+      const s = snapshot()
+      s.patients[101]!.ficha.bonos = [{ id: '900', name, remaining, expires: '31-07-2026', owed: 0, paid: 0, status: 'pasado' }]
+      return quirocitasBonoRows(s, zone, '2026-11-17').rows[0]!
+    }
+
+    it('comes in used up as 1 of 1, never 0, and says so', () => {
+      expect(bono('Genérico', 0)).toMatchObject({ sessionsTotal: 1, sessionsUsed: 1, isClosed: true, sizeUnknown: true })
+    })
+
+    it('keeps what is left when there is some', () => {
+      expect(bono('Genérico', 3)).toMatchObject({ sessionsTotal: 3, sessionsUsed: 0, sizeUnknown: false })
+    })
+
+    it('still takes the count from a name that ends in one', () => {
+      expect(bono('Bono 12', 0)).toMatchObject({ sessionsTotal: 12, sessionsUsed: 12, sizeUnknown: false })
+    })
+  })
+
   describe('which patients a read fetches', () => {
     const ids = ['101', '102', '103']
     const copy = (over: Partial<QuirocitasSnapshot>): QuirocitasSnapshot => ({ ...snapshot(), version: QUIROCITAS_COPY_VERSION, ...over })
@@ -613,5 +638,181 @@ describe('a clinic whose second payment method is transfer, not card', () => {
     const extra = { month: '2026-10', rows: 1, printed: { cash: 40, card: 0, transfer: null }, summed: { cash: 40, card: 0, transfer: 450 } }
     const cashOff = { month: '2026-09', rows: 1, printed: { cash: 40, card: null, transfer: null }, summed: { cash: 0, card: 0, transfer: 0 } }
     expect(quirocitasLedgerMismatches({ ledgerMonths: [missing, extra, cashOff] }).map((m) => m.month)).toEqual(['2026-11', '2026-10', '2026-09'])
+  })
+})
+
+// A third shape of cash page, from a clinic with several chiropractors: a
+// row of "franja" buttons, a Bizum column, a "<" for its previous button --
+// and that button goes back a DAY even from the month view, landing on the
+// day view. Invented data.
+const ym = (d: Date) => d.toISOString().slice(0, 7)
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const LT_BUTTONS = `<input type="submit" name="previo" value="<" class="ajustado" title="Anterior">&nbsp;<input type="submit" name="siguiente" value=">" class="ajustado" title="Siguiente">
+<input type="submit" name="aceptar" value="Aceptar"><input type="submit" name="cancelar" value="Cancelar">`
+const LT_CHIROS = (all: boolean) => `<select name="quiro" id="quiro" onchange="forms[0].submit();"><option ${all ? 'selected ' : ''}value="-1">-- Todos --</option><option ${all ? '' : 'selected '}value="1">Dra. Demo</option><option value="2">Dr. Ejemplo</option></select>`
+// One day: headed by its date, and "Mes entero" one of a row of buttons.
+const LT_DAY = (all: boolean, day: Date) => `<form autocomplete="off" name="diario" action="diario.php" method="post"><input type="hidden" name="tipo" value="caja">
+${LT_CHIROS(all)}
+<input type="submit" name="franja" value="09:15-12:30" disabled><input type="submit" name="franja" value="Caja Mes"><input type="submit" name="franja" value="Mes entero"><input type="submit" name="franja" value="Todo">
+<table><tr><th colspan="2" align="center">
+    ${DIAS[day.getUTCDay()]}, ${day.getUTCDate()} de ${MESES[day.getUTCMonth()]} de ${day.getUTCFullYear()}    </th></tr></table>
+<table><tr><th></th><th>Nombre</th><th>Observ.</th><th>N</th><th>I</th><th>B</th><th>Efectivo</th><th>Tarjeta</th><th>Bizum</th><th>Deuda</th><th>Fac.</th><th>Valor</th></tr></table>
+${LT_BUTTONS}</form>`
+const LT_MONTH = (month: string) => {
+  const [y, m] = month.split('-')
+  const day = (d: string) => `${d}-${m}-${y}`
+  return `<form autocomplete="off" name="diario" action="diario.php" method="post"><input type="hidden" name="tipo" value="caja">
+${LT_CHIROS(true)}
+<input type="submit" name="franja" value="Caja Mes"><input type="submit" name="franja" value="Mes entero" disabled>
+<table><tr><th colspan="2" align="center">
+     Mes de ${MESES[Number(m) - 1]} de ${y}    </th></tr></table>
+<table><tr><th></th><th>Fecha</th><th>Nombre</th><th>Observ.</th><th>N</th><th>I</th><th>B</th><th>Efectivo</th><th>Tarjeta</th><th>Bizum</th><th>Deuda</th><th>Fac.</th><th>Valor</th></tr>
+<tr><td>1</td><td>${day('03')}</td><td>Laura Demo Prueba</td><td></td><td></td><td></td><td></td><td>40,00</td><td></td><td></td><td></td><td><input type="hidden" name="id1" value=""><input type="hidden" name="pagobono1" value="0"><input type="hidden" name="cita1" value="5001"></td><td>40,00</td></tr>
+<tr><td>2</td><td>${day('04')}</td><td>Laura Demo Prueba</td><td></td><td></td><td></td><td></td><td></td><td></td><td>35,00</td><td></td><td><input type="hidden" name="id2" value=""><input type="hidden" name="pagobono2" value="0"><input type="hidden" name="cita2" value="5003"></td><td>35,00</td></tr>
+<tr><td>3</td><td>${day('05')}</td><td>Laura Demo Prueba</td><td>Bono 12</td><td></td><td></td><td></td><td></td><td>450,00</td><td></td><td></td><td><input type="hidden" name="id3" value=""><input type="hidden" name="pagobono3" value="700"><input type="hidden" name="cita3" value="0"></td><td></td></tr>
+</table>
+<input id="caja-6" type="text" value="40,00" readonly><input id="totalmeto-6[1]" type="text" value="0,00" readonly><input id="totalmeto-6[2]" type="text" value="450,00" readonly><input id="totalmeto-6[3]" type="text" value="35,00" readonly><input id="valortotal-6" type="text" value="75,00" readonly>
+${LT_BUTTONS}</form>`
+}
+
+describe('a cash page whose ◄ goes back a day', () => {
+  it('reads the value a click on each button sends from the page', () => {
+    expect(quirocitasCajaButton(LT_MONTH('2026-11'), 'previo')).toEqual(['previo', '<'])
+    expect(quirocitasCajaButton(CAJA, 'previo')).toEqual(['previo', '◄'])
+    // Among a row of "franja" buttons, the one asked for -- and a disabled
+    // one is not there to click.
+    expect(quirocitasCajaButton(LT_DAY(true, new Date('2026-11-24')), 'franja', /^mes entero$/i)).toEqual(['franja', 'Mes entero'])
+    expect(quirocitasCajaButton(LT_MONTH('2026-11'), 'franja', /^mes entero$/i)).toBeNull()
+    expect(quirocitasCajaButton(LT_MONTH('2026-11'), 'Facturas')).toBeNull()
+  })
+
+  it('tells a day view from a month view', () => {
+    expect(parseQuirocitasCajaMonth(LT_DAY(true, new Date('2026-11-23')))).toMatchObject({ month: null, day: '2026-11-23' })
+    expect(parseQuirocitasCajaMonth(LT_DAY(true, new Date('2026-10-01')))).toMatchObject({ month: null, day: '2026-10-01' })
+    expect(parseQuirocitasCajaMonth(LT_MONTH('2026-11'))).toMatchObject({ month: '2026-11', day: null })
+  })
+
+  it('reads a Bizum column, and its total from the footer slot after card', () => {
+    const m = parseQuirocitasCajaMonth(LT_MONTH('2026-11'))
+    expect(m.layout.columns).toMatchObject({ date: 1, usedBono: 6, cash: 7, card: 8, bizum: 9, debt: 10, value: 12 })
+    expect(m.layout.columns.transfer).toBeUndefined()
+    expect(m.totals).toEqual({ cash: 40, card: 450, transfer: null, bizum: 35, value: 75 })
+    expect(m.rows.map((r) => [r.citaId, r.bonoPaymentId, r.cash, r.card, r.bizum, r.value])).toEqual([
+      ['5001', null, 40, null, null, 40],
+      ['5003', null, null, null, 35, 35],
+      [null, '700', null, 450, null, null],
+    ])
+    // A page with no Bizum column keeps the totals it always had.
+    expect(parseQuirocitasCajaMonth(CAJA).totals).not.toHaveProperty('bizum')
+  })
+
+  it('counts Bizum when checking a month adds up', () => {
+    const m = parseQuirocitasCajaMonth(LT_MONTH('2026-11'))
+    const read = { month: '2026-11', rows: 3, printed: m.totals, summed: { cash: 40, card: 450, transfer: 0, bizum: m.rows.reduce((a, r) => a + (r.bizum ?? 0), 0) } }
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [read] })).toEqual([])
+    // Bizum the page printed but nobody read is money missing, not a month that adds up.
+    expect(quirocitasLedgerMismatches({ ledgerMonths: [{ ...read, summed: { ...read.summed, bizum: 0 } }] })).toHaveLength(1)
+  })
+
+  it('imports a Bizum payment as Bizum', () => {
+    const s: QuirocitasSnapshot = {
+      baseUrl: '', readAt: '', bonoTypes: parseQuirocitasBonoTypes(FICHA('101', 'x')),
+      patients: { 101: { list: { id: '101', name: 'Laura Demo Prueba', phones: [] }, ficha: parseQuirocitasFicha(FICHA('101', 'Laura Demo Prueba'))!, history: parseQuirocitasHistory(HISTORIAL), invoices: [], techniques: {} } },
+      failed: {},
+      ledger: parseQuirocitasCajaMonth(LT_MONTH('2026-11')).rows,
+      ledgerMonths: [],
+    }
+    const { payments } = quirocitasLedgerRows(s, quirocitasBonoRows(s, 'Europe/Madrid').bonoOfSale, 'Europe/Madrid')
+    expect(payments.filter((p) => p.method === 'bizum').map((p) => [p.ref, p.amountCents, p.chargeRef])).toEqual([['QC-pay-5003-bizum', 3500, 'QC-inv-5003']])
+  })
+
+  describe('walking the ledger', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    // A Quirocitas that keeps a day in the session. "Mes entero" shows that
+    // day's month; ◄ goes back a day and shows the day view -- or, with
+    // `monthly`, back a month in the month view, as the first clinics' did.
+    function fakeQuirocitas({ monthly = false } = {}) {
+      const posts: [string, string][][] = []
+      let day = new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`)
+      let view: 'day' | 'month' = 'day'
+      vi.stubGlobal('fetch', async (url: string, init: { method?: string; body?: URLSearchParams } = {}) => {
+        const path = new URL(url).pathname.split('/').pop()
+        const html = (s: string) => new Response(s, { status: 200, headers: { 'content-type': 'text/html' } })
+        if (path === 'login.php') {
+          if (init.method !== 'POST') return html('<form><input name="usuario"><input type="password" name="passwd"></form>')
+          day = new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`)
+          view = 'day'
+          return new Response(null, { status: 302, headers: { location: 'horario2.php', 'set-cookie': 'PHPSESSID=demo; path=/' } })
+        }
+        if (path !== 'diario.php') return html('')
+        if (init.method !== 'POST') return html(LT_DAY(false, day))
+        const body = [...init.body!.entries()]
+        posts.push(body)
+        const f = Object.fromEntries(body)
+        if (f.franja === 'Mes entero') view = 'month'
+        else if (f.previo !== undefined) {
+          if (monthly && view === 'month') day = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth() - 1, 15, 12))
+          else { day = new Date(day.getTime() - 86_400_000); view = 'day' }
+        }
+        return html(view === 'month' ? LT_MONTH(ym(day)) : LT_DAY(true, day))
+      })
+      return { posts }
+    }
+    const back = (n: number) => { const d = new Date(); return ym(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 15))) }
+    const client = () => new QuirocitasClient({ baseUrl: 'https://quirocitas-demo.test/chiro', username: 'demo', password: 'demo' })
+    const presses = (posts: [string, string][][]) => posts.map((b) => b.find(([k]) => k === 'previo' || k === 'franja')?.join('=') ?? 'quiro')
+
+    it('steps back a day at a time to the month before, then asks for the whole month', async () => {
+      const { posts } = fakeQuirocitas()
+      const c = client()
+      const first = await c.ledger(null, 3)
+      expect(first.months.map((m) => m.month)).toEqual([back(0), back(1), back(2)])
+      expect(first.months.every((m) => m.rows.length === 3)).toBe(true)
+      // Only ever the page's own buttons: the filter, "<", "Mes entero".
+      expect(new Set(presses(posts))).toEqual(new Set(['quiro', 'previo=<', 'franja=Mes entero']))
+      expect(presses(posts).filter((p) => p === 'franja=Mes entero')).toHaveLength(3)
+      // The next call goes on from the cursor, in the same session.
+      const next = await c.ledger(first.cursor, 2)
+      expect(next.months.map((m) => m.month)).toEqual([back(3), back(4)])
+    })
+
+    it('stops between two months when its time is up, and goes on from there', async () => {
+      fakeQuirocitas()
+      const c = client()
+      const first = await c.ledger(null, 1)
+      // Already past: one step, then back with where it stands.
+      const part = await c.ledger(first.cursor, 1, Date.now() - 1)
+      expect(part.months).toEqual([])
+      expect(part.cursor).toMatchObject({ month: back(0), day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })
+      const rest = await c.ledger(JSON.parse(JSON.stringify(part.cursor)), 1)
+      expect(rest.months.map((m) => m.month)).toEqual([back(1)])
+    })
+
+    it('still walks a page whose ◄ shows the month before', async () => {
+      const { posts } = fakeQuirocitas({ monthly: true })
+      const read = await client().ledger(null, 3)
+      expect(read.months.map((m) => m.month)).toEqual([back(0), back(1), back(2)])
+      expect(presses(posts)).toEqual(['quiro', 'franja=Mes entero', 'previo=<', 'previo=<'])
+    })
+
+    it('resumes a cursor saved by the release before, as the bare form', async () => {
+      const { posts } = fakeQuirocitas({ monthly: true })
+      const c = client()
+      await c.ledger(null, 1)
+      const read = await c.ledger(quirocitasCajaFormBody(LT_MONTH(back(0))), 1)
+      expect(posts.at(-1)).toContainEqual(['previo', '◄'])
+      expect(read.months.map((m) => m.month)).toEqual([back(1)])
+    })
+
+    it('says where the month was lost when a page shows neither a month nor a day', async () => {
+      fakeQuirocitas()
+      vi.stubGlobal('fetch', async (url: string, init: { method?: string } = {}) => new URL(url).pathname.endsWith('login.php') && init.method === 'POST'
+        ? new Response(null, { status: 302, headers: { location: 'horario2.php', 'set-cookie': 'PHPSESSID=demo' } })
+        : new Response('<form action="diario.php"><input type="submit" name="franja" value="Mes entero"></form>', { status: 200 }))
+      await expect(client().ledger(null, 1)).rejects.toThrow(QuirocitasLedgerError)
+      await expect(client().ledger(null, 1)).rejects.toThrow('on opening it, after "Mes entero"')
+    })
   })
 })

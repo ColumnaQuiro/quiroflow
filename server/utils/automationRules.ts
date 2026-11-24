@@ -6,7 +6,7 @@ import { templateMediaFiles } from '~/server/utils/whatsappTemplateMedia'
 import { allTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { EXIT_EVENTS, isLeadTrigger, triggerDef } from '~/utils/automationCatalog'
-import { asAudienceRef, asAudienceRefs, type AudienceRef } from '~/utils/automationAudience'
+import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from '~/utils/automationAudience'
 import { audienceExists } from '~/server/utils/audienceMembers'
 import {
   chainOf,
@@ -87,6 +87,8 @@ export function sanitizeRule(body: any): DraftRule {
       // A saved list or segment in place of filters (server/utils/audienceMembers.ts).
       audience: asAudienceRef(raw.audience),
       exclude: asAudienceRefs(raw.exclude),
+      // Patients chosen one by one (a one-off send from a selection).
+      patient_ids: asPatientIds(raw.patient_ids),
       schedule: {
         kind: ['once', 'daily', 'weekly'].includes(schedule.kind) ? schedule.kind : 'weekly',
         ...(Number.isInteger(schedule.weekday) ? { weekday: schedule.weekday } : {}),
@@ -163,7 +165,7 @@ export async function ruleProblems(supabase: any, accountId: string, rule: Draft
   // A list or segment deleted since it was chosen: say so, rather than run
   // an audience of nobody. Read with the caller's client, so it is the
   // caller's own list too.
-  const named = [asAudienceRef(rule.segment?.audience), asAudienceRef(rule.filters?.trigger_audience), ...asAudienceRefs(rule.segment?.exclude)].filter((x): x is AudienceRef => !!x)
+  const named = [asAudienceRef(rule.segment?.audience), asAudienceRef(rule.filters?.trigger_audience), ...asAudienceRefs(rule.segment?.exclude), ...asAudienceRefs(rule.filters?.in_audiences), ...asAudienceRefs(rule.filters?.not_in_audiences)].filter((x): x is AudienceRef => !!x)
   for (const ref of named) {
     if (!(await audienceExists(supabase, ref))) {
       problems.unshift({ stepId: null, message: ['A list or segment this automation names no longer exists. Choose another.', 'Una lista o un segmento que usa esta automatización ya no existe. Elige otro.'] })

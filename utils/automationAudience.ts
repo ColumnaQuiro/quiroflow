@@ -139,3 +139,56 @@ export function asAudienceRef(v: unknown): AudienceRef | null {
 export function asAudienceRefs(v: unknown): AudienceRef[] {
   return Array.isArray(v) ? v.map(asAudienceRef).filter((x): x is AudienceRef => !!x).slice(0, 10) : []
 }
+
+/**
+ * The most patients a send can name one by one. Past this, the people are
+ * a group with a rule to them, and a saved segment (or a list) says so and
+ * keeps the rule's jsonb small enough to load with the automation.
+ */
+export const MAX_PICKED_PATIENTS = 2000
+
+/**
+ * A stored list of hand-picked patients (segment.patient_ids): the ids that
+ * read as ids, each once, in the order chosen, capped. Who they are is
+ * decided when they are picked, not when the send goes out -- unlike a list
+ * or segment -- but the send's gates (consent, archived, minors) are still
+ * asked when it goes.
+ */
+export function asPatientIds(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of v) {
+    if (typeof id !== 'string' || !UUID.test(id)) continue
+    const key = id.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(key)
+    if (out.length >= MAX_PICKED_PATIENTS) break
+  }
+  return out
+}
+
+/**
+ * Whether a patient passes the "is / is not in a list or segment" trigger
+ * filter, given the audiences they are in now (`memberOf`, as "kind:id").
+ * `in_audiences` is any-of: being in one of them is enough. `not_in_audiences`
+ * is none-of. An empty or missing list asks nothing, so a row just added
+ * (still empty) does not stop the rule.
+ */
+export function audienceFilterMatches(
+  f: { in_audiences?: unknown; not_in_audiences?: unknown } | null | undefined,
+  memberOf: Set<string>,
+): boolean {
+  if (!f) return true
+  const inside = asAudienceRefs(f.in_audiences)
+  if (inside.length && !inside.some((a) => memberOf.has(`${a.kind}:${a.id}`))) return false
+  const outside = asAudienceRefs(f.not_in_audiences)
+  if (outside.some((a) => memberOf.has(`${a.kind}:${a.id}`))) return false
+  return true
+}
+
+/** Whether a filters object asks about lists or segments at all. */
+export function needsAudienceMembership(f: { in_audiences?: unknown; not_in_audiences?: unknown } | null | undefined): boolean {
+  return !!f && (asAudienceRefs(f.in_audiences).length > 0 || asAudienceRefs(f.not_in_audiences).length > 0)
+}

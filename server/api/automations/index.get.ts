@@ -5,7 +5,7 @@ import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
 import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
 import { isValidQuietHours } from '~/utils/automationTiming'
-import { findProblems, type DraftRule, type DraftStep } from '~/utils/automationTree'
+import { findProblems, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
 import { STEP_COLUMNS } from '~/server/utils/automationRules'
 
 // The Automations list: every rule on the account, what its steps are, and
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   // refuse on the switch itself (enabled.post.ts). Only the paused ones,
   // and their full steps read only for them: an email step carries its HTML.
   const pausedIds = (rules ?? []).filter((r) => !r.enabled).map((r) => r.id)
-  const blockers = new Map<string, [string, string][]>()
+  const blockers = new Map<string, Problem['message'][]>()
   if (pausedIds.length) {
     const { data: full } = await supabase.from('automation_actions').select(STEP_COLUMNS).eq('account_id', accountId).in('rule_id', pausedIds)
     const fullByRule = new Map<string, DraftStep[]>()

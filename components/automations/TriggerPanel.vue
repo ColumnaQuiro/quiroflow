@@ -3,10 +3,7 @@ import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, say, weekdayName } f
 import { TRIGGER_SUBJECTS, defaultAtom, momentDef, momentsOf, type TimingUnit, type TriggerAtom, type TriggerSubject, type TriggerTiming } from '~/utils/automationTrigger'
 import { timingText } from '~/utils/automationTriggerText'
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
-import { scheduledSendLabel } from '~/utils/automationDescribe'
-import { clinicTimeLabel } from '~/utils/bookingSlots'
 import type { AudienceRef } from '~/utils/automationAudience'
-import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, wallClockToUtc } from '~/utils/clinicClock'
 
 // The trigger: what starts the automation -- a subject, a moment of it and,
 // where it makes sense, a timing (utils/automationTrigger.ts) -- the "only if"
@@ -127,25 +124,8 @@ function setExclude(i: number, ref: AudienceRef | null) {
   setSegment({ exclude: next.filter(Boolean) })
 }
 
-// A one-off group send goes at the next check after it is switched on, or at
-// a date and time chosen here: schedule.starts_at, which the engine already
-// waits for (lastScheduledOccurrence). Taken in on the clinic's clock, so a
-// "10:00" means 10:00 in Madrid whoever's laptop sets it -- the zone the
-// engine reads the schedule in for these clinics.
-const tz = computed(() => DEFAULT_CLINIC_TIMEZONE)
-const scheduledAt = computed(() => (segment.value.schedule?.kind === 'once' ? segment.value.schedule?.starts_at ?? null : null))
-const scheduledDate = computed(() => (scheduledAt.value ? clinicDateOf(new Date(scheduledAt.value), tz.value) : ''))
-const scheduledTime = computed(() => (scheduledAt.value ? clinicTimeLabel(new Date(scheduledAt.value), tz.value) : '10:00'))
-const scheduledPast = computed(() => !!scheduledAt.value && new Date(scheduledAt.value).getTime() <= Date.now())
-function setOnceAt(date: string, time: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return
-  setSchedule({ kind: 'once', starts_at: new Date(wallClockToUtc(date, time, tz.value)).toISOString() })
-}
-function scheduleOnce() {
-  // Tomorrow at 10:00 to start from; the desk changes it.
-  const tomorrow = clinicDateOf(new Date(Date.now() + 86_400_000), tz.value)
-  setOnceAt(tomorrow, '10:00')
-}
+// A one-off group send: when it goes is AutomationsOnceSchedule, shared with
+// the send's checklist.
 const TIMES = Array.from({ length: 28 }, (_, i) => `${String(7 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
 
 // "Only those who have not been through here yet" is once_ever; "may come
@@ -368,25 +348,7 @@ watch(
           </select>
         </label>
       </div>
-      <template v-else>
-        <div :class="SEGMENT_WRAP" role="group" :aria-label="t('When', 'Cuándo')">
-          <button type="button" :class="segmentBtn(!scheduledAt)" :aria-pressed="!scheduledAt" data-test="segment-once-now" @click="setSchedule({ kind: 'once', starts_at: undefined })">{{ t('When switched on', 'Al activarla') }}</button>
-          <button type="button" :class="segmentBtn(!!scheduledAt)" :aria-pressed="!!scheduledAt" data-test="segment-once-scheduled" @click="scheduledAt || scheduleOnce()">{{ t('On a date', 'En una fecha') }}</button>
-        </div>
-        <div v-if="scheduledAt" class="grid grid-cols-2 gap-2.5">
-          <label :class="LABEL">
-            {{ t('Day', 'Día') }}
-            <input type="date" :class="FIELD" :value="scheduledDate" data-test="segment-once-date" @change="setOnceAt(($event.target as HTMLInputElement).value, scheduledTime)" />
-          </label>
-          <label :class="LABEL">
-            {{ t('At', 'A las') }}
-            <input type="time" step="300" :class="FIELD" :value="scheduledTime" data-test="segment-once-time" @change="setOnceAt(scheduledDate, ($event.target as HTMLInputElement).value)" />
-          </label>
-        </div>
-        <p v-if="scheduledAt && scheduledPast" :class="HINT" class="!text-warning-text" data-test="segment-once-past">{{ t('That time has passed: they would enter at the next check after it is switched on.', 'Esa hora ya ha pasado: entrarían en la siguiente revisión tras activarla.') }}</p>
-        <p v-else-if="scheduledAt" :class="HINT">{{ t(`Everyone who matches then enters once, on ${scheduledSendLabel(scheduledAt, t, tz)} (within 15 minutes). Switch it on beforehand: until then nothing is sent.`, `Todos los que coincidan entonces entran una vez, el ${scheduledSendLabel(scheduledAt, t, tz)} (antes de 15 minutos). Actívala antes: hasta entonces no se envía nada.`) }}</p>
-        <p v-else :class="HINT">{{ t('Everyone who matches enters once, at the next check after it is switched on (within 15 minutes).', 'Todos los que coinciden entran una vez, en la siguiente revisión tras activarla (antes de 15 minutos).') }}</p>
-      </template>
+      <AutomationsOnceSchedule v-else />
       <label :class="LABEL">
         {{ t('At most, per day', 'Como mucho, al día') }}
         <input

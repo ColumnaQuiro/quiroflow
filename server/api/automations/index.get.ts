@@ -4,8 +4,9 @@ import { hasGrowth } from '~/server/utils/requireGrowth'
 import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
 import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
-import { isValidQuietHours } from '~/utils/automationTiming'
+import { isValidQuietHours, segmentDailyLimit } from '~/utils/automationTiming'
 import { findProblems, withAtom, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { isGroupAtom, ruleAtom } from '~/utils/automationTrigger'
 import { STEP_COLUMNS } from '~/server/utils/automationRules'
 
 // The Automations list: every rule on the account, what its steps are, and
@@ -24,7 +25,7 @@ export default defineEventHandler(async (event) => {
     canReadWhatsApp(supabase, teamMember),
     supabase
       .from('automation_rules')
-      .select('id, name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, segment, entry_mode, exit_on, quiet_hours, created_at')
+      .select('id, name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, segment, segment_last_run_at, entry_mode, exit_on, quiet_hours, created_at')
       .eq('account_id', accountId)
       .order('created_at', { ascending: false }),
     supabase.from('automation_actions').select('rule_id, action_type, parent_id').eq('account_id', accountId),
@@ -41,6 +42,29 @@ export default defineEventHandler(async (event) => {
     else byRule.set(s.rule_id, [s])
   }
   const createdAt = new Map((rules ?? []).map((r) => [r.id, r.created_at]))
+
+  // One-off sends say where they stand (utils/oneOffSendStatus.ts), from
+  // segment_last_run_at and the runs still inside. A capped one has a third
+  // input: whether its last day filled the cap, so it carries on tomorrow --
+  // the engine's own test (enrolDueSegments): runs started since its last
+  // claim, with a minute of slack for the two clocks. Only those few rules
+  // are counted.
+  const isOneOff = (r: { trigger: unknown; trigger_event: string; segment: unknown }) =>
+    isGroupAtom(ruleAtom(r)) && (r.segment as { schedule?: { kind?: string } } | null)?.schedule?.kind === 'once'
+  const carryingOver = new Set<string>()
+  await Promise.all(
+    (rules ?? [])
+      .filter((r) => isOneOff(r) && r.segment_last_run_at && segmentDailyLimit(r.segment as { daily_limit?: unknown } | null))
+      .map(async (r) => {
+        const cap = segmentDailyLimit(r.segment as { daily_limit?: unknown })!
+        const { count } = await service
+          .from('automation_sequence_runs')
+          .select('id', { count: 'exact', head: true })
+          .eq('rule_id', r.id)
+          .gte('started_at', new Date(new Date(r.segment_last_run_at!).getTime() - 60_000).toISOString())
+        if ((count ?? 0) >= cap) carryingOver.add(r.id)
+      }),
+  )
 
   // Why a paused automation cannot be switched on, so its switch says so
   // rather than refusing after the click: the same checks saving runs
@@ -84,6 +108,8 @@ export default defineEventHandler(async (event) => {
           (entry_mode ?? 'every_time') !== 'every_time' ||
           ((exit_on as string[] | null) ?? []).length > 0 ||
           isValidQuietHours(quiet_hours),
+        // A capped one-off send with people left for tomorrow (oneOffSendStatus).
+        carryingOver: carryingOver.has(r.id),
       }
     }),
     stats,

@@ -64,8 +64,9 @@ describe('Automation triggers as atoms', () => {
     cy.get('[data-test="trigger-filter-appointment_status"]').should('be.visible')
     cy.get('[data-test="trigger-timing-text"]').should('contain', '24 h')
 
+    // A wait: a step that opens no editor over the save bar.
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
-    cy.get('[data-test="add-step-email"]').click()
+    cy.get('[data-test="add-step-delay"]').click()
     cy.get('[data-test="save"]').click()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get('[data-test="save-bar"]').should('not.exist')
@@ -132,7 +133,8 @@ describe('Automation triggers as atoms', () => {
     rule({ subject: 'appointment', moment: 'start', timing: { amount: 30, unit: 'minutes', direction: 'after' } }, { appointment_statuses: ['booked', 'completed'] }, 'Durante la cita')
     patient().then((p) => {
       patient().then((other) => {
-        const startedAgo = new Date(Date.now() - 35 * 60 * 1000).toISOString()
+        // Due when start + 30 min falls in [now, now + 20 min): started 25 minutes ago.
+        const startedAgo = new Date(Date.now() - 25 * 60 * 1000).toISOString()
         cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt: startedAgo })
         cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: other.id, startsAt: startedAgo }).then((appt) => {
           cy.task('db:updateRows', { table: 'appointments', match: { id: appt.id }, values: { status: 'no_show' } })

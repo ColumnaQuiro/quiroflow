@@ -149,7 +149,12 @@ export async function loadQuirocitasSnapshot(admin: Admin, accountId: string): P
   // Pages of a few hundred: one patient's record with years of history is
   // tens of kilobytes, and PostgREST holds a whole page in memory.
   const PAGE = 250
-  for (let from = 0; ; from += PAGE) {
+  // Several pages at a time. Every import slice loads the whole copy before
+  // it can write anything, and one page after another was 49 round trips for
+  // a clinic of 12,000 patients (11 s from a laptop, against 4 s six at a
+  // time) -- all of it slice time spent before the first row is written.
+  const AT_ONCE = 6
+  const page = async (from: number) => {
     const { data, error } = await admin
       .from('import_snapshots')
       .select('key, data')
@@ -160,7 +165,11 @@ export async function loadQuirocitasSnapshot(admin: Admin, accountId: string): P
       .range(from, from + PAGE - 1)
     if (error) throw new Error(`import_snapshots: ${error.message}`)
     for (const r of data ?? []) patients[r.key.slice(PATIENT.length)] = r.data as unknown as QuirocitasRecord
-    if (!data || data.length < PAGE) break
+    return data?.length ?? 0
+  }
+  for (let from = 0; ; from += PAGE * AT_ONCE) {
+    const counts = await Promise.all(Array.from({ length: AT_ONCE }, (_, i) => page(from + i * PAGE)))
+    if (counts.some((n) => n < PAGE)) break
   }
   const snapshot: QuirocitasSnapshot = { ...meta, patients }
   cached = { accountId, version, snapshot }

@@ -266,7 +266,10 @@ export function quirohiroImporter(ctx: QuirohiroImportContext) {
 
     const upcoming = inserts.filter((a) => a.status === 'booked' && a.startsAt > now).length
     const unmarked = inserts.filter((a) => a.unmarked).length
-    const when = (at: string) => new Date(at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'short' })
+    // One formatter, reused: `toLocaleString` with options builds a new one
+    // per call, which is most of a large clinic's plan (see quirocitasImport's eur).
+    const whenFormat = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'short' })
+    const when = (at: string) => whenFormat.format(new Date(at))
     const noClinic = !clinicId
 
     return {

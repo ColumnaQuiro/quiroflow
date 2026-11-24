@@ -119,6 +119,17 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
   let error: string | null = null
   let threw = false
 
+  // A slice the platform cuts off -- out of time or out of memory -- never
+  // reaches its save below and throws nothing the catch could count, so a
+  // step that always dies that way used to be retried by the cron every two
+  // minutes for ever: the job stayed "running", and while it did no other
+  // import could start ("An import is already running"). A clinic with
+  // 85,000 appointments sat like that for hours. So each slice marks itself
+  // before working, the save clears the mark, and enough marks in a row --
+  // slices that started and never finished -- end the job as failed.
+  const unfinished = (progress.unfinished ?? 0) + 1
+  const diedEveryTime = unfinished > MAX_FAILURES
+
   // Live progress while the slice works, a few seconds apart, so the screen
   // moves between slices too. The lock is not touched here.
   // Chained, and waited for before the slice saves: a beat landing after
@@ -128,14 +139,23 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
   const beat = (live: ImportJobProgress) => {
     if (Date.now() - lastBeat < 4000) return
     lastBeat = Date.now()
-    const snapshot = { ...live }
+    const snapshot = { ...live, unfinished }
     beats = beats.then(() => admin.from('import_jobs').update({ progress: snapshot as unknown as Json }).eq('id', job.id).then(() => {}, () => {}))
   }
 
   try {
     if (job.cancel_requested) {
       status = 'cancelled'
+    } else if (diedEveryTime) {
+      status = 'failed'
+      error = t(
+        `Stopped: the last ${MAX_FAILURES} attempts at this step were cut off before they finished, with no error to show. Nothing more was written. Try it again; if it stops the same way, contact QuiroFlow.`,
+        `Parado: los últimos ${MAX_FAILURES} intentos de este paso se cortaron antes de terminar, sin un error que mostrar. No se escribió nada más. Vuelve a intentarlo; si se para igual, contacta con QuiroFlow.`,
+      )
+      console.error(`[import-jobs] ${job.id} step ${job.steps[stepIndex]} was cut off ${MAX_FAILURES} times in a row; failing it`)
     } else {
+      const { error: markError } = await admin.from('import_jobs').update({ progress: { ...progress, unfinished } as unknown as Json }).eq('id', job.id)
+      if (markError) throw new Error(`import_jobs: ${markError.message}`)
       const step = job.steps[stepIndex]!
       let outcome: Outcome
       if (job.source === 'practicehub') {
@@ -184,12 +204,14 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
 
   await beats
   const finished = status !== 'running'
+  // Reaching this save is what clears the mark: this slice finished.
+  const { unfinished: _cleared, ...saved } = progress
   const { error: saveError } = await admin
     .from('import_jobs')
     .update({
       status,
       step_index: stepIndex,
-      progress: progress as unknown as Json,
+      progress: saved as unknown as Json,
       results: results as unknown as Json,
       error,
       locked_until: null,

@@ -24,6 +24,12 @@ export interface ImportJobProgress {
   stalls?: number
   failures?: number
   lastError?: string
+  /**
+   * Slices in a row that claimed the job and never saved it: cut off by the
+   * platform (out of time or memory) before reaching their save, so no catch
+   * ever counted them. Set when a slice starts, cleared when one saves.
+   */
+  unfinished?: number
   // --- reading PracticeHub, page by page (server/utils/practicehubImportJob.ts)
   /** The read's own id: its pages only become the copy once it finishes. */
   pass?: string

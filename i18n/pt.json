@@ -1579,7 +1579,8 @@
   "{0} before their birthday": "{0} antes do aniversário",
   "{0} before, at {1}": "{0} antes, às {1}",
   "{0} h": "{0} h",
-  "{0} later": "{0} depois"
+  "{0} later": "{0} depois",
+  "This file is {0} MB and WhatsApp takes at most {1} MB. Compress it (a shorter or lower-quality export) and try again.": "Este ficheiro tem {0} MB e o WhatsApp aceita no máximo {1} MB. Comprime-o (mais curto ou com menos qualidade) e tenta de novo."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10770,6 +10771,9 @@
   "days, by any automation": "dias, por nenhuma automatização",
   "not asked \"how did we do?\" in the last": "sem lhe perguntar «como correu?» nos últimos",
   "visits (0 = never), this one included": "consultas (0 = nunca), contando esta",
-  "years. Patients with no date of birth do not match.": "anos. Quem não tem data de nascimento não coincide."
+  "years. Patients with no date of birth do not match.": "anos. Quem não tem data de nascimento não coincide.",
+  "WhatsApp only takes MP4 videos. A .mov from an iPhone has to be exported as MP4 first.": "O WhatsApp só aceita vídeos MP4. Um .mov do iPhone tem de ser exportado primeiro para MP4.",
+  "WhatsApp only takes JPEG or PNG images.": "O WhatsApp só aceita imagens JPEG ou PNG.",
+  "WhatsApp only takes PDF documents here.": "Aqui o WhatsApp só aceita documentos PDF."
  }
 }

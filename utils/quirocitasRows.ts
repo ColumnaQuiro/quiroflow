@@ -470,6 +470,19 @@ const ledgerAmount = (r: QuirocitasLedgerRow) => (r.cash ?? 0) + (r.card ?? 0) +
  * payer's name in the cash ledger -- so the owner is whoever the ledger says
  * paid for it, and everyone else who holds it shares it.
  */
+/**
+ * The number of sessions a bono's name gives, or 0. Used only when its type
+ * is gone or says none: a clinic that retired its "26 Aj Total" type still has
+ * hundreds of bonos sold under it. Leading first ("26 Aj Total",
+ * "5 Medio Cuerpo 45" -- the 45 is minutes), then "<n> Aj" ("Mant. 12 Aj
+ * Plazos"), then trailing ("Bono 12"). "Ajuste + M 30m" and "Masaje 1h" carry
+ * a duration, not a count, and give none.
+ */
+function bonoNameSessions(name: string): number {
+  const n = name.match(/^\s*(\d+)\s/)?.[1] ?? name.match(/(\d+)\s*aj\b/i)?.[1] ?? name.match(/(\d+)\s*$/)?.[1]
+  return Number(n) || 0
+}
+
 export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, today = new Date().toISOString().slice(0, 10)) {
   const owners = quirocitasOwners(s)
   const byId = s.patients
@@ -517,15 +530,15 @@ export function quirocitasBonoRows(s: QuirocitasSnapshot, timeZone: string, toda
   for (const [bonoId, { bono, ids }] of [...holders].sort((a, b) => Number(a[0]) - Number(b[0]))) {
     const type = types.get(bono.name.toLowerCase())
     if (type?.kind === 'debt') { skippedDebt.push(bonoId); continue }
-    // How many sessions it held: its type's, else the number its name ends in.
-    // A type set up with no count ("Genérico", a gift bono) and a name with no
+    // How many sessions it held: its type's, else the number in its name
+    // (bonoNameSessions). A type set up with no count ("Genérico", a gift bono) and a name with no
     // number leave only what is left, which is 0 once it is used up -- and a
     // bono of 0 sessions breaks package_purchases' check (sessions_total > 0),
     // failing the whole batch it is written in. One clinic's 620 such bonos
     // took its other 1,750 down with them. The visit list says a visit was
     // paid with "a bono", not which one, so the real count cannot be worked
     // out: such a bono comes in with at least 1, and the step says so.
-    const known = type?.sessions || Number(bono.name.match(/(\d+)\s*$/)?.[1]) || 0
+    const known = type?.sessions || bonoNameSessions(bono.name)
     const total = Math.max(known, bono.remaining, 1)
     const expires = quirocitasDate(bono.expires)
     const amount = cents(bono.paid + bono.owed)

@@ -59,10 +59,22 @@ function setDateSource(source: string) {
 }
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-// A group aimed at a saved list or segment, with others left out; the
-// picker shows the choice before a list is chosen, so it has its own flag.
-const savedAudienceMode = ref(false)
-watch(() => rule.value.trigger_event, () => (savedAudienceMode.value = false))
+// Who a group goes to: patients matching filters, a saved list or segment
+// (with others left out), or patients chosen one by one. The mode is shown
+// before anything is chosen in it, so it is held here and read back from the
+// segment when it has something in it.
+type WhoMode = 'filters' | 'saved' | 'patients'
+const whoChoice = ref<WhoMode | null>(null)
+watch(() => rule.value.trigger_event, () => (whoChoice.value = null))
+const who = computed<WhoMode>(() => (segment.value.audience ? 'saved' : segment.value.patient_ids?.length ? 'patients' : (whoChoice.value ?? 'filters')))
+const savedAudienceMode = computed(() => who.value === 'saved')
+function setWho(mode: WhoMode) {
+  whoChoice.value = mode
+  // Each mode clears the others, so what the send names is exactly what is on screen.
+  if (mode === 'filters') setSegment({ audience: null, exclude: [], patient_ids: [] })
+  if (mode === 'saved') setSegment({ patient_ids: [] })
+  if (mode === 'patients') setSegment({ audience: null, filters: {} })
+}
 function setExclude(i: number, ref: AudienceRef | null) {
   const next = [...(segment.value.exclude ?? [])]
   if (ref) next[i] = ref
@@ -104,17 +116,22 @@ function setReentry(kind: 'once' | 'after') {
   }
 }
 
-const preview = ref<{ count: number; alreadyIn: number; whatsapp: number; email: number; sample: { id: string; name: string }[] } | null>(null)
+const preview = ref<{ count: number; chosen?: number | null; alreadyIn: number; whatsapp: number; email: number; sample: { id: string; name: string }[] } | null>(null)
 const previewing = ref(false)
 const showSample = ref(false)
 let previewTimer: ReturnType<typeof setTimeout> | undefined
 async function refreshPreview() {
   if (!isSegment.value) return
+  // Nobody chosen yet is nobody, not "no filters" (everyone).
+  if (who.value === 'patients' && !segment.value.patient_ids?.length) {
+    preview.value = { count: 0, chosen: null, alreadyIn: 0, whatsapp: 0, email: 0, sample: [] }
+    return
+  }
   previewing.value = true
   try {
     preview.value = await useStaffFetch('/api/automations/segment-preview', {
       method: 'POST',
-      body: { filters: segment.value.filters ?? {}, audience: segment.value.audience ?? null, exclude: segment.value.exclude ?? [], isMarketing: rule.value.is_marketing, ruleId: b.ruleId.value, entryMode: rule.value.entry_mode },
+      body: { filters: segment.value.filters ?? {}, audience: segment.value.audience ?? null, exclude: segment.value.exclude ?? [], patientIds: segment.value.patient_ids ?? [], isMarketing: rule.value.is_marketing, ruleId: b.ruleId.value, entryMode: rule.value.entry_mode },
     })
   } catch {
     preview.value = null
@@ -123,7 +140,7 @@ async function refreshPreview() {
   }
 }
 watch(
-  () => [isSegment.value, JSON.stringify(segment.value.filters), JSON.stringify(segment.value.audience ?? null), JSON.stringify(segment.value.exclude ?? []), rule.value.is_marketing],
+  () => [isSegment.value, JSON.stringify(segment.value.filters), JSON.stringify(segment.value.audience ?? null), JSON.stringify(segment.value.exclude ?? []), JSON.stringify(segment.value.patient_ids ?? []), rule.value.is_marketing, who.value],
   () => {
     clearTimeout(previewTimer)
     previewTimer = setTimeout(refreshPreview, 400)
@@ -371,11 +388,13 @@ watch(
       <div class="flex flex-col gap-2" data-test="segment-who">
         <span :class="SECTION">{{ t('Who', 'Quiénes') }}</span>
         <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Who', 'Quiénes')">
-          <button type="button" :class="segmentBtn(!segment.audience)" :aria-pressed="!segment.audience" data-test="segment-who-filters" @click="setSegment({ audience: null, exclude: [] })">{{ t('Patients who…', 'Pacientes que…') }}</button>
-          <button type="button" :class="segmentBtn(!!segment.audience)" :aria-pressed="!!segment.audience" data-test="segment-who-saved" @click="savedAudienceMode = true">{{ t('A list or segment', 'Una lista o un segmento') }}</button>
+          <button type="button" :class="segmentBtn(who === 'filters')" :aria-pressed="who === 'filters'" data-test="segment-who-filters" @click="setWho('filters')">{{ t('Patients who…', 'Pacientes que…') }}</button>
+          <button type="button" :class="segmentBtn(who === 'saved')" :aria-pressed="who === 'saved'" data-test="segment-who-saved" @click="setWho('saved')">{{ t('A list or segment', 'Una lista o un segmento') }}</button>
+          <button type="button" :class="segmentBtn(who === 'patients')" :aria-pressed="who === 'patients'" data-test="segment-who-patients" @click="setWho('patients')">{{ t('Specific patients', 'Pacientes concretos') }}</button>
         </span>
       </div>
-      <div v-if="segment.audience || savedAudienceMode" class="flex flex-col gap-2.5">
+      <AutomationsPatientPicker v-if="who === 'patients'" :model-value="segment.patient_ids ?? []" @update:model-value="setSegment({ patient_ids: $event })" />
+      <div v-if="savedAudienceMode" class="flex flex-col gap-2.5">
         <AutomationsAudiencePicker :model-value="segment.audience ?? null" test-id="segment-audience" @update:model-value="setSegment({ audience: $event })" />
         <div :class="LABEL">
           {{ t('Leave out whoever is in', 'Excepto quienes estén en') }}
@@ -390,7 +409,7 @@ watch(
         </div>
         <span :class="HINT">{{ t("Whoever is in it when the send goes out: the list, or the segment's own filters, decide who that is.", 'Quienes estén en ella cuando salga el envío: lo deciden la lista, o los filtros del propio segmento.') }}</span>
       </div>
-      <div v-if="!segment.audience && !savedAudienceMode" class="flex flex-col gap-2">
+      <div v-if="who === 'filters'" class="flex flex-col gap-2">
         <AutomationsFilterEditor
           :model-value="segment.filters ?? {}"
           mode="segment"
@@ -408,6 +427,9 @@ watch(
             <button v-if="preview?.count" type="button" class="font-semibold text-brand-text underline" @click="showSample = !showSample">{{ showSample ? t('Hide the list', 'Ocultar la lista') : t('See the list', 'Ver la lista') }}</button>
           </span>
         </div>
+        <p v-if="preview?.chosen && preview.chosen > preview.count" :class="HINT" data-test="segment-count-left-out">
+          {{ t(`${preview.chosen - preview.count} of the ${preview.chosen} chosen cannot receive it: no consent for this kind of message, archived, a minor or not to be contacted.`, `${preview.chosen - preview.count} de los ${preview.chosen} elegidos no pueden recibirlo: sin consentimiento para este tipo de mensaje, archivados, menores o «no contactar».`) }}
+        </p>
         <p v-if="preview && preview.alreadyIn > 0" :class="HINT">{{ t(`${preview.alreadyIn} of them have already been through, so they will not enter again.`, `${preview.alreadyIn} ya han pasado por aquí, así que no volverán a entrar.`) }}</p>
         <ul v-if="showSample && preview" class="mt-1 max-h-40 overflow-y-auto text-[12.5px] text-ink-700">
           <li v-for="p in preview.sample" :key="p.id"><NuxtLink :to="`/patients/${p.id}`" class="hover:underline">{{ p.name }}</NuxtLink></li>

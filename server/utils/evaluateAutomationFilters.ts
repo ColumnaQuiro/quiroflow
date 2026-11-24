@@ -1,5 +1,5 @@
 import { carePlanOverdueDays } from '~/utils/carePlanOverdue'
-import { needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
+import { asAudienceRefs, audienceFilterMatches, needsAudienceMembership, needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
 // automation_rules.filters narrows a trigger down to a specific audience --
 // e.g. "only when the appointment type is Primera visita, and only the
 // first time it's ever completed for this patient" -- mirroring the
@@ -77,6 +77,13 @@ export interface AutomationFilters {
   care_plan_overdue_days?: number
   // The patient's own location (patients.clinic_id), any of these.
   clinic_ids?: string[]
+  // In one of these lists or segments (any of), and in none of the others,
+  // when the trigger fires: "after a first visit, only for the Corporate
+  // list". AudienceRefs ({ kind, id }), read by utils/automationAudience.ts.
+  // A segment is its snapshot (refreshed every 15 minutes and on save), the
+  // same membership a group send and "enters a list or segment" read.
+  in_audiences?: { kind: 'list' | 'segment'; id: string }[]
+  not_in_audiences?: { kind: 'list' | 'segment'; id: string }[]
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
@@ -188,6 +195,30 @@ export async function ruleFiltersMatch(
   if (filters.clinic_ids?.length) {
     const { data: row } = await supabase.from('patients').select('clinic_id').eq('id', patientId).maybeSingle()
     if (!row?.clinic_id || !filters.clinic_ids.includes(row.clinic_id)) return false
+  }
+
+  if (needsAudienceMembership(filters)) {
+    const refs = [...asAudienceRefs(filters.in_audiences), ...asAudienceRefs(filters.not_in_audiences)]
+    const listIds = refs.filter((r) => r.kind === 'list').map((r) => r.id)
+    const segmentIds = refs.filter((r) => r.kind === 'segment').map((r) => r.id)
+    // A failed read is not "in none of them": the rule does not fire for
+    // this patient, rather than sending to someone it was meant to leave out
+    // (and not thrown, which would take the other rules on this event with it).
+    const [lists, segments] = await Promise.all([
+      listIds.length ? supabase.from('patient_list_members').select('list_id').eq('patient_id', patientId).in('list_id', listIds) : { data: [], error: null },
+      segmentIds.length
+        ? supabase.from('patient_segment_members').select('segment_id').eq('patient_id', patientId).in('segment_id', segmentIds).is('left_at', null)
+        : { data: [], error: null },
+    ])
+    if (lists.error || segments.error) {
+      console.error('[automations] audience filter could not be read:', (lists.error ?? segments.error)?.message)
+      return false
+    }
+    const memberOf = new Set<string>([
+      ...((lists.data ?? []) as { list_id: string }[]).map((r) => `list:${r.list_id}`),
+      ...((segments.data ?? []) as { segment_id: string }[]).map((r) => `segment:${r.segment_id}`),
+    ])
+    if (!audienceFilterMatches(filters, memberOf)) return false
   }
 
   if (filters.membership_active || filters.membership_ids?.length) {

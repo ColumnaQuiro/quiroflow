@@ -8,6 +8,8 @@ import { scheduledSendLabel } from '~/utils/automationDescribe'
 
 const props = defineProps<{
   filters: Record<string, any>
+  /** Who the group names instead of filters, when it does: a list or segment (less excluded ones), or patients chosen one by one. */
+  named?: { audience?: unknown; exclude?: unknown; patient_ids?: unknown } | null
   isMarketing: boolean
   schedule: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string; starts_at?: string } | null | undefined
   /** segment.daily_limit: how many enter per clinic day, the rest the days after. */
@@ -29,7 +31,17 @@ onMounted(async () => {
   try {
     preview.value = await useStaffFetch('/api/automations/segment-preview', {
       method: 'POST',
-      body: { filters: props.filters, isMarketing: props.isMarketing, ruleId: props.ruleId, entryMode: props.entryMode },
+      // The whole of who it is aimed at: the filters alone count everyone for
+      // a send aimed at a list, which is not who it goes to.
+      body: {
+        filters: props.filters,
+        audience: props.named?.audience ?? null,
+        exclude: props.named?.exclude ?? [],
+        patientIds: props.named?.patient_ids ?? [],
+        isMarketing: props.isMarketing,
+        ruleId: props.ruleId,
+        entryMode: props.entryMode,
+      },
     })
   } catch {
     preview.value = null

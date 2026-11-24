@@ -107,9 +107,9 @@ describe('Automation canvas', () => {
     cy.get('[data-test="dry-run-toggle"]').click()
     cy.get('[data-test="tab-flow"]').click()
 
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
-    cy.get('[data-test="save-bar"]').should('not.exist')
     cy.get('[data-test="automation-enabled"]').click()
     cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
 
@@ -194,9 +194,9 @@ describe('Automation canvas', () => {
       // The canvas reads the question, not "Form answer".
       cy.contains('[data-test^="node-"]', '¿Recomendarías este tratamiento').should('exist')
 
-      cy.get('[data-test="save"]').click()
+      // Auto-saved: wait for it to land rather than pressing Save.
+      cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
       cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
-      cy.get('[data-test="save-bar"]').should('not.exist')
       cy.location('pathname').then((path) => {
         cy.task<Step[]>('auto:actionsForRule', { ruleId: path.split('/').pop()! }).then((steps) => {
           const wait = steps.find((s) => s.action_type === 'wait_until')!
@@ -234,8 +234,8 @@ describe('Automation canvas', () => {
           cy.get('[data-test="canvas-fit"]').click()
           add('[data-test="insert-root-root-0"]', 'tag')
           cy.get('[data-test="tag-input"]').type('nuevo')
-          cy.get('[data-test="save-bar-save"]').click()
-          cy.get('[data-test="save-bar"]').should('not.exist')
+          // Auto-saved: wait for it to land rather than pressing Save.
+          cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
 
           cy.task<Step[]>('auto:actionsForRule', { ruleId: rule.id }).then((after) => {
             expect(after.find((s) => s.id === delay.id)?.position, 'same delay row, moved down one').to.eq(1)
@@ -266,11 +266,12 @@ describe('Automation canvas', () => {
           cy.get('[data-test="canvas-fit"]').click()
           cy.get(`[data-test="node-${delay.id}"]`).click({ force: true })
           cy.get('[data-test="step-remove"]').click()
-          cy.get('[data-test="save-bar-save"]').click()
-          cy.get('[data-test="removed-steps-summary"]').should('contain', '1 person')
+          // The auto-save stops and asks: nobody's place is decided by a timer.
+          cy.get('[data-test="removed-steps-summary"]', { timeout: 15000 }).should('contain', '1 person')
+          cy.get('[data-test="save-status"]').should('have.attr', 'data-state', 'held')
           cy.get('[data-test="removed-move-on"]').should('be.checked')
           cy.get('[data-cy="confirm-dialog-confirm"]').click()
-          cy.get('[data-test="save-bar"]').should('not.exist')
+          cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
           cy.task<Run[]>('auto:runsForRule', { ruleId: rule.id }).then((runs) => {
             const moved = runs.find((r) => r.status === 'running')!
             expect(moved.current_action_id, 'moved on to what followed the delay').to.eq(wa.id)

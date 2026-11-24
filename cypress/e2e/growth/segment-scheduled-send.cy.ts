@@ -36,7 +36,8 @@ describe('Scheduling a group send', () => {
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
     cy.get('[data-test="tag-input"]').clear().type('contactado')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
     cy.get('[data-test="automation-enabled"]').click()

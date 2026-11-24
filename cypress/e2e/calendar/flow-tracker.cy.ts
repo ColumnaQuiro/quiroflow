@@ -74,6 +74,8 @@ describe('Calendar: today at a glance and the flow tracker', () => {
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
+      // The tracker and the day's numbers are in the toolbar's "Today" drawer.
+      cy.clickUntil('[data-cy=calendar-today-toggle]', '[data-cy=flow-tracker]')
 
       // 8 = seven live visits today + the one moved away; Borja's deletion is not counted.
       cy.get('[data-cy=glance-booked]').should('contain.text', '8')
@@ -94,7 +96,8 @@ describe('Calendar: today at a glance and the flow tracker', () => {
       cy.login(account.email, account.password)
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
-
+      // The tracker and the day's numbers are in the toolbar's "Today" drawer.
+      cy.clickUntil('[data-cy=calendar-today-toggle]', '[data-cy=flow-tracker]')
       cy.get('[data-cy=flow-tracker]').should('be.visible')
       rowIn('arrived', 'Laura Gómez').should('contain.text', 'arrived 10:16 · booked 10:30')
       rowIn('withp', 'Jordi Mas').should('contain.text', 'since 10:02')
@@ -136,22 +139,32 @@ describe('Calendar: today at a glance and the flow tracker', () => {
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
       cy.get('button[aria-label="Next"]').first().click()
+      // The tracker and the day's numbers are in the toolbar's "Today" drawer.
+      cy.clickUntil('[data-cy=calendar-today-toggle]', '[data-cy=flow-tracker]')
       rowIn('withp', 'Jordi Mas').find('[data-cy=flow-open]').click()
       cy.get('[data-cy=appt-sheet]').should('contain.text', 'Jordi Mas')
     })
   })
 
-  it('hides behind its display toggle', () => {
+  it('opens from the toolbar, counting who is in, and stays as it was left', () => {
     seedDay().then((account) => {
       cy.login(account.email, account.password)
       cy.visit('/calendar')
-      cy.get('[data-cy=flow-tracker]').should('be.visible')
-      cy.get('[data-cy=display-flowTracker]').should('have.attr', 'aria-checked', 'true').click()
       cy.get('[data-cy=flow-tracker]').should('not.exist')
-      cy.get('[data-cy=display-flowTracker]').click()
-      // The switch sits further down the scrolling panel than the tracker,
-      // so clicking it scrolls the tracker out of view; it is back, above.
-      cy.get('[data-cy=flow-tracker]').scrollIntoView().should('be.visible')
+      // Laura waiting, Jordi in session, Íñigo to pay: three in the building.
+      cy.get('[data-cy=calendar-today-toggle]').should('contain.text', '3')
+      cy.clickUntil('[data-cy=calendar-today-toggle]', '[data-cy=flow-tracker]')
+      cy.get('[data-cy=flow-tracker]').should('be.visible')
+      cy.get('[data-cy=calendar-today-toggle]').should('have.attr', 'aria-expanded', 'true')
+
+      cy.reload()
+      cy.get('[data-cy=flow-tracker]').should('be.visible')
+      cy.clickUntil('[data-cy=calendar-today-close]', '[data-cy=calendar-today-toggle][aria-expanded=false]')
+      cy.get('[data-cy=flow-tracker]').should('not.exist')
+
+      cy.reload()
+      cy.get('[data-cy=calendar-today-toggle]').should('contain.text', '3').and('have.attr', 'aria-expanded', 'false')
+      cy.get('[data-cy=flow-tracker]').should('not.exist')
     })
   })
 })

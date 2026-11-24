@@ -58,13 +58,17 @@ describe('Calendar: rescheduled visits', () => {
       // Only a marker for Marta today -- the visit itself is tomorrow.
       cy.contains('[data-cy=appt-block]', 'Marta Movida').should('not.exist')
 
-      // The switch takes the markers away and leaves every visit.
+      // The switch (in the toolbar's display popover) takes the markers
+      // away and leaves every visit.
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=display-hideRescheduled]').click()
       cy.get('[data-cy=moved-away-marker]').should('not.exist')
       block('Rosa Real').should('have.attr', 'data-stage', 'confirmed')
       block('Carlos Mismo').should('exist')
 
       cy.get('[data-cy=display-hideRescheduled]').click()
+      cy.get('[data-cy=calendar-display]').click()
+      cy.get('[data-cy=calendar-display-panel]').should('not.exist')
       // A marker opens the visit it stands for.
       marker('Marta Movida').scrollIntoView().click()
       cy.get('[data-cy=appt-sheet]').should('contain.text', 'Marta Movida')

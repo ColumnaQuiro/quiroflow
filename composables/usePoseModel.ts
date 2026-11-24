@@ -12,7 +12,8 @@ import type { Landmark } from '../utils/posture'
 //
 // The same run also outlines the person (outputSegmentationMasks): how
 // likely each pixel is to be them rather than the room, which is what lets
-// the capture screen put them on a white background (Capture.vue cutOut).
+// a photo put them on a white background (utils/postureWhite.ts): as it is
+// taken (Capture.vue), or once it is saved (Whiten.vue).
 // No second model to download, and nothing more leaves the device.
 //
 // window.__postureDetect, when a test sets it, answers instead -- the e2e

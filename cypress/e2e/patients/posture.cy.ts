@@ -594,6 +594,92 @@ describe('Posture assessment', () => {
     })
   })
 
+  // An assessment saved with the room behind the person (taken before the
+  // white background existed, or on a device that could not cut anyone out)
+  // kept it in every report, since the PDF draws the stored photo and the
+  // outline is never stored. "Fondo blanco" cuts it out afterwards and
+  // replaces the stored photo in place, so the points and the reports carry
+  // on unchanged.
+  it('puts a saved assessment’s photos on white afterwards, replacing them in place', () => {
+    /** The top-left pixel of the photo the record's comparison shows. */
+    const corner = () =>
+      cy.get('[data-cy=posture-compare-photo] [data-cy=posture-overlay] image').then(($img) =>
+        cy.window().then(
+          (win) =>
+            new Cypress.Promise<number[]>((resolve) => {
+              const img = new win.Image()
+              img.crossOrigin = 'anonymous'
+              img.onload = () => {
+                const c = win.document.createElement('canvas')
+                c.width = img.width
+                c.height = img.height
+                const ctx = c.getContext('2d')!
+                ctx.drawImage(img, 0, 0)
+                resolve(Array.from(ctx.getImageData(2, 2, 1, 1).data.slice(0, 3)))
+              }
+              img.src = $img.attr('href')!
+            }),
+        ),
+      )
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fondo', lastName: 'Después' }).then((patient) => {
+        cy.login(account.email, account.password)
+        // No outline at capture: saved as taken, background and all.
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-height]').clear().type('170')
+        photo()
+        cy.get('[data-cy=posture-no-cutout]', { timeout: 20000 }).should('have.attr', 'data-reason', 'no-mask')
+        cy.get('[data-cy=posture-next]').click()
+        cy.get('[data-cy=posture-skip]').click()
+        cy.get('[data-cy=posture-save]').click()
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        // The fixture's own background is a grey, (225, 225, 230).
+        corner().should((rgb) => expect(rgb[0]).to.be.lessThan(235))
+        cy.task<{ views: Record<string, unknown> }[]>('db:selectRows', { table: 'posture_assessments', columns: 'views', match: { patient_id: patient.id } }).as('before')
+
+        // Now the model gives an outline, as it would on a device that can.
+        cy.window().then((win) => ((win as any).__postureMask = personMask))
+        cy.get('[data-cy=posture-whiten-open]').click()
+        cy.get('[data-cy=posture-whiten][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=posture-whiten-row]').should('have.length', 1).and('have.attr', 'data-view', 'front').and('have.attr', 'data-white', 'true')
+        cy.get('[data-cy=posture-whiten-use]').should('be.checked')
+        // Unticked, there is nothing to replace.
+        cy.get('[data-cy=posture-whiten-use]').uncheck()
+        cy.get('[data-cy=confirm-dialog-confirm]').should('be.disabled')
+        cy.get('[data-cy=posture-whiten-use]').check()
+        cy.get('[data-cy=confirm-dialog-confirm]').should('contain', 'Replace 1 photo').click()
+        cy.get('[data-cy=posture-whiten]').should('not.exist')
+        // The record shows the new one at once, not the one the browser has cached.
+        cy.get('[data-cy=posture-compare-photo] [data-cy=posture-overlay] image', { timeout: 20000 }).should('have.attr', 'href').and('match', /^blob:/)
+        corner().should((rgb) => rgb.forEach((v) => expect(v).to.be.greaterThan(248)))
+        // And what is stored is white too: a reload signs it afresh.
+        cy.reload()
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        corner().should((rgb) => rgb.forEach((v) => expect(v).to.be.greaterThan(248)))
+        // Same path, same points: only the picture changed.
+        cy.get<{ views: Record<string, unknown> }[]>('@before').then(([before]) =>
+          cy.task<{ views: Record<string, unknown> }[]>('db:selectRows', { table: 'posture_assessments', columns: 'views', match: { patient_id: patient.id } }).then(([after]) => {
+            expect(after!.views).to.deep.eq(before!.views)
+          }),
+        )
+
+        // An outline that is not believable is not offered, and says why.
+        // (The reload above dropped the stubbed model, so both again.)
+        cy.window().then((win) => {
+          ;(win as any).__postureDetect = landmarks
+          ;(win as any).__postureMask = wholeFrameMask
+        })
+        cy.get('[data-cy=posture-whiten-open]').click()
+        cy.get('[data-cy=posture-whiten][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=posture-whiten-row]').should('have.attr', 'data-white', 'false')
+        cy.get('[data-cy=posture-whiten-reason]').should('contain', 'fills almost the whole photo')
+        cy.get('[data-cy=confirm-dialog-confirm]').should('be.disabled')
+        cy.get('[data-cy=confirm-dialog-cancel]').click()
+        cy.get('[data-cy=posture-whiten]').should('not.exist')
+      })
+    })
+  })
+
   it('is not written for another clinic’s patient', () => {
     cy.seedStaffAccount().then((other) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: other.accountId, clinicId: other.clinicId, firstName: 'Ajena', lastName: 'Postura' }).then((stranger) => {

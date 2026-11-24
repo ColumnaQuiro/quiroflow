@@ -293,6 +293,18 @@ function showSent(c: SentComparison) {
   picked.value = [c.before_assessment_id, c.after_assessment_id]
 }
 
+// "Fondo blanco": the person cut out onto white in an assessment already
+// saved with the room behind them (Whiten.vue), its photos replaced in place.
+const whitening = ref<Assessment | null>(null)
+async function whitened(replaced: Record<string, Blob>) {
+  whitening.value = null
+  showToast(t('Photos replaced. The reports now show them on white.', 'Fotos sustituidas. Los informes ya las muestran sobre blanco.'), 'success')
+  await load()
+  // Shown from what was just uploaded: the signed URL can come back the same
+  // as before, and the browser would keep showing the photo it has cached.
+  for (const [path, blob] of Object.entries(replaced)) urls.value[path] = URL.createObjectURL(blob)
+}
+
 const removing = ref<Assessment | null>(null)
 async function remove() {
   const a = removing.value
@@ -355,7 +367,10 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
               <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, (Object.keys(a.views).length === 1 ? t('1 photo', '1 foto') : t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)), viewsNote(a)].filter(Boolean).join(' · ') }}</p>
               <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
-              <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
+              <div class="mt-1.5 flex flex-wrap gap-1.5">
+                <button type="button" class="inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60 touch:h-11" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
+                <button v-if="can('visit_notes_access')" type="button" class="inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle touch:h-11" data-cy="posture-whiten-open" @click="whitening = a">{{ t('White background', 'Fondo blanco') }}</button>
+              </div>
             </div>
             <button v-if="can('visit_notes_delete')" type="button" class="text-[12px] text-ink-muted hover:text-danger-text" :aria-label="t('Delete', 'Eliminar')" @click="removing = a">✕</button>
           </li>
@@ -535,6 +550,8 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
     >
       <p class="text-[14px] text-ink-700">{{ t('The patient stops seeing it. The two assessments and their photos stay.', 'El paciente deja de verla. Las dos valoraciones y sus fotos se conservan.') }}</p>
     </UiConfirmDialog>
+
+    <PostureWhiten v-if="whitening" :views="whitening.views" :urls="urls" @saved="whitened" @cancel="whitening = null" />
 
     <UiConfirmDialog
       v-if="removing"

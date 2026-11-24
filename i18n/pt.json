@@ -1579,7 +1579,10 @@
   "{0} before their birthday": "{0} antes do aniversário",
   "{0} before, at {1}": "{0} antes, às {1}",
   "{0} h": "{0} h",
-  "{0} later": "{0} depois"
+  "{0} later": "{0} depois",
+  "Replace {0} photos": "Substituir {0} fotografias",
+  "{0}, as saved": "{0}, como está guardada",
+  "{0}, on white": "{0}, sobre branco"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10764,6 +10767,17 @@
   "days, by any automation": "dias, por nenhuma automatização",
   "not asked \"how did we do?\" in the last": "sem lhe perguntar «como correu?» nos últimos",
   "visits (0 = never), this one included": "consultas (0 = nunca), contando esta",
-  "years. Patients with no date of birth do not match.": "anos. Quem não tem data de nascimento não coincide."
+  "years. Patients with no date of birth do not match.": "anos. Quem não tem data de nascimento não coincide.",
+  "Photos replaced. The reports now show them on white.": "Fotografias substituídas. Os relatórios já as mostram com fundo branco.",
+  "The person is too small in this photo to cut out.": "A pessoa aparece demasiado pequena nesta fotografia para a recortar.",
+  "The person fills almost the whole photo, so it cannot be cut out.": "A pessoa ocupa quase toda a fotografia, por isso não se pode recortar.",
+  "No one was found in this photo.": "Não foi encontrada nenhuma pessoa nesta fotografia.",
+  "The background could not be removed on this device.": "Não foi possível remover o fundo neste dispositivo.",
+  "Replace 1 photo": "Substituir 1 fotografia",
+  "Each photo with the person cut out onto white, beside it as it is now. The ticked ones replace the saved photo, here and in every report. The points and measurements do not change.": "Cada fotografia com a pessoa recortada sobre branco, ao lado de como está agora. As assinaladas substituem a fotografia guardada, aqui e em todos os relatórios. Os pontos e as medidas não mudam.",
+  "Use white": "Usar branco",
+  "On white": "Sobre branco",
+  "Cutting out the next photo…": "A recortar a fotografia seguinte…",
+  "Loading the model and cutting out the first photo…": "A carregar o modelo e a recortar a primeira fotografia…"
  }
 }

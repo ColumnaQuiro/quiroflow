@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { MaskMissing, PersonMask } from '../../composables/usePoseModel'
 import type { ReportIssue } from '../../utils/reportIssue'
+import { personOnWhite, postureJpeg } from '../../utils/postureWhite'
 import {
   cutoutVerdict,
   defaultPoints,
@@ -149,8 +150,7 @@ const levelState = computed(() => {
 
 // The photo, shrunk to 1600 px on its long side (enough to place a point to
 // a few millimetres, small enough to upload from a phone), as a JPEG.
-const jpeg = (canvas: HTMLCanvasElement) =>
-  new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se ha podido leer la foto'))), 'image/jpeg', 0.86))
+const jpeg = postureJpeg
 async function shrink(file: File): Promise<{ blob: Blob; width: number; height: number; canvas: HTMLCanvasElement }> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
@@ -161,42 +161,8 @@ async function shrink(file: File): Promise<{ blob: Blob; width: number; height: 
   return { blob: await jpeg(canvas), width: canvas.width, height: canvas.height, canvas }
 }
 
-// The person on white: the photo kept where the model's outline says it is
-// the person, white everywhere else. The outline is soft (the model works at
-// a lower resolution than the photo), so it is tightened a little -- below
-// LOW is background, above HIGH is the person, a ramp between -- and then
-// scaled up smoothly, which leaves an edge a pixel or two wide rather than a
-// staircase. Only once cutoutVerdict (utils/posture.ts) believes the outline
-// is one standing person.
-const LOW = 0.35
-const HIGH = 0.65
-function cutOut(photo: HTMLCanvasElement, mask: PersonMask): HTMLCanvasElement {
-  const n = mask.width * mask.height
-  const alpha = document.createElement('canvas')
-  alpha.width = mask.width
-  alpha.height = mask.height
-  const actx = alpha.getContext('2d')!
-  const img = actx.createImageData(mask.width, mask.height)
-  for (let i = 0; i < n; i++) {
-    const v = mask.data[i]!
-    const t = Math.min(1, Math.max(0, (v - LOW) / (HIGH - LOW)))
-    img.data[i * 4 + 3] = Math.round(t * t * (3 - 2 * t) * 255)
-  }
-  actx.putImageData(img, 0, 0)
-  const out = document.createElement('canvas')
-  out.width = photo.width
-  out.height = photo.height
-  const ctx = out.getContext('2d')!
-  ctx.drawImage(photo, 0, 0)
-  ctx.globalCompositeOperation = 'destination-in'
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(alpha, 0, 0, out.width, out.height)
-  ctx.globalCompositeOperation = 'destination-over'
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, out.width, out.height)
-  return out
-}
+// The person on white (utils/postureWhite.ts), once cutoutVerdict
+// (utils/posture.ts) believes the outline is one standing person.
 
 function forget(s: Shot | undefined) {
   if (!s) return
@@ -229,7 +195,7 @@ async function onPhoto(e: Event) {
       if (verdict.verdict !== 'ok') noCutout = verdict.verdict
       else {
         try {
-          cutBlob = await jpeg(cutOut(canvas, mask))
+          cutBlob = await jpeg(personOnWhite(canvas, mask))
         } catch (e) {
           console.error('[posture] cut out', e)
           noCutout = 'failed'

@@ -1579,7 +1579,10 @@
   "{0} before their birthday": "{0} vor dem Geburtstag",
   "{0} before, at {1}": "{0} vorher, um {1}",
   "{0} h": "{0} Std.",
-  "{0} later": "{0} später"
+  "{0} later": "{0} später",
+  "Replace {0} photos": "{0} Fotos ersetzen",
+  "{0}, as saved": "{0}, wie gespeichert",
+  "{0}, on white": "{0}, auf Weiß"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10764,6 +10767,17 @@
   "days, by any automation": "Tagen, von keiner Automatisierung",
   "not asked \"how did we do?\" in the last": "nicht nach „Wie war es?“ gefragt in den letzten",
   "visits (0 = never), this one included": "Behandlungen (0 = nie), diese mitgezählt",
-  "years. Patients with no date of birth do not match.": "Jahre. Patienten ohne Geburtsdatum passen nicht."
+  "years. Patients with no date of birth do not match.": "Jahre. Patienten ohne Geburtsdatum passen nicht.",
+  "Photos replaced. The reports now show them on white.": "Fotos ersetzt. Die Berichte zeigen sie jetzt auf Weiß.",
+  "The person is too small in this photo to cut out.": "Die Person ist auf diesem Foto zu klein, um sie freizustellen.",
+  "The person fills almost the whole photo, so it cannot be cut out.": "Die Person füllt fast das ganze Foto, daher kann sie nicht freigestellt werden.",
+  "No one was found in this photo.": "Auf diesem Foto wurde niemand gefunden.",
+  "The background could not be removed on this device.": "Der Hintergrund konnte auf diesem Gerät nicht entfernt werden.",
+  "Replace 1 photo": "1 Foto ersetzen",
+  "Each photo with the person cut out onto white, beside it as it is now. The ticked ones replace the saved photo, here and in every report. The points and measurements do not change.": "Jedes Foto mit der Person freigestellt auf Weiß, neben dem aktuellen Stand. Die markierten ersetzen das gespeicherte Foto, hier und in jedem Bericht. Punkte und Messwerte ändern sich nicht.",
+  "Use white": "Weiß verwenden",
+  "On white": "Auf Weiß",
+  "Cutting out the next photo…": "Nächstes Foto wird freigestellt…",
+  "Loading the model and cutting out the first photo…": "Modell wird geladen und das erste Foto freigestellt…"
  }
 }

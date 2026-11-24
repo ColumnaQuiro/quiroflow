@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireAnyPermission, requirePermission } from '~/server/utils/requirePermission'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { receptionistPurchased } from '~/utils/receptionistAllowance'
 
@@ -23,8 +23,20 @@ import { receptionistPurchased } from '~/utils/receptionistAllowance'
 export type GrowthAccess = Awaited<ReturnType<typeof requirePermission>>
 
 export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
-  const access = await requirePermission(event, 'communication_config')
+  return entitled(await requirePermission(event, 'communication_config'))
+}
 
+/**
+ * The lead side of Growth -- the Leads board, a lead's thread and drawer,
+ * converting them, and lead conversations in the Inbox. "See leads"
+ * (leads_access) opens it on its own, so reception can work leads without
+ * "Communication and Growth", which is Settings; that one still includes it.
+ */
+export async function requireLeads(event: H3Event): Promise<GrowthAccess> {
+  return entitled(await requireAnyPermission(event, ['leads_access', 'communication_config']))
+}
+
+async function entitled(access: GrowthAccess): Promise<GrowthAccess> {
   // Read alongside the team member in requireActiveAccount, one round trip
   // rather than two; none or several rows arrive as null, as .maybeSingle()
   // gave them here before.

@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import { formatEuros } from '~/server/utils/leads'
 
 // Lead conversations for the Inbox.
@@ -13,7 +13,7 @@ import { formatEuros } from '~/server/utils/leads'
 // place to put a message, so no conversation on those channels can exist
 // yet and none is invented here.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
 
   // Each lead with only its newest message, in one query: `!inner` keeps
   // leads that have written or been written to, and the embedded order and

@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 
 // Throws the drafted reply away.
 //
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
 
   const { data: lead } = await supabase
     .from('leads')

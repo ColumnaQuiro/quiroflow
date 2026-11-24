@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   EMPTY_PERMISSIONS,
+  INCLUDED_BY,
   displayRoleDescription,
   displayRoleName,
   permissionGroups,
@@ -83,6 +84,21 @@ describe('Role permission catalogue', () => {
   it('sums a role up by what tells it apart', () => {
     const p = permissionsWithDefaults({ calendar_scope: 'own', patients_scope: 'own', billing_access: true, visit_notes_access: true, reports_access: true, reports_own_only: true })
     expect(summaryChips(p, es)).to.deep.equal(['Calendario: solo sus citas', 'Pacientes: solo los suyos', 'Cobrar', 'Informes: solo los suyos'])
+  })
+
+  it('names the switch that includes another, and both are shown', () => {
+    const shown = new Set<string>(permissionGroups(es).flatMap((g) => g.rows.map((r) => r.key)))
+    for (const [child, parent] of Object.entries(INCLUDED_BY)) {
+      expect(shown.has(child), child).to.eq(true)
+      expect(shown.has(parent!), parent).to.eq(true)
+    }
+    expect(INCLUDED_BY).to.deep.equal({ progress_access: 'visit_notes_access', leads_access: 'communication_config' })
+  })
+
+  it('shows Leads for a role that works leads without Growth\'s settings', () => {
+    expect(summaryChips(permissionsWithDefaults({ leads_access: true }), es)).to.include('Leads')
+    const admin = permissionsWithDefaults({ leads_access: true, settings_access: true, communication_config: true })
+    expect(summaryChips(admin, es)).not.to.include('Leads')
   })
 
   it('says when a role without the notes still sees progress', () => {

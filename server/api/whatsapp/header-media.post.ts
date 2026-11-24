@@ -1,63 +1,57 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requirePermission } from '~/server/utils/requirePermission'
+import { WHATSAPP_HEADER_MEDIA_MAX_BYTES, WHATSAPP_HEADER_MEDIA_TYPES, whatsappHeaderMediaProblem, whatsappHeaderMediaSafeName } from '~/utils/whatsappHeaderMedia'
 
-// Stores the media a template header needs -- the video on a welcome message,
-// an image on an offer.
+// Lets an automation step store the media its template header needs -- the
+// video on a welcome message, an image on an offer.
 //
-// Uploaded through the server rather than straight from the browser so the
-// whatsapp-media bucket can stay private. Anything a clinic sends a patient
-// lives there, and opening it to browser writes would mean a storage policy
-// broad enough to cover patient documents too. The sender reads this back as
-// a short-lived signed URL at send time; nothing here is ever public.
-const MAX_BYTES = 15 * 1024 * 1024
-
-// What Meta accepts in a template header, and nothing else. The list is not
-// about our storage -- an .exe would upload perfectly well -- it is about
-// refusing at the door something that can only fail later, in front of a
-// patient, as a template rejected mid-drip.
-const ALLOWED: Record<string, string[]> = {
-  image: ['image/jpeg', 'image/png'],
-  video: ['video/mp4', 'video/3gpp'],
-  document: ['application/pdf'],
-}
+// This route never sees the file. It used to: the browser posted it here as
+// multipart and the route wrote it to Storage. But a Netlify function refuses
+// any request over ~6 MB before our code runs, so a 1:46 clinic video
+// (18 MB) failed with nothing logged anywhere while one of 4.5 MB went
+// through, and the clinic could not tell why one worked and the other did
+// not.
+//
+// Now the browser says what it is about to upload, this route checks the
+// permission, the type and the size, and answers with a one-off signed
+// upload URL for a path inside the clinic's own folder. The browser puts the
+// file there directly. The whatsapp-media bucket stays private, as before:
+// the token writes that one path, and the sender reads the file back as a
+// short-lived signed URL at send time. Nothing here is ever public.
+//
+// The size checked is the one the browser declares; a signed upload cannot
+// cap it. Lying about it only gets a clinic its own template refused by
+// Meta, so it is checked here for the honest case and not enforced further.
 
 export default defineEventHandler(async (event) => {
   const { teamMember } = await requirePermission(event, 'communication_config')
 
-  const form = await readMultipartFormData(event)
-  const file = form?.find((part) => part.name === 'file' && part.filename)
-  const kind = form?.find((part) => part.name === 'kind')?.data?.toString() ?? ''
+  const body = await readBody<{ kind?: unknown; filename?: unknown; contentType?: unknown; bytes?: unknown }>(event)
+  const kind = typeof body?.kind === 'string' ? body.kind : ''
+  const contentType = typeof body?.contentType === 'string' ? body.contentType : ''
+  const bytes = typeof body?.bytes === 'number' ? body.bytes : 0
+  const filename = typeof body?.filename === 'string' ? body.filename : ''
 
-  if (!file?.data) throw createError({ statusCode: 400, statusMessage: 'No file was uploaded.' })
-  if (!ALLOWED[kind]) throw createError({ statusCode: 400, statusMessage: 'kind must be image, video or document.' })
-  if (file.data.length > MAX_BYTES) {
-    throw createError({ statusCode: 400, statusMessage: `That file is larger than ${MAX_BYTES / (1024 * 1024)} MB, which WhatsApp will not accept.` })
+  const problem = whatsappHeaderMediaProblem(kind, contentType, bytes)
+  if (problem === 'kind') throw createError({ statusCode: 400, statusMessage: 'kind must be image, video or document.' })
+  if (problem === 'too_large') {
+    throw createError({ statusCode: 400, statusMessage: `That file is larger than ${WHATSAPP_HEADER_MEDIA_MAX_BYTES / (1024 * 1024)} MB, which WhatsApp will not accept.` })
   }
-
-  const type = file.type ?? ''
-  if (!ALLOWED[kind]!.includes(type)) {
+  if (problem === 'type') {
     throw createError({
       statusCode: 400,
-      statusMessage: `WhatsApp accepts ${ALLOWED[kind]!.join(' or ')} for a ${kind} header, not ${type || 'an unknown type'}.`,
+      statusMessage: `WhatsApp accepts ${WHATSAPP_HEADER_MEDIA_TYPES[kind]!.join(' or ')} for a ${kind} header, not ${contentType || 'an unknown type'}.`,
     })
   }
 
-  const safeName = (file.filename ?? 'header')
-    .toLowerCase()
-    .replace(/[^a-z0-9.-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(-80)
-
   // Account-scoped, matching the rest of whatsapp-media.
+  const safeName = whatsappHeaderMediaSafeName(filename)
   const path = `${teamMember.account_id}/campaigns/${Date.now()}-${safeName}`
 
   const supabase = serverSupabaseServiceRole<Database>(event)
-  const { error } = await supabase.storage.from('whatsapp-media').upload(path, file.data, {
-    contentType: type,
-    upsert: false,
-  })
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  const { data, error } = await supabase.storage.from('whatsapp-media').createSignedUploadUrl(path)
+  if (error || !data) throw createError({ statusCode: 500, statusMessage: error?.message ?? 'Could not prepare the upload.' })
 
-  return { storage_path: path, filename: safeName, bytes: file.data.length }
+  return { storage_path: path, filename: safeName, token: data.token }
 })

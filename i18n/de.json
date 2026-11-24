@@ -1579,7 +1579,8 @@
   "{0} before their birthday": "{0} vor dem Geburtstag",
   "{0} before, at {1}": "{0} vorher, um {1}",
   "{0} h": "{0} Std.",
-  "{0} later": "{0} später"
+  "{0} later": "{0} später",
+  "This file is {0} MB and WhatsApp takes at most {1} MB. Compress it (a shorter or lower-quality export) and try again.": "Diese Datei ist {0} MB groß, WhatsApp akzeptiert höchstens {1} MB. Komprimiere sie (kürzer oder in geringerer Qualität) und versuche es erneut."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10774,6 +10775,9 @@
   "Without this, notes do not appear on the record or the appointment. Includes \"See progress\".": "Ohne dies erscheinen Notizen weder in der Akte noch beim Termin. Schließt „Fortschritt ansehen“ ein.",
   "See progress": "Fortschritt ansehen",
   "The Progress tab on the record: the pain curve, what was adjusted at each visit, posture assessments and their reports. Read only: taking an assessment or sending it to the patient needs \"See visit notes\".": "Der Reiter Fortschritt in der Akte: die Schmerzkurve, was bei jedem Termin justiert wurde, Haltungsanalysen und ihre Berichte. Nur lesen: Eine Analyse erstellen oder an den Patienten senden erfordert „Behandlungsnotizen ansehen“.",
-  "Sees progress": "Sieht den Fortschritt"
+  "Sees progress": "Sieht den Fortschritt",
+  "WhatsApp only takes MP4 videos. A .mov from an iPhone has to be exported as MP4 first.": "WhatsApp akzeptiert nur MP4-Videos. Eine .mov-Datei vom iPhone muss zuerst als MP4 exportiert werden.",
+  "WhatsApp only takes JPEG or PNG images.": "WhatsApp akzeptiert nur JPEG- oder PNG-Bilder.",
+  "WhatsApp only takes PDF documents here.": "WhatsApp akzeptiert hier nur PDF-Dokumente."
  }
 }

@@ -4,7 +4,7 @@
 // colour picker for anything deeper or louder than them. A free colour can
 // read as red or vanish into one theme's surface, so the picker says so
 // underneath -- it warns, it does not refuse.
-import { CALENDAR_PALETTE, calendarColorWarnings, isPaletteColor, normalizeCalendarColor } from '~/utils/calendarPalette'
+import { CALENDAR_PALETTE, CALENDAR_PALETTE_ROWS, calendarBlockColors, calendarColorWarnings, isPaletteColor, normalizeCalendarColor } from '~/utils/calendarPalette'
 
 const props = defineProps<{
   modelValue: string
@@ -59,13 +59,22 @@ const warnings = computed(() =>
 const WHEEL = ['Orange', 'Yellow', 'Lime', 'Teal', 'Sky', 'Blue', 'Violet', 'Fuchsia', 'Pink']
 const wheelStops = WHEEL.map((en) => CALENDAR_PALETTE.find((c) => c.en === en)!.hex)
 const rainbow = `conic-gradient(${[...wheelStops, wheelStops[0]].join(', ')})`
+
+// The sample block, painted exactly as AppointmentBlock paints a live visit.
+const block = computed(() => calendarBlockColors(current.value))
+const blockStyle = computed(() =>
+  block.value
+    ? { background: block.value.fill, border: `1px solid ${block.value.border}`, '--sample-on': block.value.text, '--sample-muted': block.value.textMuted, color: 'rgb(var(--sample-on))' }
+    : { background: 'rgb(var(--color-surface))', border: '1px solid rgb(var(--color-line))' },
+)
+const blockMetaStyle = computed(() => (block.value ? { color: 'rgb(var(--sample-muted))' } : {}))
 </script>
 
 <template>
   <div class="flex flex-col gap-2.5">
     <div role="radiogroup" :aria-label="label" class="flex max-w-[432px] flex-wrap gap-1.5" data-cy="color-picker">
       <button
-        v-for="c in CALENDAR_PALETTE"
+        v-for="c in CALENDAR_PALETTE_ROWS.flat()"
         :key="c.hex"
         type="button"
         role="radio"
@@ -119,12 +128,9 @@ const rainbow = `conic-gradient(${[...wheelStops, wheelStops[0]].join(', ')})`
 
     <div v-if="preview" class="flex flex-col gap-1.5" aria-hidden="true">
       <span class="text-[12px] text-ink-muted">{{ t('How it looks on the calendar', 'Así se ve en el calendario') }}</span>
-      <span
-        class="flex max-w-[260px] flex-col gap-0.5 rounded-ctlSm px-2.5 py-2"
-        :style="{ background: `color-mix(in srgb, ${current} 16%, rgb(var(--color-surface)))`, border: `1px solid color-mix(in srgb, ${current} 50%, rgb(var(--color-surface)))` }"
-      >
-        <strong class="text-[13px] text-ink-900">{{ preview.title }}</strong>
-        <span class="text-[12px] text-ink-muted">{{ preview.meta }}</span>
+      <span class="flex max-w-[260px] flex-col gap-0.5 rounded-ctl px-[9px] py-1.5" :style="blockStyle" data-cy="color-preview">
+        <strong class="text-[13px]">{{ preview.title }}</strong>
+        <span class="text-[11.5px]" :style="blockMetaStyle">{{ preview.meta }}</span>
       </span>
     </div>
   </div>

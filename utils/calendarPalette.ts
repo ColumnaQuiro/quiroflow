@@ -2,9 +2,10 @@
 // (team_members.color) and an appointment type's (appointment_types.color).
 //
 // Colour on the calendar is data: it tints a practitioner's tab and dot, and
-// an appointment block's fill and border, mixed against a surface token so it
-// reads in both themes (see components/calendar). These presets are each
-// checked as a tint in light and dark.
+// it FILLS a live appointment block exactly as chosen -- a deeper pick is a
+// deeper block, a softer pick a softer one, with white or near-black text on
+// it (calendarBlockColors). The calendar does not tone it down. The presets
+// run from soft to deep so a clinic can have a calm calendar or a loud one.
 //
 // Next to them, components/calendar/ColorPicker.vue offers a free colour, for
 // clinics that want something deeper or louder than the presets. A free
@@ -51,7 +52,22 @@ export const CALENDAR_PALETTE: PaletteColor[] = [
   { hex: '#ec4899', en: 'Pink', es: 'Rosa' },
   { hex: '#7e22ce', en: 'Purple', es: 'Morado' },
   { hex: '#64748b', en: 'Slate', es: 'Gris' },
+  // Soft shades of the original ten. The calendar paints a block in its
+  // colour as chosen, so these are what a calm calendar is made of.
+  { hex: '#c7d2fe', en: 'Soft indigo', es: 'Índigo suave' },
+  { hex: '#bfdbfe', en: 'Soft blue', es: 'Azul suave' },
+  { hex: '#bae6fd', en: 'Soft sky', es: 'Celeste suave' },
+  { hex: '#99f6e4', en: 'Soft teal', es: 'Turquesa suave' },
+  { hex: '#bbf7d0', en: 'Soft green', es: 'Verde suave' },
+  { hex: '#d9f99d', en: 'Soft lime', es: 'Lima suave' },
+  { hex: '#fde68a', en: 'Soft amber', es: 'Ámbar suave' },
+  { hex: '#fed7aa', en: 'Soft orange', es: 'Naranja suave' },
+  { hex: '#f5d0fe', en: 'Soft fuchsia', es: 'Fucsia suave' },
+  { hex: '#ddd6fe', en: 'Soft violet', es: 'Violeta suave' },
 ]
+
+/** The palette as the picker lays it out: soft, the original ten, then the deeper and extra hues. */
+export const CALENDAR_PALETTE_ROWS: PaletteColor[][] = [CALENDAR_PALETTE.slice(20, 30), CALENDAR_PALETTE.slice(0, 10), CALENDAR_PALETTE.slice(10, 20)]
 
 /** Whether a stored colour is one of the palette's (case-insensitive). */
 export function isPaletteColor(hex: string | null | undefined): boolean {
@@ -115,7 +131,41 @@ export function calendarColorWarnings(input: string | null | undefined): Calenda
   // Pink (~330) and orange (~25) stay out; crimson, scarlet and brick-red in.
   if ((h < 15 || h > 345) && s > 0.45 && l > 0.2 && l < 0.75) out.push('red')
 
-  if (contrast(rgb, LIGHT_SURFACE) < 1.5) out.push('faint-light')
+  // Light: a soft pastel block still has its darker edge (calendarBlockColors),
+  // so only near-white is lost. Dark: near-black sinks into the dark page.
+  if (contrast(rgb, LIGHT_SURFACE) < 1.12) out.push('faint-light')
   if (contrast(rgb, DARK_SURFACE) < 1.5) out.push('faint-dark')
   return out
+}
+
+// Text on a block filled with the chosen colour: white, or the near-black
+// the dark palette uses for text on its fills, whichever reads better.
+const INK: Rgb = [15, 16, 20]
+const WHITE: Rgb = [255, 255, 255]
+
+export interface CalendarBlockColors {
+  fill: string
+  /** The fill a step darker, so a pale block keeps an edge on a white page. */
+  border: string
+  /** "r g b" triplets for rgb(var(--…)), so they work like theme tokens. */
+  text: string
+  textMuted: string
+}
+
+/**
+ * How a live appointment block is painted: in its type's colour exactly as
+ * chosen -- a darker pick is a darker block, a softer pick a softer one -- with
+ * text that stays readable on it. Null when the colour is not a hex.
+ */
+export function calendarBlockColors(input: string | null | undefined): CalendarBlockColors | null {
+  const hex = normalizeCalendarColor(input)
+  if (!hex) return null
+  const rgb = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)) as Rgb
+  const light = contrast(rgb, WHITE) >= contrast(rgb, INK)
+  return {
+    fill: hex,
+    border: `color-mix(in srgb, ${hex} 78%, black)`,
+    text: light ? '255 255 255' : '15 16 20',
+    textMuted: light ? '236 237 242' : '52 54 64',
+  }
 }

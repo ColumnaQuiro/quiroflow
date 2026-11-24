@@ -35,7 +35,7 @@ describe('My account', () => {
       cy.get('[data-cy=account-hours]').contains('div', 'Tuesday').should('contain.text', 'Not working')
 
       // The seeded colour predates the palette: kept, as its own selected swatch.
-      cy.get('[data-cy=account-palette] [role=radio]').should('have.length', 21)
+      cy.get('[data-cy=account-palette] [role=radio]').should('have.length', 31)
       cy.get('[data-cy=account-palette] [aria-label=Custom]').should('have.attr', 'aria-checked', 'true')
 
       // Nothing waits for Save until something changes; Discard puts it back.

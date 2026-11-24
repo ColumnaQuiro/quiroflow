@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CALENDAR_PALETTE, calendarColorWarnings, isPaletteColor, normalizeCalendarColor } from '../../utils/calendarPalette'
+import { CALENDAR_PALETTE, CALENDAR_PALETTE_ROWS, calendarBlockColors, calendarColorWarnings, isPaletteColor, normalizeCalendarColor } from '../../utils/calendarPalette'
 
 // The calendar offers presets plus a free colour. The presets must all be
 // safe; the free colour warns when it reads as red (money owed) or vanishes
@@ -20,6 +20,45 @@ describe('CALENDAR_PALETTE', () => {
 
   it.each(CALENDAR_PALETTE.map((c) => [c.en, c.hex]))('%s (%s) raises no warning', (_name, hex) => {
     expect(calendarColorWarnings(hex)).toEqual([])
+  })
+
+  it('lays every colour out exactly once, in rows of ten', () => {
+    const shown = CALENDAR_PALETTE_ROWS.flat().map((c) => c.hex)
+    expect(shown.slice().sort()).toEqual(CALENDAR_PALETTE.map((c) => c.hex).sort())
+    for (const row of CALENDAR_PALETTE_ROWS) expect(row).toHaveLength(10)
+  })
+})
+
+describe('calendarBlockColors', () => {
+  // WCAG contrast of the text triplet on the fill.
+  const lum = (r: number, g: number, b: number) =>
+    [r, g, b].map((v) => {
+      const c = v / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    }).reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i]!, 0)
+  const ratio = (hex: string, triplet: string) => {
+    const a = lum(...([1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]))
+    const b = lum(...(triplet.split(' ').map(Number) as [number, number, number]))
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  }
+
+  it('fills with the colour exactly as chosen', () => {
+    expect(calendarBlockColors('#FF00FF')!.fill).toBe('#ff00ff')
+    expect(calendarBlockColors('#1e40af')!.fill).toBe('#1e40af')
+  })
+
+  it('puts white text on deep colours and dark text on soft ones', () => {
+    expect(calendarBlockColors('#1e40af')!.text).toBe('255 255 255')
+    expect(calendarBlockColors('#fde68a')!.text).toBe('15 16 20')
+  })
+
+  it.each(CALENDAR_PALETTE.map((c) => [c.en, c.hex]))('%s (%s) keeps its text readable', (_name, hex) => {
+    expect(ratio(hex, calendarBlockColors(hex)!.text)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('is null for what is not a hex', () => {
+    expect(calendarBlockColors(null)).toBeNull()
+    expect(calendarBlockColors('rgb(var(--color-brand))')).toBeNull()
   })
 })
 

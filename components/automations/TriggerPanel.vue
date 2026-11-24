@@ -73,8 +73,18 @@ function setWho(mode: WhoMode) {
   // Each mode clears the others, so what the send names is exactly what is on screen.
   if (mode === 'filters') setSegment({ audience: null, exclude: [], patient_ids: [] })
   if (mode === 'saved') setSegment({ patient_ids: [] })
-  if (mode === 'patients') setSegment({ audience: null, filters: {} })
+  if (mode === 'patients') setSegment({ audience: null, exclude: [], filters: {} })
 }
+// A send opened with people already chosen (from the Patients page) stays in
+// that mode when the last of them is taken off, rather than turning into
+// "Patients who…" with no filters.
+watch(
+  () => segment.value.patient_ids?.length ?? 0,
+  (n) => {
+    if (n > 0) whoChoice.value = 'patients'
+  },
+  { immediate: true },
+)
 function setExclude(i: number, ref: AudienceRef | null) {
   const next = [...(segment.value.exclude ?? [])]
   if (ref) next[i] = ref

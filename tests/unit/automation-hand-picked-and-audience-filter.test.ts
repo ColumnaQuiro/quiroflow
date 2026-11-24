@@ -34,7 +34,7 @@ describe('patients chosen one by one', () => {
     const base = { name: 'x', filters: {}, is_marketing: true, dry_run: false, entry_mode: 'once_ever' as const, exit_on: [], quiet_hours: null }
     const step = [{ id: 's', action_type: 'email', config: { subject: 'Hola', body: '<p>Hola</p>' }, parent_id: null, branch: null, position: 0 }]
     const group = (segment: Record<string, unknown>) => findProblems({ ...base, trigger_event: 'segment', segment: { schedule: { kind: 'once' }, filters: {}, ...segment } } as never, step, null)
-    const everyone = (ps: { message: [string, string] }[]) => ps.some((p) => p.message[0].includes('otherwise it is every patient'))
+    const everyone = (ps: { message: readonly [string, string] }[]) => ps.some((p) => p.message[0].includes('otherwise it is every patient'))
     expect(everyone(group({ patient_ids: [] }))).toBe(true)
     expect(everyone(group({ patient_ids: ['not-an-id'] }))).toBe(true)
     expect(everyone(group({ patient_ids: [uuid(1)] }))).toBe(false)
@@ -98,7 +98,7 @@ describe('"in a list or segment" on a trigger', () => {
     const base = { name: 'x', is_marketing: false, dry_run: false, entry_mode: 'every_time' as const, exit_on: [], quiet_hours: null, segment: null }
     const step = [{ id: 's', action_type: 'email', config: { subject: 'Hola', body: '<p>Hola</p>' }, parent_id: null, branch: null, position: 0 }]
     const problems = (filters: Record<string, unknown>) => findProblems({ ...base, trigger_event: 'appointment.completed', filters } as never, step, null)
-    const asks = (ps: { message: [string, string] }[]) => ps.some((p) => p.message[0].includes('"In a list or segment"'))
+    const asks = (ps: { message: readonly [string, string] }[]) => ps.some((p) => p.message[0].includes('"In a list or segment"'))
     expect(asks(problems({ in_audiences: [] }))).toBe(true)
     expect(asks(problems({ in_audiences: [{ kind: 'list', id: LIST }] }))).toBe(false)
     expect(asks(problems({}))).toBe(false)

@@ -1,5 +1,6 @@
 import { formatEur } from '~/utils/billing'
 import { linkInvoicesToAppointments, type LinkableAppointment, type LinkableInvoice } from '~/utils/importInvoiceLink'
+import { readAllForAccount } from '~/utils/practicehubImport/appointments'
 import { practiceHubList, type PracticeHubImportContext, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 import { pairWithBookedCharges } from '~/utils/stripeMembershipSync'
 
@@ -237,38 +238,9 @@ export const SETTLE_BATCH = 2000
 /** Only a guard against looping forever: a call changing fewer than SETTLE_BATCH means it is done. */
 const SETTLE_MAX_CALLS = 200
 
-async function withConcurrency<T>(items: T[], n: number, run: (item: T) => Promise<void>) {
-  const queue = [...items]
-  await Promise.all(Array.from({ length: n }, async () => { for (let x; (x = queue.shift()) !== undefined;) await run(x) }))
-}
-
-/**
- * Every row of one of the account's tables. Scoped to the account by hand --
- * this runs with the service role, so RLS is not there to do it -- and paged,
- * because PostgREST stops at 1,000 rows per request without saying so. The
- * first page says how many there are, and the rest are asked for several at a
- * time.
- */
+/** Every row of one of the account's tables; readAllForAccount says how. */
 async function readAll<T>(ctx: PracticeHubImportContext, table: string, columns: string, refPrefix?: string): Promise<T[]> {
-  const PAGE = 1000
-  const page = async (from: number, count: boolean) => {
-    let q = (ctx.supabase.from(table as never) as any).select(columns, count ? { count: 'exact' } : undefined).eq('account_id', ctx.accountId)
-    if (refPrefix) q = q.like('external_reference', `${refPrefix}%`)
-    const { data, error, count: total } = await q.order('id').range(from, from + PAGE - 1)
-    if (error) throw new Error(`${table}: ${error.message}`)
-    return { rows: (data ?? []) as T[], total: total as number | null | undefined }
-  }
-  const first = await page(0, true)
-  if (first.rows.length < PAGE) return first.rows
-  const pages: T[][] = [first.rows]
-  if (first.total == null) {
-    for (let from = PAGE; ; from += PAGE) { const next = await page(from, false); pages.push(next.rows); if (next.rows.length < PAGE) break }
-    return pages.flat()
-  }
-  const starts: number[] = []
-  for (let from = PAGE; from < first.total; from += PAGE) starts.push(from)
-  await withConcurrency(starts, 6, async (from) => { pages[from / PAGE] = (await page(from, false)).rows })
-  return pages.flat()
+  return readAllForAccount<T>(ctx.supabase, ctx.accountId, table, columns, refPrefix ? (q) => q.like('external_reference', `${refPrefix}%`) : undefined)
 }
 
 /** Charges the Stripe sync booked that no PracticeHub payment has claimed yet. */

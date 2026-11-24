@@ -449,9 +449,11 @@ export function successorInNewTree(removedId: string, oldSteps: DraftStep[], new
  * read before its atom existed) gets the atom that name is, and the filters
  * that make it behave as it did.
  */
-export function withAtom<T extends { trigger?: unknown; trigger_event?: string | null; filters?: Record<string, any> | null }>(rule: T): Omit<T, 'trigger' | 'filters'> & { trigger: TriggerAtom; filters: Record<string, any> } {
+export function withAtom<T extends { trigger?: unknown; trigger_event?: string | null; filters?: unknown }>(rule: T): Omit<T, 'trigger' | 'filters'> & { trigger: TriggerAtom; filters: Record<string, any> } {
+  // Stored as JSON: anything that is not an object is no filters.
+  const raw = rule.filters && typeof rule.filters === 'object' && !Array.isArray(rule.filters) ? (rule.filters as Record<string, any>) : {}
   const stored = asTriggerAtom(rule.trigger)
-  if (stored) return { ...rule, trigger: stored, filters: onlyIfFilters(rule.filters) }
-  const { trigger, implied } = atomFromLegacy(String(rule.trigger_event ?? ''), rule.filters)
-  return { ...rule, trigger, filters: { ...onlyIfFilters(rule.filters), ...implied } }
+  if (stored) return { ...rule, trigger: stored, filters: onlyIfFilters(raw) }
+  const { trigger, implied } = atomFromLegacy(String(rule.trigger_event ?? ''), raw)
+  return { ...rule, trigger, filters: { ...onlyIfFilters(raw), ...implied } }
 }

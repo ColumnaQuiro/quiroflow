@@ -2,6 +2,7 @@ import { formatEur } from '~/utils/billing'
 import { linkInvoicesToAppointments, type LinkableAppointment, type LinkableInvoice } from '~/utils/importInvoiceLink'
 import { readAllForAccount } from '~/utils/practicehubImport/appointments'
 import { practiceHubList, type PracticeHubImportContext, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
+import { pairWithBookedCharges } from '~/utils/stripeMembershipSync'
 
 // The Ledger step, run on the server: PracticeHub's ledger as PracticeHub
 // actually keeps it -- one invoice per visit, one payment per payment, and no
@@ -99,14 +100,29 @@ export interface PracticeHubLedgerInput {
   ourInvoices: PracticeHubLedgerOurInvoice[]
   /** External references of the payments already here. */
   havePaymentRefs: Set<string>
+  /**
+   * Charges the Stripe webhook booked that no PracticeHub payment has claimed
+   * yet (payments with a stripe_invoice_id and no external reference). A
+   * PracticeHub payment that is one of them adopts it instead of being
+   * created a second time (utils/stripeMembershipSync.ts).
+   */
+  stripeBooked?: StripeBookedCharge[]
   timezoneOfClinic: (clinicId: string | null) => string | null | undefined
 }
+
+export interface StripeBookedCharge { id: string; patient_id: string; amount_cents: number; paid_at: string; method: string }
 
 export interface PracticeHubLedgerRows {
   invoices: PracticeHubInvoiceCandidate[]
   /** Invoices an earlier run imported without a visit, that can be linked now. Only appointment_id is written to them. */
   invoicesToLink: { id: string; ref: string; appointmentId: string }[]
   payments: PracticeHubPaymentCandidate[]
+  /**
+   * PracticeHub payments that are a Stripe charge already booked here: the
+   * booked payment takes the PracticeHub reference (so later runs see it as
+   * imported) and nothing new is written.
+   */
+  paymentsToAdopt: { paymentId: string; ref: string }[]
   skipped: { invoicesAlready: number; paymentsAlready: number; invoicesUnmatched: number; paymentsUnmatched: number }
   phTotals: { invoicedCents: number; paidCents: number }
 }
@@ -191,7 +207,26 @@ export function practiceHubLedgerRows(input: PracticeHubLedgerInput): PracticeHu
     payments.push({ ref, patientId, amountCents: practiceHubCents(pay.amount), method: methodById.get(pay.payment_type_id) ?? 'other', paidAt: pay.created })
   }
 
-  return { invoices, invoicesToLink, payments, skipped, phTotals }
+  const { adopt, rest } = adoptBookedStripeCharges(payments, input.stripeBooked ?? [])
+  return { invoices, invoicesToLink, payments: rest, paymentsToAdopt: adopt, skipped, phTotals }
+}
+
+/**
+ * Splits PracticeHub payment candidates into those that are a Stripe charge
+ * the webhook already booked -- the same patient, amount and days, not cash
+ * -- and the rest. Shared with the browser importer.
+ */
+export function adoptBookedStripeCharges<T extends PracticeHubPaymentCandidate>(candidates: T[], booked: StripeBookedCharge[]): { adopt: { paymentId: string; ref: string }[]; rest: T[] } {
+  const cashless = candidates.filter((c) => c.method !== 'cash')
+  const { adopt } = pairWithBookedCharges(
+    cashless,
+    booked.map((b) => ({ id: b.id, patientId: b.patient_id, amountCents: b.amount_cents, paidAt: b.paid_at })),
+  )
+  const adopted = new Set(adopt.map((a) => a.incoming))
+  return {
+    adopt: adopt.map((a) => ({ paymentId: a.bookedId, ref: a.incoming.ref })),
+    rest: candidates.filter((c) => !adopted.has(c)),
+  }
 }
 
 // --- the step ------------------------------------------------------------------------
@@ -206,6 +241,24 @@ const SETTLE_MAX_CALLS = 200
 /** Every row of one of the account's tables; readAllForAccount says how. */
 async function readAll<T>(ctx: PracticeHubImportContext, table: string, columns: string, refPrefix?: string): Promise<T[]> {
   return readAllForAccount<T>(ctx.supabase, ctx.accountId, table, columns, refPrefix ? (q) => q.like('external_reference', `${refPrefix}%`) : undefined)
+}
+
+/** Charges the Stripe sync booked that no PracticeHub payment has claimed yet. */
+async function readStripeBooked(ctx: PracticeHubImportContext): Promise<StripeBookedCharge[]> {
+  const PAGE = 1000
+  const out: StripeBookedCharge[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (ctx.supabase.from('payments' as never) as any)
+      .select('id, patient_id, amount_cents, paid_at, method')
+      .eq('account_id', ctx.accountId)
+      .not('stripe_invoice_id', 'is', null)
+      .is('external_reference', null)
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw new Error(`payments: ${error.message}`)
+    out.push(...((data ?? []) as StripeBookedCharge[]))
+    if ((data ?? []).length < PAGE) return out
+  }
 }
 
 export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise<PracticeHubPlan> => {
@@ -229,9 +282,10 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
     readAll<PracticeHubLedgerOurInvoice>(ctx, 'invoices', 'id, external_reference, appointment_id, patient_id, created_at'),
     readAll<{ external_reference: string | null }>(ctx, 'payments', 'external_reference', 'phpay-'),
   ])
+  const stripeBooked = await readStripeBooked(ctx)
   const timezoneByClinic = new Map(clinics.map((c) => [c.id, c.timezone]))
 
-  const { invoices, invoicesToLink, payments, skipped, phTotals } = practiceHubLedgerRows({
+  const { invoices, invoicesToLink, payments, paymentsToAdopt, skipped, phTotals } = practiceHubLedgerRows({
     methods,
     patients: phPatients,
     invoices: phInvoices,
@@ -240,6 +294,7 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
     ourAppointments,
     ourInvoices,
     havePaymentRefs: new Set(ourPayments.map((p) => p.external_reference).filter(Boolean) as string[]),
+    stripeBooked,
     timezoneOfClinic: (clinicId) => (clinicId ? timezoneByClinic.get(clinicId) : null),
   })
 
@@ -312,6 +367,12 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
           `Ya importados, se omiten: ${nf.format(skipped.invoicesAlready)} facturas, ${nf.format(skipped.paymentsAlready)} pagos.`,
         )]
         : []),
+      ...(paymentsToAdopt.length
+        ? [t(
+          `${nf.format(paymentsToAdopt.length)} payments are Stripe charges already recorded here by the Stripe sync, so they are matched to those instead of created again.`,
+          `${nf.format(paymentsToAdopt.length)} pagos son cobros de Stripe ya registrados aquí por la sincronización de Stripe, así que se emparejan con ellos en vez de crearse otra vez.`,
+        )]
+        : []),
       ...(invoicesToLink.length
         ? [t(
           `${nf.format(invoicesToLink.length)} invoices already imported without their visit will be linked to it now.`,
@@ -326,7 +387,7 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
         : []),
       t('Nothing is deleted. Invoices and payments already here stay exactly as they are.', 'No se elimina nada. Las facturas y pagos que ya están aquí se quedan tal cual.'),
     ],
-    total: invoices.length + invoicesToLink.length + payments.length + (settle ? 1 : 0),
+    total: invoices.length + invoicesToLink.length + payments.length + paymentsToAdopt.length + (settle ? 1 : 0),
 
     // `written` counts invoices and payments created, invoices linked, and
     // invoices whose status settlement changed -- every row this touched, so
@@ -403,6 +464,21 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
         else written += data?.length ?? 0
         done += chunk.length
         progress(done)
+      }
+
+      for (const adopt of paymentsToAdopt) {
+        if (shouldStop()) return { written, errors }
+        // Only while it is still nobody's, so two runs cannot both claim it.
+        const { data, error } = await supabase
+          .from('payments')
+          .update({ external_reference: adopt.ref })
+          .eq('id', adopt.paymentId)
+          .eq('account_id', accountId)
+          .is('external_reference', null)
+          .select('id')
+        if (error) errors.push(t(`A Stripe charge was not matched to PracticeHub payment ${adopt.ref}: ${error.message}`, `Un cobro de Stripe no se emparejó con el pago de PracticeHub ${adopt.ref}: ${error.message}`))
+        else written += data?.length ?? 0
+        progress(++done)
       }
 
       if (settle) {

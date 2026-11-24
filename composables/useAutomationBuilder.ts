@@ -156,6 +156,9 @@ export function useAutomationBuilder() {
   const saving = ref(false)
   const savedAt = ref<number | null>(null)
   const createdAt = ref<string | null>(null)
+  // When a group send went out (segment_last_run_at): a one-off send with it
+  // set never goes again, whatever its date now says.
+  const lastRunAt = ref<string | null>(null)
 
   const stats = ref<{ rule: RuleTotals | null; steps: Record<string, RuleStepStats> }>({ rule: null, steps: {} })
   const canReadWhatsApp = ref(true)
@@ -338,7 +341,7 @@ export function useAutomationBuilder() {
     if (!UUID.test(id)) return null
     const accountId = store.accountId ?? ''
     const [rule, steps] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
       supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', id).eq('account_id', accountId).order('position'),
     ])
     if (rule.error) throw rule.error
@@ -403,7 +406,7 @@ export function useAutomationBuilder() {
         else missing.value = true
         return
       }
-      const { enabled, created_at, ...rest } = tree.rule
+      const { enabled, created_at, segment_last_run_at, ...rest } = tree.rule
       // Replacing the draft under a loaded canvas is not an edit to undo.
       if (silent) restoring = true
       draft.value = {
@@ -422,6 +425,7 @@ export function useAutomationBuilder() {
         steps: normalizePositions(tree.steps.map((s) => ({ id: s.id, action_type: s.action_type, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null, position: s.position }))),
       }
       createdAt.value = created_at
+      lastRunAt.value = segment_last_run_at ?? null
       loaded.value = true
       resetBaseline()
       if (silent) nextTick(() => (restoring = false))
@@ -440,6 +444,7 @@ export function useAutomationBuilder() {
 
   function initNew(from?: { rule: DraftRule; steps: DraftStep[] }, opts: { unsaved?: boolean } = {}) {
     ruleId.value = null
+    lastRunAt.value = null
     draft.value = from ? { rule: clone(from.rule), enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
     stats.value = { rule: null, steps: {} }
     hasGrowth.value = store.hasGrowthAddon
@@ -571,6 +576,7 @@ export function useAutomationBuilder() {
     saving,
     savedAt,
     createdAt,
+    lastRunAt,
     stats,
     canReadWhatsApp,
     hasGrowth,

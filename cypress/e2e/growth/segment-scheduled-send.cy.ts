@@ -1,7 +1,8 @@
 // A one-off group send on a date (TriggerPanel, schedule.starts_at): switched
 // on beforehand, it sends nothing until that time, and then enrols the group
 // once, as a "send now" one does. The engine has waited for starts_at all
-// along (lastScheduledOccurrence); this is the builder letting you set it.
+// along (lastScheduledOccurrence); this is the builder letting you set it,
+// and the list and the checklist saying Scheduled, then Sent.
 describe('Scheduling a group send', () => {
   let account: { email: string; password: string; accountId: string; clinicId: string }
 
@@ -53,9 +54,15 @@ describe('Scheduling a group send', () => {
         const at = new Date(rule.segment.schedule.starts_at)
         expect(at.toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' })).to.eq('11:30')
 
-        // Before the date: nothing.
+        // Before the date: nothing, and the send says it is scheduled -- in
+        // the Sends list and on its own checklist.
         cron()
         cy.task('auto:runsForRule', { ruleId }).should('have.length', 0)
+        cy.visit('/automations?view=sends')
+        cy.get(`[data-test="rule-${ruleId}"] [data-test="send-status-scheduled"]`).should('contain', '11:30')
+        cy.visit(`/automations/${ruleId}`)
+        cy.get('[data-test="broadcast-status-scheduled"]').should('contain', '11:30')
+        cy.get('[data-test="broadcast-when-scheduled"]').should('have.attr', 'aria-pressed', 'true')
 
         // The date arrives (moved back rather than waited for): the group enters, once.
         cy.task('db:updateRows', { table: 'automation_rules', values: { segment: { ...rule.segment, schedule: { ...rule.segment.schedule, starts_at: new Date(Date.now() - 60_000).toISOString() } } }, match: { id: ruleId } })
@@ -63,6 +70,14 @@ describe('Scheduling a group send', () => {
         cy.task('auto:runsForRule', { ruleId }).should('have.length', 2)
         cron()
         cy.task('auto:runsForRule', { ruleId }).should('have.length', 2)
+
+        // Gone out: sent, and its date can no longer be changed.
+        cy.visit('/automations?view=sends')
+        cy.get(`[data-test="rule-${ruleId}"] [data-test="send-status-sent"]`).should('be.visible')
+        cy.visit(`/automations/${ruleId}`)
+        cy.get('[data-test="broadcast-status-sent"]').should('be.visible')
+        cy.get('[data-test="broadcast-when-sent"]').should('be.visible')
+        cy.get('[data-test="broadcast-when-date"]').should('not.exist')
       })
     })
   })

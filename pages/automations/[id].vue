@@ -3,10 +3,11 @@ import { BUILDER_KEY, isBroadcastRule, newBroadcastDraft, useAutomationBuilder }
 import { OUTLETS } from '~/utils/automationCatalog'
 import { outletLabel, stepTitle } from '~/utils/automationDescribe'
 import { chainOf, type Problem } from '~/utils/automationTree'
+import type { AutoSaveOutcome } from '~/composables/useAutoSave'
 import { serverMessage } from '~/utils/serverMessage'
 
 // One automation: the canvas (Flow), who is in it (People), what it did
-// (History) and its settings. One draft for all four, one Save.
+// (History) and its settings. One draft for all four, saved as it is edited.
 //
 // /automations/new is the same page with nothing saved yet.
 
@@ -85,28 +86,136 @@ const problems = ref<Problem[] | null>(null)
 let pending: { enabled?: boolean } = {}
 const removedTitles = ref<Record<string, string>>({})
 
-async function saveWith(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 'take_out' } = {}) {
+// Auto-save. Every change is written on its own: a moment after the typing
+// stops, at once when a field loses focus, on Cmd+S, and before leaving the
+// page. The rules that keep that safe:
+//
+// - An automation that is ON only ever saves a COMPLETE state. While the
+//   check that refuses switching it on finds something missing -- a step just
+//   added and not filled in, a template not chosen yet -- nothing is written
+//   and the status says why, so patients keep getting the last complete
+//   version rather than half an edit. (The server refuses the same thing with
+//   422 whatever the browser thinks.) It also waits longer for typing to stop
+//   than a paused one does, so a pause mid-sentence is not what goes out.
+// - A save never switches it on or off. Only the switch does that.
+// - A save is refused when the automation was saved elsewhere since this
+//   page loaded it (another tab, another person): nothing more is written
+//   until the person chooses which version to keep.
+// - Nobody's place is decided by a timer: removing a step that people are on
+//   stops and asks, as the Save button did.
+//
+// A new automation is created, paused, by its first change: opening "New"
+// and leaving untouched creates nothing.
+const LIVE_DELAY_MS = 4000
+const PAUSED_DELAY_MS = 1500
+const live = computed(() => !b.isNew.value && b.draft.value.enabled)
+// What a held save is waiting on, for the status's "Review" button.
+const held = ref<{ kind: 'problems'; problems: Problem[] } | { kind: 'people'; people: NonNullable<typeof people.value> } | null>(null)
+// The people dialog an auto-save opened and the person closed: not opened
+// again by the next keystroke, only from "Review".
+let dismissedPeople = ''
+
+const missingMessage = () => t('Not saved: something is missing, and this automation is on', 'Sin guardar: falta algo y la automatización está activa')
+
+async function persist(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 'take_out'; force?: boolean; auto?: boolean } = {}): Promise<AutoSaveOutcome> {
   const wasNew = b.isNew.value
-  const result = await b.save(opts)
+  const { auto, ...saveOpts } = opts
+  const result = await b.save(saveOpts)
   if (result.ok) {
     forgetList()
     people.value = null
     problems.value = null
-    showToast(t('Saved', 'Guardado'))
-    if (wasNew && b.ruleId.value) router.replace({ path: `/automations/${b.ruleId.value}`, query: route.query })
-    return true
+    held.value = null
+    if (!auto) showToast(t('Saved', 'Guardado'))
+    // Not while leaving: the move to its id would cancel the way out.
+    if (wasNew && b.ruleId.value && !leaving) router.replace({ path: `/automations/${b.ruleId.value}`, query: route.query })
+    return { ok: true }
+  }
+  if ('conflict' in result) {
+    return { ok: false, state: 'conflict', message: t('Not saved: this automation was changed in another tab or by someone else', 'Sin guardar: esta automatización se ha cambiado en otra pestaña o por otra persona') }
   }
   if ('people' in result) {
     pending = { enabled: opts.enabled }
     removedTitles.value = Object.fromEntries(result.people.map((p) => [p.stepId, originalTitle(p.stepId) ?? '']))
-    people.value = result.people
-  } else if ('problems' in result) {
-    pending = { enabled: opts.enabled }
-    problems.value = result.problems
-  } else {
-    showToast(result.error, 'error')
+    held.value = { kind: 'people', people: result.people }
+    if (!auto || JSON.stringify(result.people) !== dismissedPeople) people.value = result.people
+    return { ok: false, state: 'held', message: t('Not saved: choose what happens to the people on the step you removed', 'Sin guardar: elige qué pasa con las personas del paso que has quitado') }
   }
-  return false
+  if ('problems' in result) {
+    pending = { enabled: opts.enabled }
+    held.value = { kind: 'problems', problems: result.problems }
+    // Asked for (switching on): show what is missing. Typed: the status says
+    // so, and Review opens it -- not a dialog in the middle of a sentence.
+    if (!auto) problems.value = result.problems
+    // Switching on a PAUSED automation was refused, and its edits with it.
+    // Paused, they can be saved as they are: written right after this.
+    if (!auto && !live.value) {
+      autosave.flush()
+      return { ok: false, state: 'held', message: '' }
+    }
+    return { ok: false, state: 'held', message: missingMessage() }
+  }
+  if (!auto) showToast(result.error, 'error')
+  // A dropped connection or a server error is worth trying again; a refusal
+  // (no permission, a step that is not this automation's) would be refused again.
+  const retry = result.status === null || result.status >= 500 || result.status === 408 || result.status === 429
+  return { ok: false, state: 'error', message: result.error, retry }
+}
+
+const autosave = useAutoSave({
+  source: () => b.draft.value,
+  ready: () => b.loaded.value && !b.missing.value && !b.loadError.value,
+  dirty: () => b.dirty.value,
+  // Held here: only what is missing whatever the templates say (an empty
+  // tag, a step with nothing chosen). A template that is not on the list the
+  // browser read is left to the server, which checks it against what it can
+  // read itself and refuses with 422 (held the same way) -- the list here may
+  // be stale, or not loaded, and the old Save never held on it either.
+  hold: () => {
+    if (!live.value) return null
+    const missing = findProblems(b.draft.value.rule, b.draft.value.steps, null)
+    if (missing.length === 0) return null
+    held.value = { kind: 'problems', problems: missing }
+    return missingMessage()
+  },
+  save: () => persist({ auto: true }),
+  delay: () => (live.value ? LIVE_DELAY_MS : PAUSED_DELAY_MS),
+})
+
+/** A save made on purpose (switching on, pausing, choosing for removed steps), queued behind any auto-save. */
+async function saveWith(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 'take_out'; force?: boolean } = {}) {
+  return (await autosave.run(() => persist(opts))).ok
+}
+function reviewHeld() {
+  if (held.value?.kind === 'people') people.value = held.value.people
+  else if (held.value?.kind === 'problems') problems.value = held.value.problems
+}
+function dismissPeople() {
+  dismissedPeople = JSON.stringify(people.value)
+  people.value = null
+}
+// After a conflict: take what is stored now (this tab's edits go), or write
+// this tab's over it.
+async function loadLatest() {
+  if (!b.ruleId.value) return
+  await b.load(b.ruleId.value)
+  autosave.resolve()
+}
+async function keepMine() {
+  if (await saveWith({ force: true })) autosave.resolve()
+}
+function onFocusOut() {
+  if (b.dirty.value) autosave.flush()
+}
+// Back on this tab with nothing unsaved: pick up what another tab or person
+// saved meanwhile, before the next edit here would conflict with it. Leaving
+// it: write what is pending, in case the tab is closed next.
+function onVisibility() {
+  if (document.visibilityState === 'hidden') {
+    if (b.dirty.value) autosave.flush()
+  } else if (b.ruleId.value && !b.dirty.value && autosave.state.value === 'saved') {
+    b.load(b.ruleId.value, { silent: true })
+  }
 }
 function originalTitle(stepId: string) {
   const saved = b.savedStep(stepId)
@@ -194,12 +303,23 @@ function onDeleted() {
 }
 
 // ---- leaving with unsaved changes
+// What is pending is written first; only what could not be (held, failed,
+// in conflict) asks before it is left behind.
 let leavingOnPurpose = false
+// Saving on the way out, which must not move the page to the new id.
+let leaving = false
 const leaveTo = ref<string | null>(null)
-onBeforeRouteLeave((to) => {
+onBeforeRouteLeave(async (to) => {
   if (leavingOnPurpose || !b.dirty.value || leaveTo.value === to.fullPath) return true
   // Same page, new id: the first save of a new automation.
   if (to.path === `/automations/${b.ruleId.value}`) return true
+  leaving = true
+  try {
+    await autosave.flush()
+  } finally {
+    leaving = false
+  }
+  if (!b.dirty.value) return true
   leaveTo.value = to.fullPath
   return false
 })
@@ -208,14 +328,18 @@ function leaveAnyway() {
   leavingOnPurpose = true
   if (to) router.push(to)
 }
+// Closing or reloading the tab cannot wait for a save: start it, and have the
+// browser ask, which gives it the time to land.
 function onBeforeUnload(e: BeforeUnloadEvent) {
-  if (b.dirty.value) e.preventDefault()
+  if (!b.dirty.value) return
+  autosave.flush()
+  e.preventDefault()
 }
 function onKeydown(e: KeyboardEvent) {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName) || (e.target as HTMLElement)?.isContentEditable
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
-    if (b.dirty.value || b.isNew.value) saveWith()
+    autosave.flush()
   } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && tab.value === 'flow') {
     e.preventDefault()
     b.undo()
@@ -224,10 +348,12 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('beforeunload', onBeforeUnload)
   window.addEventListener('keydown', onKeydown)
+  document.addEventListener('visibilitychange', onVisibility)
 })
 onUnmounted(() => {
   window.removeEventListener('beforeunload', onBeforeUnload)
   window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('visibilitychange', onVisibility)
 })
 
 // ---- header
@@ -247,7 +373,9 @@ let clock: ReturnType<typeof setInterval> | undefined
 onMounted(() => (clock = setInterval(() => (now.value = Date.now()), 30_000)))
 onUnmounted(() => clearInterval(clock))
 const savedText = computed(() => {
-  if (!b.savedAt.value) return ''
+  // Nothing typed yet: it saves itself once something is.
+  if (b.isNew.value) return t('Saves as you edit', 'Se guarda mientras editas')
+  if (!b.savedAt.value) return t('Saved', 'Guardado')
   const min = Math.floor((now.value - b.savedAt.value) / 60_000)
   return min < 1 ? t('Saved just now', 'Guardado ahora') : t(`Saved ${min} min ago`, `Guardado hace ${min} min`)
 })
@@ -277,7 +405,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 flex-col bg-surface-page">
+  <div class="relative flex h-full min-h-0 flex-col bg-surface-page" @focusout="onFocusOut">
     <!-- The shared empty state, so a missing automation or a failed load
     reads as an answer with a way out, not a page that did not render. -->
     <UiEmptyState
@@ -329,11 +457,23 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           @click="problems = b.problems.value"
         >{{ t('What is missing?', '¿Qué falta?') }}</button>
         <UiPill v-if="b.draft.value.rule.dry_run" tone="info">{{ t('Test mode', 'Modo prueba') }}</UiPill>
-        <span class="ml-auto hidden text-[12px] text-ink-muted md:inline" data-test="saved-at">{{ b.dirty.value ? t('Unsaved changes', 'Cambios sin guardar') : savedText }}</span>
+        <!-- In place of a Save button: it saves itself, and says when it
+        could not. The name keeps a floor (min-w above) so on a phone this
+        wraps under it: squeezed onto one row the name read "Rec". -->
+        <UiAutoSaveStatus class="ml-auto" :state="autosave.state.value" :message="autosave.message.value" :saved-label="savedText" @retry="autosave.flush()">
+          <button
+            v-if="autosave.state.value === 'held' && held"
+            type="button"
+            class="shrink-0 rounded-ctl border border-line-control px-2 py-0.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle touch:min-h-11"
+            data-test="save-review"
+            @click="reviewHeld"
+          >{{ t('Review', 'Revisar') }}</button>
+          <template v-if="autosave.state.value === 'conflict'">
+            <button type="button" class="shrink-0 rounded-ctl border border-line-control px-2 py-0.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle touch:min-h-11" data-test="conflict-reload" @click="loadLatest">{{ t('Load the latest', 'Cargar la última') }}</button>
+            <button type="button" class="shrink-0 rounded-ctl border border-line-control px-2 py-0.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle touch:min-h-11" data-test="conflict-keep" @click="keepMine">{{ t('Keep mine', 'Quedarme con la mía') }}</button>
+          </template>
+        </UiAutoSaveStatus>
         <UiBtn class="hidden sm:inline-flex" data-test="send-test" @click="sendTestOpen = true">{{ t('Send test', 'Enviar prueba') }}</UiBtn>
-        <!-- The name keeps a floor (min-w above) so on a phone the status and
-        Save wrap under it: squeezed onto one row the name read "Rec". -->
-        <UiBtn variant="primary" class="max-md:ml-auto" :disabled="(!b.dirty.value && !b.isNew.value) || b.saving.value" data-test="save" @click="saveWith()">{{ b.saving.value ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
       </header>
 
       <nav role="tablist" class="flex shrink-0 gap-1 border-b border-line bg-surface px-4 sm:px-5">
@@ -412,28 +552,15 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       <AutomationsHistoryTab v-else-if="tab === 'history'" />
       <AutomationsSettingsTab v-else-if="tab === 'settings'" @send-test="sendTestOpen = true" @launch="launchOpen = true" @toggle-enabled="toggleEnabled" @remove="deleteOpen = true" />
 
-      <!-- One save for the whole automation. -->
-      <div
-        v-if="b.dirty.value"
-        role="region"
-        :aria-label="t('Unsaved changes', 'Cambios sin guardar')"
-        class="absolute bottom-5 left-1/2 z-30 flex w-[min(600px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-2.5 pl-5 pr-2.5 text-surface-page shadow-popover"
-        :class="sheetOpen ? 'hidden' : ''"
-        data-test="save-bar"
-      >
-        <span class="flex-1 text-[13.5px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
-        <button type="button" class="h-9 rounded-ctl border border-surface-page/30 px-3.5 text-[13px] font-semibold touch:h-11" data-test="discard" @click="b.discard()">{{ t('Discard', 'Descartar') }}</button>
-        <button type="button" :disabled="b.saving.value" class="h-9 rounded-ctl bg-brand px-4 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-70 touch:h-11" data-test="save-bar-save" @click="saveWith()">
-          {{ b.saving.value ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
-        </button>
-      </div>
     </template>
 
-    <AutomationsRemovedStepsDialog v-if="people" :people="people" :titles="removedTitles" :busy="b.saving.value" @confirm="confirmRemoved" @cancel="people = null" />
+    <AutomationsRemovedStepsDialog v-if="people" :people="people" :titles="removedTitles" :busy="b.saving.value" @confirm="confirmRemoved" @cancel="dismissPeople" />
+    <!-- On a live automation whose edits are held, the way out is to pause
+    it: then what is on screen can be saved, incomplete or not. -->
     <AutomationsProblemsDialog
       v-if="problems"
       :problems="problems"
-      :draft-label="b.dirty.value || b.isNew.value ? null : t('Keep it paused', 'Dejarla pausada')"
+      :draft-label="b.dirty.value || b.isNew.value ? (live ? t('Pause it and save', 'Pausarla y guardar') : null) : t('Keep it paused', 'Dejarla pausada')"
       :busy="b.saving.value"
       @draft="b.dirty.value || b.isNew.value ? saveAsDraft() : (problems = null)"
       @review="gotoStep(problems![0]?.stepId ?? null)"

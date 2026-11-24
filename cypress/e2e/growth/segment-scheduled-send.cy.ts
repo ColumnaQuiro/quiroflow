@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // A one-off group send on a date (TriggerPanel, schedule.starts_at): switched
 // on beforehand, it sends nothing until that time, and then enrols the group
 // once, as a "send now" one does. The engine has waited for starts_at all
@@ -37,7 +38,8 @@ describe('Scheduling a group send', () => {
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
     cy.get('[data-test="tag-input"]').clear().type('contactado')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
     cy.get('[data-test="automation-enabled"]').click()

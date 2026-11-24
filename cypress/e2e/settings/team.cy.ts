@@ -31,7 +31,7 @@ describe('Settings > Team', () => {
       cy.get('[data-cy=member-role]').should('be.disabled')
 
       cy.get('[data-cy=member-name]').clear().type('Olga Owner')
-      cy.get('[data-cy=member-color]').eq(3).click()
+      cy.get('[data-cy=member-color][data-color="#14b8a6"]').click()
       // No hours of their own: the week stays hidden rather than reading
       // "Closed" seven times.
       cy.get('[data-cy=member-hours-none]').should('contain', 'No hours of their own')

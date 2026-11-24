@@ -35,6 +35,9 @@ describe('Dragging a block', () => {
           cy.login(account.email, account.password)
           cy.visit('/calendar')
           cy.contains('select', 'Work week').select('day')
+          // The week stays drawn until the day replaces it; a block found
+          // before then is the week's, and is gone a moment later.
+          cy.get('[data-cy=day-column-head]').should('exist')
           cy.contains('[data-cy=appt-block]', 'Mover Arrastrado').should('exist')
 
           hourPx().then((px) => {
@@ -82,6 +85,9 @@ describe('Dragging a block', () => {
         cy.login(account.email, account.password)
         cy.visit('/calendar')
         cy.contains('select', 'Work week').select('day')
+        // The week stays drawn until the day replaces it; a block found
+        // before then is the week's, and is gone a moment later.
+        cy.get('[data-cy=day-column-head]').should('exist')
         cy.contains('[data-cy=appt-block]', 'Viaje Mañana').should('exist')
         // Clear of the auto-scroll zones at the grid's top and bottom.
         cy.get('[data-cy=grid-scroller]').scrollTo(0, 0)

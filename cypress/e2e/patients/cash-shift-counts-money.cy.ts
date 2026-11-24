@@ -7,6 +7,8 @@
 //
 // The till's total is a register figure, not a balance -- nothing here
 // touches how a patient's balance is worked out.
+import { chooseFromCalendarMore } from '../../support/calendar'
+
 describe('The cash shift', () => {
   it('counts money that came in, and charges that still stand', () => {
     cy.seedStaffAccount().then((account) => {
@@ -23,7 +25,7 @@ describe('The cash shift', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/calendar')
-        cy.contains('button', 'Cash shift').click()
+        chooseFromCalendarMore('cash-shift-open', '[role=dialog]:contains("Cash shift")')
 
         cy.contains('Charged this shift').parent().should('contain', '60,00 €')
         // 30 in cash. Not 60: 20 of it was credit spent and 10 was forgiven.

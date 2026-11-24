@@ -74,7 +74,8 @@ describe('The day on a phone', () => {
       cy.visit('/calendar')
       cy.get('[data-cy=calendar-phone-header]').should('be.visible').invoke('outerHeight').should('be.lessThan', 60)
       cy.get('[data-cy=new-appointment]').should('not.be.visible')
-      cy.contains('button', 'Cash shift').should('not.be.visible')
+      // The toolbar's own menu is closed, and the phone's is not open yet.
+      cy.contains('button', 'Cash shift').should('not.exist')
 
       cy.get('[data-cy=calendar-phone-more]').click()
       cy.get('[data-cy=calendar-phone-menu]').within(() => {

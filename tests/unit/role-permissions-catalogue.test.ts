@@ -84,4 +84,10 @@ describe('Role permission catalogue', () => {
     const p = permissionsWithDefaults({ calendar_scope: 'own', patients_scope: 'own', billing_access: true, visit_notes_access: true, reports_access: true, reports_own_only: true })
     expect(summaryChips(p, es)).to.deep.equal(['Calendario: solo sus citas', 'Pacientes: solo los suyos', 'Cobrar', 'Informes: solo los suyos'])
   })
+
+  it('says when a role without the notes still sees progress', () => {
+    const p = permissionsWithDefaults({ patients_scope: 'all', progress_access: true })
+    expect(summaryChips(p, es)).to.include.members(['Sin notas clínicas', 'Ve el progreso'])
+    expect(summaryChips(permissionsWithDefaults({ visit_notes_access: true, progress_access: true }), es)).not.to.include('Ve el progreso')
+  })
 })

@@ -98,6 +98,11 @@ const rules: Rule[] = [
   // bookmark, or from the command palette, and it loaded real conversations.
   { test: (p) => p.startsWith('/inbox'), check: (s) => can(s, 'inbox_access') },
   { test: (p) => p.startsWith('/recalls'), check: (s) => can(s, 'recalls_access') },
+  // The other two lists under "Recalls, waitlist and plan alerts". The sidebar
+  // hid them without recalls_access, but nothing guarded the routes, so they
+  // opened from an address or a bookmark. /waitlist/<token> is the patient's
+  // public link and has no session to check.
+  { test: (p) => p === '/waitlist' || p === '/care-plan-alerts', check: (s) => can(s, 'recalls_access') },
   { test: (p) => p.startsWith('/billing'), check: (s) => can(s, 'billing_access') },
   // Reports that are about the whole clinic and cannot be narrowed to one
   // practitioner -- money owed on bonos, membership revenue, reminder

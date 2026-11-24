@@ -20,7 +20,7 @@ import { deliverEmail } from '~/server/utils/resend'
 import { quirocitasImporter, type QuirocitasStepKind } from '~/utils/quirocitasImport'
 import type { QuirocitasBonoType, QuirocitasHistory, QuirocitasInvoice, QuirocitasListPatient, QuirocitasPatient } from '~/utils/quirocitasPages'
 import { QUIROCITAS_COPY_VERSION, quirocitasDate, quirocitasReadQueue, type QuirocitasRecord, type QuirocitasTechniques } from '~/utils/quirocitasRows'
-import { importJobEmail, type ImportJobProgress, type ImportJobStepResult } from '~/utils/importJobReport'
+import { importJobEmail, importJobStepLabel, importSourceName, type ImportJobProgress, type ImportJobStepResult } from '~/utils/importJobReport'
 import { uiCatalogTranslate } from '~/utils/uiCatalog'
 import { practiceHubApplySlice, practiceHubReadSlice } from '~/server/utils/practicehubImportJob'
 import type { PracticeHubStepKind } from '~/utils/practicehubImport'
@@ -85,6 +85,41 @@ export function importJobT(lang: string | undefined) {
 }
 
 const errText = (e: unknown) => (e as { statusMessage?: string; message?: string })?.statusMessage ?? (e as { message?: string })?.message ?? String(e)
+
+/**
+ * The audit trail's one row for a finished import step. The rows the step
+ * wrote are not audited one by one (slice.post.ts sends `x-audit-import`, and
+ * fn_audit_log skips them): a clinic's whole history copied into audit_logs a
+ * second time doubled every write, and 104,503 appointments did not get
+ * through it on 24 Nov 2026. This says who imported what, from where, and how
+ * much. A step that wrote nothing (the read, a dry run) leaves no row.
+ *
+ * Never fails the import: a slice that has written its rows and then cannot
+ * record the summary would only retry and write them again.
+ */
+async function writeImportStepAudit(admin: Admin, job: ImportJob, result: ImportJobStepResult) {
+  if (result.dryRun || !result.written || result.step === 'read') return
+  const en = (text: string) => text
+  const source = importSourceName(job.source)
+  const step = importJobStepLabel(result.step, en, job.source)
+  let actorName: string | null = null
+  if (job.started_by) {
+    const { data } = await admin.from('team_members').select('full_name').eq('id', job.started_by).maybeSingle()
+    actorName = data?.full_name ?? null
+  }
+  const { error } = await admin.from('audit_logs').insert({
+    account_id: job.account_id,
+    entity_type: 'import_job',
+    entity_id: job.id,
+    action: 'created',
+    summary: `Imported from ${source}: ${step}, ${result.written} written`,
+    team_member_id: job.started_by,
+    actor: job.started_by ? 'staff' : 'server',
+    actor_name: actorName,
+    snapshot: { source: job.source, step: result.step, written: result.written, errors: result.errors.length } as Json,
+  })
+  if (error) console.error(`[import-jobs] ${job.id}: could not record the ${result.step} step in the audit trail: ${error.message}`)
+}
 
 /** Takes the job for one slice, or null when another slice holds it or it is over. */
 async function claim(admin: Admin, jobId: string): Promise<ImportJob | null> {
@@ -179,6 +214,7 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
       progress = { ...outcome.progress, failures: 0 }
       if (outcome.result) {
         results.push(outcome.result)
+        await writeImportStepAudit(admin, job, outcome.result)
         stepIndex++
         progress = {}
         if (stepIndex >= job.steps.length) status = 'done'

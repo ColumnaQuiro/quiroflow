@@ -36,7 +36,11 @@ async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
-export function attachAuditActor(event: H3Event, teamMemberId: string) {
+// `extraHeaders` ride along on the same client: an import slice adds
+// `x-audit-import`, so its writes skip the per-row audit
+// (20261124105403_import_writes_skip_row_audit.sql). With no team member the
+// writes are attributed to the server, as they would be without this.
+export function attachAuditActor(event: H3Event, teamMemberId: string | null, extraHeaders: Record<string, string> = {}) {
   const config = useRuntimeConfig(event) as unknown as {
     supabase?: { secretKey?: string; serviceKey?: string }
     public: { supabase: { url: string } }
@@ -53,7 +57,7 @@ export function attachAuditActor(event: H3Event, teamMemberId: string) {
     get() {
       client ??= createClient<Database>(config.public.supabase.url, key, {
         auth: { detectSessionInUrl: false, persistSession: false, autoRefreshToken: false },
-        global: { fetch: fetchWithRetry, headers: { 'x-audit-actor': teamMemberId } },
+        global: { fetch: fetchWithRetry, headers: { ...extraHeaders, ...(teamMemberId ? { 'x-audit-actor': teamMemberId } : {}) } },
       })
       return client
     },

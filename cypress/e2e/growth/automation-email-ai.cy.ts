@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The email editor's "Write with AI". The model is stubbed (CI has no
 // Anthropic key): what matters here is what the editor does with a draft --
 // asks before replacing what the email already says, puts the blocks and the
@@ -51,9 +52,10 @@ describe('Writing an automation email with AI', () => {
     cy.get('[data-test="email-builder-subject"]').should('have.value', '{{first_name}}, gracias por venir')
     cy.get('[data-test="email-builder-preheader"]').should('have.value', 'Te esperamos en tu próxima visita')
 
-    // Kept only by the automation's own Save.
+    // Kept by the automation's own save, not the email builder's.
     cy.get('[data-test="email-builder-done"]').click()
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.location('pathname').then((path) => {
       cy.task<{ config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: path.split('/').pop() }).should((rows) => {

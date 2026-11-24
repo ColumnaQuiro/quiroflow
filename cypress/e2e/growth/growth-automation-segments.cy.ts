@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The segment trigger, from the builder: a group of patients, the live
 // "N match today" count while the filters are edited, the activation dialog,
 // and -- the point -- that the count is exactly who the cron then enrols.
@@ -56,7 +57,8 @@ describe('Segment trigger', () => {
     cy.get('[data-test="tag-suggestions"]').contains('button', tag).click()
     cy.get('[data-test="tag-input"]').should('have.value', tag)
     cy.get('[data-test="tag-input"]').clear().type('contactado')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
     // Switching it on says how many, and offers test mode first.
@@ -145,7 +147,8 @@ describe('Segment trigger', () => {
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
     cy.get('[data-test="tag-input"]').type('contactado')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get('[data-test="automation-enabled"]').click()
     cy.get('[data-test="segment-activate"]').should('contain', '1 patient')
@@ -183,7 +186,8 @@ describe('Segment trigger', () => {
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
     cy.get('[data-test="tag-input"]').type('contactado')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get('[data-test="automation-enabled"]').click()
     // The dialog says how it will be paced.
@@ -245,7 +249,8 @@ describe('Segment trigger', () => {
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
     cy.get('[data-test="tag-input"]').type('plan sin terminar')
-    cy.get('[data-test="save"]').click()
+    // Auto-saved: wait for it to land rather than pressing Save.
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get('[data-test="automation-enabled"]').click()
     cy.get('[data-test="segment-activate"]').should('contain', '1 patient')

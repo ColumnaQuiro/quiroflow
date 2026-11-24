@@ -1,3 +1,5 @@
+import { autoSaved } from '../../support/autoSave'
+
 // Triggers as atoms (utils/automationTrigger.ts): a subject, a moment of it and
 // a timing, chosen in the builder and saved beside the old trigger name the
 // code before them reads; a rule saved on an old trigger opening as its atom;
@@ -64,12 +66,11 @@ describe('Automation triggers as atoms', () => {
     cy.get('[data-test="trigger-filter-appointment_status"]').should('be.visible')
     cy.get('[data-test="trigger-timing-text"]').should('contain', '24 h')
 
-    // A wait: a step that opens no editor over the save bar.
+    // A step, so there is something to run; auto-saved as it is edited.
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-delay"]').click()
-    cy.get('[data-test="save"]').click()
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
-    cy.get('[data-test="save-bar"]').should('not.exist')
     cy.location('pathname').then((path) => {
       savedRule(path.split('/').pop()!).then((r) => {
         expect(r.trigger).to.deep.include({ subject: 'appointment', moment: 'start', timing: { amount: 24, unit: 'hours', direction: 'before' } })
@@ -84,8 +85,7 @@ describe('Automation triggers as atoms', () => {
     cy.get('[data-test="trigger-subject"]').select('patient')
     cy.get('[data-test="trigger-moment"]').select('created')
     cy.get('[data-test="trigger-filter-appointment_status"]').should('not.exist')
-    cy.get('[data-test="save"]').click()
-    cy.get('[data-test="save-bar"]').should('not.exist')
+    autoSaved()
     cy.location('pathname').then((path) => {
       savedRule(path.split('/').pop()!).should((r) => {
         expect(r.trigger).to.deep.include({ subject: 'patient', moment: 'created', timing: null })

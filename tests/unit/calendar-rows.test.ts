@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gridEndHour, gridHourOf, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt } from '../../utils/calendarRows'
+import { gridEndHour, gridHourOf, gridOpenHourRange, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt } from '../../utils/calendarRows'
 
 // The calendar's vertical scale (utils/calendarRows): the linear grid it has
 // always drawn, and rows mode, where an hour grows to fit the visits stacked
@@ -123,5 +123,36 @@ describe('gridEndHour', () => {
 
   it('ignores a malformed closing time', () => {
     expect(gridEndHour(['', 'abc'], [])).toBe(20)
+  })
+})
+
+// "Solo horario de apertura": a clinic open 16:00-20:30 on Tuesdays faced
+// eight grey hours from 08:00 before its first patient.
+describe('gridOpenHourRange', () => {
+  it('spans the first opening to the last closing, to whole hours', () => {
+    expect(gridOpenHourRange([['16:00', '20:30']], [])).toEqual({ start: 16, end: 21 })
+    expect(gridOpenHourRange([['09:30', '13:00'], ['16:00', '21:00']], [])).toEqual({ start: 9, end: 21 })
+  })
+
+  it('widens to every visit on screen, so none falls off either edge', () => {
+    expect(gridOpenHourRange([['16:00', '20:30']], [[15 * 60 + 15, 16 * 60]])).toEqual({ start: 15, end: 21 })
+    expect(gridOpenHourRange([['16:00', '20:30']], [[20 * 60 + 30, 21 * 60 + 15]])).toEqual({ start: 16, end: 22 })
+  })
+
+  it('fits to visits alone on a day nobody works', () => {
+    expect(gridOpenHourRange([], [[10 * 60, 10 * 60 + 30]])).toEqual({ start: 10, end: 11 })
+  })
+
+  it('has nothing to fit to with no hours and no visits', () => {
+    expect(gridOpenHourRange([], [])).toBeNull()
+  })
+
+  it('skips malformed or empty windows', () => {
+    expect(gridOpenHourRange([['', 'x'], ['18:00', '18:00'], ['10:00', '12:00']], [])).toEqual({ start: 10, end: 12 })
+  })
+
+  it('stops at midnight and never returns a zero-hour grid', () => {
+    expect(gridOpenHourRange([['22:00', '23:30']], [[23 * 60, 24 * 60]])).toEqual({ start: 22, end: 24 })
+    expect(gridOpenHourRange([], [[23 * 60 + 30, 23 * 60 + 30]])).toEqual({ start: 23, end: 24 })
   })
 })

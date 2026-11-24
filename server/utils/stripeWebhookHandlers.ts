@@ -7,6 +7,18 @@ import { formatEur } from '~/utils/billing'
 import { installmentBeingPaid } from '~/utils/bonoInstallments'
 import { deliverGiftVoucher, madridToday, type GiftVoucher } from '~/server/utils/giftVouchers'
 import { recordAppVisitPayment } from '~/server/utils/appPayments'
+import { claimImportedStripePayment, syncStripeSubscription } from '~/server/utils/stripeMembershipSync'
+
+// The subscription events an imported membership follows
+// (server/utils/stripeMembershipSync.ts). The Connect webhook in the platform's
+// Stripe dashboard, and a legacy clinic's own endpoint, must be sending them.
+const SUBSCRIPTION_EVENTS = new Set([
+  'customer.subscription.created',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'customer.subscription.paused',
+  'customer.subscription.resumed',
+])
 
 // The subscription an invoice belongs to, in either shape Stripe sends it.
 // Up to 2025-02-24.acacia it is `invoice.subscription`; from 2025-03-31.basil
@@ -61,7 +73,7 @@ export async function handleStripeEvent(
     if (!subscriptionId) return null
     const { data } = await supabase
       .from('payment_schedules')
-      .select('id, installments_paid, installments_total, package_purchase_id, patient_membership_id, patient_id')
+      .select('id, installments_paid, installments_total, package_purchase_id, patient_membership_id, patient_id, origin, created_at')
       .eq('stripe_subscription_id', subscriptionId)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -151,7 +163,38 @@ export async function handleStripeEvent(
     const invoice = stripeEvent.data.object as Stripe.Invoice
     const subscriptionId = stripeInvoiceSubscriptionId(invoice)
     const paymentIntentId = stripeInvoicePaymentIntentId(invoice)
-    const schedule = await findSchedule(subscriptionId)
+    let schedule = await findSchedule(subscriptionId)
+
+    // A subscription made outside QuiroFlow whose created event has not been
+    // seen (or arrived before its plan was mapped): its first paid invoice
+    // pairs it, when the pairing is safe, and is then booked like any other.
+    // One of ours whose subscription id had not been filled in yet is found
+    // the same way (the sync fills it from the Subscription Schedule).
+    if (!schedule && subscriptionId && stripeEvent.type === 'invoice.paid' && clinicStripe) {
+      let sub: Stripe.Subscription | null = null
+      try {
+        sub = await clinicStripe.stripe.subscriptions.retrieve(subscriptionId, { expand: ['customer'] }, clinicStripe.options)
+      } catch (err) {
+        // Not readable: nothing is paired, exactly as before this existed.
+        console.error('[stripe webhook] could not read the subscription of a paid invoice', subscriptionId, (err as Error).message)
+      }
+      if (sub) {
+        const synced = await syncStripeSubscription(supabase, accountId, sub, { mode: 'auto' })
+        if (synced.outcome !== 'pending') schedule = await findSchedule(subscriptionId)
+      }
+    }
+
+    // An imported subscription books what it charges from when it was paired
+    // on: its history is the clinic's old system's to bring (the PracticeHub
+    // ledger import), not this webhook's. A day of slack, so the very invoice
+    // that paired it, or the one paid as the import screen ran, still counts.
+    // Stripe always sends `created`; an event built without it (a replayed
+    // fixture) is dated now rather than turning every date below into NaN.
+    const paidAtUnix = (invoice.status_transitions?.paid_at as number | null | undefined) ?? stripeEvent.created ?? Math.floor(Date.now() / 1000)
+    if (schedule?.origin === 'imported' && stripeEvent.type === 'invoice.paid' && paidAtUnix * 1000 < new Date(schedule.created_at).getTime() - 24 * 60 * 60 * 1000) {
+      return
+    }
+
     if (schedule) {
       const status = stripeEvent.type === 'invoice.paid' ? 'paid' : 'failed'
 
@@ -195,14 +238,27 @@ export async function handleStripeEvent(
 
         if (schedule.patient_membership_id) {
           const periodStart = new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString()
-          await bookMembershipPeriod(supabase, accountId, {
+          const amountCents = invoice.amount_paid || invoice.amount_due
+          // The same charge already here, imported from PracticeHub, is
+          // marked as this invoice instead of being booked a second time.
+          const claimed = await claimImportedStripePayment(supabase, accountId, {
             patientId: schedule.patient_id,
-            membershipId: schedule.patient_membership_id,
-            amountCents: invoice.amount_paid || invoice.amount_due,
-            periodStart,
-            method: 'card',
+            amountCents,
+            paidAt: new Date(paidAtUnix * 1000).toISOString(),
+            stripeInvoiceId: invoice.id!,
             stripePaymentIntentId: paymentIntentId,
           })
+          if (!claimed) {
+            await bookMembershipPeriod(supabase, accountId, {
+              patientId: schedule.patient_id,
+              membershipId: schedule.patient_membership_id,
+              amountCents,
+              periodStart,
+              method: 'card',
+              stripePaymentIntentId: paymentIntentId,
+              stripeInvoiceId: invoice.id ?? null,
+            })
+          }
           await fireMembershipPaymentProcessed(supabase, accountId, schedule.patient_membership_id, origin)
         } else if (schedule.package_purchase_id) {
           await recordPackageCharge(schedule.patient_id, schedule.package_purchase_id, invoice.amount_paid || invoice.amount_due, paymentIntentId)
@@ -211,6 +267,22 @@ export async function handleStripeEvent(
         await supabase.from('payment_schedules').update({ status: 'past_due' }).eq('id', schedule.id)
       }
     }
+  }
+
+  // A subscription made or changed in the clinic's Stripe: paired with its
+  // patient and membership, or that membership brought up to date (paused,
+  // resumed, cancelled). Read again from Stripe rather than taken from the
+  // event, so events arriving out of order still leave the latest state.
+  if (SUBSCRIPTION_EVENTS.has(stripeEvent.type)) {
+    let sub = stripeEvent.data.object as Stripe.Subscription
+    if (clinicStripe) {
+      try {
+        sub = await clinicStripe.stripe.subscriptions.retrieve(sub.id, { expand: ['customer'] }, clinicStripe.options)
+      } catch (err) {
+        console.error('[stripe webhook] could not read the subscription again; using the event', sub.id, (err as Error).message)
+      }
+    }
+    await syncStripeSubscription(supabase, accountId, sub, { mode: 'auto' })
   }
 
   // Subscription Schedule create response only sometimes carries the

@@ -86,6 +86,47 @@ export interface QuirohiroSnapshot {
   events: QuirohiroEvent[]
   /** Only for the contacts the read was asked to bring (see quirohiroNoteTargets). */
   notes: QuirohiroNote[]
+  /** QuiroHiro's invoices and payments: empty when the token cannot read them (see `money`). */
+  invoices?: QuirohiroInvoice[]
+  transactions?: QuirohiroTransaction[]
+  /** Whether the read could see payments: they need two scopes a token made for an earlier version may not have. */
+  money?: { read: boolean; reason?: string }
+}
+
+export interface QuirohiroInvoiceItem { name?: string | null; description?: string | null; amount?: number | null; qty?: number | null }
+export interface QuirohiroInvoice {
+  _id: string
+  /** draft | sent | payment_processing | partially_paid | paid | void */
+  status?: string | null
+  liveMode?: boolean | null
+  invoiceNumber?: string | number | null
+  currency?: string | null
+  contactDetails?: { id?: string | null } | null
+  issueDate?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  /** In the currency's units (45.5 is 45,50 €), as are every amount below. */
+  total?: number | null
+  amountPaid?: number | null
+  amountDue?: number | null
+  invoiceItems?: QuirohiroInvoiceItem[] | null
+}
+export interface QuirohiroTransaction {
+  _id: string
+  contactId?: string | null
+  /** succeeded | partially_refunded | refunded | failed | pending */
+  status?: string | null
+  liveMode?: boolean | null
+  currency?: string | null
+  amount?: number | null
+  amountRefunded?: number | null
+  /** What was paid for: "invoice" with entityId the invoice, or an order, a payment link... */
+  entityType?: string | null
+  entityId?: string | null
+  entitySourceType?: string | null
+  entitySourceName?: string | null
+  paymentProviderType?: string | null
+  createdAt?: string | null
 }
 
 /** Who becomes a patient here: only the clinic's patients, or every contact, leads included. */
@@ -450,4 +491,179 @@ export function quirohiroNoteRows(s: Pick<QuirohiroSnapshot, 'notes' | 'events'>
     })[0]
     return [{ ref: qhNoteRef(n.id), patientRef: qhPatientRef(n.contactId), at, text, appointmentRef: best ? qhAppointmentRef(best.id) : null }]
   })
+}
+
+// --- money ---------------------------------------------------------------------------------
+//
+// A clinic that charges through QuiroHiro has its invoices and its payments
+// (GoHighLevel "transactions") there; the first clinic charged outside it and
+// had neither. They come in as QuiroFlow keeps money: charges (invoices) and
+// payments side by side, a patient's balance being what they paid less what
+// they were charged. So both sides come in or neither does, and:
+//
+//   * a QuiroHiro invoice (not a draft, not voided) is a charge, paid or not
+//     as QuiroHiro has it;
+//   * a payment is a payment, net of what was refunded, on its invoice;
+//   * a payment that settles no invoice -- a payment link, an order -- gets a
+//     paid receipt of its own, or the patient would read as in credit by it;
+//   * an invoice QuiroHiro calls paid by more than the payments it lists (a
+//     payment recorded by hand there) gets a payment for the difference;
+//   * a line or a payment named "bono" with a number of sessions is a bono
+//     charged when it was sold (package_purchases.charged_at_purchase), so
+//     the sessions drawn from it charge nothing more.
+//
+// Only live euros: GoHighLevel keeps test-mode payments beside real ones.
+
+export interface QuirohiroChargeRow {
+  ref: string
+  patientRef: string
+  number: string
+  totalCents: number
+  createdAt: string
+  status: 'paid' | 'unpaid'
+  what: string
+}
+export interface QuirohiroPaymentRow {
+  ref: string
+  patientRef: string
+  amountCents: number
+  method: 'card' | 'cash' | 'transfer' | 'other'
+  paidAt: string
+  chargeRef: string | null
+  bonoRef: string | null
+}
+export interface QuirohiroBonoRow {
+  ref: string
+  patientRef: string
+  name: string
+  priceCents: number
+  sessionsTotal: number
+  purchasedAt: string
+  chargeRef: string
+}
+export interface QuirohiroLedger {
+  charges: QuirohiroChargeRow[]
+  payments: QuirohiroPaymentRow[]
+  bonos: QuirohiroBonoRow[]
+  /** Bono lines whose number of sessions the name does not say: charged, but no bono to draw from. */
+  bonosWithoutSessions: string[]
+  skipped: { notEuro: number; test: number; noContact: number }
+  /** Transactions counted in cents rather than euros, worked out from the invoices they paid. */
+  transactionsInCents: boolean
+}
+
+const cents = (amount: number | null | undefined) => Math.round((Number(amount) || 0) * 100)
+
+/** "Bono 10 sesiones", "BONO 5 ajustes", "Bono de 8": how many sessions a bono's name says it holds. */
+export function quirohiroBonoSessions(name: string): number | null | undefined {
+  if (!/\bbono/i.test(name)) return undefined
+  const n = name.match(/(\d{1,3})\s*(?:x\s*)?(?:ses(?:i[oó]n|iones)?|sesiones|citas?|visitas?|ajustes?|sessions?|visits?)\b/i) ?? name.match(/\bbono\s+(?:de\s+)?(\d{1,3})\b/i)
+  const sessions = n ? Number(n[1]) : NaN
+  return sessions >= 2 && sessions <= 100 ? sessions : null
+}
+
+/** How a QuiroHiro payment was taken, as one of the methods every clinic here has. */
+export function quirohiroPaymentMethod(t: Pick<QuirohiroTransaction, 'paymentProviderType' | 'entitySourceName'>): QuirohiroPaymentRow['method'] {
+  const provider = (t.paymentProviderType ?? '').toLowerCase()
+  if (/stripe|square|authorize|nmi|card|tarjeta/.test(provider)) return 'card'
+  if (/cash|efectivo/.test(provider)) return 'cash'
+  if (/bank|transfer|ach|sepa/.test(provider)) return 'transfer'
+  return 'other'
+}
+
+export function quirohiroLedgerRows(s: Pick<QuirohiroSnapshot, 'invoices' | 'transactions'>): QuirohiroLedger {
+  const skipped = { notEuro: 0, test: 0, noContact: 0 }
+  const usable = <T extends { liveMode?: boolean | null; currency?: string | null }>(x: T) => {
+    if (x.liveMode === false) { skipped.test++; return false }
+    if (x.currency && x.currency.toUpperCase() !== 'EUR') { skipped.notEuro++; return false }
+    return true
+  }
+  const invoices = (s.invoices ?? []).filter((i) => i.status !== 'draft' && i.status !== 'void' && usable(i))
+  const invoiceById = new Map(invoices.map((i) => [i._id, i]))
+  const transactions = (s.transactions ?? []).filter((t) => (t.status === 'succeeded' || t.status === 'partially_refunded') && usable(t))
+
+  // GoHighLevel's docs give every amount in the currency's units, but a
+  // payment read in cents would make each one a hundred times too large. The
+  // invoices say which: a payment of a whole invoice matches its total.
+  const ratios = transactions.flatMap((t) => {
+    const inv = t.entityType === 'invoice' ? invoiceById.get(t.entityId ?? '') : undefined
+    return inv?.total && t.amount ? [t.amount / inv.total] : []
+  }).sort((a, b) => a - b)
+  const transactionsInCents = ratios.length > 0 && ratios[Math.floor(ratios.length / 2)]! > 50
+  const txCents = (amount: number | null | undefined) => (transactionsInCents ? Math.round(Number(amount) || 0) : cents(amount))
+
+  const charges: QuirohiroChargeRow[] = []
+  const payments: QuirohiroPaymentRow[] = []
+  const bonos: QuirohiroBonoRow[] = []
+  const bonosWithoutSessions: string[] = []
+  const bonoFrom = (name: string, priceCents: number, patientRef: string, purchasedAt: string, chargeRef: string, key: string) => {
+    const sessions = quirohiroBonoSessions(name)
+    if (sessions === undefined || priceCents <= 0) return null
+    if (sessions === null) { bonosWithoutSessions.push(name); return null }
+    const bono: QuirohiroBonoRow = { ref: `QH-bono-${key}`, patientRef, name: name.trim(), priceCents, sessionsTotal: sessions, purchasedAt, chargeRef }
+    bonos.push(bono)
+    return bono
+  }
+
+  const paidOn = new Map<string, number>()
+  for (const t of transactions) {
+    const inv = t.entityType === 'invoice' ? invoiceById.get(t.entityId ?? '') : undefined
+    const contact = t.contactId ?? inv?.contactDetails?.id
+    if (!contact) { skipped.noContact++; continue }
+    const amountCents = txCents(t.amount) - txCents(t.amountRefunded)
+    if (amountCents <= 0) continue
+    const paidAt = new Date(t.createdAt ?? Date.now()).toISOString()
+    let chargeRef: string
+    let bonoRef: string | null = null
+    if (inv) {
+      chargeRef = `QH-inv-${inv._id}`
+      paidOn.set(inv._id, (paidOn.get(inv._id) ?? 0) + amountCents)
+    } else {
+      // Paid with no invoice to settle: its own paid receipt.
+      chargeRef = `QH-sale-${t._id}`
+      const what = clean(t.entitySourceName) || clean(t.entitySourceType) || 'QuiroHiro'
+      charges.push({ ref: chargeRef, patientRef: qhPatientRef(contact), number: `QHV-${t._id.slice(-8).toUpperCase()}`, totalCents: amountCents, createdAt: paidAt, status: 'paid', what })
+      bonoRef = bonoFrom(what, amountCents, qhPatientRef(contact), paidAt, chargeRef, `sale-${t._id}`)?.ref ?? null
+    }
+    payments.push({ ref: `QH-pay-${t._id}`, patientRef: qhPatientRef(contact), amountCents, method: quirohiroPaymentMethod(t), paidAt, chargeRef, bonoRef })
+  }
+
+  for (const inv of invoices) {
+    const contact = inv.contactDetails?.id
+    if (!contact) { skipped.noContact++; continue }
+    const totalCents = cents(inv.total)
+    const createdAt = new Date(inv.issueDate ?? inv.createdAt ?? Date.now()).toISOString()
+    const ref = `QH-inv-${inv._id}`
+    const items = inv.invoiceItems ?? []
+    const paid = inv.status === 'paid' || (totalCents > 0 && inv.amountDue != null && cents(inv.amountDue) <= 0)
+    charges.push({
+      ref, patientRef: qhPatientRef(contact), number: `QHI-${clean(String(inv.invoiceNumber ?? '')) || inv._id.slice(-8).toUpperCase()}`,
+      totalCents, createdAt, status: paid ? 'paid' : 'unpaid', what: items.map((i) => clean(i.name)).filter(Boolean).join(', ') || 'QuiroHiro',
+    })
+    items.forEach((item, n) => bonoFrom(clean(item.name), cents(item.amount) * Math.max(1, Number(item.qty) || 1), qhPatientRef(contact), createdAt, ref, `${inv._id}-${n}`))
+    // Paid by more than the payments QuiroHiro lists for it: the rest was recorded by hand.
+    const gap = cents(inv.amountPaid) - (paidOn.get(inv._id) ?? 0)
+    if (gap > 0) payments.push({ ref: `QH-invpay-${inv._id}`, patientRef: qhPatientRef(contact), amountCents: gap, method: 'other', paidAt: new Date(inv.updatedAt ?? createdAt).toISOString(), chargeRef: ref, bonoRef: null })
+  }
+  return { charges, payments, bonos, bonosWithoutSessions, skipped, transactionsInCents }
+}
+
+/**
+ * How many of a bono's sessions are gone: the patient's visits that took
+ * place from the day it was bought, each patient's bonos used up oldest
+ * first. QuiroHiro keeps no count of its own, so this is the best there is,
+ * and the step says so.
+ */
+export function quirohiroBonoSessionsUsed(bonos: QuirohiroBonoRow[], visits: { patientRef: string; startsAt: string; status: string }[]): Map<string, number> {
+  const used = new Map<string, number>()
+  const byPatient = new Map<string, QuirohiroBonoRow[]>()
+  for (const b of [...bonos].sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt))) byPatient.set(b.patientRef, [...(byPatient.get(b.patientRef) ?? []), b])
+  for (const [patientRef, list] of byPatient) {
+    const attended = visits.filter((v) => v.patientRef === patientRef && v.status === 'completed').map((v) => v.startsAt).sort()
+    for (const at of attended) {
+      const bono = list.find((b) => b.purchasedAt.slice(0, 10) <= at.slice(0, 10) && (used.get(b.ref) ?? 0) < b.sessionsTotal)
+      if (bono) used.set(bono.ref, (used.get(bono.ref) ?? 0) + 1)
+    }
+  }
+  return used
 }

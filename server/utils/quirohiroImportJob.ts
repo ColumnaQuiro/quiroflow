@@ -33,7 +33,7 @@ type Admin = SupabaseClient<Database>
 type Outcome = { progress: ImportJobProgress; result?: ImportJobStepResult }
 const SOURCE = 'quirohiro'
 
-export const QUIROHIRO_LISTS = ['users', 'calendars', 'fields', 'folders', 'contacts', 'events', 'notes'] as const
+export const QUIROHIRO_LISTS = ['users', 'calendars', 'fields', 'folders', 'contacts', 'events', 'invoices', 'transactions', 'notes'] as const
 type ListName = (typeof QUIROHIRO_LISTS)[number]
 
 /** Notes are fetched this many contacts at a time, and saved as one page per batch. */
@@ -94,7 +94,13 @@ export async function loadQuirohiroSnapshot(admin: Admin, accountId: string): Pr
   if (!meta) return null
   const lists = await Promise.all(QUIROHIRO_LISTS.map((l) => loadList<never>(admin, accountId, meta.pass, l)))
   const of = (l: ListName) => lists[QUIROHIRO_LISTS.indexOf(l)]!
-  return { readAt: meta.readAt, locationId: meta.locationId, users: of('users'), calendars: of('calendars'), fields: of('fields'), folders: of('folders'), contacts: of('contacts'), events: of('events'), notes: of('notes') }
+  // A copy read before payments were read has no marker, and no money.
+  const [money] = await loadList<{ read: boolean; reason?: string }>(admin, accountId, meta.pass, 'money')
+  return {
+    readAt: meta.readAt, locationId: meta.locationId, users: of('users'), calendars: of('calendars'), fields: of('fields'), folders: of('folders'),
+    contacts: of('contacts'), events: of('events'), notes: of('notes'), invoices: of('invoices'), transactions: of('transactions'),
+    money: money ? { read: money.read, reason: money.reason } : { read: false },
+  }
 }
 
 /** "Forget the copy": everything read from QuiroHiro for this clinic. */
@@ -215,6 +221,35 @@ export async function quirohiroReadSlice(
         beat(p)
       }
       next(list, at.s - 1)
+      continue
+    }
+
+    if (list === 'invoices' || list === 'transactions') {
+      // Payments need two scopes the first tokens were made without. A token
+      // that lacks them reads everything else, and the payments step says
+      // what to tick; any other refusal still stops the read.
+      try {
+        const res = list === 'invoices'
+          ? await quirohiroRequest<{ invoices?: { _id: string }[]; total?: number }>(conn, '/invoices/', { altId: conn.locationId, altType: 'location', limit: 100, offset: (page - 1) * 100 })
+          : await quirohiroRequest<{ data?: { _id: string }[]; totalCount?: number }>(conn, '/payments/transactions', { altId: conn.locationId, altType: 'location', limit: 100, offset: (page - 1) * 100 })
+        const rows = ((res as { invoices?: { _id: string }[] }).invoices ?? (res as { data?: { _id: string }[] }).data ?? []).map((r) => ({ ...r, id: r._id }))
+        const total = Number((res as { total?: number }).total ?? (res as { totalCount?: number }).totalCount ?? rows.length)
+        if (rows.length) await savePage(admin, accountId, pass, list, page, rows)
+        if (page === 1) p.pageCount = Math.max(1, Math.ceil(total / 100))
+        p.records = (p.records ?? 0) + rows.length
+        p.done = (p.done ?? 0) + 1
+        if (rows.length < 100 || page >= (p.pageCount ?? 1)) {
+          if (list === 'transactions') await savePage(admin, accountId, pass, 'money', 1, [{ id: 'money', read: true }])
+          next(list, rows.length ? page : page - 1)
+        } else p.page = page + 1
+      } catch (e) {
+        if (!(e instanceof QuirohiroError) || e.statusCode !== 400 || !/permission|scope/i.test(e.message)) throw e
+        await savePage(admin, accountId, pass, 'money', 1, [{ id: 'money', read: false, reason: t('the key cannot see payments', 'la clave no puede ver los pagos') }])
+        // Neither list can be read: past both.
+        next(list, 0)
+        if (list === 'invoices') next('transactions', 0)
+      }
+      beat(p)
       continue
     }
 

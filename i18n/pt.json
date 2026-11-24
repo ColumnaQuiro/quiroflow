@@ -1560,7 +1560,13 @@
   "{0} records and notes wait for their patient: run Patients first.": "{0} fichas e notas esperam pelo seu paciente: execute primeiro Pacientes.",
   "{0} notes were written on the day of a visit that is not here yet: they go on the patient's history. Run Appointments first to have them on their visit.": "{0} notas foram escritas no dia de uma visita que ainda não está aqui: vão para o histórico do paciente. Execute primeiro Consultas para as ter na sua visita.",
   "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} ficheiros e assinaturas dos campos personalizados do QuiroHiro não são copiados nesta importação: descarregue-os do QuiroHiro se precisar deles.",
-  "WhatsApp did not send it: {0}": "O WhatsApp não o enviou: {0}"
+  "WhatsApp did not send it: {0}": "O WhatsApp não o enviou: {0}",
+  "Payments and invoices were not read from QuiroHiro{0}. To bring them, edit the Private Integration in QuiroHiro, tick invoices.readonly and payments/transactions.readonly, and run the import again.": "Os pagamentos e as faturas não foram lidos do QuiroHiro{0}. Para os trazer, edite a integração privada no QuiroHiro, marque invoices.readonly e payments/transactions.readonly e volte a importar.",
+  "{0} of {1} sessions used": "{0} de {1} sessões usadas",
+  "{0} bonos do not say how many sessions they hold ({1}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.": "{0} pacotes não dizem quantas sessões têm ({1}): chegam como faturas pagas, sem pacote de onde gastar sessões. Crie esses pacotes à mão.",
+  "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ficam de fora {0} pagamentos ou faturas de teste e {1} numa moeda que não é o euro.",
+  "{0} payments or invoices name no contact and are left out.": "{0} pagamentos ou faturas não têm contacto e ficam de fora.",
+  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos»."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10685,6 +10691,14 @@
   "Could not check whether WhatsApp is set up.": "Não foi possível verificar se o WhatsApp está configurado.",
   "Checking WhatsApp…": "A verificar o WhatsApp…",
   "Sent by WhatsApp": "Enviado por WhatsApp",
-  "Could not send by WhatsApp": "Não foi possível enviar por WhatsApp"
+  "Could not send by WhatsApp": "Não foi possível enviar por WhatsApp",
+  "If the clinic charges or sells bonos through QuiroHiro, tick these two as well, for its payments and invoices:": "Se a clínica cobra ou vende pacotes com o QuiroHiro, marque também estes dois, para os pagamentos e faturas:",
+  "Reads QuiroHiro and brings it across: patients, appointments, each patient's clinical record and visit notes, and payments, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Lê o QuiroHiro e traz tudo: pacientes, consultas, a ficha clínica e as notas de visita de cada paciente, e os pagamentos, por esta ordem. Corre no servidor do QuiroFlow, por isso pode fechar esta página; recebe um email quando terminar.",
+  "Payments, invoices and bonos.": "Pagamentos, faturas e pacotes.",
+  "If the clinic charges through QuiroHiro and the key has the two payment permissions, its invoices, payments and bonos come in last. A clinic that keeps its money elsewhere (a spreadsheet) has none there to bring.": "Se a clínica cobra com o QuiroHiro e a chave tem as duas permissões de pagamentos, as faturas, pagamentos e pacotes chegam no fim. Uma clínica que gere o dinheiro noutro sítio (uma folha de cálculo) não tem nada a trazer daí.",
+  "Payments and bonos": "Pagamentos e pacotes",
+  "Only for a clinic that charges through QuiroHiro.": "Só para uma clínica que cobra com o QuiroHiro.",
+  "Invoices paid since": "Faturas pagas desde então",
+  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "O QuiroHiro não conta as sessões dos pacotes: as usadas são as visitas a que cada paciente veio desde o dia da compra, do pacote mais antigo ao mais recente. Cada pacote foi cobrado na venda, por isso as sessões gastas aqui não cobram mais nada."
  }
 }

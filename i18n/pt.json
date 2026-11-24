@@ -1566,7 +1566,11 @@
   "{0} bonos do not say how many sessions they hold ({1}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.": "{0} pacotes não dizem quantas sessões têm ({1}): chegam como faturas pagas, sem pacote de onde gastar sessões. Crie esses pacotes à mão.",
   "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ficam de fora {0} pagamentos ou faturas de teste e {1} numa moeda que não é o euro.",
   "{0} payments or invoices name no contact and are left out.": "{0} pagamentos ou faturas não têm contacto e ficam de fora.",
-  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos»."
+  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos».",
+  "Switch on \"{0}\"?": "Ativar «{0}»?",
+  " (and {0} more)": " (e mais {0})",
+  "\"{0}\" is on": "«{0}» ativada",
+  "\"{0}\" is paused": "«{0}» em pausa"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10723,6 +10727,16 @@
   "Payments and bonos": "Pagamentos e pacotes",
   "Only for a clinic that charges through QuiroHiro.": "Só para uma clínica que cobra com o QuiroHiro.",
   "Invoices paid since": "Faturas pagas desde então",
-  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "O QuiroHiro não conta as sessões dos pacotes: as usadas são as visitas a que cada paciente veio desde o dia da compra, do pacote mais antigo ao mais recente. Cada pacote foi cobrado na venda, por isso as sessões gastas aqui não cobram mais nada."
+  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "O QuiroHiro não conta as sessões dos pacotes: as usadas são as visitas a que cada paciente veio desde o dia da compra, do pacote mais antigo ao mais recente. Cada pacote foi cobrado na venda, por isso as sessões gastas aqui não cobram mais nada.",
+  "From now on, every new lead that meets this enters and receives its steps:": "A partir de agora, cada novo lead que cumpra isto entra e recebe os seus passos:",
+  "From now on, every patient who meets this enters and receives its steps:": "A partir de agora, cada paciente que cumpra isto entra e recebe os seus passos:",
+  "already inside carries on from the step where it stopped.": "que já estava dentro continua a partir do passo em que ficou.",
+  "already inside carry on from the step where they stopped.": "que já estavam dentro continuam a partir do passo em que ficaram.",
+  "Test mode: nothing is sent to anyone. What would have been sent is recorded so you can check it.": "Modo de teste: não é enviado nada a ninguém. Fica registado o que teria sido enviado para que o possa rever.",
+  "It is marketing: each channel only reaches people who accepted it.": "É marketing: cada canal só chega a quem o aceitou.",
+  "Click to pause it": "Clique para a pausar",
+  "Click to switch it on": "Clique para a ativar",
+  "What is missing?": "O que falta?",
+  "Cannot be switched on yet:": "Ainda não pode ser ativada:"
  }
 }

@@ -1262,6 +1262,7 @@ export type Database = {
           starter_key: string | null
           created_at: string
           created_by: string | null
+          external_reference: string | null
           id: string
           instructions: string | null
           media_path: string | null
@@ -1274,6 +1275,7 @@ export type Database = {
           starter_key?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           instructions?: string | null
           media_path?: string | null
@@ -1286,6 +1288,7 @@ export type Database = {
           starter_key?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           instructions?: string | null
           media_path?: string | null
@@ -4615,6 +4618,7 @@ export type Database = {
           assigned_by: string | null
           created_at: string
           ended_at: string | null
+          external_reference: string | null
           exercise_id: string
           frequency: string | null
           id: string
@@ -4631,6 +4635,7 @@ export type Database = {
           assigned_by?: string | null
           created_at?: string
           ended_at?: string | null
+          external_reference?: string | null
           exercise_id: string
           frequency?: string | null
           id?: string
@@ -4647,6 +4652,7 @@ export type Database = {
           assigned_by?: string | null
           created_at?: string
           ended_at?: string | null
+          external_reference?: string | null
           exercise_id?: string
           frequency?: string | null
           id?: string

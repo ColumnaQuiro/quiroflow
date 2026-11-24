@@ -11,7 +11,7 @@ import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
-import { gridEndHour, gridLinearTops, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
+import { gridEndHour, gridLinearTops, gridOpenHourRange, gridMinuteAt, gridRowsPerHour, gridStackRows, gridStretchedTops, gridYAt, type HourTops } from '~/utils/calendarRows'
 import { onlineBookingBands, type PractitionerDay } from '~/utils/calendarBookingWindows'
 import type { OnlineBookingWindows } from '~/utils/bookingSlots'
 import type { MoveClash } from '~/utils/moveClash'
@@ -21,7 +21,7 @@ import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
 import { isRouteAllowed } from '~/utils/routePermissions'
 import type { Database } from '~/types/database.types'
 
-const START_HOUR = 8
+const DEFAULT_START_HOUR = 8
 
 // Row scale: these are floors, not fixed values -- on a viewport taller
 // than 12 hours' worth of rows, the actual per-hour height grows to fill
@@ -404,6 +404,7 @@ const settings = reactive({
   showCancelled: false,
   hideRescheduled: false,
   hideDeleted: true,
+  openHoursOnly: false,
 })
 const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
   { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
@@ -411,7 +412,36 @@ const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>
   { key: 'showCancelled', label: t('Show cancelled', 'Mostrar canceladas') },
   { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
   { key: 'hideDeleted', label: t('Hide deleted', 'Ocultar eliminadas') },
+  { key: 'openHoursOnly', label: t('Opening hours only', 'Solo horario de apertura') },
 ])
+// The switches above are remembered per browser, like the view and the
+// rows/columns choice. They used to reset on every reload, so a clinic that
+// hid the markers of moved visits saw them back the next morning and read
+// them as the visits themselves still being there. Only known keys with a
+// boolean value are read back, so a stale or hand-edited entry cannot put
+// anything else into `settings`.
+const CALENDAR_DISPLAY_KEY = 'quiroflow-calendar-display'
+onMounted(() => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CALENDAR_DISPLAY_KEY) ?? '{}') as Record<string, unknown> | null
+    for (const key of Object.keys(settings) as (keyof typeof settings)[]) {
+      if (typeof stored?.[key] === 'boolean') settings[key] = stored[key] as boolean
+    }
+  } catch {
+    // Storage blocked or unreadable: the defaults stand.
+  }
+})
+watch(
+  settings,
+  (v) => {
+    try {
+      localStorage.setItem(CALENDAR_DISPLAY_KEY, JSON.stringify(v))
+    } catch {
+      // Storage blocked: remembered for this visit only.
+    }
+  },
+  { deep: true },
+)
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
@@ -576,18 +606,45 @@ const clinicTeamMembers = computed(() =>
 // whichever is later. It was a fixed 20:00, and a clinic open until 20:30
 // had its last half hour, and every visit booked in it, off the bottom.
 const endHour = computed(() => {
+  if (openHourRange.value) return openHourRange.value.end
   const closing = [store.currentClinic?.business_hours as BusinessHours | null | undefined, ...clinicTeamMembers.value.map((m) => m.business_hours)]
     .flatMap((hours) => Object.values(hours ?? {}).flat().map((w) => w[1]))
-  const ends = [...appointments.value, ...classSessions.value].map((v) => {
-    const s = new Date(v.starts_at)
-    const e = new Date(v.ends_at)
-    const startMin = s.getHours() * 60 + s.getMinutes()
-    if (e <= s) return startMin
-    return startOfDay(e).getTime() === startOfDay(s).getTime() ? e.getHours() * 60 + e.getMinutes() : 24 * 60
-  })
+  const ends = [...appointments.value, ...classSessions.value].map((v) => visitSpanMinutes(v)[1])
   return gridEndHour(closing, ends)
 })
-const gridHours = computed(() => endHour.value - START_HOUR)
+/** A visit's start and end in minutes from midnight of the day it starts on;
+ *  one running past midnight ends at 24:00. */
+function visitSpanMinutes(v: { starts_at: string; ends_at: string }): [number, number] {
+  const s = new Date(v.starts_at)
+  const e = new Date(v.ends_at)
+  const startMin = s.getHours() * 60 + s.getMinutes()
+  if (e <= s) return [startMin, startMin]
+  return [startMin, startOfDay(e).getTime() === startOfDay(s).getTime() ? e.getHours() * 60 + e.getMinutes() : 24 * 60]
+}
+// "Solo horario de apertura": the grid runs from the first hour anyone on
+// screen works to the last, over the days on screen, and never cuts off a
+// visit booked outside them (utils/calendarRows gridOpenHourRange). Off, it
+// is 08:00 to closing as always -- a switch, not the default, because the
+// grey hours are also where a visit squeezed in before opening gets booked.
+// Nobody's hours set for one of those days means there is nothing to fit to,
+// and the usual range stands.
+const openHourRange = computed(() => {
+  if (!settings.openHoursOnly || viewMode.value === 'month') return null
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  const windows: [string, string][] = []
+  for (const d of days) {
+    const w = workingWindowsFor(d)
+    if (w === null) return null
+    windows.push(...w)
+  }
+  // Only what is drawn: a cancelled visit left hidden must not stretch it.
+  const keys = new Set(days.map(toDateKey))
+  const drawn = days.flatMap((d) => appointmentsByDay.value.get(toDateKey(d)) ?? []).filter(isApptVisible)
+  const classes = classSessions.value.filter((c) => keys.has(toDateKey(new Date(c.starts_at))))
+  return gridOpenHourRange(windows, [...drawn, ...classes].map(visitSpanMinutes))
+})
+const startHour = computed(() => openHourRange.value?.start ?? DEFAULT_START_HOUR)
+const gridHours = computed(() => endHour.value - startHour.value)
 const totalMin = computed(() => gridHours.value * 60)
 
 // Keeps practitionerFilter pointing at a real, visible tab -- restores the
@@ -1350,7 +1407,7 @@ const weekTops = computed<HourTops>(() => {
 /** Minutes from the grid's first hour to a time, on its own day. */
 function minuteOfGrid(iso: string) {
   const d = new Date(iso)
-  return d.getHours() * 60 + d.getMinutes() - START_HOUR * 60
+  return d.getHours() * 60 + d.getMinutes() - startHour.value * 60
 }
 function timeToPx(iso: string, tops: HourTops) {
   return Math.max(0, gridYAt(tops, minuteOfGrid(iso)))
@@ -1370,13 +1427,13 @@ function slotHeight(tops: HourTops, min: number) {
 
 const dayGridHeight = computed(() => dayTops.value[gridHours.value])
 const weekGridHeight = computed(() => weekTops.value[gridHours.value])
-const hourMarks = computed(() => Array.from({ length: gridHours.value }, (_, i) => START_HOUR + i))
+const hourMarks = computed(() => Array.from({ length: gridHours.value }, (_, i) => startHour.value + i))
 function hourLabel(h: number) {
   return `${pad(h)}:00`
 }
-// m is minutes elapsed since START_HOUR (matches slotMarks below).
+// m is minutes elapsed since the grid's first hour, startHour (matches slotMarks below).
 function slotLabel(m: number) {
-  const total = START_HOUR * 60 + m
+  const total = startHour.value * 60 + m
   return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
 }
 
@@ -1445,7 +1502,7 @@ function closedSlotRects(forDate: Date, tops: HourTops) {
   if (windows === null) return []
   const rects: { top: number; height: number }[] = []
   for (let m = 0; m < totalMin.value; m += SLOT_MIN.value) {
-    if (withinWindows(START_HOUR * 60 + m, windows)) continue
+    if (withinWindows(startHour.value * 60 + m, windows)) continue
     const top = slotTop(tops, m)
     const slotPx = slotHeight(tops, m)
     const last = rects[rects.length - 1]
@@ -1486,8 +1543,8 @@ function hhmmMinutes(hhmm: string) {
 }
 function bookingBandRects(forDate: Date, tops: HourTops) {
   return onlineBookingBands(appointmentTypes.value, dayKeyFor(forDate), practitionerDaysFor(forDate)).flatMap((band) => {
-    const from = Math.max(0, hhmmMinutes(band.from) - START_HOUR * 60)
-    const to = Math.min(totalMin.value, hhmmMinutes(band.to) - START_HOUR * 60)
+    const from = Math.max(0, hhmmMinutes(band.from) - startHour.value * 60)
+    const to = Math.min(totalMin.value, hhmmMinutes(band.to) - startHour.value * 60)
     if (to <= from) return []
     const top = gridYAt(tops, from)
     return [{ key: `${band.from}-${band.to}`, top, height: gridYAt(tops, to) - top, color: band.types[0].color, label: band.types.map((x) => x.name).join(' · ') }]
@@ -1691,6 +1748,9 @@ interface OverflowBlock {
   _totalCols: number
   starts_at: string
   count: number
+  /** The visits folded into the chip, in start order: Day view lists them
+   *  when the chip is clicked. */
+  hidden: AppointmentRow[]
 }
 type LayoutBlock = LaidOutAppointment | OverflowBlock
 
@@ -1760,6 +1820,7 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
         _totalCols: maxLanes,
         starts_at: hidden.reduce((min, a) => (a.starts_at < min ? a.starts_at : min), hidden[0].starts_at),
         count: hidden.length,
+        hidden,
       })
     }
     cluster = []
@@ -1921,7 +1982,7 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
 // in the middle of what is visible.
 function blockBoxOnDay(block: AvailabilityBlock, day: Date, tops: HourTops, minFloor: number) {
   const gridStart = startOfDay(day)
-  gridStart.setHours(START_HOUR)
+  gridStart.setHours(startHour.value)
   const gridEnd = startOfDay(day)
   gridEnd.setHours(endHour.value)
   const s = Math.max(new Date(block.starts_at).getTime(), gridStart.getTime())
@@ -1943,6 +2004,32 @@ function blockLabelLines(block: AvailabilityBlock): [string, string] {
 function showOverflowDay(day: Date) {
   anchorDate.value = day
   viewMode.value = 'day'
+}
+// Day view's "+N más" chip lists the visits it folds in. The week chip sends
+// you to Day view, but Day view had nowhere further to go: its chip was a
+// label, so a seventh visit at 18:00 could only be reached by switching to
+// rows. One list open at a time, keyed by column and chip; any other click
+// closes it (the chip and the list stop their own clicks).
+const openOverflowKey = ref<string | null>(null)
+function toggleOverflowList(key: string) {
+  openOverflowKey.value = openOverflowKey.value === key ? null : key
+}
+function closeOverflowList() {
+  openOverflowKey.value = null
+}
+onMounted(() => document.addEventListener('click', closeOverflowList))
+onUnmounted(() => document.removeEventListener('click', closeOverflowList))
+watch([anchorDate, viewMode, stackMode], closeOverflowList)
+function overflowEntryName(a: AppointmentRow): string {
+  if (a._class) return a.appointment_types?.name ?? t('Class', 'Clase')
+  if (a._movedFrom) return `${movedMarkerName(a)} · ${movedMarkerLabel(a)}`
+  return `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim() || t('No patient', 'Sin paciente')
+}
+function openOverflowEntry(a: AppointmentRow, e: MouseEvent) {
+  closeOverflowList()
+  if (a._class) classPanelId.value = a._class.sessionId
+  else if (a._movedFrom) openEditModal(a._movedFrom)
+  else handleAppointmentClick(a, e)
 }
 function openEditModal(appointment: AppointmentRow, tab: 'summary' | 'billing' = 'summary') {
   closeHoverCardNow()
@@ -2806,7 +2893,7 @@ const hoveredRoomName = computed(() => rooms.value.find((r) => r.id === hoveredA
 
 // --- Empty slots: hover, keyboard focus, touch ---
 // Every column on screen, left to right: rooms in Day view, day x room in the
-// week views. A cell is (column, minute since START_HOUR), one slot tall.
+// week views. A cell is (column, minute since the grid's first hour), one slot tall.
 const gridColumns = computed(() => {
   const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
   return days.flatMap((day) => dayColumns.value.map((c) => ({ day, dayKey: toDateKey(day), roomId: c.id, roomName: c.name })))
@@ -2826,7 +2913,7 @@ function colIndex(dayKey: string, roomId: string) {
 function cellStart(cell: Cell): Date {
   const c = gridColumns.value[cell.col]
   const d = new Date(c.day)
-  d.setHours(START_HOUR, cell.min, 0, 0)
+  d.setHours(startHour.value, cell.min, 0, 0)
   return d
 }
 function cellTimeLabel(cell: Cell) {
@@ -2886,7 +2973,7 @@ function createGhostFor(dayKey: string, roomId: string) {
   if (!modalOpen.value || modalMode.value !== 'create' || !prefill.value) return null
   if (prefill.value.date !== dayKey || (prefill.value.roomId || '__none') !== roomId) return null
   const [h, m] = prefill.value.time.split(':').map(Number)
-  const min = h * 60 + m - START_HOUR * 60
+  const min = h * 60 + m - startHour.value * 60
   // Over a taken slot the full-width marker would hide the visit already
   // there; the gutter carries it instead (gutterMarkFor).
   const taken = !!appointmentAtCell({ col: colIndex(dayKey, roomId), min })
@@ -3037,7 +3124,7 @@ function activateKeyboardFocus() {
   if (!focusCell.value) {
     // Start where the day is: now, if it is on screen, else the first hour
     // anybody works.
-    const nowMin = now.value.getHours() * 60 + now.value.getMinutes() - START_HOUR * 60
+    const nowMin = now.value.getHours() * 60 + now.value.getMinutes() - startHour.value * 60
     const onScreen = gridColumns.value.findIndex((c) => isSameDate(c.day, now.value))
     const min = onScreen >= 0 && nowMin >= 0 && nowMin < totalMin.value ? Math.floor(nowMin / SLOT_MIN.value) * SLOT_MIN.value : 0
     focusCell.value = { col: Math.max(0, onScreen), min }
@@ -3215,7 +3302,7 @@ onUnmounted(() => {
   if (nowTimer) clearInterval(nowTimer)
   document.removeEventListener('visibilitychange', onVisible)
 })
-const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < endHour.value)
+const nowWithinHours = computed(() => now.value.getHours() >= startHour.value && now.value.getHours() < endHour.value)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
 const nowLinePx = computed(() => timeToPx(now.value.toISOString(), dayTops.value))
 // Week views: the line runs across today's room columns only, and the time
@@ -3617,7 +3704,7 @@ function showNowLineOn(day: Date) {
           <div class="w-[58px] shrink-0 border-r border-line">
             <div class="border-b border-line" :style="{ height: `${viewMode === 'day' ? DAY_HEADER_PX : WEEK_HEADER_PX}px` }" />
             <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
-              <span v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint" :style="{ top: `${Math.max(0, gridYAt(topsForView(), (h - START_HOUR) * 60) - 7)}px` }">{{ hourLabel(h) }}</span>
+              <span v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint" :style="{ top: `${Math.max(0, gridYAt(topsForView(), (h - startHour) * 60) - 7)}px` }">{{ hourLabel(h) }}</span>
             </div>
           </div>
           <div v-for="(day, i) in skeletonColumns" :key="i" class="flex min-w-0 flex-1 flex-col border-r border-line last:border-r-0">
@@ -3626,7 +3713,7 @@ function showNowLineOn(day: Date) {
               <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
             </div>
             <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
-              <div v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(topsForView(), (h - START_HOUR) * 60)}px` }" />
+              <div v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(topsForView(), (h - startHour) * 60)}px` }" />
               <UiSkeleton v-for="(b, j) in skeletonBlocks(i, topsForView())" :key="j" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
             </div>
           </div>
@@ -3683,7 +3770,7 @@ function showNowLineOn(day: Date) {
                     v-for="h in hourMarks"
                     :key="h"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                    :style="{ top: `${Math.max(0, gridYAt(dayTops, (h - START_HOUR) * 60) - 7)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(dayTops, (h - startHour) * 60) - 7)}px` }"
                   >
                     {{ hourLabel(h) }}
                   </span>
@@ -3717,7 +3804,7 @@ function showNowLineOn(day: Date) {
                     <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }} · {{ t('online', 'online') }}</span>
                   </div>
                   <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(dayTops, m)}px` }" />
-                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(dayTops, (h - START_HOUR) * 60)}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(dayTops, (h - startHour) * 60)}px` }" />
 
                   <!-- A range loading: placeholders where the visits go, and
                        nothing to click until it is known what is free. -->
@@ -3754,11 +3841,38 @@ function showNowLineOn(day: Date) {
                   <template v-for="(appt, i) in layoutForRoomOnDay(anchorDate, col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                     <div
                       v-if="isOverflowBlock(appt)"
-                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card"
-                      :title="appt.count === 1 ? t('1 more appointment at this time', '1 cita más a esta hora') : t(`${appt.count} more appointments at this time`, `${appt.count} citas más a esta hora`)"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, dayTops), OVERFLOW_CHIP_PX)"
+                      class="absolute"
+                      :style="{ ...columnStyle(appt, timeToPx(appt.starts_at, dayTops), OVERFLOW_CHIP_PX), zIndex: openOverflowKey === `${col.id}-${i}` ? '40' : '10' }"
                     >
-                      +{{ appt.count }} {{ t('more', 'más') }}
+                      <button
+                        type="button"
+                        data-cy="day-overflow-chip"
+                        class="flex h-full w-full items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                        :aria-expanded="openOverflowKey === `${col.id}-${i}`"
+                        :title="appt.count === 1 ? t('1 more appointment at this time. Click to see it.', '1 cita más a esta hora. Haz clic para verla.') : t(`${appt.count} more appointments at this time. Click to see them.`, `${appt.count} citas más a esta hora. Haz clic para verlas.`)"
+                        @click.stop="toggleOverflowList(`${col.id}-${i}`)"
+                      >
+                        +{{ appt.count }} {{ t('more', 'más') }}
+                      </button>
+                      <ul
+                        v-if="openOverflowKey === `${col.id}-${i}`"
+                        data-cy="day-overflow-list"
+                        class="absolute right-0 top-full mt-1 w-56 max-w-[70vw] overflow-hidden rounded-ctl border border-line bg-surface py-1 shadow-pop"
+                        @click.stop
+                      >
+                        <li v-for="h in appt.hidden" :key="h.id">
+                          <button
+                            type="button"
+                            data-cy="day-overflow-entry"
+                            :data-appt-id="h._movedFrom?.id ?? h.id"
+                            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-ink-900 hover:bg-surface-subtle"
+                            @click="openOverflowEntry(h, $event)"
+                          >
+                            <span class="shrink-0 font-mono text-[11.5px] text-ink-muted">{{ formatTime(h.starts_at) }}</span>
+                            <span class="truncate" :class="settings.privacyMode && !h._class ? 'select-none blur-sm' : ''">{{ overflowEntryName(h) }}</span>
+                          </button>
+                        </li>
+                      </ul>
                     </div>
                     <button
                       v-else-if="appt._class"
@@ -3878,7 +3992,7 @@ function showNowLineOn(day: Date) {
                     v-for="h in hourMarks"
                     :key="h"
                     class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                    :style="{ top: `${Math.max(0, gridYAt(weekTops, (h - START_HOUR) * 60) - 7)}px` }"
+                    :style="{ top: `${Math.max(0, gridYAt(weekTops, (h - startHour) * 60) - 7)}px` }"
                   >
                     {{ hourLabel(h) }}
                   </span>
@@ -3949,7 +4063,7 @@ function showNowLineOn(day: Date) {
                       <span v-if="ci === 0 && band.height >= 22" class="truncate">{{ band.label }}</span>
                     </div>
                     <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${gridYAt(weekTops, m)}px` }" />
-                    <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(weekTops, (h - START_HOUR) * 60)}px` }" />
+                    <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${gridYAt(weekTops, (h - startHour) * 60)}px` }" />
 
                     <template v-if="loading">
                       <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(di + ci, weekTops, day) : []" :key="`sk-${j}`" class="absolute left-0.5 right-0.5 rounded-[6px]" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />

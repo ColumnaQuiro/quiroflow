@@ -161,9 +161,16 @@ const autosave = useAutoSave({
   source: () => b.draft.value,
   ready: () => b.loaded.value && !b.missing.value && !b.loadError.value,
   dirty: () => b.dirty.value,
+  // Held here: only what is missing whatever the templates say (an empty
+  // tag, a step with nothing chosen). A template that is not on the list the
+  // browser read is left to the server, which checks it against what it can
+  // read itself and refuses with 422 (held the same way) -- the list here may
+  // be stale, or not loaded, and the old Save never held on it either.
   hold: () => {
-    if (!live.value || b.problems.value.length === 0) return null
-    held.value = { kind: 'problems', problems: b.problems.value }
+    if (!live.value) return null
+    const missing = findProblems(b.draft.value.rule, b.draft.value.steps, null)
+    if (missing.length === 0) return null
+    held.value = { kind: 'problems', problems: missing }
     return missingMessage()
   },
   save: () => persist({ auto: true }),

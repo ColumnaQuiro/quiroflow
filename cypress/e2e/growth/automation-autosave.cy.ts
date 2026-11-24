@@ -1,3 +1,5 @@
+import { autoSaved } from '../../support/autoSave'
+
 // The automation builder saves itself: no Save button, a status that says
 // where it stands, and the cases where saving on a timer would be wrong --
 // a live automation half edited, a failed request, a second tab -- each
@@ -16,7 +18,7 @@ interface Step {
 }
 
 const status = () => cy.get('[data-test="save-status"]', { timeout: 15000 })
-const saved = () => status().should('have.attr', 'data-state', 'saved')
+const saved = () => autoSaved()
 
 describe('Automation auto-save', () => {
   let account: SeededAccount

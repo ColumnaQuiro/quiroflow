@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The Automations page's "Create with AI". The model is stubbed (CI has no
 // Anthropic key): what matters here is what the builder does with a draft --
 // opens it switched off and saves it at once, paused, so leaving loses
@@ -61,7 +62,7 @@ describe('Creating an automation with AI', () => {
     cy.contains('[data-test^="node-"]', 'te toca revisión').should('be.visible')
 
     // Nobody presses anything: it is written, and the address becomes its own.
-    cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.location('pathname').then((path) => {
       cy.task<{ action_type: string; config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: path.split('/').pop() }).should((rows) => {

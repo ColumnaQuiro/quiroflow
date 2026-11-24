@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The automation builder's step panels -- what the Campaigns editor's
 // "action" rows were, now one panel per step type beside the canvas.
 //
@@ -80,7 +81,7 @@ describe('Automation builder: step panels', () => {
       cy.get('select').select('hours')
     })
     // Auto-saved: wait for it to land rather than pressing Save.
-    cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
     // Two hours is stored as 120 minutes: one unit underneath, because the
@@ -116,7 +117,7 @@ describe('Automation builder: step panels', () => {
     cy.get('[data-test="template-select"]').select('with_button::es')
     cy.get('[data-test="button-slot-0"]').should('contain', 'Reservar').find('select').select('phone')
     // Auto-saved: wait for it to land rather than pressing Save.
-    cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
+    autoSaved()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get<string>('@accountId').then((accountId) => {
       cy.task('db:latestAutomationActions', { accountId }).then((rows) => {
@@ -188,7 +189,7 @@ describe('Automation builder: step panels', () => {
           cy.get('[data-test="variable-2"] [data-test="answer-fallback"]').type('tu dolor')
           cy.get('[data-test="variable-1"] [data-test="answer-fallback"]').should('not.exist')
           // Auto-saved: wait for it to land rather than pressing Save.
-          cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
+          autoSaved()
           // Saved, before reading it back (cy.task does not retry).
           cy.task<{ config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: rule.id }).should((rows) => {
             expect(rows[0]!.config.variables[1]).to.deep.eq({ source: 'answer_cual_seria_el_motivo_de_tu_consulta', fallback: 'tu dolor' })
@@ -282,7 +283,7 @@ describe('Automation builder: step panels', () => {
       canvas().should('contain', 'Gracias por venir, Lucía').and('contain', 'Reserva tu próxima cita')
       cy.get('[data-test="email-builder-done"]').click()
       // Auto-saved: wait for it to land rather than pressing Save.
-      cy.get('[data-test="save-status"]', { timeout: 15000 }).should('have.attr', 'data-state', 'saved')
+      autoSaved()
       cy.task<{ config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: rule.id }).should((rows) => {
         expect(rows[0]!.config.design.blocks.map((x: { type: string }) => x.type)).to.deep.eq(['text', 'button'])
         expect(rows[0]!.config.design.blocks[0].html).to.eq('<p>Gracias por venir, {{first_name}}.</p>')

@@ -15,16 +15,16 @@ describe('PracticeHub 2.0', () => {
       // And the other way round: a phk_ key is refused as the Classic one,
       // whether saved or pasted into an import tab, rather than reaching
       // PracticeHub and coming back a bare 403.
-      cy.request({ method: 'PUT', url: '/api/import/practicehub-connection', body: { baseUrl: 'https://clinic.neptune.practicehub.io', apiKey: 'phk_abc123' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'PracticeHub 2.0 key')
+      cy.request({ method: 'PUT', url: '/api/import/practicehub-connection', body: { baseUrl: 'https://clinic.neptune.practicehub.io', apiKey: 'phk_abc123' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'PracticeHub API key')
       cy.request({ method: 'POST', url: '/api/import/practicehub-proxy', body: { baseUrl: 'https://clinic.neptune.practicehub.io', apiKey: 'phk_abc123', appDetails: 'QuiroFlow=a@b.es', path: '/patients' }, failOnStatusCode: false }).then((res) => {
         expect(res.status).to.eq(400)
-        expect(res.body.statusMessage).to.contain('PracticeHub 2.0 key')
+        expect(res.body.statusMessage).to.contain('PracticeHub API key')
       })
       for (const body of [{ path: '/../me' }, { path: 'https://evil.example/x' }, { path: '/patients', query: { 'x-api-key': 'y' } }]) {
         cy.request({ method: 'POST', url: PROXY, body, failOnStatusCode: false }).its('status').should('eq', 400)
       }
       // A well-formed request with nothing saved says what is missing.
-      cy.request({ method: 'POST', url: PROXY, body: { path: '/me' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'No PracticeHub 2.0 connection is saved')
+      cy.request({ method: 'POST', url: PROXY, body: { path: '/me' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'No PracticeHub API key is saved')
     })
   })
 

@@ -71,7 +71,7 @@ async function run() {
       return { planId: p.id, patientNumber: number, ourPatient: number ? ourByNumber.get(number) ?? null : null, phName: p.name, outcome: carePlanOutcome(p), status: p.status }
     })
   } catch (e: any) {
-    error.value = importErrorText(e, t, { en: 'Could not read PracticeHub 2.0.', es: 'No se pudo leer PracticeHub 2.0.' })
+    error.value = importErrorText(e, t, { en: 'Could not read the PracticeHub API.', es: 'No se pudo leer la PracticeHub API.' })
   } finally {
     running.value = false
     progress.value = ''
@@ -108,7 +108,7 @@ function becomes(o: CarePlanOutcome): string {
 <template>
   <div class="flex flex-col gap-4">
     <p class="text-sm text-ink-muted2">
-      {{ t('For a clinic on PracticeHub 2.0, its bonos and memberships are care plans there. This reads them through the 2.0 API and shows what each would become in QuiroFlow. It is read-only: nothing is written yet.', 'En una clínica que ya está en PracticeHub 2.0, sus bonos y membresías son planes de cuidados. Esto los lee con la API 2.0 y muestra en qué se convertiría cada uno en QuiroFlow. Solo lectura: todavía no escribe nada.') }}
+      {{ t('For a clinic on PracticeHub 2.0, its bonos and memberships are care plans there. This reads them through the PracticeHub API and shows what each would become in QuiroFlow. It is read-only: nothing is written yet.', 'En una clínica que ya está en PracticeHub 2.0, sus bonos y membresías son planes de cuidados. Esto los lee con la PracticeHub API y muestra en qué se convertiría cada uno en QuiroFlow. Solo lectura: todavía no escribe nada.') }}
     </p>
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50" :disabled="running || !hydrated" data-cy="ph20-read" @click="run">

@@ -20,14 +20,14 @@ type Translate = (en: string, es: string) => string
 
 const KNOWN: { starts: string; en: string; es: string }[] = [
   {
-    starts: 'The PracticeHub 2.0 key starts with phk_',
-    en: 'The PracticeHub 2.0 key starts with phk_. Create one in PracticeHub under Developers → API Keys.',
-    es: 'La clave de PracticeHub 2.0 empieza por phk_. Créala en PracticeHub, en Developers → API Keys.',
+    starts: 'The PracticeHub API key starts with phk_',
+    en: 'The PracticeHub API key starts with phk_. Create one in PracticeHub under Developers → API Keys.',
+    es: 'La clave de la PracticeHub API empieza por phk_. Créala en PracticeHub, en Developers → API Keys.',
   },
   {
-    starts: 'That is a PracticeHub 2.0 key',
-    en: 'That is a PracticeHub 2.0 key (it starts with phk_), so it goes in the "PracticeHub 2.0 API key" field. The API key field takes the Classic key, which does not start with phk_.',
-    es: 'Esa es una clave de PracticeHub 2.0 (empieza por phk_), así que va en el campo "Clave API de PracticeHub 2.0". El campo Clave API lleva la clave Classic, que no empieza por phk_.',
+    starts: 'That is a PracticeHub API key',
+    en: 'That is a PracticeHub API key (it starts with phk_), so it goes in the "PracticeHub API key" field. The "Legacy API key" field takes the Legacy API key, which does not start with phk_.',
+    es: 'Esa es una clave de la PracticeHub API (empieza por phk_), así que va en el campo "Clave de la PracticeHub API". El campo "Clave de la Legacy API" lleva la clave de la Legacy API, que no empieza por phk_.',
   },
   {
     starts: 'The PracticeHub address is',
@@ -62,9 +62,9 @@ const KNOWN: { starts: string; en: string; es: string }[] = [
     es: 'PracticeHub está limitando la velocidad a la que responde. Espera un minuto y vuelve a intentarlo.',
   },
   {
-    starts: 'No PracticeHub 2.0 connection is saved',
-    en: 'No PracticeHub 2.0 key is saved. Add the phk_ key in the Connection step first.',
-    es: 'No hay ninguna clave de PracticeHub 2.0 guardada. Añade la clave phk_ en el paso Conexión.',
+    starts: 'No PracticeHub API key is saved',
+    en: 'No PracticeHub API key is saved. Add the phk_ key in the Connection step first.',
+    es: 'No hay ninguna clave de la PracticeHub API guardada. Añade la clave phk_ en el paso Conexión.',
   },
   {
     starts: 'The Quirocitas address is',

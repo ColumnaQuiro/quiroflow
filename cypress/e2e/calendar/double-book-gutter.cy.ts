@@ -23,6 +23,9 @@ function openDay(account: StaffAccount, firstBlock: string) {
   cy.login(account.email, account.password)
   cy.visit('/calendar')
   cy.contains('select', 'Work week').select('day')
+  // The week stays drawn until the day replaces it; a block found
+  // before then is the week's, and is gone a moment later.
+  cy.get('[data-cy=day-column-head]').should('exist')
   block(firstBlock).should('exist')
 }
 

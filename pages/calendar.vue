@@ -1233,11 +1233,15 @@ const dayHeaderPx = computed(() => (hasRooms.value ? DAY_HEADER_PX : 0))
 const weekHeaderPx = computed(() => (hasRooms.value ? WEEK_HEADER_PX : WEEK_HEADER_PX - WEEK_ROOM_ROW_PX))
 // Each room sub-column of the week: as wide as the screen allows up to
 // WEEK_ROOM_COL_PX, no narrower than WEEK_ROOM_COL_MIN_PX (past that, scroll).
-// 58 is the hour gutter. Before the grid is measured, the old width.
+// 58 is the hour gutter, and each day column draws a 1px border on top of
+// its sub-columns: left out, the week overflowed by a pixel or two whenever
+// the division came out nearly whole. Before the grid is measured, the old
+// width.
 const weekColPx = computed(() => {
-  const cols = visibleWeekDays.value.length * dayColumns.value.length
+  const days = visibleWeekDays.value.length
+  const cols = days * dayColumns.value.length
   if (!weekScrollerWidth.value || !cols) return WEEK_ROOM_COL_PX
-  return Math.max(WEEK_ROOM_COL_MIN_PX, Math.min(WEEK_ROOM_COL_PX, Math.floor((weekScrollerWidth.value - 58) / cols)))
+  return Math.max(WEEK_ROOM_COL_MIN_PX, Math.min(WEEK_ROOM_COL_PX, Math.floor((weekScrollerWidth.value - 58 - days) / cols)))
 })
 
 function blockLabel(block: AvailabilityBlock) {
@@ -3307,6 +3311,11 @@ function showNowLineOn(day: Date) {
          150px over the grid, and a 238px column beside it. The counts are in
          the strip under the grid now; the column's contents are in the
          popovers here and the "Today" drawer. -->
+    <!-- The page's headings, for a screen reader's outline: the toolbar has
+         no visible title (the sidebar already says where you are), and the
+         flow tracker's h2s are in a drawer that starts closed. -->
+    <h1 class="sr-only">{{ t('Calendar', 'Calendario') }}</h1>
+    <h2 class="sr-only" data-cy="calendar-range-heading">{{ rangeLabel }}</h2>
     <header class="hidden h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-4 md:flex lg:px-5 xl:gap-3 touch:h-[60px]" data-cy="calendar-toolbar">
       <div class="relative flex shrink-0 items-center gap-0.5" data-pop="date">
         <button

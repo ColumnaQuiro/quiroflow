@@ -39,7 +39,7 @@ describe('Unplanned absence', () => {
     chooseFromCalendarMore('absence-open', '[data-cy=absence]')
   }
   function openFor() {
-    cy.contains('button', 'Unplanned absence', { timeout: 20000 })
+    cy.get('[data-cy=calendar-more]', { timeout: 20000 })
     openPanel()
     cy.get('[data-cy=absence]').should('be.visible')
     cy.get('[data-cy=absence-who]').select('Test Owner')

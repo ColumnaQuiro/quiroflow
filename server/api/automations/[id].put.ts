@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { sanitizeRule, sanitizeSteps, saveRuleTree, type RemovedPolicy } from '~/server/utils/automationRules'
+import { loadRuleTree, sanitizeRule, sanitizeSteps, saveRuleTree, type RemovedPolicy } from '~/server/utils/automationRules'
+import { automationTreeVersion } from '~/utils/automationVersion'
 
 // Saves an automation from the builder: the rule and its whole tree, with step
 // ids kept stable (server/utils/automationRules.ts says why).
@@ -9,11 +10,22 @@ import { sanitizeRule, sanitizeSteps, saveRuleTree, type RemovedPolicy } from '~
 // what to do with them (`removedPolicy`: move them on, or take them out).
 // 422 when the rule would be on and something is missing; saving it paused
 // (`enabled: false`) is always allowed -- that is "Save as draft".
+// 409 with `conflict` when `baseVersion` (utils/automationVersion.ts) is not
+// what is stored any more: it was saved elsewhere since this builder loaded
+// it, and writing this tree would undo that. Without `baseVersion` (an older
+// client, or "keep mine") it saves regardless, as it always did.
 export default defineEventHandler(async (event) => {
   const ruleId = getRouterParam(event, 'id')
   if (!ruleId) throw createError({ statusCode: 400, statusMessage: 'Missing automation id' })
-  const body = await readBody<{ rule?: unknown; steps?: unknown; enabled?: boolean; removedPolicy?: RemovedPolicy }>(event)
+  const body = await readBody<{ rule?: unknown; steps?: unknown; enabled?: boolean; removedPolicy?: RemovedPolicy; baseVersion?: unknown }>(event)
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+
+  if (typeof body?.baseVersion === 'string') {
+    const stored = await loadRuleTree(supabase, teamMember.account_id, ruleId)
+    if (stored && automationTreeVersion(stored.rule, stored.steps) !== body.baseVersion) {
+      throw createError({ statusCode: 409, statusMessage: 'This automation was changed somewhere else', data: { conflict: true } })
+    }
+  }
 
   const result = await saveRuleTree({
     supabase,
@@ -33,5 +45,9 @@ export default defineEventHandler(async (event) => {
   if (!result.ok) {
     throw createError({ statusCode: 422, statusMessage: 'Something is missing before this automation can run', data: { problems: result.problems } })
   }
-  return { id: result.ruleId, problems: result.problems, moved: result.moved, takenOut: result.takenOut }
+  // What is stored now, read back rather than assumed: the builder's next
+  // save is compared against this.
+  const saved = await loadRuleTree(supabase, teamMember.account_id, result.ruleId)
+  const version = saved ? automationTreeVersion(saved.rule, saved.steps) : null
+  return { id: result.ruleId, problems: result.problems, moved: result.moved, takenOut: result.takenOut, version }
 })

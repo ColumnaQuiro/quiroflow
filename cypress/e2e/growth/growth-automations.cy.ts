@@ -1,3 +1,4 @@
+import { autoSaved } from '../../support/autoSave'
 // The Automations list -- what Campaigns and Growth > Automations were.
 //
 // The old Growth canvas spec asserted that the canvas drew the account's real
@@ -186,13 +187,16 @@ describe('Automations list', () => {
         cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', false)
 
         // The builder's header has the same switch and the same dialog.
+        cy.intercept('PUT', `/api/automations/${rule.id}`).as('put')
         cy.visit(`/automations/${rule.id}`)
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false').click()
         cy.get('[data-test="activate-when"]').should('contain', 'Appointment · is completed')
         cy.get('[data-cy="confirm-dialog-confirm"]').click()
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
-        // Switching is not an edit: nothing waits to be saved.
-        cy.get('[data-test="save-bar"]').should('not.exist')
+        // Switching is not an edit: nothing waits to be saved, and nothing
+        // was auto-saved for it.
+        autoSaved()
+        cy.get('@put.all').should('have.length', 0)
         cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', true)
         cy.get('[data-test="automation-enabled"]').click()
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false')

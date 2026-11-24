@@ -9,12 +9,14 @@ import { emptyLookup, type NameLookup } from '~/utils/automationDescribe'
 import type { InsertPoint } from '~/utils/automationLayout'
 import { serverMessage } from '~/utils/serverMessage'
 import { answerKey, leadAnswersFromEvents } from '~/utils/automationFields'
+import { automationTreeVersion } from '~/utils/automationVersion'
 import { asPatientIds } from '~/utils/automationAudience'
 import type { BroadcastRecipients } from '~/composables/useBroadcastRecipients'
 
 // The state of the automation builder: the rule and its tree as they are on
 // screen, what they were when loaded (so "unsaved changes" means something),
-// an undo history, and the one Save that writes it all.
+// an undo history, and the one save that writes it all (auto-saved by
+// pages/automations/[id].vue through useAutoSave).
 //
 // Created once by pages/automations/[id].vue and handed to every panel with
 // provide/inject, so the canvas, the inspector and the settings tab edit the
@@ -160,6 +162,9 @@ export function useAutomationBuilder() {
   const saving = ref(false)
   const savedAt = ref<number | null>(null)
   const createdAt = ref<string | null>(null)
+  // What is stored, as of the last load or save (utils/automationVersion.ts):
+  // sent with every save so one made elsewhere in between is not overwritten.
+  const version = ref<string | null>(null)
   // When a group send went out (segment_last_run_at): a one-off send with it
   // set never goes again, whatever its date now says.
   const lastRunAt = ref<string | null>(null)
@@ -350,7 +355,8 @@ export function useAutomationBuilder() {
     ])
     if (rule.error) throw rule.error
     if (steps.error) throw steps.error
-    return rule.data ? { rule: rule.data as any, steps: (steps.data ?? []) as DraftStep[] } : null
+    if (!rule.data) return null
+    return { rule: rule.data as any, steps: (steps.data ?? []) as DraftStep[], version: automationTreeVersion(rule.data, steps.data ?? []) }
   }
 
   /**
@@ -411,6 +417,15 @@ export function useAutomationBuilder() {
         return
       }
       const { enabled, created_at, segment_last_run_at, ...stored } = tree.rule
+      // Not part of the version (the engine sets it, not an edit): kept current
+      // even by a re-read that leaves the draft alone.
+      lastRunAt.value = segment_last_run_at ?? null
+      // A re-read that finds what is already on screen leaves it alone (and
+      // the undo history with it). One that finds unsaved edits on screen
+      // leaves them too: they are this person's, and if the automation did
+      // change elsewhere their next save says so (`conflict`) rather than
+      // having a refresh quietly throw them away.
+      if (silent && (dirty.value || (tree.version === version.value && enabled === draft.value.enabled))) return
       // The atom, and the "only if" filters without the old trigger settings.
       const rest = withAtom(stored as { trigger?: unknown; trigger_event?: string; filters?: Record<string, any> } & Record<string, any>)
       // Replacing the draft under a loaded canvas is not an edit to undo.
@@ -431,16 +446,16 @@ export function useAutomationBuilder() {
         steps: normalizePositions(tree.steps.map((s) => ({ id: s.id, action_type: s.action_type, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null, position: s.position }))),
       }
       createdAt.value = created_at
-      lastRunAt.value = segment_last_run_at ?? null
+      version.value = tree.version
       loaded.value = true
       resetBaseline()
       if (silent) nextTick(() => (restoring = false))
     } catch (e: any) {
-      // What is on screen is still what was saved: keep it, rather than
-      // swapping a working canvas for an error over a failed re-read.
+      // Keep what is on screen, rather than swapping a working canvas for an
+      // error over a failed re-read -- and keep its unsaved edits unsaved, so
+      // auto-save still writes them.
       if (silent) {
         restoring = false
-        resetBaseline()
         return
       }
       if (ruleId.value !== id) return
@@ -450,6 +465,7 @@ export function useAutomationBuilder() {
 
   function initNew(from?: { rule: DraftRule; steps: DraftStep[] }, opts: { unsaved?: boolean } = {}) {
     ruleId.value = null
+    version.value = null
     lastRunAt.value = null
     // A template or an AI draft may name an old trigger: it gets its atom here.
     draft.value = from ? { rule: { ...(withAtom(clone(from.rule)) as DraftRule), trigger_event: undefined }, enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
@@ -554,31 +570,56 @@ export function useAutomationBuilder() {
     | { ok: true }
     | { ok: false; people: { stepId: string; actionType: string; count: number }[] }
     | { ok: false; problems: Problem[] }
-    | { ok: false; error: string }
+    | { ok: false; conflict: true }
+    | { ok: false; error: string; status: number | null }
 
-  async function save(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 'take_out' } = {}): Promise<SaveOutcome> {
+  /**
+   * Writes the draft as it is now. `enabled` only when switching on or off
+   * on purpose: left out, the stored one stands, so a save can never flip it
+   * (an auto-save from a tab that missed a pause would otherwise undo it).
+   * `force` drops the version check: "keep mine" after a conflict.
+   *
+   * The draft is NOT re-read afterwards. It used to be, which was fine behind
+   * a Save button and is not behind auto-save: whatever was typed while the
+   * request was out would be replaced by the server's copy, and every save
+   * would wipe the undo history. What was sent becomes the baseline instead,
+   * so edits made meanwhile stay "unsaved" and go with the next save.
+   */
+  async function save(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 'take_out'; force?: boolean } = {}): Promise<SaveOutcome> {
     saving.value = true
-    const enabled = opts.enabled ?? draft.value.enabled
-    const body = { rule: draft.value.rule, steps: draft.value.steps, enabled, removedPolicy: opts.removedPolicy }
+    const sent = clone(draft.value)
+    if (opts.enabled !== undefined) sent.enabled = opts.enabled
+    const body = {
+      rule: sent.rule,
+      steps: sent.steps,
+      enabled: opts.enabled,
+      removedPolicy: opts.removedPolicy,
+      baseVersion: opts.force ? undefined : (version.value ?? undefined),
+    }
     try {
-      if (!ruleId.value) {
-        const res = await useStaffFetch<{ id: string }>('/api/automations', { method: 'POST', body })
+      const wasNew = !ruleId.value
+      const res = wasNew
+        ? await useStaffFetch<{ id: string; version: string | null }>('/api/automations', { method: 'POST', body })
+        : await useStaffFetch<{ id: string; version: string | null }>(`/api/automations/${ruleId.value}`, { method: 'PUT', body })
+      if (wasNew) {
         ruleId.value = res.id
-      } else {
-        await useStaffFetch(`/api/automations/${ruleId.value}`, { method: 'PUT', body })
+        createdAt.value = new Date().toISOString()
+        // The flags only the server knows (Growth, old delays); a rule that
+        // already existed has them from its load.
+        loadExtras(res.id)
       }
-      draft.value.enabled = enabled
+      version.value = res.version ?? null
+      if (opts.enabled !== undefined) draft.value.enabled = opts.enabled
+      original.value = JSON.stringify(sent)
       savedAt.value = Date.now()
-      const selected = selection.value
-      await load(ruleId.value!, { silent: true })
-      selection.value = selected?.kind === 'step' && !stepsById.value.has(selected.id) ? { kind: 'trigger' } : selected
       return { ok: true }
     } catch (e: any) {
-      const status = e?.statusCode ?? e?.response?.status
+      const status = e?.statusCode ?? e?.response?.status ?? null
       const data = e?.data?.data
+      if (status === 409 && data?.conflict) return { ok: false, conflict: true }
       if (status === 409 && data?.people) return { ok: false, people: data.people }
       if (status === 422 && data?.problems) return { ok: false, problems: data.problems }
-      return { ok: false, error: serverMessage(e) ?? t('Could not save.', 'No se ha podido guardar.') }
+      return { ok: false, error: serverMessage(e) ?? t('Could not save.', 'No se ha podido guardar.'), status }
     } finally {
       saving.value = false
     }
@@ -603,6 +644,7 @@ export function useAutomationBuilder() {
     saving,
     savedAt,
     createdAt,
+    version,
     lastRunAt,
     stats,
     canReadWhatsApp,

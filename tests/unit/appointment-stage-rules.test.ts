@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, pendingFormsFlag, stageCounts, trackIndex, type StageInput } from '../../utils/appointmentStage'
-import { blockLadder, practitionerBadgeLabels, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
+import { blockLadder, fullerPatientNames, practitionerBadgeLabels, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
 import { mergeWindows, unionWorkingWindows } from '../../utils/businessHours'
 import { bonoForVisit } from '../../utils/visitPayment'
 
@@ -304,6 +304,61 @@ describe('Block ladder', () => {
   it('shortens a name to initial and first surname', () => {
     expect(shortPatientName('Laura', 'Gómez Pardo')).to.equal('L. Gómez')
     expect(shortPatientName('Laura', null)).to.equal('Laura')
+  })
+
+  it('keeps a surname\'s particles with it', () => {
+    expect(shortPatientName('Laura', 'de la Fuente Ruiz')).to.equal('L. de la Fuente')
+    expect(fullerPatientNames('Laura', 'de la Fuente Ruiz')).to.deep.equal(['Laura de la Fuente Ruiz', 'Laura de la Fuente'])
+    expect(shortPatientName('Laura', 'De')).to.equal('L. De')
+  })
+
+  it('lists a name from most to least complete', () => {
+    expect(fullerPatientNames('Laura', 'Gómez Pardo')).to.deep.equal(['Laura Gómez Pardo', 'Laura Gómez'])
+    expect(fullerPatientNames('Laura', 'Gómez'), 'one surname is one form').to.deep.equal(['Laura Gómez'])
+    expect(fullerPatientNames('Laura', null)).to.deep.equal([])
+  })
+
+  it('prints the fullest name a week column has room for', () => {
+    const week = { ...base, density: 'week' as const, height: 30, stage: 'confirmed' as const, owes: false, nameText: 'L. Gómez', firstName: 'Laura', lastName: 'Gómez Pardo' }
+    expect(blockLadder({ ...week, width: 160 }).fullerName, 'first name and both surnames').to.equal('Laura Gómez Pardo')
+    expect(blockLadder({ ...week, width: 100 }).fullerName, 'first name and first surname').to.equal('Laura Gómez')
+    const narrow = blockLadder({ ...week, width: 70 })
+    expect(narrow.fullerName, 'one line: the short form rather than a cut-off long one').to.equal(null)
+    expect(narrow.nameLines).to.equal(null)
+    expect(narrow.shortName).to.equal(true)
+    // A stage icon, the re-exam marker and the red flag are drawn first.
+    expect(blockLadder({ ...week, width: 150 }).fullerName).to.equal('Laura Gómez Pardo')
+    expect(blockLadder({ ...week, width: 150, stage: 'arrived', marker: true, redFlag: true }).fullerName).to.equal('Laura Gómez')
+    expect(blockLadder({ ...week, width: 160, firstName: undefined, lastName: undefined }).shortName, 'a caller that sends no parts keeps the short name').to.equal(true)
+  })
+
+  it('keeps a week icon rather than print a longer name', () => {
+    const week = { ...base, density: 'week' as const, height: 30, stage: 'completed' as const, noNext: true, nameText: 'L. Gómez', firstName: 'Laura', lastName: 'Gómez Pardo' }
+    const l = blockLadder({ ...week, width: 120 })
+    expect(l.noNext).to.equal(true)
+    expect(l.fullerName).to.equal('Laura Gómez')
+  })
+
+  it('gives a narrow week block\'s name two lines, and keeps the time where there are three', () => {
+    // A day split into room columns: some 70px a block.
+    const week = { ...base, density: 'week' as const, width: 71, stage: 'pending' as const, owes: false, nameText: 'L. Gómez', firstName: 'Laura', lastName: 'Gómez Pardo' }
+    const halfHour = blockLadder({ ...week, height: 46 })
+    expect(halfHour.nameLines).to.deep.equal(['Laura', 'Gómez Pardo'])
+    expect(halfHour.shortName).to.equal(false)
+    expect(halfHour.meta, 'the time stays').to.equal('time')
+    expect(halfHour.tight).to.equal(true)
+    const hour = blockLadder({ ...week, height: 94 })
+    expect(hour.nameLines).to.deep.equal(['Laura', 'Gómez Pardo'])
+    expect(hour.tight).to.equal(false)
+    const short = blockLadder({ ...week, height: 41 })
+    expect(short.nameLines, 'two lines only: the name outranks the time').to.deep.equal(['Laura', 'Gómez Pardo'])
+    expect(short.meta).to.equal('none')
+    // The badge always stays, and it lives on the time's line.
+    const badged = blockLadder({ ...week, height: 41, badgeText: 'L' })
+    expect(badged.nameLines).to.equal(null)
+    expect(badged.badge).to.equal('meta')
+    expect(blockLadder({ ...week, height: 46, badgeText: 'L' }).nameLines).to.deep.equal(['Laura', 'Gómez Pardo'])
+    expect(blockLadder({ ...week, height: 46, lastName: undefined }).nameLines, 'no surname on record').to.equal(null)
   })
 
   it('always draws the practitioner badge it is given, and nothing without one', () => {

@@ -63,6 +63,13 @@ export interface LadderInput {
   /** The patient's name as it will print. The name outranks the label, so
    *  the label gives way to its icon before the name would be cut. */
   nameText?: string
+  /** Week view only, where `nameText` is the short "L. Gómez": the name's
+   *  two columns (patients.first_name, and last_name with both surnames),
+   *  for printing more of it wherever the block has the room. */
+  firstName?: string
+  lastName?: string
+  /** The red-flags icon is drawn after the name (it is never dropped). */
+  redFlag?: boolean
   /** The money label as it will print ("Debe 45,00 €"). */
   owesText?: string
   bonoText?: string
@@ -72,6 +79,14 @@ export interface Ladder {
   /** One line, vertically centred. */
   compact: boolean
   shortName: boolean
+  /** Week view: the fuller name this column has room for on one line, to
+   *  print in place of the short one; null where only the short one fits. */
+  fullerName: string | null
+  /** Week view, where no fuller name fits on one line and the block is tall
+   *  enough: the first name, and the surnames on a line of their own. */
+  nameLines: [string, string] | null
+  /** Three lines in a block only just tall enough for them. */
+  tight: boolean
   pill: 'none' | 'icon' | 'label'
   owes: 'none' | 'inline' | 'meta' | 'dot'
   meta: 'none' | 'time' | 'full'
@@ -97,6 +112,11 @@ export const COMPACT_BELOW_PX = 40
  *  line would put the badge beside the name, which then lost half its
  *  letters on most of a work week split into rooms. */
 export const WEEK_BADGE_TWO_LINES_FROM_PX = 38
+/** A week block at least this tall holds a two-line name and the time under
+ *  it: three 11px lines with the padding pulled in (Ladder.tight). */
+export const WEEK_THREE_LINES_FROM_PX = 44
+/** From here the three lines fit at the block's usual spacing. */
+export const WEEK_THREE_LINES_ROOMY_FROM_PX = 56
 /** At or above this the detail row wraps onto a third line rather than dropping items. */
 export const WRAP_FROM_PX = 76
 /** Narrower than this, a day block's stage pill shows its icon only. */
@@ -116,6 +136,8 @@ const FORMS_PX = 17
 // Week blocks: 11px semibold, 5px padding a side plus the border.
 const WEEK_NAME_CHAR_PX = 6.6
 const WEEK_INNER_PAD_PX = 12
+// The red-flags icon at week size.
+const WEEK_ICON_PX = 11
 const MARKER_PX = 14
 const MOVED_PX = 26
 const NO_NEXT_PX = 17
@@ -142,24 +164,39 @@ export function blockLadder(input: LadderInput): Ladder {
     // not cut it: in practice a confirmed visit (no stage icon) in a column
     // of 82px or more, or any visit in a wider one. The re-exam marker
     // (rank 2½) is always drawn, so it takes its room first.
-    const room =
-      input.width -
-      WEEK_INNER_PAD_PX -
-      Math.ceil((input.nameText?.length ?? 8) * WEEK_NAME_CHAR_PX) -
-      (pillHidden ? 0 : 18 + GAP_PX) -
-      (input.marker ? MARKER_PX + GAP_PX : 0) -
-      (compact ? badgeRoom : 0)
+    const lineRoom = input.width - WEEK_INNER_PAD_PX - (pillHidden ? 0 : 18 + GAP_PX) - (input.marker ? MARKER_PX + GAP_PX : 0) - (compact ? badgeRoom : 0)
+    const room = lineRoom - Math.ceil((input.nameText?.length ?? 8) * WEEK_NAME_CHAR_PX)
     // Two lines: the badge leads the second, and the time keeps its place
     // beside it only where both fit.
     const timeFits = !input.badgeText || input.width - WEEK_INNER_PAD_PX - badgeRoom - WEEK_SQUARE_PX >= WEEK_TIME_PX
     const forms = !!input.forms && room >= FORMS_PX
     const noNext = input.noNext && room - (forms ? FORMS_PX + GAP_PX : 0) >= NO_NEXT_PX
+    // The icons are decided against the short name, as they always were, and
+    // the name then takes what is left: first name and both surnames where
+    // the column has the room, first name and first surname where it has
+    // less. Two patients called Laura are told apart by either.
+    const iconsPx = (input.redFlag ? WEEK_ICON_PX + GAP_PX : 0) + (forms ? FORMS_PX + GAP_PX : 0) + (noNext ? NO_NEXT_PX + GAP_PX : 0)
+    const fullerName = fullerPatientNames(input.firstName, input.lastName).find((n) => n !== input.nameText && Math.ceil(n.length * WEEK_NAME_CHAR_PX) <= lineRoom - iconsPx) ?? null
+    // Where neither fits -- a day split into room columns leaves a block
+    // some 70px, and "L. Gómez" itself was cut to "L. Gó…" there -- the name
+    // takes two lines: the first name, then the surnames. The time keeps its
+    // line under them from WEEK_THREE_LINES_FROM_PX; in the few blocks
+    // shorter than that and still not one-line it gives way, the name being
+    // rank 1 -- unless the practitioner badge is on that line, which always
+    // stays, and then the name stays as it was.
+    const threeLines = input.height >= WEEK_THREE_LINES_FROM_PX
+    const first = (input.firstName ?? '').trim()
+    const last = (input.lastName ?? '').trim()
+    const nameLines: Ladder['nameLines'] = !compact && !fullerName && !!first && !!last && (threeLines || !input.badgeText) ? [first, last] : null
     return {
       compact,
-      shortName: true,
+      shortName: !fullerName && !nameLines,
+      fullerName,
+      nameLines,
+      tight: !!nameLines && threeLines && input.height < WEEK_THREE_LINES_ROOMY_FROM_PX,
       pill: pillHidden ? 'none' : 'icon',
       owes: input.owes ? 'dot' : 'none',
-      meta: compact || !timeFits ? 'none' : 'time',
+      meta: compact || !timeFits || (nameLines && !threeLines) ? 'none' : 'time',
       forms,
       note: false,
       bono: false,
@@ -196,7 +233,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
+    return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
@@ -224,7 +261,17 @@ export function blockLadder(input: LadderInput): Ladder {
   const bono = take(input.bono, textPx(input.bonoText ?? 'Bono 00/00', 14))
   const moved = take(input.moved > 0, MOVED_PX)
 
-  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap }
+  return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap }
+}
+
+// "de la Fuente Ruiz" starts with a surname of three words, not one.
+const SURNAME_PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'da', 'das', 'do', 'dos', 'di', 'van', 'von', 'der', 'den', 'y', 'i'])
+/** The first surname of "Gómez Pardo" or "de la Fuente Ruiz", particles kept. */
+function firstSurname(last: string): string {
+  const words = last.split(/\s+/)
+  let end = 0
+  while (end < words.length - 1 && SURNAME_PARTICLES.has(words[end]!.toLocaleLowerCase('es'))) end++
+  return words.slice(0, end + 1).join(' ')
 }
 
 /** "Laura Gómez" -> "L. Gómez", for week view's narrow columns. */
@@ -233,7 +280,19 @@ export function shortPatientName(first: string | null | undefined, last: string 
   const l = (last ?? '').trim()
   if (!l) return f
   if (!f) return l
-  return `${f[0]}. ${l.split(/\s+/)[0]}`
+  return `${f[0]}. ${firstSurname(l)}`
+}
+
+/**
+ * A patient's name from most to least complete, for a week block to print
+ * the first that fits on its line: "Laura Gómez Pardo", then "Laura Gómez".
+ * `last_name` holds both surnames; there is no column for the second.
+ */
+export function fullerPatientNames(first: string | null | undefined, last: string | null | undefined): string[] {
+  const f = (first ?? '').trim()
+  const l = (last ?? '').trim()
+  if (!f || !l) return []
+  return [...new Set([`${f} ${l}`, `${f} ${firstSurname(l)}`])]
 }
 
 /**

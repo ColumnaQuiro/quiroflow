@@ -8,6 +8,8 @@ import { emptyLookup, type NameLookup } from '~/utils/automationDescribe'
 import type { InsertPoint } from '~/utils/automationLayout'
 import { serverMessage } from '~/utils/serverMessage'
 import { answerKey, leadAnswersFromEvents } from '~/utils/automationFields'
+import { asPatientIds } from '~/utils/automationAudience'
+import type { BroadcastRecipients } from '~/composables/useBroadcastRecipients'
 
 // The state of the automation builder: the rule and its tree as they are on
 // screen, what they were when loaded (so "unsaved changes" means something),
@@ -122,10 +124,15 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
  * clinic chooses, with one email ready to write. Marketing by default -- a
  * newsletter or an offer is, and a send that is not can say so -- so it only
  * reaches patients who accepted it until someone decides otherwise.
+ *
+ * `to` aims it from the start: patients chosen on the Patients page, or the
+ * list or segment that page was showing.
  */
-export function newBroadcastDraft(name: string): { rule: DraftRule; steps: DraftStep[] } {
+export function newBroadcastDraft(name: string, to?: BroadcastRecipients | null): { rule: DraftRule; steps: DraftStep[] } {
+  const audience = to && 'audience' in to ? to.audience : null
+  const patientIds = to && 'patientIds' in to ? asPatientIds(to.patientIds) : []
   return {
-    rule: { ...blankRule(), name, trigger_event: 'segment', is_marketing: true, entry_mode: 'once_ever', segment: { filters: {}, audience: null, exclude: [], schedule: { kind: 'once' }, reentry_days: null } },
+    rule: { ...blankRule(), name, trigger_event: 'segment', is_marketing: true, entry_mode: 'once_ever', segment: { filters: {}, audience, exclude: [], patient_ids: patientIds, schedule: { kind: 'once' }, reentry_days: null } },
     steps: [{ id: crypto.randomUUID(), action_type: 'email', position: 0, parent_id: null, branch: null, config: defaultConfig('email') }],
   }
 }
@@ -266,6 +273,18 @@ export function useAutomationBuilder() {
     }
     docTemplates.value = ((docs.data ?? []) as { id: string; title: string; fields: unknown }[]).map((d) => ({ ...d, fields: Array.isArray(d.fields) ? (d.fields as DocField[]) : [] }))
     lookup.value = { ...lookup.value, docTemplates: docTemplates.value }
+    // Lists and segments, to name them in the "in a list or segment" filter.
+    const [audienceLists, audienceSegments] = await Promise.all([
+      supabase.from('patient_lists').select('id, name').order('name'),
+      supabase.from('patient_segments').select('id, name').order('name'),
+    ])
+    lookup.value = {
+      ...lookup.value,
+      audiences: [
+        ...((audienceLists.data ?? []) as { id: string; name: string }[]).map((l) => ({ kind: 'list' as const, id: l.id, name: l.name })),
+        ...((audienceSegments.data ?? []) as { id: string; name: string }[]).map((s) => ({ kind: 'segment' as const, id: s.id, name: s.name })),
+      ],
+    }
     const questions = new Map<string, string>()
     for (const a of leadAnswersFromEvents((forms.data ?? []) as { body: unknown }[])) {
       const key = answerKey(a.question)

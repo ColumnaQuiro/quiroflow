@@ -32,6 +32,7 @@ import {
   parseQuirocitasHistory,
   parseQuirocitasInvoice,
   parseQuirocitasPatientList,
+  quirocitasCajaButton,
   quirocitasCajaFormBody,
   quirocitasSafeDecode,
   type QuirocitasInvoice,
@@ -53,6 +54,15 @@ export class QuirocitasError extends Error {
  * do not depend on the ledger.
  */
 export class QuirocitasLedgerError extends QuirocitasError {}
+
+/** Where a walk through the cash ledger stopped: the click to make next, and the month and day it had reached. */
+export interface QuirocitasLedgerCursor {
+  form: [string, string][]
+  /** The last month read. */
+  month: string | null
+  /** The day shown, when it stopped between two months on a clinic whose ◄ goes back a day. */
+  day: string | null
+}
 
 /**
  * A logged-in session against one clinic's Quirocitas.
@@ -177,17 +187,45 @@ export class QuirocitasClient {
   /**
    * Months of the cash ledger, newest first, for every chiropractor.
    *
-   * `cursor` is the form the previous call left the session on; null starts
-   * from the current month.
+   * `saved` is where the previous call stopped (null starts from the current
+   * month). A call returns after `months` months, or at the first page past
+   * `until` -- possibly with none, part-way between two months.
+   *
+   * How the walk moves is the clinic's page, not one assumption. On the first
+   * clinics read, ◄ under a month shows the month before. On another it goes
+   * back a DAY even there: from "Mes de Noviembre" to "Lunes, 23 de
+   * Noviembre", in the day view, because that page does not keep "Mes
+   * entero" once something else is pressed. Read as a month, that day view
+   * named none, and the whole ledger was given up on its first step back
+   * ("did not show a month of the cash ledger"), with every payment and
+   * invoice in it. So the walk looks at what each click brought: a month is
+   * read and left with ◄; a day is left with ◄ until it is a day of the month
+   * before, and that month is then asked for with "Mes entero" -- the clicks
+   * a receptionist on that page makes. That is a page for every day with
+   * something in it (fifteen-odd a month there) instead of one a month, which
+   * is why a call can stop between two months.
    */
-  async ledger(cursor: [string, string][] | null, months: number) {
-    const submit = (html: string | [string, string][], extra: Record<string, string>) => {
-      const body = typeof html === 'string' ? quirocitasCajaFormBody(html) : html
-      return this.page('diario.php', [...body.filter(([k]) => !(k in extra)), ...Object.entries(extra)])
-    }
+  async ledger(saved: QuirocitasLedgerCursor | [string, string][] | null, months: number, until = Number.POSITIVE_INFINITY) {
+    const post = (body: [string, string][]) => this.page('diario.php', body)
+    // A click on one of the page's buttons: the form as rendered, plus that
+    // button with the value the page put on it (quirocitasCajaButton). The
+    // value this reader always sent is kept for a page showing no such
+    // button, which is what it sent there before.
+    const click = (html: string, name: string, fallback: string, label?: RegExp): [string, string][] =>
+      [...quirocitasCajaFormBody(html).filter(([k]) => k !== name), quirocitasCajaButton(html, name, label) ?? [name, fallback]]
+    const wholeMonth = (html: string) => click(html, 'franja', 'Mes entero', /^mes entero$/i)
+
+    // A walk saved by the release before this one is the bare form under its
+    // last month, and its next click was always ◄.
+    const cursor: QuirocitasLedgerCursor | null = Array.isArray(saved)
+      ? { form: saved.some(([k]) => k === 'previo') ? saved : [...saved, ['previo', '◄']], month: null, day: null }
+      : saved
     let page: string
-    if (cursor) page = await submit(cursor, { previo: '◄' })
-    else {
+    let pressed: 'month' | 'back'
+    if (cursor) {
+      page = await post(cursor.form)
+      pressed = cursor.form.some(([k, v]) => k === 'franja' && /^mes entero$/i.test(v.trim())) ? 'month' : 'back'
+    } else {
       // Quirocitas keeps the month being shown in the session, and the
       // session is kept between calls -- so "from the start" on a session a
       // walk has already been through is from wherever that walk stopped. A
@@ -200,26 +238,53 @@ export class QuirocitasClient {
       // clinic with one chiropractor has no such filter, and nothing is ever
       // submitted that the page did not render.
       const first = await this.page('diario.php')
-      const everyone = parseQuirocitasCajaMonth(first).hasChiroFilter ? await submit(first, { quiro: '-1' }) : first
-      page = await submit(everyone, { franja: 'Mes entero' })
+      const everyone = parseQuirocitasCajaMonth(first).hasChiroFilter
+        ? await post([...quirocitasCajaFormBody(first).filter(([k]) => k !== 'quiro'), ['quiro', '-1']])
+        : first
+      page = await post(wholeMonth(everyone))
+      pressed = 'month'
     }
+    let last = cursor?.month ?? null
+    let lastDay = cursor?.day ?? null
+    let daysBack = 0
     const out: ReturnType<typeof parseQuirocitasCajaMonth>[] = []
-    for (let i = 0; ; i++) {
-      const month = parseQuirocitasCajaMonth(page)
-      if (!month.month) throw new QuirocitasLedgerError('Quirocitas did not show a month of the cash ledger.')
-      if (!month.everyChiro) throw new QuirocitasLedgerError(`The cash ledger for ${month.month} is showing only ${month.chiroShown || 'one chiropractor'}, not everyone.`)
-      // And checked, not assumed: a walk that does not begin this month is
-      // not this clinic's ledger up to today, whatever it goes on to read.
-      // A day either side, for the clinic's clock against this one.
-      if (!cursor && i === 0) {
-        const nearby = [-1, 0, 1].map((days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 7))
-        if (!nearby.includes(month.month)) throw new QuirocitasLedgerError(`The cash ledger opened on ${month.month}, not on the current month.`)
+    for (;;) {
+      const view = parseQuirocitasCajaMonth(page)
+      // Where it was lost, so the error says which step to look at.
+      const where = last ? `going back from ${last}` : 'on opening it'
+      let next: [string, string][]
+      if (view.month) {
+        if (!view.everyChiro) throw new QuirocitasLedgerError(`The cash ledger for ${view.month} is showing only ${view.chiroShown || 'one chiropractor'}, not everyone.`)
+        if (last && view.month >= last) throw new QuirocitasLedgerError(`The cash ledger showed ${view.month} ${where}, not an earlier month.`)
+        // And checked, not assumed: a walk that does not begin this month is
+        // not this clinic's ledger up to today, whatever it goes on to read.
+        // A day either side, for the clinic's clock against this one.
+        if (!cursor && !out.length) {
+          const nearby = [-1, 0, 1].map((days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 7))
+          if (!nearby.includes(view.month)) throw new QuirocitasLedgerError(`The cash ledger opened on ${view.month}, not on the current month.`)
+        }
+        out.push(view)
+        last = view.month
+        lastDay = null
+        daysBack = 0
+        next = click(page, 'previo', '◄')
+        pressed = 'back'
+        if (out.length >= months || Date.now() >= until) return { months: out, cursor: { form: next, month: last, day: null } satisfies QuirocitasLedgerCursor }
+      } else if (view.day && pressed === 'back' && last) {
+        if (lastDay && view.day >= lastDay) throw new QuirocitasLedgerError(`The cash ledger did not move back from ${lastDay} (${where}).`)
+        // Thirty-one days and the one the month view was left on: past that
+        // the page is not going where the walk thinks it is.
+        if (++daysBack > 40) throw new QuirocitasLedgerError(`The cash ledger did not reach the month before ${last} going back a day at a time.`)
+        lastDay = view.day
+        const earlier = view.day.slice(0, 7) < last
+        next = earlier ? wholeMonth(page) : click(page, 'previo', '◄')
+        pressed = earlier ? 'month' : 'back'
+        if (Date.now() >= until) return { months: out, cursor: { form: next, month: last, day: lastDay } satisfies QuirocitasLedgerCursor }
+      } else {
+        throw new QuirocitasLedgerError(`Quirocitas did not show a month of the cash ledger (${where}${pressed === 'month' ? ', after "Mes entero"' : ''}).`)
       }
-      out.push(month)
-      if (i + 1 >= months) break
-      page = await submit(page, { previo: '◄' })
+      page = await post(next)
     }
-    return { months: out, cursor: quirocitasCajaFormBody(page) }
   }
 
   /** A photo or attached file's bytes. Some uploads stored an accented name in another form. */

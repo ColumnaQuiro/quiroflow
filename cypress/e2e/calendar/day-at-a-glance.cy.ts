@@ -107,10 +107,14 @@ describe('Calendar: the day at a glance', () => {
 
       // Cancelled visits leave the grid until asked for.
       cy.contains('[data-cy=appt-block]', 'Carla Cancel').should('not.exist')
+      // The switch is in the toolbar's display popover.
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=display-showCancelled]').click()
       block('Carla Cancel').should('have.attr', 'data-stage', 'cancelled')
       cy.get('[data-cy=display-showCancelled]').click()
       cy.contains('[data-cy=appt-block]', 'Carla Cancel').should('not.exist')
+      cy.get('[data-cy=calendar-display]').click()
+      cy.get('[data-cy=calendar-display-panel]').should('not.exist')
 
       // Hours nobody works are hatched (08:00-09:00 here).
       cy.get('[data-cy=closed-hours]').should('exist')

@@ -541,12 +541,12 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
       `Aún no están en tu equipo, así que estos pacientes quedan sin profesional habitual: ${unmatched.map((p) => `${p.name} (${p.patients})`).join(', ')}. Añádelos en Ajustes → Equipo con el mismo nombre y vuelve a leer.`,
     )] : []),
     t(
-      'Tags are only in PracticeHub 2.0’s API, which this sync does not read, so new patients come in without them.',
-      'Las etiquetas solo están en la API de PracticeHub 2.0, que esta sincronización no lee, así que los pacientes nuevos llegan sin ellas.',
+      'Tags are only in the PracticeHub API, which this sync does not read, so new patients come in without them.',
+      'Las etiquetas solo están en la PracticeHub API, que esta sincronización no lee, así que los pacientes nuevos llegan sin ellas.',
     ),
     ...(v3Patients ? [] : [t(
-      'The DNI/NIE (PracticeHub’s "Social security number") is only in PracticeHub 2.0’s API. Save a 2.0 key in Settings > Import > Connection and read again to bring it.',
-      'El DNI/NIE (el «Número de la seguridad social» de PracticeHub) solo está en la API de PracticeHub 2.0. Guarda una clave 2.0 en Ajustes > Importar > Conexión y vuelve a leer para traerlo.',
+      'The DNI/NIE (PracticeHub’s "Social security number") is only in the PracticeHub API. Save a PracticeHub API key in Settings > Import > Connection and read again to bring it.',
+      'El DNI/NIE (el «Número de la seguridad social» de PracticeHub) solo está en la PracticeHub API. Guarda una clave de la PracticeHub API en Ajustes > Importar > Conexión y vuelve a leer para traerlo.',
     )]),
     // A patient with no clinic is invisible on the main Patients list once
     // its clinic filter applies, with no error anywhere.

@@ -31,7 +31,7 @@ export interface PracticeHubV3Connection {
  */
 export function assertPracticeHubClassicKey(apiKey: string | undefined) {
   if (apiKey?.startsWith('phk_')) {
-    throw createError({ statusCode: 400, statusMessage: 'That is a PracticeHub 2.0 key (phk_...), which goes in the "PracticeHub 2.0 API key" field. The API Key field takes the Classic key, from the same Developers > API Keys page, which does not start with phk_.' })
+    throw createError({ statusCode: 400, statusMessage: 'That is a PracticeHub API key (phk_...), which goes in the "PracticeHub API key" field. The "Legacy API key" field takes the Legacy API key, from the same Developers > API Keys page, which does not start with phk_.' })
   }
 }
 
@@ -43,7 +43,7 @@ export async function practicehubV3Connection(admin: Service, accountId: string)
   ])
   const baseUrl = (data?.practicehub_base_url ?? '').replace(/\/$/, '')
   if (!baseUrl || !apiKey) {
-    throw createError({ statusCode: 400, statusMessage: 'No PracticeHub 2.0 connection is saved. Add the address and the phk_ key in Settings > Import > Connection.' })
+    throw createError({ statusCode: 400, statusMessage: 'No PracticeHub API key is saved. Add the address and the phk_ key in Settings > Import > Connection.' })
   }
   return { baseUrl, apiKey }
 }

@@ -67,7 +67,7 @@ const fieldId = useId()
       />
     </div>
     <div>
-      <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API key', 'Clave API') }}</label>
+      <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('Legacy API key', 'Clave de la Legacy API') }}</label>
       <input :id="`${fieldId}-apiKey`"
         v-model="apiKey"
         type="password"

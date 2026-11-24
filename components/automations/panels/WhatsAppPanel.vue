@@ -3,6 +3,7 @@ import { BUTTON_PARAM_SOURCES, VARIABLE_SOURCES, say } from '~/utils/automationC
 import { ANSWER_PREFIX, DEFAULT_ANSWER_FALLBACK } from '~/utils/automationFields'
 import { FIELD, HINT, LABEL, LINK_BTN, NOTE, REMOVE_BTN, SECTION, WARN } from '~/utils/automationUi'
 import { serverMessage } from '~/utils/serverMessage'
+import { WHATSAPP_HEADER_MEDIA_MAX_BYTES, whatsappHeaderMediaProblem } from '~/utils/whatsappHeaderMedia'
 import { isFormButton, type EditedTemplateResult } from '~/utils/whatsappTemplateDraft'
 
 // A WhatsApp step: an approved Meta template, what fills each {{n}}, the
@@ -125,18 +126,49 @@ function setLocation(patch: Record<string, any>) {
 }
 const uploading = ref(false)
 const uploadError = ref('')
+const supabase = useSupabaseClient()
+// Said here, before anything is sent: a phone video is often too big or a
+// .mov, and finding out only after a long upload is the worst time.
+function headerMediaProblemText(kind: string, file: File): string | null {
+  const problem = whatsappHeaderMediaProblem(kind, file.type, file.size)
+  if (problem === 'too_large') {
+    const mb = (file.size / (1024 * 1024)).toFixed(1)
+    const max = WHATSAPP_HEADER_MEDIA_MAX_BYTES / (1024 * 1024)
+    return t(
+      `This file is ${mb} MB and WhatsApp takes at most ${max} MB. Compress it (a shorter or lower-quality export) and try again.`,
+      `Este archivo pesa ${mb.replace('.', ',')} MB y WhatsApp admite como máximo ${max} MB. Comprímelo (más corto o con menos calidad) y vuelve a probar.`,
+    )
+  }
+  if (problem === 'type') {
+    return kind === 'video'
+      ? t('WhatsApp only takes MP4 videos. A .mov from an iPhone has to be exported as MP4 first.', 'WhatsApp solo admite vídeos MP4. Un .mov del iPhone hay que exportarlo antes a MP4.')
+      : kind === 'image'
+        ? t('WhatsApp only takes JPEG or PNG images.', 'WhatsApp solo admite imágenes JPEG o PNG.')
+        : t('WhatsApp only takes PDF documents here.', 'WhatsApp solo admite documentos PDF aquí.')
+  }
+  return null
+}
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file || !headerFormat.value) return
-  uploadError.value = ''
+  const kind = headerFormat.value.toLowerCase()
+  uploadError.value = headerMediaProblemText(kind, file) ?? ''
+  if (uploadError.value) {
+    input.value = ''
+    return
+  }
   uploading.value = true
   try {
-    const body = new FormData()
-    body.append('file', file)
-    body.append('kind', headerFormat.value.toLowerCase())
-    const result = await useStaffFetch<{ storage_path: string; filename: string }>('/api/whatsapp/header-media', { method: 'POST', body })
-    set({ header: { type: headerFormat.value.toLowerCase(), storage_path: result.storage_path, filename: result.filename } })
+    // The server checks and signs; the file goes straight to Storage, never
+    // through a function and its ~6 MB request limit (header-media.post.ts).
+    const result = await useStaffFetch<{ storage_path: string; filename: string; token: string }>('/api/whatsapp/header-media', {
+      method: 'POST',
+      body: { kind, filename: file.name, contentType: file.type, bytes: file.size },
+    })
+    const { error } = await supabase.storage.from('whatsapp-media').uploadToSignedUrl(result.storage_path, result.token, file, { contentType: file.type })
+    if (error) throw error
+    set({ header: { type: kind, storage_path: result.storage_path, filename: result.filename } })
   } catch (e) {
     uploadError.value = serverMessage(e) ?? t('Could not upload that file.', 'No se ha podido subir el archivo.')
   } finally {

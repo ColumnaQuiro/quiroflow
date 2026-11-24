@@ -130,6 +130,44 @@ describe('Automation builder: step panels', () => {
     })
   })
 
+  // A clinic's 1:46 video (18 MB) could not be uploaded while a 4.5 MB one
+  // could: the file went through a Netlify function, which refuses requests
+  // over ~6 MB before any code runs, and nothing said why. Now the route only
+  // signs the upload and the file goes straight to Storage -- so the route
+  // never sees it, and what WhatsApp would refuse is said before sending.
+  it('uploads a header video straight to storage, and refuses what WhatsApp would', () => {
+    cy.wait('@templates')
+    addStep('whatsapp_template')
+    cy.get('[data-test="template-select"]').select('with_video::en')
+    cy.intercept('POST', '**/api/whatsapp/header-media').as('sign')
+
+    // A phone's .mov, and a file over the limit: refused here, nothing sent.
+    cy.get('[data-test="header-media-input"]').selectFile({ contents: Cypress.Buffer.from('mov'), fileName: 'clip.mov', mimeType: 'video/quicktime' })
+    cy.get('[data-test="header-media"]').should('contain', 'MP4')
+    cy.get('[data-test="header-media-input"]').selectFile({ contents: Cypress.Buffer.alloc(16 * 1024 * 1024), fileName: 'big.mp4', mimeType: 'video/mp4' })
+    cy.get('[data-test="header-media"]').should('contain', '16')
+    cy.get('@sign.all').should('have.length', 0)
+
+    // 7 MB: more than the function would ever have accepted.
+    cy.get('[data-test="header-media-input"]').selectFile({ contents: Cypress.Buffer.alloc(7 * 1024 * 1024), fileName: 'Primera visita.mp4', mimeType: 'video/mp4' })
+    cy.wait('@sign').then(({ request, response }) => {
+      // The route is asked about the file, not sent it.
+      expect(request.body).to.deep.eq({ kind: 'video', filename: 'Primera visita.mp4', contentType: 'video/mp4', bytes: 7 * 1024 * 1024 })
+      expect(response!.statusCode).to.eq(200)
+    })
+    cy.get('[data-test="header-media-name"]').should('have.text', 'primera-visita.mp4')
+
+    autoSaved()
+    cy.get<string>('@accountId').then((accountId) => {
+      cy.task('db:latestAutomationActions', { accountId }).then((rows) => {
+        const wa = (rows as { action_type: string; config: Record<string, any> }[]).find((a) => a.action_type === 'whatsapp_template')!
+        expect(wa.config.header.type).to.eq('video')
+        expect(wa.config.header.storage_path).to.match(new RegExp(`^${accountId}/campaigns/\\d+-primera-visita\\.mp4$`))
+        cy.task('db:storageObjectExists', { bucket: 'whatsapp-media', path: wa.config.header.storage_path }).should('eq', true)
+      })
+    })
+  })
+
   // An unassigned slot is sent as the first name (so Meta does not refuse
   // the message) -- which is how "por lo de {{2}}" went out as "por lo de
   // Martín" in production. The panel says so until something is chosen.

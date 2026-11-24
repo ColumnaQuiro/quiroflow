@@ -86,6 +86,8 @@ export function useAppointmentPanelLoader() {
       id: a.id,
       name: `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim(),
       shortName: shortPatientName(a.patients?.first_name, a.patients?.last_name),
+      firstName: a.patients?.first_name?.trim(),
+      lastName: a.patients?.last_name?.trim(),
       stage,
       arrivedAt: a.checked_in_at ? formatTime(a.checked_in_at) : null,
       timeLabel: formatTime(a.starts_at),

@@ -62,8 +62,11 @@ describe('Formatting a WhatsApp template', () => {
         // An emoji's button, not the skin-tone one beside the search (also button.emoji).
         cy.get('emoji-picker').first().shadow().find('button[id^="emo-"]', { timeout: 20000 }).first().click()
         cy.get('[data-cy="template-body"]').invoke('val').should('match', /^Trae:\p{Extended_Pictographic}/u)
-        cy.get('[data-cy="wa-format-emoji-picker"]').first().trigger('keydown', { key: 'Escape' })
+        // Inserting hands focus back to the box with the picker still open (and
+        // over it, hence force), so Escape comes from there.
+        cy.get('[data-cy="template-body"]').should('have.focus').type('{esc}', { force: true })
         cy.get('[data-cy="wa-format-emoji-picker"]').first().should('not.be.visible')
+        cy.get('[data-cy="template-body"]').should('have.focus')
 
         // The footer offers emoji, and nothing else.
         cy.get('[data-cy="template-footer"]').parent().within(() => {

@@ -64,11 +64,10 @@ function apply(edit: WhatsAppEdit) {
     el.value = edit.text
     model.value = edit.text
   }
+  // Set once, now. The box and the model already agree, so the next render
+  // writes nothing back; a deferred second set would only land on whatever
+  // selection the person (or a test) has made since.
   el.setSelectionRange(edit.start, edit.end)
-  // The v-model may write the value back on the next render; the selection has to survive it.
-  nextTick(() => {
-    if (el.value === edit.text) el.setSelectionRange(edit.start, edit.end)
-  })
 }
 
 function selection(): [number, number] {
@@ -187,21 +186,30 @@ function onDocumentPointer(e: PointerEvent) {
   if (open.value && wrap.value && !e.composedPath().includes(wrap.value)) closeEmoji()
 }
 // Escape closes the picker, not the dialog it sits in: useFocusTrap leaves an
-// Escape somebody already handled alone.
+// Escape somebody already handled alone. It is caught on the document, before
+// the trap's own listener there, because focus is not always in the picker:
+// inserting an emoji hands it back to the box, with the picker still open.
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && open.value) {
     e.preventDefault()
-    closeEmoji(true)
+    // Back to the emoji button only from inside the picker; typing in the box stays there.
+    closeEmoji(!!wrap.value && e.composedPath().includes(wrap.value))
   }
 }
-onMounted(() => document.addEventListener('pointerdown', onDocumentPointer))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointer))
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointer)
+  document.addEventListener('keydown', onKeydown, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointer)
+  document.removeEventListener('keydown', onKeydown, true)
+})
 
 const BTN = 'flex h-7 min-w-7 items-center justify-center rounded-ctlSm px-1 text-[13px] text-ink-700 hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand touch:h-11 touch:min-w-11'
 </script>
 
 <template>
-  <div ref="wrap" class="relative flex flex-wrap items-center gap-0.5" role="toolbar" :aria-label="t('Formatting', 'Formato')" data-cy="wa-format-toolbar" @keydown="onKeydown">
+  <div ref="wrap" class="relative flex flex-wrap items-center gap-0.5" role="toolbar" :aria-label="t('Formatting', 'Formato')" data-cy="wa-format-toolbar">
     <template v-if="formatting">
       <!-- mousedown.prevent keeps the box's selection while the button is pressed. -->
       <button

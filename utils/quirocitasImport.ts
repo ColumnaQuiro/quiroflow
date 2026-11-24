@@ -559,6 +559,15 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
       warnings: [
         ...(rows.length > ready.length ? [t(`${nf.format(rows.length - ready.length)} bonos belong to patients not imported yet: run Patients first.`, `${nf.format(rows.length - ready.length)} bonos son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
         ...(inserts.some((b) => !b.dateFromLedger) ? [t('* No sale for this bono in the cash ledger: its purchase date is worked back from when it expires.', '* No hay venta de este bono en la caja: su fecha de compra se calcula desde su caducidad.')] : []),
+        ...(() => {
+          const unknown = inserts.filter((b) => b.sizeUnknown)
+          if (!unknown.length) return []
+          const names = [...new Set(unknown.map((b) => b.name))].slice(0, 4).join(', ')
+          return [t(
+            `${nf.format(unknown.length)} used-up bonos (${names}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.`,
+            `${nf.format(unknown.length)} bonos ya gastados (${names}) no tienen número de sesiones en Quirocitas: se importan cerrados, como 1 sesión de 1.`,
+          )]
+        })(),
       ],
       total: inserts.length + updates.length + missingLinks.length,
       async apply(progress, shouldStop) {

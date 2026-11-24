@@ -110,7 +110,10 @@ describe('Automation canvas', () => {
     cy.get('[data-test="save"]').click()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
     cy.get('[data-test="save-bar"]').should('not.exist')
+    // Switching on says first what will happen -- here, that nothing is sent.
     cy.get('[data-test="automation-enabled"]').click()
+    cy.get('[data-test="activate-test-mode"]').should('be.visible')
+    cy.get('[data-cy="confirm-dialog-confirm"]').click()
     cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
 
     cy.location('pathname').then((path) => {

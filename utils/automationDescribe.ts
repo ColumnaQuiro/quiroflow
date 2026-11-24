@@ -21,6 +21,7 @@ import {
 } from './automationCatalog'
 import type { DraftRule, DraftStep } from './automationTree'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
+import { asAudienceRefs } from './automationAudience'
 
 export interface NameLookup {
   appointmentTypes: { id: string; name: string }[]
@@ -36,6 +37,8 @@ export interface NameLookup {
   patientTypes?: { id: string; name: string }[]
   exercisePrograms?: { id: string; name: string }[]
   exerciseSchedules?: { id: string; name: string }[]
+  /** Patient lists and segments, for the "in a list or segment" filter. */
+  audiences?: { kind: 'list' | 'segment'; id: string; name: string }[]
 }
 
 export const emptyLookup = (): NameLookup => ({ appointmentTypes: [], practitioners: [], members: [], roles: [], clinics: [], memberships: [], templates: [], docTemplates: [] })
@@ -292,6 +295,17 @@ export function filtersText(t: Translate, filters: Record<string, any> | null | 
       case 'clinics':
         parts.push(names(f.clinic_ids, lookup.clinics))
         break
+      case 'audience': {
+        const named = (v: unknown) =>
+          asAudienceRefs(v)
+            .map((a) => lookup.audiences?.find((x) => x.kind === a.kind && x.id === a.id)?.name ?? t('a list or segment', 'una lista o segmento'))
+            .join(', ')
+        const inside = named(f.in_audiences)
+        const outside = named(f.not_in_audiences)
+        if (inside) parts.push(t(`In ${inside}`, `En ${inside}`))
+        if (outside) parts.push(t(`Not in ${outside}`, `No en ${outside}`))
+        break
+      }
     }
   }
   return parts.filter(Boolean).join(' · ')

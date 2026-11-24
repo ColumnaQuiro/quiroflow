@@ -1,5 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
 import { modelFailureMessage } from '~/utils/modelFailure'
 
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { teamMember, supabase } = await requireGrowth(event)
+  const { teamMember, supabase } = await requireLeads(event)
 
   let outcome
   try {

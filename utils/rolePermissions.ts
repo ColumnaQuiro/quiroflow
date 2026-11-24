@@ -30,6 +30,7 @@ export interface RolePermissions {
   billing_access: boolean
   recalls_access: boolean
   inbox_access: boolean
+  leads_access: boolean
   reports_access: boolean
   reports_own_only: boolean
   appointments_delete: boolean
@@ -77,6 +78,7 @@ export const EMPTY_PERMISSIONS: RolePermissions = {
   billing_access: false,
   recalls_access: false,
   inbox_access: false,
+  leads_access: false,
   reports_access: false,
   reports_own_only: false,
   appointments_delete: false,
@@ -97,6 +99,16 @@ export const EMPTY_PERMISSIONS: RolePermissions = {
   visit_notes_delete: false,
   progress_access: false,
   docs_files_scope: 'own',
+}
+
+/**
+ * A switch that another one includes: while the including one is on, the
+ * included one is in force whatever it stores (the policies and routes accept
+ * either), so the editor shows it on and locked.
+ */
+export const INCLUDED_BY: Partial<Record<BooleanPermissionKey, BooleanPermissionKey>> = {
+  progress_access: 'visit_notes_access',
+  leads_access: 'communication_config',
 }
 
 export function permissionsWithDefaults(stored: unknown): RolePermissions {
@@ -379,6 +391,15 @@ export function permissionGroups(t: T): PermissionGroup[] {
             'Las tres listas de pacientes a contactar, y enviarles email o WhatsApp desde la ficha.',
           ),
         },
+        {
+          kind: 'toggle',
+          key: 'leads_access',
+          label: t('See leads', 'Ver leads'),
+          description: t(
+            'Growth\'s Leads board and lead conversations in the Inbox: answer them, send them a template, move them along and convert them into patients. Included in "Communication and Growth".',
+            'El tablero de Leads de Growth y sus conversaciones en la bandeja: contestarles, enviarles una plantilla, moverlos de etapa y convertirlos en pacientes. Incluido en «Comunicación y Growth».',
+          ),
+        },
       ],
     },
     {
@@ -438,7 +459,10 @@ export function permissionGroups(t: T): PermissionGroup[] {
           kind: 'toggle',
           key: 'communication_config',
           label: t('Communication and Growth', 'Comunicación y Growth'),
-          description: t('WhatsApp, templates, saved replies, documents, campaigns and all of Growth.', 'WhatsApp, plantillas, respuestas guardadas, documentos, campañas y todo Growth.'),
+          description: t(
+            'WhatsApp, templates, saved replies, documents, automations and all of Growth. Includes "See leads".',
+            'WhatsApp, plantillas, respuestas guardadas, documentos, automatizaciones y todo Growth. Incluye «Ver leads».',
+          ),
         },
         {
           kind: 'toggle',
@@ -522,6 +546,7 @@ export function summaryChips(p: RolePermissions, t: T): string[] {
   if (p.billing_access && p.payments_allocate) chips.push(t('Charge and till', 'Cobrar y caja'))
   else if (p.billing_access) chips.push(t('Charge', 'Cobrar'))
   if (p.inbox_access) chips.push(t('Inbox', 'Bandeja de entrada'))
+  if (p.leads_access && !(p.settings_access && p.communication_config)) chips.push(t('Leads', 'Leads'))
   if (!p.visit_notes_access) chips.push(t('No clinical notes', 'Sin notas clínicas'))
   if (!p.visit_notes_access && p.progress_access) chips.push(t('Sees progress', 'Ve el progreso'))
   if (p.reports_access) chips.push(p.reports_own_only ? t('Reports: only their own', 'Informes: solo los suyos') : t('Reports', 'Informes'))

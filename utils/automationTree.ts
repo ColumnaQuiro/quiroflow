@@ -7,7 +7,8 @@
 
 import { asEmailDesign, emailDesignHasContent } from './emailDesign'
 import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from './automationAudience'
-import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, isLeadTrigger, stepDef, triggerDef, waitEventDef, type Pair } from './automationCatalog'
+import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, stepDef, waitEventDef, type Pair } from './automationCatalog'
+import { asTriggerAtom, atomFromLegacy, atomProblem, isGroupAtom, isLeadAtom, onlyIfFilters, type TriggerAtom } from './automationTrigger'
 
 export interface DraftStep {
   id: string
@@ -20,7 +21,15 @@ export interface DraftStep {
 
 export interface DraftRule {
   name: string
-  trigger_event: string
+  /** What starts it (utils/automationTrigger.ts). */
+  trigger: TriggerAtom
+  /**
+   * The old trigger name: what templates and the AI drafter still write, and
+   * what the server keeps writing for code that only knows it. The builder
+   * and the checks read `trigger`; withAtom() turns one into the other.
+   */
+  trigger_event?: string
+  /** The "only if" filters (no old trigger settings in them). */
   filters: Record<string, any>
   is_marketing: boolean
   dry_run: boolean
@@ -112,7 +121,7 @@ export function nextInChain(steps: DraftStep[], step: DraftStep): DraftStep | nu
  * outlet, a cycle. The server refuses these outright (400); the builder can
  * never produce them, so they mean a bug or a hand-made request.
  */
-export function structuralErrors(steps: DraftStep[], triggerEvent: string): string[] {
+export function structuralErrors(steps: DraftStep[], lead: boolean): string[] {
   const errors: string[] = []
   const ids = new Set<string>()
   for (const s of steps) {
@@ -121,7 +130,7 @@ export function structuralErrors(steps: DraftStep[], triggerEvent: string): stri
     ids.add(s.id)
     const def = stepDef(s.action_type)
     if (!def) errors.push(`Unknown step type "${s.action_type}".`)
-    if (def?.leadOnly && !isLeadTrigger(triggerEvent)) errors.push(`"${s.action_type}" only belongs in a lead automation.`)
+    if (def?.leadOnly && !lead) errors.push(`"${s.action_type}" only belongs in a lead automation.`)
     if (!Number.isInteger(s.position) || s.position < 0) errors.push(`Step ${s.id} has an invalid position.`)
     if (!s.config || typeof s.config !== 'object' || Array.isArray(s.config)) errors.push(`Step ${s.id} has no config object.`)
   }
@@ -193,38 +202,34 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   const add = (stepId: string | null, en: string, es: string) => problems.push({ stepId, message: [en, es] })
 
   if (!rule.name.trim()) add(null, 'The automation has no name.', 'La automatización no tiene nombre.')
-  if (!triggerDef(rule.trigger_event)) add(null, 'Choose what starts this automation.', 'Elige qué inicia esta automatización.')
+  const atom = rule.trigger
+  const atomIssue = atomProblem(atom)
+  if (atomIssue) add(null, atomIssue[0], atomIssue[1])
   if (steps.length === 0) add(null, 'Add at least one step.', 'Añade al menos un paso.')
 
-  if (rule.trigger_event === 'appointment.hours_before' && !(Number(rule.filters?.hours_before) > 0)) {
-    add(null, 'Say how many hours before the appointment.', 'Indica cuántas horas antes de la cita.')
+  // A timing that names a moment but not how far from it.
+  if (atom?.timing && !(Number(atom.timing.amount) >= 0 && Number.isInteger(Number(atom.timing.amount)))) {
+    add(null, 'Say how long before or after, as a whole number.', 'Indica cuánto antes o después, en un número entero.')
   }
-  if (rule.trigger_event === 'appointment.review_request' && !(Number(rule.filters?.days_after) > 0)) {
-    add(null, 'Say how many days after the visit.', 'Indica cuántos días después de la cita.')
+  if (atom?.subject === 'patient' && atom.moment === 'date_field' && typeof atom.options?.trigger_date !== 'string') {
+    add(null, 'Choose the date field it counts from.', 'Elige el campo de fecha desde el que cuenta.')
   }
-  if (rule.trigger_event === 'appointment.satisfaction' && !(Number(rule.filters?.hours_after) > 0)) {
-    add(null, 'Say how many hours after the visit.', 'Indica cuántas horas después de la visita.')
+  const vn = rule.filters?.visit_number
+  if (vn && typeof vn === 'object' && vn.first === false && !(Number(vn.every) > 0)) {
+    add(null, 'Under "Visit number", choose the first visit, every few visits, or both.', 'En «Número de visita», elige la primera visita, cada pocas visitas, o ambas.')
   }
-  if (rule.trigger_event === 'appointment.satisfaction' && rule.filters?.first_visit === false && !(Number(rule.filters?.every_visits) > 0)) {
-    add(null, 'Ask after the first visit, every few visits, or both.', 'Pregunta tras la primera visita, cada pocas visitas, o ambas.')
-  }
-  if (rule.trigger_event === 'invoice.overdue' && !(Number(rule.filters?.days_overdue) > 0)) {
-    add(null, 'Say how many days after the invoice.', 'Indica cuántos días después de la factura.')
-  }
-  if (rule.trigger_event === 'patient.date') {
-    if (!rule.filters?.trigger_date) add(null, 'Choose the date it counts from.', 'Elige la fecha desde la que cuenta.')
-    const days = Number(rule.filters?.trigger_days)
-    if (!Number.isInteger(days) || days < 0 || days > 3650) add(null, 'Say how many days, from 0 to 3650.', 'Indica cuántos días, de 0 a 3650.')
+  if (Array.isArray(rule.filters?.appointment_statuses) && rule.filters.appointment_statuses.length === 0) {
+    add(null, 'Choose at least one appointment status, or remove that filter.', 'Elige al menos un estado de cita, o quita ese filtro.')
   }
   // "In a list or segment" added and left empty would read as no filter at
   // all, which is the opposite of what adding it meant.
   if ((Array.isArray(rule.filters?.in_audiences) || Array.isArray(rule.filters?.not_in_audiences)) && !asAudienceRefs(rule.filters?.in_audiences).length && !asAudienceRefs(rule.filters?.not_in_audiences).length) {
     add(null, 'Choose the list or segment under "In a list or segment", or remove that filter.', 'Elige la lista o el segmento en «En una lista o segmento», o quita ese filtro.')
   }
-  if (rule.trigger_event === 'audience.entered' && !asAudienceRef(rule.filters?.trigger_audience)) {
+  if (atom?.subject === 'patient' && atom.moment === 'entered_audience' && !asAudienceRef(atom.options?.trigger_audience)) {
     add(null, 'Choose the list or segment people enter.', 'Elige la lista o el segmento al que entran.')
   }
-  if (rule.trigger_event === 'segment') {
+  if (isGroupAtom(atom)) {
     const schedule = rule.segment?.schedule
     if (!schedule || !['once', 'daily', 'weekly'].includes(schedule.kind)) add(null, 'Choose when the group is checked.', 'Elige cuándo se revisa el grupo.')
     else if (schedule.kind !== 'once' && !/^\d{1,2}:\d{2}$/.test(schedule.time ?? '')) add(null, 'Choose the time the group is checked.', 'Elige a qué hora se revisa el grupo.')
@@ -321,8 +326,8 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
             add(step.id, 'An if/else step has a condition with no question.', 'Un paso «Si / si no» tiene una condición sin pregunta.')
             continue
           }
-          if (def.subject === 'lead' && !isLeadTrigger(rule.trigger_event)) add(step.id, `"${def.label[0]}" only applies to leads.`, `«${def.label[1]}» solo aplica a leads.`)
-          if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadTrigger(rule.trigger_event)) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
+          if (def.subject === 'lead' && !isLeadAtom(rule.trigger)) add(step.id, `"${def.label[0]}" only applies to leads.`, `«${def.label[1]}» solo aplica a leads.`)
+          if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadAtom(rule.trigger)) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
           if (def.value === 'doc_answer' && !(isUuid(cond.doc_template_id) && cond.doc_field_id)) {
             add(step.id, 'A form-answer condition does not say which form and question.', 'Una condición de respuesta no dice qué formulario y qué pregunta.')
           }
@@ -341,11 +346,11 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         break
       case 'patient_type':
         if (!c.type_id) add(step.id, 'A patient type step has no type.', 'Un paso de tipo de paciente no tiene tipo.')
-        if (isLeadTrigger(rule.trigger_event)) add(step.id, 'Patient types apply to patients, not leads.', 'Los tipos de paciente son de pacientes, no de leads.')
+        if (isLeadAtom(rule.trigger)) add(step.id, 'Patient types apply to patients, not leads.', 'Los tipos de paciente son de pacientes, no de leads.')
         break
       case 'assign_exercises':
         if (!c.program_id && !c.schedule_id) add(step.id, 'An assign-exercises step has no programme or schedule.', 'Un paso de asignar ejercicios no tiene programa ni pauta.')
-        if (isLeadTrigger(rule.trigger_event)) add(step.id, 'Exercises are for patients, not leads.', 'Los ejercicios son de pacientes, no de leads.')
+        if (isLeadAtom(rule.trigger)) add(step.id, 'Exercises are for patients, not leads.', 'Los ejercicios son de pacientes, no de leads.')
         break
       case 'notify': {
         const to = c.to ?? {}
@@ -434,4 +439,18 @@ export function successorInNewTree(removedId: string, oldSteps: DraftStep[], new
   if (!before) return newChain[0] ?? null
   const anchor = newChain.findIndex((s) => s.id === before.id)
   return anchor >= 0 ? (newChain[anchor + 1] ?? null) : null
+}
+
+/**
+ * A rule as the builder edits it, whatever it came from: one already carrying
+ * its atom keeps it, with the old trigger settings taken out of its filters;
+ * one written with an old trigger name (a template, the AI drafter, a rule
+ * read before its atom existed) gets the atom that name is, and the filters
+ * that make it behave as it did.
+ */
+export function withAtom<T extends { trigger?: unknown; trigger_event?: string | null; filters?: Record<string, any> | null }>(rule: T): Omit<T, 'trigger' | 'filters'> & { trigger: TriggerAtom; filters: Record<string, any> } {
+  const stored = asTriggerAtom(rule.trigger)
+  if (stored) return { ...rule, trigger: stored, filters: onlyIfFilters(rule.filters) }
+  const { trigger, implied } = atomFromLegacy(String(rule.trigger_event ?? ''), rule.filters)
+  return { ...rule, trigger, filters: { ...onlyIfFilters(rule.filters), ...implied } }
 }

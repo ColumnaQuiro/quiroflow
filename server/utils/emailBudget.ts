@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { serviceSupabase } from './serviceSupabase'
+import { isBulkAtom, ruleAtom } from '~/utils/automationTrigger'
 
 // The daily email budget: how many emails QuiroFlow may still send today, and
 // who gets them.
@@ -63,8 +64,8 @@ export function currentEmailScope(): EmailScope | null {
  * day's campaign budget and wait when there is none; everything else is sent
  * at once, out of the reserve kept for it.
  */
-export function isBulkEmailRule(rule: { is_marketing?: boolean | null; trigger_event: string }): boolean {
-  return Boolean(rule.is_marketing) || rule.trigger_event === 'segment' || rule.trigger_event === 'audience.entered'
+export function isBulkEmailRule(rule: { is_marketing?: boolean | null; trigger_event: string; trigger?: unknown; filters?: unknown }): boolean {
+  return Boolean(rule.is_marketing) || isBulkAtom(ruleAtom(rule))
 }
 
 /** Not sent, on purpose: there is no budget for it now. Says when to try again. */

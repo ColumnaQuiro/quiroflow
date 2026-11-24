@@ -66,6 +66,9 @@ export type StopReason =
   // The patient replied "Más adelante": parked in Recalls for two months,
   // and the recall that asked ends rather than chasing.
   | 'snoozed'
+  // The trigger held them back ("3 hours after check-in") and, by then, they
+  // no longer passed the automation's "only if" filters.
+  | 'no_longer_matches'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -246,6 +249,7 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   declined: 'The patient asked not to be contacted (WhatsApp reply)',
   snoozed: 'The patient asked to be written to later (WhatsApp reply)',
   left_the_clinic: 'The patient said they moved away or will not be back (AI receptionist)',
+  no_longer_matches: 'No longer matched the automation\'s conditions when the wait after the trigger ended',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

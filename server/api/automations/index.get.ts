@@ -5,6 +5,7 @@ import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
 import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
 import { isValidQuietHours } from '~/utils/automationTiming'
+import { withAtom } from '~/utils/automationTree'
 
 // The Automations list: every rule on the account, what its steps are, and
 // what it has done in the last 30 days.
@@ -22,7 +23,7 @@ export default defineEventHandler(async (event) => {
     canReadWhatsApp(supabase, teamMember),
     supabase
       .from('automation_rules')
-      .select('id, name, trigger_event, enabled, filters, is_marketing, dry_run, segment, entry_mode, exit_on, quiet_hours, created_at')
+      .select('id, name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, segment, entry_mode, exit_on, quiet_hours, created_at')
       .eq('account_id', accountId)
       .order('created_at', { ascending: false }),
     supabase.from('automation_actions').select('rule_id, action_type, parent_id').eq('account_id', accountId),
@@ -45,7 +46,8 @@ export default defineEventHandler(async (event) => {
       const ruleSteps = byRule.get(r.id) ?? []
       const { entry_mode, exit_on, quiet_hours, ...rest } = r
       return {
-        ...rest,
+        // The atom, and the "only if" filters without the old trigger settings.
+        ...withAtom(rest),
         stepCount: ruleSteps.length,
         stepTypes: [...new Set(ruleSteps.map((s) => s.action_type))],
         hasConditions: ruleSteps.some((s) => s.action_type === 'branch' || s.action_type === 'wait_until'),

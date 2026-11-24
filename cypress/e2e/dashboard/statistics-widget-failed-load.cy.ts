@@ -1,4 +1,6 @@
-// The "Visit value & retention" widget, when its payments cannot be read.
+// The "Visit value & retention" widget, when what its visits were worth
+// cannot be read (it reads bono sessions and invoices; it read payments until
+// Nov 2026, see utils/visitValue.ts).
 //
 // It started its two loads in onMounted without handing either promise back,
 // so a read that failed -- fetchAllRows throws supabase's error object --
@@ -21,15 +23,15 @@ describe('The dashboard statistics widget', () => {
         match: { id: account.teamMemberId },
       })
 
-      cy.intercept('GET', '**/rest/v1/payments*', {
+      cy.intercept('GET', '**/rest/v1/package_sessions*', {
         statusCode: 500,
-        body: { code: 'XX000', message: 'payments refused for this spec', details: null, hint: null },
-      }).as('payments')
+        body: { code: 'XX000', message: 'bono sessions refused for this spec', details: null, hint: null },
+      }).as('sessions')
 
       cy.login(account.email, account.password)
       cy.visit('/dashboard')
       cy.contains('Visit value & retention').should('be.visible')
-      cy.wait('@payments')
+      cy.wait('@sessions')
       // Long enough for the rejection to settle after the response; without
       // the fix, the test fails here as an uncaught exception.
       cy.wait(500)

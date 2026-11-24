@@ -1,4 +1,4 @@
-import { dateInputValue } from '../../support/calendar'
+import { chooseFromCalendarMore, dateInputValue } from '../../support/calendar'
 
 // "Bloquear horario" over visits already booked (components/calendar/
 // BlockClashes.vue): the form lists them before saving and the button says
@@ -20,7 +20,7 @@ describe('Blocking time over booked visits', () => {
         }).then((visit) => {
           cy.login(account.email, account.password)
           cy.visit('/calendar')
-          cy.contains('button', 'Block time').click()
+          chooseFromCalendarMore('block-time-open', '[role=dialog]:contains("Block time")')
           cy.get('.fixed.inset-0.z-50').within(() => {
             cy.contains('label', 'Start date').parent().find('input').clear().type(dateInputValue(day))
             cy.contains('label', 'End date').parent().find('input').clear().type(dateInputValue(day))

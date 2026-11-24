@@ -1560,7 +1560,13 @@
   "{0} records and notes wait for their patient: run Patients first.": "{0} Akten und Notizen warten auf ihren Patienten: Führen Sie zuerst Patienten aus.",
   "{0} notes were written on the day of a visit that is not here yet: they go on the patient's history. Run Appointments first to have them on their visit.": "{0} Notizen wurden am Tag eines Besuchs geschrieben, der noch nicht hier ist: Sie kommen in den Verlauf des Patienten. Führen Sie zuerst Termine aus, um sie bei ihrem Besuch zu haben.",
   "{0} files and signatures in QuiroHiro's custom fields are not copied by this import: download them from QuiroHiro if you need them.": "{0} Dateien und Unterschriften in den benutzerdefinierten Feldern von QuiroHiro werden bei diesem Import nicht kopiert: Laden Sie sie bei Bedarf aus QuiroHiro herunter.",
-  "WhatsApp did not send it: {0}": "WhatsApp hat es nicht gesendet: {0}"
+  "WhatsApp did not send it: {0}": "WhatsApp hat es nicht gesendet: {0}",
+  "Payments and invoices were not read from QuiroHiro{0}. To bring them, edit the Private Integration in QuiroHiro, tick invoices.readonly and payments/transactions.readonly, and run the import again.": "Zahlungen und Rechnungen wurden nicht aus QuiroHiro gelesen{0}. Um sie zu übernehmen, bearbeiten Sie die private Integration in QuiroHiro, kreuzen invoices.readonly und payments/transactions.readonly an und importieren erneut.",
+  "{0} of {1} sessions used": "{0} von {1} Sitzungen genutzt",
+  "{0} bonos do not say how many sessions they hold ({1}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.": "{0} Pakete geben nicht an, wie viele Sitzungen sie enthalten ({1}): Sie kommen als bezahlte Rechnungen an, ohne Paket, aus dem Sitzungen genutzt werden. Legen Sie diese Pakete von Hand an.",
+  "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ausgelassen: {0} Zahlungen oder Rechnungen im Testmodus und {1} in einer anderen Währung als Euro.",
+  "{0} payments or invoices name no contact and are left out.": "{0} Zahlungen oder Rechnungen nennen keinen Kontakt und werden ausgelassen.",
+  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} Rechnungen und Zahlungen gehören zu nicht importierten Patienten: Führen Sie zuerst Patienten aus oder wählen Sie „Alle“."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10685,6 +10691,14 @@
   "Could not check whether WhatsApp is set up.": "Es konnte nicht geprüft werden, ob WhatsApp eingerichtet ist.",
   "Checking WhatsApp…": "WhatsApp wird geprüft…",
   "Sent by WhatsApp": "Per WhatsApp gesendet",
-  "Could not send by WhatsApp": "Senden per WhatsApp fehlgeschlagen"
+  "Could not send by WhatsApp": "Senden per WhatsApp fehlgeschlagen",
+  "If the clinic charges or sells bonos through QuiroHiro, tick these two as well, for its payments and invoices:": "Wenn die Praxis über QuiroHiro abrechnet oder Pakete verkauft, kreuzen Sie auch diese beiden an, für Zahlungen und Rechnungen:",
+  "Reads QuiroHiro and brings it across: patients, appointments, each patient's clinical record and visit notes, and payments, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Liest QuiroHiro und übernimmt alles: Patienten, Termine, die Krankenakte und Besuchsnotizen jedes Patienten sowie Zahlungen, in dieser Reihenfolge. Es läuft auf dem Server von QuiroFlow, Sie können diese Seite also schließen; Sie erhalten eine E-Mail, wenn es fertig ist.",
+  "Payments, invoices and bonos.": "Zahlungen, Rechnungen und Pakete.",
+  "If the clinic charges through QuiroHiro and the key has the two payment permissions, its invoices, payments and bonos come in last. A clinic that keeps its money elsewhere (a spreadsheet) has none there to bring.": "Wenn die Praxis über QuiroHiro abrechnet und der Schlüssel die beiden Zahlungsberechtigungen hat, kommen Rechnungen, Zahlungen und Pakete zuletzt. Eine Praxis, die ihr Geld anderswo führt (eine Tabelle), hat dort nichts zu übernehmen.",
+  "Payments and bonos": "Zahlungen und Pakete",
+  "Only for a clinic that charges through QuiroHiro.": "Nur für eine Praxis, die über QuiroHiro abrechnet.",
+  "Invoices paid since": "Seitdem bezahlte Rechnungen",
+  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "QuiroHiro zählt keine Paketsitzungen: Als genutzt gelten die Besuche, die jeder Patient seit dem Kauftag wahrgenommen hat, ältestes Paket zuerst. Jedes Paket wurde beim Verkauf berechnet, daher kosten die hier genutzten Sitzungen nichts mehr."
  }
 }

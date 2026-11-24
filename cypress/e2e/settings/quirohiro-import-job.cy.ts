@@ -25,7 +25,8 @@ describe('QuiroHiro import running on the server', () => {
       cy.visit('/settings/import?source=quirohiro&type=full')
       cy.get('[data-cy="qh-who-patients"]', { timeout: 15000 }).should('be.checked')
       cy.get('[data-cy="qh-who-everyone"]').should('not.be.checked')
-      cy.get('[data-cy="qh-full-preview"]').should('be.visible')
+      // The panel scrolls, and the source picker above it pushes this below the fold.
+      cy.get('[data-cy="qh-full-preview"]').scrollIntoView().should('be.visible')
       cy.get('[data-cy="qh-full-start"]').should('contain', 'Import everything')
 
       // Held by a slice for the next hour, so nothing on the server picks it

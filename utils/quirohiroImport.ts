@@ -11,6 +11,8 @@ import {
   quirohiroPatientRow,
   quirohiroPatients,
   quirohiroRecordText,
+  quirohiroBonoSessionsUsed,
+  quirohiroLedgerRows,
   qhRecordRef,
   type QuirohiroSnapshot,
   type QuirohiroWho,
@@ -29,10 +31,14 @@ import {
 //
 // Service role: every read is scoped to the account by hand.
 
-export type QuirohiroStepKind = 'patients' | 'appointments' | 'clinical'
+export type QuirohiroStepKind = 'patients' | 'appointments' | 'clinical' | 'ledger'
 
-/** The order a full import runs them in: everything finds its patient by reference, and notes find their visit. */
-export const QUIROHIRO_STEPS: QuirohiroStepKind[] = ['patients', 'appointments', 'clinical']
+/**
+ * The order a full import runs them in: everything finds its patient by
+ * reference, notes find their visit, and a bono counts the visits taken
+ * since it was bought.
+ */
+export const QUIROHIRO_STEPS: QuirohiroStepKind[] = ['patients', 'appointments', 'clinical', 'ledger']
 
 export type QuirohiroPlan = QuirocitasPlan
 
@@ -424,12 +430,137 @@ export function quirohiroImporter(ctx: QuirohiroImportContext) {
     }
   }
 
+
+  // --- 4 · Payments, invoices and bonos -------------------------------------------------
+  // What each QuiroHiro invoice and payment becomes is in quirohiroLedgerRows;
+  // this writes what is not here yet. Insert-only, by reference ("QH-inv-",
+  // "QH-sale-", "QH-pay-", "QH-invpay-", "QH-bono-"), except that an
+  // imported invoice follows QuiroHiro when it is paid there afterwards.
+
+  async function planLedger(s: QuirohiroSnapshot): Promise<QuirohiroPlan> {
+    const eur = (c: number) => `${(c / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+    if (!s.money?.read) {
+      return {
+        stats: [], columns: [], rows: [], total: 0,
+        warnings: [t(
+          `Payments and invoices were not read from QuiroHiro${s.money?.reason ? ` (${s.money.reason})` : ''}. To bring them, edit the Private Integration in QuiroHiro, tick invoices.readonly and payments/transactions.readonly, and run the import again.`,
+          `No se leyeron los pagos ni las facturas de QuiroHiro${s.money?.reason ? ` (${s.money.reason})` : ''}. Para traerlos, edita la integración privada en QuiroHiro, marca invoices.readonly y payments/transactions.readonly, y vuelve a importar.`,
+        )],
+        apply: async () => ({ written: 0, errors: [] }),
+      }
+    }
+    const patients = await patientIds()
+    const refOf = new Map([...patients].map(([ref, id]) => [id, ref]))
+    const haveInvoices = new Map((await readAll<{ id: string; external_reference: string; status: string }>('invoices', 'id, external_reference, status', 'QH-')).map((i) => [i.external_reference, i]))
+    const havePayments = new Set((await readAll<{ external_reference: string }>('payments', 'external_reference', 'QH-')).map((p) => p.external_reference))
+    const haveBonos = new Map((await readAll<{ id: string; external_reference: string }>('package_purchases', 'id, external_reference', 'QH-bono-')).map((b) => [b.external_reference, b.id]))
+    const visits = (await readAll<{ patient_id: string; starts_at: string; status: string }>('appointments', 'patient_id, starts_at, status', 'QH-appt-'))
+      .map((a) => ({ patientRef: refOf.get(a.patient_id) ?? '', startsAt: a.starts_at, status: a.status }))
+    const { data: methodRows, error: methodError } = await supabase.from('payment_methods').select('key').eq('account_id', accountId)
+    if (methodError) throw new Error(`payment_methods: ${methodError.message}`)
+    const methods = new Set((methodRows ?? []).map((m) => m.key))
+
+    const ledger = quirohiroLedgerRows(s)
+    const charges = ledger.charges.filter((c) => patients.has(c.patientRef) && !haveInvoices.has(c.ref))
+    const statusChanges = ledger.charges.filter((c) => { const here = haveInvoices.get(c.ref); return here && here.status !== 'void' && here.status !== c.status })
+    const bonos = ledger.bonos.filter((b) => patients.has(b.patientRef) && !haveBonos.has(b.ref))
+    const used = quirohiroBonoSessionsUsed(ledger.bonos, visits)
+    const payments = ledger.payments.filter((p) => patients.has(p.patientRef) && !havePayments.has(p.ref))
+    const waiting = ledger.charges.filter((c) => !patients.has(c.patientRef)).length + ledger.payments.filter((p) => !patients.has(p.patientRef)).length
+    const missingMethods = [...new Set(payments.map((p) => p.method))].filter((m) => !methods.has(m))
+    const methodName = (m: string) => (m === 'cash' ? t('Cash', 'Efectivo') : m === 'card' ? t('Card', 'Tarjeta') : m === 'transfer' ? t('Transfer', 'Transferencia') : t('Other', 'Otro'))
+    const { skipped } = ledger
+
+    return {
+      stats: [
+        { label: t('Invoices', 'Facturas'), value: nf.format(charges.length), tone: 'good' },
+        { label: t('Invoiced', 'Facturado'), value: eur(charges.reduce((a, c) => a + c.totalCents, 0)) },
+        { label: t('Payments', 'Pagos'), value: nf.format(payments.length), tone: 'good' },
+        { label: t('Paid', 'Pagado'), value: eur(payments.reduce((a, p) => a + p.amountCents, 0)) },
+        { label: 'Bonos', value: nf.format(bonos.length), tone: 'good' },
+        ...(statusChanges.length ? [{ label: t('Invoices paid since', 'Facturas pagadas desde entonces'), value: nf.format(statusChanges.length), tone: 'good' as const }] : []),
+      ],
+      columns: [{ key: 'when', label: t('Date', 'Fecha') }, { key: 'what', label: t('What', 'Qué'), wrap: true }, { key: 'amount', label: t('Amount', 'Importe') }],
+      rows: [
+        ...bonos.map((b) => ({ when: b.purchasedAt.slice(0, 10), what: `Bono · ${b.name} · ${t(`${used.get(b.ref) ?? 0} of ${b.sessionsTotal} sessions used`, `${used.get(b.ref) ?? 0} de ${b.sessionsTotal} sesiones usadas`)}`, amount: eur(b.priceCents) })),
+        ...charges.map((c) => ({ when: c.createdAt.slice(0, 10), what: `${t('Invoice', 'Factura')} ${c.number} · ${c.what} · ${c.status === 'paid' ? t('paid', 'pagada') : t('unpaid', 'pendiente')}`, amount: eur(c.totalCents) })),
+        ...payments.map((p) => ({ when: p.paidAt.slice(0, 10), what: `${t('Payment', 'Pago')} · ${methodName(p.method)}`, amount: eur(p.amountCents) })),
+      ],
+      warnings: [
+        ...(ledger.bonos.length ? [t(
+          'QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.',
+          'QuiroHiro no cuenta las sesiones de los bonos: las usadas son las visitas a las que vino cada paciente desde el día de la compra, del bono más antiguo al más nuevo. Cada bono se cobró al venderse, así que las sesiones que se gasten aquí no cobran nada más.',
+        )] : []),
+        ...(ledger.bonosWithoutSessions.length ? [t(
+          `${nf.format(ledger.bonosWithoutSessions.length)} bonos do not say how many sessions they hold (${[...new Set(ledger.bonosWithoutSessions)].slice(0, 5).join(', ')}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.`,
+          `${nf.format(ledger.bonosWithoutSessions.length)} bonos no dicen cuántas sesiones tienen (${[...new Set(ledger.bonosWithoutSessions)].slice(0, 5).join(', ')}): llegan como facturas pagadas, sin bono del que gastar sesiones. Crea esos bonos a mano.`,
+        )] : []),
+        ...(skipped.notEuro || skipped.test ? [t(
+          `Left out: ${nf.format(skipped.test)} test-mode payments or invoices and ${nf.format(skipped.notEuro)} in a currency other than euros.`,
+          `Se dejan fuera ${nf.format(skipped.test)} pagos o facturas de prueba y ${nf.format(skipped.notEuro)} en una moneda que no es el euro.`,
+        )] : []),
+        ...(skipped.noContact ? [t(`${nf.format(skipped.noContact)} payments or invoices name no contact and are left out.`, `${nf.format(skipped.noContact)} pagos o facturas no tienen contacto y se dejan fuera.`)] : []),
+        ...(waiting ? [t(`${nf.format(waiting)} invoices and payments belong to patients not imported: run Patients first, or choose "Everyone".`, `${nf.format(waiting)} facturas y pagos son de pacientes no importados: ejecuta Pacientes antes, o elige «Todos».`)] : []),
+        ...(missingMethods.length ? [t(`This clinic has no payment method for ${missingMethods.map(methodName).join(', ')}: add it under Settings → Payments → Payment methods first.`, `Esta clínica no tiene método de pago para ${missingMethods.map(methodName).join(', ')}: añádelo antes en Ajustes → Pagos → Métodos de pago.`)] : []),
+      ],
+      total: charges.length + bonos.length + payments.length + statusChanges.length,
+      async apply(progress, shouldStop) {
+        if (missingMethods.length) return { written: 0, errors: [t('Nothing was written: a payment method is missing (see above).', 'No se escribió nada: falta un método de pago (ver arriba).')] }
+        const errors: string[] = []
+        let written = 0
+        let done = 0
+        const invoiceId = new Map([...haveInvoices].map(([ref, i]) => [ref, i.id]))
+        const bonoId = new Map(haveBonos)
+        // Invoices first, then the bonos sold on them, then the payments: each finds the one before it by reference.
+        await inChunks(charges, async (chunk) => {
+          const { data, error } = await supabase.from('invoices').insert(chunk.map((c) => ({
+            account_id: accountId, patient_id: patients.get(c.patientRef)!, invoice_number: c.number, total_cents: c.totalCents, status: c.status, created_at: c.createdAt, external_reference: c.ref,
+          }))).select('id, external_reference')
+          if (error) { errors.push(error.message); return }
+          for (const d of data) invoiceId.set(d.external_reference!, d.id)
+          written += data.length
+        }, (n) => progress(done + n), shouldStop)
+        done += charges.length
+        await inChunks(bonos.filter((b) => invoiceId.has(b.chargeRef)), async (chunk) => {
+          const { data, error } = await supabase.from('package_purchases').insert(chunk.map((b) => {
+            const sessionsUsed = Math.min(used.get(b.ref) ?? 0, b.sessionsTotal)
+            return {
+              account_id: accountId, patient_id: patients.get(b.patientRef)!, package_name: b.name, price_cents: b.priceCents, sessions_total: b.sessionsTotal, sessions_used: sessionsUsed,
+              purchased_at: b.purchasedAt, invoice_id: invoiceId.get(b.chargeRef)!, charged_at_purchase: true, owed_cents: 0, is_closed: sessionsUsed >= b.sessionsTotal, external_reference: b.ref,
+            }
+          })).select('id, external_reference')
+          if (error) { errors.push(error.message); return }
+          for (const d of data) bonoId.set(d.external_reference!, d.id)
+          written += data.length
+        }, (n) => progress(done + n), shouldStop)
+        done += bonos.length
+        await inChunks(payments.filter((p) => !p.chargeRef || invoiceId.has(p.chargeRef)), async (chunk) => {
+          const { error } = await supabase.from('payments').insert(chunk.map((p) => ({
+            account_id: accountId, patient_id: patients.get(p.patientRef)!, amount_cents: p.amountCents, method: p.method, paid_at: p.paidAt,
+            invoice_id: p.chargeRef ? invoiceId.get(p.chargeRef) ?? null : null, package_purchase_id: p.bonoRef ? bonoId.get(p.bonoRef) ?? null : null, external_reference: p.ref,
+          })))
+          if (error) errors.push(error.message); else written += chunk.length
+        }, (n) => progress(done + n), shouldStop)
+        done += payments.length
+        await withConcurrency(statusChanges, 8, async (c) => {
+          if (shouldStop()) return
+          // Only an invoice QuiroHiro wrote, and never one voided here.
+          const { error } = await supabase.from('invoices').update({ status: c.status }).eq('id', haveInvoices.get(c.ref)!.id).eq('account_id', accountId).neq('status', 'void')
+          if (error) errors.push(error.message); else written++
+          progress(++done)
+        })
+        return { written, errors }
+      },
+    }
+  }
+
   return {
     plan(kind: QuirohiroStepKind, s: QuirohiroSnapshot, opts: QuirohiroPlanOptions): Promise<QuirohiroPlan> {
       switch (kind) {
         case 'patients': return planPatients(s, opts)
         case 'appointments': return planAppointments(s, opts)
         case 'clinical': return planClinical(s, opts)
+        case 'ledger': return planLedger(s)
       }
     },
   }

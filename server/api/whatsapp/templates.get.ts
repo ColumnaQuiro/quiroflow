@@ -18,8 +18,13 @@ import { allTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
 // attaches by default rather than asking for it a second time; one made with
 // a form button carries `form`, the QuiroFlow form that button opens; one
 // QuiroFlow fills on each send carries `sendValues`, what goes in its blanks.
+//
+// Read too by "See leads" (leads_access): a lead from an ad form has often
+// never written, so a template is the only way to reach them, and the lead
+// thread's "Send template" lists them here. Changing templates stays under
+// communication_config (templates.post, templates/[id]).
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireAnyPermission(event, ['communication_config', 'leads_access'])
 
   let all
   try {

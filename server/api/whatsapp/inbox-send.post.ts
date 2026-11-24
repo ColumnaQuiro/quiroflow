@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'text or media is required' })
   }
 
-  const { supabase, teamMember } = await requirePermission(event, body?.leadId ? 'communication_config' : 'inbox_access')
+  const { supabase, teamMember } = await (body?.leadId ? requireAnyPermission(event, ['leads_access', 'communication_config']) : requirePermission(event, 'inbox_access'))
 
   await sendInboxMessage(event, { supabase, teamMember }, {
     patientId: body.patientId,

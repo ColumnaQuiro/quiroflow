@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import {
   CARDS_PER_STAGE,
   LEAD_STAGES,
@@ -30,7 +30,7 @@ import {
 const PAGE = 1000
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
   const query = getQuery(event)
   const term = typeof query.q === 'string' ? query.q.trim().toLowerCase() : ''
   const termDigits = term.replace(/\D/g, '')

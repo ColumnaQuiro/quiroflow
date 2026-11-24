@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database, TablesUpdate  } from '~/types/database.types'
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
 import { fireLeadStageTrigger } from '~/server/utils/automationTriggers'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
   const body = await readBody<Body>(event)
 
   // The generated Update type rather than a loose record, so a column typo

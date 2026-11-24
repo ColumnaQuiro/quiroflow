@@ -5,7 +5,9 @@ import {
   roleNameTaken,
   rowValue,
   setFinancialsMode,
+  INCLUDED_BY,
   permissionsWithDefaults,
+  type BooleanPermissionKey,
   type FinancialsMode,
   type PermissionRow,
   type RolePermissions,
@@ -93,20 +95,27 @@ const nameInput = computed({
 const nameEmpty = computed(() => !!form.value && !form.value.name.trim())
 const nameTaken = computed(() => (form.value && form.value.name !== storedName.value ? roleNameTaken(form.value.name, otherRoles.value) : null))
 
-// "See visit notes" includes "See progress" (every progress policy reads
-// either key), so while notes are on, progress shows as on and cannot be
-// switched off -- an off switch there would say something untrue.
-function impliedByNotes(row: PermissionRow) {
-  return row.key === 'progress_access' && !!form.value?.permissions.visit_notes_access
+// "See visit notes" includes "See progress", "Communication and Growth"
+// includes "See leads" (INCLUDED_BY): while the including switch is on, the
+// included one shows as on and cannot be switched off -- an off switch there
+// would say something untrue.
+function includedBy(row: PermissionRow) {
+  if (row.kind !== 'toggle' || !form.value) return false
+  const parent = INCLUDED_BY[row.key]
+  return !!parent && form.value.permissions[parent] === true
 }
 function permValue(row: PermissionRow) {
-  if (impliedByNotes(row)) return true
+  if (includedBy(row)) return true
   return form.value ? rowValue(form.value.permissions, row) : false
 }
 function setValue(row: PermissionRow, value: string | boolean) {
   if (!form.value) return
   const p = form.value.permissions
-  if (row.key === 'visit_notes_access' && value === true) p.progress_access = true
+  // Turning on the including switch stores the included one too, so the
+  // stored role says what is in force.
+  if (row.kind === 'toggle' && value === true) {
+    for (const [child, parent] of Object.entries(INCLUDED_BY)) if (parent === row.key) p[child as BooleanPermissionKey] = true
+  }
   if (row.kind === 'toggle') p[row.key] = value === true
   else if (row.key === 'financials') setFinancialsMode(p, value as FinancialsMode)
   else (p as unknown as Record<string, string>)[row.key] = value as string
@@ -380,7 +389,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 :key="row.key"
                 :row="row"
                 :model-value="permValue(row)"
-                :disabled="isSystem || impliedByNotes(row)"
+                :disabled="isSystem || includedBy(row)"
                 @update:model-value="setValue(row, $event)"
               />
             </section>

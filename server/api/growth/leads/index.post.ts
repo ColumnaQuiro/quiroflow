@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import { insertLead, isLeadChannel, isLeadStage } from '~/server/utils/leads'
 
 interface Body {
@@ -17,7 +17,7 @@ interface Body {
 // the reference and the opening timeline entry are written here rather than
 // by the caller.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
   const body = await readBody<Body>(event)
 
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : ''

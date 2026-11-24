@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 
 const STATES = ['none', 'handling', 'paused', 'needs_human', 'blocked'] as const
 type AiState = (typeof STATES)[number]
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   if (!STATES.includes(body.state as AiState)) {

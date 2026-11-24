@@ -42,11 +42,13 @@ export default defineEventHandler(async (event) => {
 
   // A bare number is only ever an Inbox conversation, so it takes the
   // Inbox's permission; a patient send keeps the one it always had; a lead
-  // takes the one a free-form reply to a lead does (whatsapp/inbox-send).
-  const { supabase, teamMember } = await requirePermission(
-    event,
-    body.patientId ? 'recalls_access' : body.leadId ? 'communication_config' : 'inbox_access',
-  )
+  // takes the one a free-form reply to a lead does (whatsapp/inbox-send):
+  // "See leads", or "Communication and Growth", which includes it.
+  const { supabase, teamMember } = await (body.patientId
+    ? requirePermission(event, 'recalls_access')
+    : body.leadId
+      ? requireAnyPermission(event, ['leads_access', 'communication_config'])
+      : requirePermission(event, 'inbox_access'))
 
   const { data: account } = await supabase
     .from('accounts')

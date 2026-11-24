@@ -1,5 +1,11 @@
--- progress_access: "Ver progreso", a role permission of its own for the
--- patient record's Progreso tab.
+-- Two role permissions that were missing from Settings > Roles: each feature
+-- sat behind another switch that never mentioned it.
+--
+-- progress_access: "Ver progreso", the patient record's Progreso tab.
+-- leads_access:    "Ver leads", Growth's Leads board and lead conversations.
+--
+-- ============================================================ progress_access
+--
 --
 -- The tab -- the pain curve (visit_pain_scores), what was adjusted at each
 -- visit (visit_listings), posture and squat assessments and the comparisons
@@ -56,12 +62,37 @@ create policy "staff select posture_comparisons" on public.posture_comparisons f
     and (public.has_permission(account_id, 'progress_access') or public.has_permission(account_id, 'visit_notes_access'))
   );
 
+-- ============================================================ leads_access
+--
+-- The Leads board, a lead's drawer and thread, converting a lead, lead
+-- conversations in the Inbox, and sending a lead WhatsApp -- all behind
+-- communication_config, "Communication and Growth", which is a SETTINGS
+-- permission: WhatsApp setup, templates, saved replies, automations. So
+-- reception could not answer the people an ad brought in without also being
+-- able to rewrite the clinic's templates and automations.
+--
+-- leads_access opens that lead side on its own. communication_config keeps
+-- including it (the routes accept either: server/utils/requireGrowth.ts,
+-- requireLeads), so no role loses anything; the rest of Growth -- Overview,
+-- AI receptionist, Reputation -- stays under communication_config.
+--
+-- Enforced in the routes, which is where the Leads board always was. The
+-- lead tables' own policies are member-wide, as they were: My Day's tasks,
+-- the Inbox and reports read a lead's name for roles that have no Growth at
+-- all, and narrowing them is a change of its own.
+
+update public.account_roles
+set permissions = permissions || jsonb_build_object(
+  'leads_access', coalesce((permissions->>'communication_config')::boolean, false)
+)
+where not (permissions ? 'leads_access');
+
 -- ------------------------------------------------------------ restated
 
 -- New accounts: seed_account_roles as 20261109181443 left it, with
--- progress_access on for Owner and Practitioner and off for Front Desk --
--- the same as visit_notes_access, so a new clinic starts exactly where an
--- existing one is after the update above.
+-- progress_access as visit_notes_access (Owner and Practitioner on, Front
+-- Desk off) and leads_access as communication_config (Owner only), so a new
+-- clinic starts exactly where an existing one is after the updates above.
 create or replace function public.seed_account_roles(target_account_id uuid)
 returns uuid
 language plpgsql
@@ -80,6 +111,7 @@ declare
     "calendar_read_only": false,
     "settings_access": true, "roles_admin": true, "team_admin": true, "clinic_config": true,
     "billing_config": true, "communication_config": true, "data_admin": true,
+    "leads_access": true,
     "developers_access": true,
     "billing_access": true, "recalls_access": true, "inbox_access": true,
     "reports_access": true, "reports_own_only": false,
@@ -106,6 +138,7 @@ declare
     "calendar_read_only": false,
     "settings_access": false, "roles_admin": false, "team_admin": false, "clinic_config": false,
     "billing_config": false, "communication_config": false, "data_admin": false,
+    "leads_access": false,
     "developers_access": false,
     "billing_access": true, "recalls_access": true, "inbox_access": false,
     "reports_access": true, "reports_own_only": true,
@@ -126,11 +159,14 @@ declare
   -- separately from Practitioner. progress_access is false too, as pain and
   -- posture are clinical; a clinic whose reception shows patients their
   -- progress turns it on in Settings > Roles without touching the notes.
+  -- leads_access is off as communication_config is: a clinic whose reception
+  -- answers its leads turns it on there.
   v_front_desk_permissions jsonb := '{
     "dashboard_scope": "all", "calendar_scope": "all", "patients_scope": "all",
     "calendar_read_only": false,
     "settings_access": false, "roles_admin": false, "team_admin": false, "clinic_config": false,
     "billing_config": false, "communication_config": false, "data_admin": false,
+    "leads_access": false,
     "developers_access": false,
     "billing_access": true, "recalls_access": true, "inbox_access": true,
     "reports_access": false, "reports_own_only": false,

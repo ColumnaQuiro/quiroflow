@@ -11,9 +11,9 @@ export default defineEventHandler(async (event) => {
   const withId = (await readBody<{ withId?: unknown }>(event))?.withId
   if (!assessmentId || typeof withId !== 'string' || !withId) throw createError({ statusCode: 400, statusMessage: 'Two assessments are needed' })
 
-  // Clinical, like the report: the permission that opens the visit notes,
-  // and then this patient specifically.
-  const { supabase, teamMember } = await requirePermission(event, 'visit_notes_access')
+  // Reading what is on the Progreso tab: "See progress", or "See visit
+  // notes", which includes it -- and then this patient specifically.
+  const { supabase, teamMember } = await requireAnyPermission(event, ['progress_access', 'visit_notes_access'])
   const { data: rows } = await supabase.from('posture_assessments').select('id, patient_id').in('id', [assessmentId, withId]).eq('account_id', teamMember.account_id).eq('kind', 'posture')
   if (rows?.length !== 2 || rows[0]!.patient_id !== rows[1]!.patient_id) throw createError({ statusCode: 404, statusMessage: 'Assessment not found' })
   const patientId = rows[0]!.patient_id

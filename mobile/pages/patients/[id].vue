@@ -352,7 +352,7 @@ const tabs = computed(() => {
     { key: 'summary', label: t('Summary', 'Resumen') },
     { key: 'clinical', label: t('Clinical', 'Clínico') },
   ]
-  if (can('visit_notes_access')) list.push({ key: 'progress', label: t('Progress', 'Progreso') })
+  if (can('progress_access') || can('visit_notes_access')) list.push({ key: 'progress', label: t('Progress', 'Progreso') })
   if (showMoney.value) list.push({ key: 'money', label: t('Payments', 'Pagos') })
   list.push({ key: 'files', label: t('Files', 'Archivos') })
   return list

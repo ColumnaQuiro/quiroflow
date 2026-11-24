@@ -93,12 +93,20 @@ const nameInput = computed({
 const nameEmpty = computed(() => !!form.value && !form.value.name.trim())
 const nameTaken = computed(() => (form.value && form.value.name !== storedName.value ? roleNameTaken(form.value.name, otherRoles.value) : null))
 
+// "See visit notes" includes "See progress" (every progress policy reads
+// either key), so while notes are on, progress shows as on and cannot be
+// switched off -- an off switch there would say something untrue.
+function impliedByNotes(row: PermissionRow) {
+  return row.key === 'progress_access' && !!form.value?.permissions.visit_notes_access
+}
 function permValue(row: PermissionRow) {
+  if (impliedByNotes(row)) return true
   return form.value ? rowValue(form.value.permissions, row) : false
 }
 function setValue(row: PermissionRow, value: string | boolean) {
   if (!form.value) return
   const p = form.value.permissions
+  if (row.key === 'visit_notes_access' && value === true) p.progress_access = true
   if (row.kind === 'toggle') p[row.key] = value === true
   else if (row.key === 'financials') setFinancialsMode(p, value as FinancialsMode)
   else (p as unknown as Record<string, string>)[row.key] = value as string
@@ -372,7 +380,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 :key="row.key"
                 :row="row"
                 :model-value="permValue(row)"
-                :disabled="isSystem"
+                :disabled="isSystem || impliedByNotes(row)"
                 @update:model-value="setValue(row, $event)"
               />
             </section>

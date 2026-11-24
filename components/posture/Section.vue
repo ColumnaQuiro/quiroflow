@@ -354,7 +354,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
               <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, (Object.keys(a.views).length === 1 ? t('1 photo', '1 foto') : t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)), viewsNote(a)].filter(Boolean).join(' · ') }}</p>
-              <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
+              <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" :disabled="!can('visit_notes_edit')" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
               <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
             </div>
             <button v-if="can('visit_notes_delete')" type="button" class="text-[12px] text-ink-muted hover:text-danger-text" :aria-label="t('Delete', 'Eliminar')" @click="removing = a">✕</button>
@@ -384,7 +384,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
             <div class="mt-1 flex flex-wrap items-center gap-2 border-t border-line-divider pt-3">
               <h4 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Comparison', 'Comparativa') }}</h4>
               <button type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60 touch:h-11" :disabled="comparing" data-cy="posture-comparison-report" @click="openComparison">{{ comparing ? t('Preparing…', 'Preparando…') : t('Comparison report (PDF)', 'Informe comparativo (PDF)') }}</button>
-              <button type="button" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on touch:h-11" data-cy="posture-comparison-send" @click="startSend">{{ currentSent ? t('Edit what was sent', 'Editar lo enviado') : t('Send to the patient', 'Enviar al paciente') }}</button>
+              <button v-if="can('visit_notes_access')" type="button" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on touch:h-11" data-cy="posture-comparison-send" @click="startSend">{{ currentSent ? t('Edit what was sent', 'Editar lo enviado') : t('Send to the patient', 'Enviar al paciente') }}</button>
             </div>
             <p v-if="currentSent" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-700" data-cy="posture-comparison-sent-note">
               <span class="font-semibold text-ink-900">{{ currentSent.shared_with_patient ? t(`Sent to the patient on ${day(currentSent.updated_at)}`, `Enviada al paciente el ${day(currentSent.updated_at)}`) : t('Saved, but the patient cannot see it now', 'Guardada, pero el paciente no la ve ahora') }}</span><template v-if="currentSent.note"> · {{ currentSent.note }}</template>
@@ -414,7 +414,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               <p class="text-[12px] text-ink-muted">{{ [c.team_members?.full_name, t(`sent ${day(c.updated_at)}`, `enviada el ${day(c.updated_at)}`)].filter(Boolean).join(' · ') }}</p>
               <p v-if="c.note" class="mt-0.5 whitespace-pre-line text-[13px] text-ink-700">{{ c.note }}</p>
             </div>
-            <label class="flex h-9 items-center gap-1.5 text-[12.5px] text-ink-700 touch:h-11"><input type="checkbox" :checked="c.shared_with_patient" data-cy="posture-sent-share" @change="setSentShared(c, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
+            <label class="flex h-9 items-center gap-1.5 text-[12.5px] text-ink-700 touch:h-11"><input type="checkbox" :checked="c.shared_with_patient" :disabled="!can('visit_notes_access')" data-cy="posture-sent-share" @change="setSentShared(c, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
             <button type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle touch:h-11" data-cy="posture-sent-show" @click="showSent(c)">{{ t('Show', 'Ver') }}</button>
             <button type="button" class="inline-flex h-9 items-center px-1 text-[12.5px] font-semibold text-ink-muted hover:text-danger-text touch:h-11" data-cy="posture-sent-delete" @click="unsending = c">{{ t('Delete', 'Eliminar') }}</button>
           </li>

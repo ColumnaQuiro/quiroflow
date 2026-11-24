@@ -158,6 +158,8 @@ export interface QuirocitasLedgerRow {
   cash: number | null
   card: number | null
   transfer: number | null
+  /** Paid by Bizum, on a clinic whose cash page has that column. Absent on copies read before it was. */
+  bizum?: number | null
   debt: number | null
   value: number | null
   citaId: string | null
@@ -351,7 +353,7 @@ export interface QuirocitasCajaLayout {
   inputs: string[]
 }
 
-type CajaField = 'date' | 'name' | 'note' | 'isNew' | 'usedBono' | 'cash' | 'card' | 'transfer' | 'debt' | 'value'
+type CajaField = 'date' | 'name' | 'note' | 'isNew' | 'usedBono' | 'cash' | 'card' | 'transfer' | 'bizum' | 'debt' | 'value'
 
 // What each column is called, matched on the label lower-cased without
 // accents or punctuation.
@@ -364,13 +366,14 @@ const CAJA_LABELS: [CajaField, RegExp][] = [
   ['cash', /^efectivo$/],
   ['card', /^tarjeta$/],
   ['transfer', /^transf/],
+  ['bizum', /^bizum$/],
   ['debt', /^(deuda|debe)$/],
   ['value', /^valor$/],
 ]
 // Where the columns sat on the first clinic read (multi-chiropractor, with an
 // invoicing column), for a page whose header names none of them.
-const CAJA_POSITIONS: Record<CajaField, number> = { date: 1, name: 2, note: 3, isNew: 4, usedBono: 5, cash: 6, card: 7, transfer: 8, debt: 9, value: 11 }
-const MONEY_FIELDS = ['cash', 'card', 'transfer', 'value'] as const
+const CAJA_POSITIONS: Record<Exclude<CajaField, 'bizum'>, number> = { date: 1, name: 2, note: 3, isNew: 4, usedBono: 5, cash: 6, card: 7, transfer: 8, debt: 9, value: 11 }
+const MONEY_FIELDS = ['cash', 'card', 'transfer', 'bizum', 'value'] as const
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const isQuirocitasDate = (s: string | undefined) => /^\d{2}-\d{2}-\d{4}$/.test(s ?? '')
 
@@ -406,6 +409,12 @@ export function parseQuirocitasCajaMonth(html: string) {
   const m = html.match(/Mes de (\w+) de (\d{4})/i)
   const idx = m ? MONTHS.indexOf(m[1]!.toLowerCase()) : -1
   const month = m && idx >= 0 ? `${m[2]}-${String(idx + 1).padStart(2, '0')}` : null
+  // A page showing one day rather than a month heads it "Lunes, 23 de
+  // Noviembre de 2026". Some clinics' ◄ goes back a day even from the month
+  // view, and the walk steps through these to reach the month before.
+  const d = month ? null : html.match(/,\s*(\d{1,2}) de ([a-z]+) de (\d{4})/i)
+  const dayIdx = d ? MONTHS.indexOf(d[2]!.toLowerCase()) : -1
+  const day = d && dayIdx >= 0 ? `${d[3]}-${String(dayIdx + 1).padStart(2, '0')}-${d[1]!.padStart(2, '0')}` : null
   const table = tables(html).find((t) => t.header.includes('Efectivo') || t.rows.some((r) => r.cells.includes('Efectivo')))
   // Every row of the table, header included, as markup: the header is the
   // row naming the cash column -- the first on every page seen so far, but
@@ -438,16 +447,21 @@ export function parseQuirocitasCajaMonth(html: string) {
   // totalmeto-N[2], [3] are the clinic's second and third methods, in the
   // order their columns follow Efectivo. Which method a slot holds is the
   // clinic's: card then transfer on the first clinic read, but transfer in
-  // slot 2 on a clinic that takes no card. Read as "slot 2 is card", that
-  // clinic's every month looked mismatched and its ledger was refused.
+  // slot 2 on a clinic that takes no card, and card then Bizum on another.
+  // Read as "slot 2 is card", the second clinic's every month looked
+  // mismatched and its ledger was refused; a Bizum column nobody read was
+  // money missing from a month that still seemed to add up.
   const slot = (n: number) => footer(`totalmeto-\\d+\\[${n}\\]`)
-  const methodsInOrder = (['card', 'transfer'] as const).filter((f) => columns[f] !== undefined).sort((a, b) => columns[a]! - columns[b]!)
-  const bySlot = Object.fromEntries(methodsInOrder.map((f, i) => [f, slot(i + 2)])) as Partial<Record<'card' | 'transfer', number | null>>
+  const methodsInOrder = (['card', 'transfer', 'bizum'] as const).filter((f) => columns[f] !== undefined).sort((a, b) => columns[a]! - columns[b]!)
+  const bySlot = Object.fromEntries(methodsInOrder.map((f, i) => [f, slot(i + 2)])) as Partial<Record<'card' | 'transfer' | 'bizum', number | null>>
   const totals = {
     cash: footer('caja-\\d+'),
     card: methodsInOrder.length ? bySlot.card ?? null : slot(2),
     transfer: methodsInOrder.length ? bySlot.transfer ?? null : slot(3),
     value: footer('valortotal-\\d+'),
+    // Only on a page with the column: the months of every other clinic keep
+    // the shape they were stored in.
+    ...(columns.bizum !== undefined ? { bizum: bySlot.bizum ?? null } : {}),
   }
 
   // A money column whose rows do not add up to its printed total is looked
@@ -479,7 +493,7 @@ export function parseQuirocitasCajaMonth(html: string) {
     }
     return {
       month: month ?? '', date: cell(cells, 'date')!, name: cell(cells, 'name') ?? '', note: cell(cells, 'note') ?? '', isNew: !!cell(cells, 'isNew'), usedBono: cell(cells, 'usedBono') === 'B',
-      cash: amountComma(cell(cells, 'cash')), card: amountComma(cell(cells, 'card')), transfer: amountComma(cell(cells, 'transfer')), debt: amountComma(cell(cells, 'debt')), value: amountComma(cell(cells, 'value')),
+      cash: amountComma(cell(cells, 'cash')), card: amountComma(cell(cells, 'card')), transfer: amountComma(cell(cells, 'transfer')), bizum: amountComma(cell(cells, 'bizum')), debt: amountComma(cell(cells, 'debt')), value: amountComma(cell(cells, 'value')),
       citaId: id('cita', 'idcita'), bonoPaymentId: id('pagobono', 'idpagobono'),
     }
   })
@@ -496,6 +510,8 @@ export function parseQuirocitasCajaMonth(html: string) {
   const chiroFilter = controls(html).quiro
   return {
     month,
+    /** The day shown, YYYY-MM-DD, on a page showing a day rather than a month. */
+    day,
     rows,
     layout,
     totals,
@@ -527,3 +543,23 @@ export function quirocitasCajaFormBody(html: string): [string, string][] {
   return body
 }
 
+/**
+ * What a click on one of the cash page's buttons sends: the button's name with
+ * the value the page rendered on it, or null when the page shows no such
+ * button (or only a disabled one, which a browser cannot click either).
+ * `label` picks among buttons sharing a name -- "franja" is a row of them.
+ * The previous-month button is "◄" on some clinics' pages and "<" on
+ * others; what is sent is what the page shows.
+ */
+export function quirocitasCajaButton(html: string, name: string, label?: RegExp): [string, string] | null {
+  const form = html.split(/<form\b/i).find((f) => /action="diario\.php"/i.test(f.slice(0, 300))) ?? ''
+  // <input type="submit"> on every page seen; a <button> sends its value too.
+  for (const m of form.matchAll(/<(input|button)\b[^>]*>/gi)) {
+    const a = attrs(m[0])
+    const submits = m[1]!.toLowerCase() === 'button' ? (a.type ?? 'submit').toLowerCase() === 'submit' : (a.type ?? '').toLowerCase() === 'submit'
+    if (a.name !== name || !submits || 'disabled' in a) continue
+    const value = a.value ?? ''
+    if (!label || label.test(value.trim())) return [name, value]
+  }
+  return null
+}

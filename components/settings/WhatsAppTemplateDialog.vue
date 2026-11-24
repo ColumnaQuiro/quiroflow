@@ -214,6 +214,7 @@ watch(needed, (n) => {
 }, { immediate: true })
 
 const bodyField = ref<HTMLTextAreaElement | null>(null)
+const footerField = ref<HTMLInputElement | null>(null)
 function insertVariable() {
   const el = bodyField.value
   const token = slot(needed.value + 1)
@@ -319,7 +320,8 @@ async function submit() {
 const panel = ref<HTMLElement | null>(null)
 useFocusTrap(panel, () => emit('close'))
 const titleId = `tpl-${Math.random().toString(36).slice(2, 9)}`
-const TEXTAREA = 'w-full min-w-0 resize-y rounded-ctl border border-line-control bg-surface px-2.5 py-2 text-[13px] font-normal leading-relaxed text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+// The body's box draws its border around the toolbar too, so the textarea has none of its own.
+const BODY_TEXTAREA = 'block w-full min-w-0 resize-y rounded-b-ctl border-0 bg-transparent px-2.5 py-2 text-[13px] font-normal leading-relaxed text-ink-900 focus:outline-none'
 const COUNTER = 'self-end text-[12px] tabular-nums'
 const ICON_BTN = 'flex h-7 w-7 items-center justify-center rounded-ctlSm text-[13px] text-ink-muted hover:bg-surface disabled:opacity-30 touch:h-11 touch:w-11'
 const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
@@ -465,10 +467,14 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             </div>
           </div>
 
-          <label :class="LABEL">
-            {{ t('Message', 'Mensaje') }}
-            <textarea ref="bodyField" v-model="body" rows="6" :class="TEXTAREA" :placeholder="placeholder" data-cy="template-body" />
-          </label>
+          <div :class="LABEL">
+            <label :for="`${titleId}-body`">{{ t('Message', 'Mensaje') }}</label>
+            <!-- Bold, italic, lists, emoji: what WhatsApp draws from the markers in the text. -->
+            <div class="rounded-ctl border border-line-control bg-surface focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+              <SettingsWhatsAppFormatToolbar v-model="body" :field="bodyField" class="border-b border-line-row px-1 py-1" />
+              <textarea :id="`${titleId}-body`" ref="bodyField" v-model="body" rows="6" :class="BODY_TEXTAREA" :placeholder="placeholder" data-cy="template-body" />
+            </div>
+          </div>
           <div class="-mt-2 flex items-center gap-3">
             <button type="button" :class="LINK_BTN" data-cy="template-add-variable" @click="insertVariable">+ {{ t('Insert a variable', 'Insertar una variable') }}</button>
             <span class="ml-auto text-[12px] tabular-nums" :class="body.trim().length > BODY_MAX ? 'text-danger-text' : 'text-ink-faint'">{{ body.trim().length }}/{{ BODY_MAX }}</span>
@@ -483,10 +489,14 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             </div>
           </div>
 
-          <label :class="LABEL">
-            <span>{{ t('Footer', 'Pie') }} <span class="font-normal text-ink-faint">{{ t('(optional)', '(opcional)') }}</span></span>
-            <input v-model="footer" :class="FIELD" :placeholder="t('Your clinic', 'Tu clínica')" data-cy="template-footer" />
-          </label>
+          <div :class="LABEL">
+            <label :for="`${titleId}-footer`">{{ t('Footer', 'Pie') }} <span class="font-normal text-ink-faint">{{ t('(optional)', '(opcional)') }}</span></label>
+            <!-- A footer takes emoji, but no formatting and no variables. -->
+            <div class="flex items-center gap-1">
+              <input :id="`${titleId}-footer`" ref="footerField" v-model="footer" :class="FIELD" :placeholder="t('Your clinic', 'Tu clínica')" data-cy="template-footer" />
+              <SettingsWhatsAppFormatToolbar v-model="footer" :field="footerField" :formatting="false" />
+            </div>
+          </div>
           <span class="-mt-3" :class="[COUNTER, footer.trim().length > FOOTER_MAX ? 'text-danger-text' : 'text-ink-faint']">{{ footer.trim().length }}/{{ FOOTER_MAX }}</span>
 
           <!-- Buttons -->
@@ -622,7 +632,7 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
                 </div>
               </div>
               <p v-else-if="header === 'text'" class="px-1 font-bold" :class="headerText.trim() ? '' : 'text-ink-faint'" data-cy="template-preview-header">{{ previewHeading || t('Heading', 'Título') }}</p>
-              <p class="whitespace-pre-line px-1" :class="body.trim() ? '' : 'text-ink-faint'">{{ previewBody }}</p>
+              <SettingsWhatsAppFormattedText :text="previewBody" class="px-1" :class="body.trim() ? '' : 'text-ink-faint'" data-cy="template-preview-body" />
               <p v-if="footer.trim()" class="px-1 text-[12px] text-ink-muted">{{ footer.trim() }}</p>
             </div>
             <div

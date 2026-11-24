@@ -5,6 +5,8 @@
 // (cash_shift_carry_float), since most clinics keep the same change.
 //
 // Amounts carry a non-breaking space before €, as formatEur prints them.
+import { chooseFromCalendarMore } from '../../support/calendar'
+
 describe('The cash shift’s opening change', () => {
   it('counts in the drawer and carries into the next shift', () => {
     cy.seedStaffAccount().then((account) => {
@@ -15,7 +17,7 @@ describe('The cash shift’s opening change', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/calendar')
-        cy.contains('button', 'Cash shift').click()
+        chooseFromCalendarMore('cash-shift-open', '[role=dialog]:contains("Cash shift")')
         cy.get('[data-cy=shift-float]').should('contain', '0,00 €')
         cy.get('[data-cy=shift-expected]').should('contain', '30,00 €')
 

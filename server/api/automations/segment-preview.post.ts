@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { segmentAudience } from '~/server/utils/segmentAudience'
-import { asAudienceRef, asAudienceRefs } from '~/utils/automationAudience'
+import { asAudienceRef, asAudienceRefs, asPatientIds } from '~/utils/automationAudience'
 
 // "N patients match today" for a segment trigger, while it is being edited
 // (the filters come from the builder, saved or not), and the marketing split
@@ -12,14 +12,18 @@ import { asAudienceRef, asAudienceRefs } from '~/utils/automationAudience'
 // the whole clinic. The names in `sample` go back through the caller's own
 // client, so "See the list" never shows a patient they could not open.
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ filters?: Record<string, unknown>; isMarketing?: boolean; ruleId?: string; entryMode?: string; audience?: unknown; exclude?: unknown }>(event)
+  const body = await readBody<{ filters?: Record<string, unknown>; isMarketing?: boolean; ruleId?: string; entryMode?: string; audience?: unknown; exclude?: unknown; patientIds?: unknown }>(event)
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
   const accountId = teamMember.account_id
   const service = serverSupabaseServiceRole<Database>(event)
 
-  // A saved list or segment, when the send is aimed at one; else the filters.
-  const saved = asAudienceRef(body?.audience)
-  const audience = await segmentAudience(service, accountId, (body?.filters ?? {}) as never, body?.isMarketing === true, saved ? { audience: saved, exclude: asAudienceRefs(body?.exclude) } : null)
+  // A saved list or segment, or patients chosen one by one, when the send is
+  // aimed at those; else the filters.
+  const audience = await segmentAudience(service, accountId, (body?.filters ?? {}) as never, body?.isMarketing === true, {
+    audience: asAudienceRef(body?.audience),
+    exclude: asAudienceRefs(body?.exclude),
+    patient_ids: asPatientIds(body?.patientIds),
+  })
 
   // Who will not enter again under "only those who have not been through
   // here yet" (once_ever): everyone with a run of this rule already.
@@ -40,6 +44,9 @@ export default defineEventHandler(async (event) => {
 
   return {
     count: audience.ids.length,
+    // Chosen one by one: how many were chosen, so the count can say how many
+    // of them the send's gates leave out (consent, archived, minors).
+    chosen: asAudienceRef(body?.audience) ? null : asPatientIds(body?.patientIds).length || null,
     alreadyIn,
     whatsapp: audience.whatsapp,
     email: audience.email,

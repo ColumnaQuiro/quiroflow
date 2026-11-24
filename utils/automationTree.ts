@@ -6,7 +6,7 @@
 // what a valid automation is.
 
 import { asEmailDesign, emailDesignHasContent } from './emailDesign'
-import { asAudienceRef, type AudienceRef } from './automationAudience'
+import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from './automationAudience'
 import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, isLeadTrigger, stepDef, triggerDef, waitEventDef, type Pair } from './automationCatalog'
 
 export interface DraftStep {
@@ -33,6 +33,8 @@ export interface DraftRule {
     audience?: AudienceRef | null
     /** Lists or segments whose members are left out. */
     exclude?: AudienceRef[]
+    /** Patients chosen one by one, in place of a list, a segment or filters (a one-off send). */
+    patient_ids?: string[]
     schedule?: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string; starts_at?: string }
     reentry_days?: number | null
     /** At most this many patients enter per clinic day; the rest wait for the next day. */
@@ -214,6 +216,11 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
     const days = Number(rule.filters?.trigger_days)
     if (!Number.isInteger(days) || days < 0 || days > 3650) add(null, 'Say how many days, from 0 to 3650.', 'Indica cuántos días, de 0 a 3650.')
   }
+  // "In a list or segment" added and left empty would read as no filter at
+  // all, which is the opposite of what adding it meant.
+  if ((Array.isArray(rule.filters?.in_audiences) || Array.isArray(rule.filters?.not_in_audiences)) && !asAudienceRefs(rule.filters?.in_audiences).length && !asAudienceRefs(rule.filters?.not_in_audiences).length) {
+    add(null, 'Choose the list or segment under "In a list or segment", or remove that filter.', 'Elige la lista o el segmento en «En una lista o segmento», o quita ese filtro.')
+  }
   if (rule.trigger_event === 'audience.entered' && !asAudienceRef(rule.filters?.trigger_audience)) {
     add(null, 'Choose the list or segment people enter.', 'Elige la lista o el segmento al que entran.')
   }
@@ -222,7 +229,7 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
     if (!schedule || !['once', 'daily', 'weekly'].includes(schedule.kind)) add(null, 'Choose when the group is checked.', 'Elige cuándo se revisa el grupo.')
     else if (schedule.kind !== 'once' && !/^\d{1,2}:\d{2}$/.test(schedule.time ?? '')) add(null, 'Choose the time the group is checked.', 'Elige a qué hora se revisa el grupo.')
     const f = rule.segment?.filters ?? {}
-    if (!asAudienceRef(rule.segment?.audience) && Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && f[k].length === 0)).length === 0) {
+    if (!asAudienceRef(rule.segment?.audience) && !asPatientIds(rule.segment?.patient_ids).length && Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && f[k].length === 0)).length === 0) {
       add(null, 'Choose a list or segment, or at least one filter: otherwise it is every patient.', 'Elige una lista o un segmento, o al menos un filtro: si no, serían todos los pacientes.')
     }
     const limit = rule.segment?.daily_limit

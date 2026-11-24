@@ -25,12 +25,23 @@ export default defineEventHandler(async (event) => {
   if (!account) throw createError({ statusCode: 404, statusMessage: 'Account not found' })
   const { stripe, options } = await stripeClientFor(event, accountId, account)
 
+  // Stripe refuses an expand deeper than four levels, and the product sits at
+  // five (data.items.data.price.product) -- every list failed with "You cannot
+  // expand more than 4 levels of a property". The price comes embedded in each
+  // item anyway, so only its product is fetched, once per distinct product.
   const subscriptions: Stripe.Subscription[] = []
+  const products = new Map<string, Stripe.Product>()
   try {
-    for await (const sub of stripe.subscriptions.list({ status: 'all', limit: 100, expand: ['data.customer', 'data.items.data.price.product'] }, options)) {
+    for await (const sub of stripe.subscriptions.list({ status: 'all', limit: 100, expand: ['data.customer'] }, options)) {
       if (sub.status === 'canceled' || sub.status === 'incomplete_expired') continue
       subscriptions.push(sub)
       if (subscriptions.length >= 2000) break
+    }
+    const productIds = [...new Set(subscriptions.flatMap((s) => s.items.data.map((i) => (typeof i.price.product === 'string' ? i.price.product : i.price.product.id))))]
+    // `ids` cannot be paginated, so one page of up to 100 ids per request.
+    for (let i = 0; i < productIds.length; i += 100) {
+      const page = await stripe.products.list({ ids: productIds.slice(i, i + 100), limit: 100 }, options)
+      for (const product of page.data) products.set(product.id, product)
     }
   } catch (err) {
     throw createError({ statusCode: 502, statusMessage: `Stripe: ${(err as Error).message}` })
@@ -63,7 +74,8 @@ export default defineEventHandler(async (event) => {
     if ((schedule && schedule.origin === 'created_here') || (scheduleId && oursBySchedule.has(scheduleId))) continue
 
     for (const item of sub.items.data) {
-      const product = item.price.product as Stripe.Product | Stripe.DeletedProduct | string
+      const productId = typeof item.price.product === 'string' ? item.price.product : item.price.product.id
+      const product: Stripe.Product | string = products.get(productId) ?? productId
       const existing = prices.get(item.price.id)
       if (existing) existing.subscriptions++
       else

@@ -35,7 +35,7 @@ describe('My account', () => {
       cy.get('[data-cy=account-hours]').contains('div', 'Tuesday').should('contain.text', 'Not working')
 
       // The seeded colour predates the palette: kept, as its own selected swatch.
-      cy.get('[data-cy=account-palette] [role=radio]').should('have.length', 11)
+      cy.get('[data-cy=account-palette] [role=radio]').should('have.length', 21)
       cy.get('[data-cy=account-palette] [aria-label=Custom]').should('have.attr', 'aria-checked', 'true')
 
       // Nothing waits for Save until something changes; Discard puts it back.
@@ -56,11 +56,11 @@ describe('My account', () => {
         expect(tm.color).to.equal('#3b82f6')
       })
 
-      // After a reload the palette colour is chosen and the custom swatch is gone.
+      // After a reload the palette colour is chosen and Custom is not.
       cy.reload()
       cy.get('[data-cy=account-page]').should('have.attr', 'data-ready', 'true')
       cy.get('[data-cy=account-palette] [data-color="#3b82f6"]').should('have.attr', 'aria-checked', 'true')
-      cy.get('[data-cy=account-palette] [role=radio]').should('have.length', 10)
+      cy.get('[data-cy=account-palette] [aria-label=Custom]').should('have.attr', 'aria-checked', 'false')
       cy.get('[data-cy=account-name]').should('have.value', 'Marta Vidal')
     })
   })

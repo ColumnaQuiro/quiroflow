@@ -1,4 +1,4 @@
-import { dateInputValue } from '../../support/calendar'
+import { chooseFromCalendarMore, dateInputValue } from '../../support/calendar'
 
 // "Ausencia imprevista" on the Calendar: a practitioner is off tomorrow, and
 // their visits go to a colleague where the colleague is free -- the rest stay
@@ -34,16 +34,9 @@ describe('Unplanned absence', () => {
         ),
     )
   }
-  // The panel is lazy-loaded, so it can take a moment after the click; and a
-  // click before hydration does nothing. Opening again is harmless (it only
-  // sets it open), hence a forced retry rather than clickUntil, whose second
-  // click would land on the panel's backdrop.
-  function openPanel(attempt = 0) {
-    cy.get('[data-cy=absence-open]').click({ force: true })
-    cy.wait(500)
-    cy.get('body').then(($body) => {
-      if (!$body.find('[data-cy=absence]').length && attempt < 10) openPanel(attempt + 1)
-    })
+  // From the toolbar's more menu; see chooseFromCalendarMore for the retry.
+  function openPanel() {
+    chooseFromCalendarMore('absence-open', '[data-cy=absence]')
   }
   function openFor() {
     cy.contains('button', 'Unplanned absence', { timeout: 20000 })

@@ -16,7 +16,7 @@ onMounted(async () => {
   const [{ data: p }, { data: sends }, { count }] = await Promise.all([
     supabase.from('patients').select('invoice_reminders_paused').eq('id', props.patientId).maybeSingle(),
     supabase.from('automation_invoice_sends').select('sent_at, invoices!inner(invoice_number, patient_id)').eq('invoices.patient_id', props.patientId).order('sent_at', { ascending: false }).limit(1),
-    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger_event', 'invoice.overdue').eq('enabled', true),
+    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger->>subject', 'invoice').eq('trigger->>moment', 'issued').eq('filters->invoice_unpaid', true).eq('enabled', true),
   ])
   paused.value = !!(p as { invoice_reminders_paused?: boolean } | null)?.invoice_reminders_paused
   const s = ((sends ?? []) as unknown as { sent_at: string; invoices: { invoice_number: string } }[])[0]

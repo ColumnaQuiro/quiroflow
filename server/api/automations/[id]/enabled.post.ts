@@ -1,4 +1,5 @@
 import { loadRuleTree, ruleProblems } from '~/server/utils/automationRules'
+import { isGroupAtom } from '~/utils/automationTrigger'
 
 // Switches an automation on or off -- the list's toggle, and Pause in its
 // settings. Switching on checks exactly what saving it on checks: nothing
@@ -24,14 +25,14 @@ export default defineEventHandler(async (event) => {
     }
     // A recurring segment switched on enrols at its next scheduled time, not
     // for every occurrence it missed while off (see automationRules.ts).
-    if (!loaded.rule.enabled && loaded.rule.trigger_event === 'segment' && loaded.rule.segment?.schedule?.kind !== 'once') {
+    if (!loaded.rule.enabled && isGroupAtom(loaded.rule.trigger) && loaded.rule.segment?.schedule?.kind !== 'once') {
       update.segment_last_run_at = new Date().toISOString()
     }
     // "Enters a list or segment" switched back on starts from now: who came
     // in while it was paused is not enrolled late. Switched on for the first
     // time its cursor is still empty, and the first tick sets it
     // (enrolAudienceEntries), taking in the current members only if asked.
-    if (!loaded.rule.enabled && loaded.rule.trigger_event === 'audience.entered' && loaded.rule.segment_last_run_at) {
+    if (!loaded.rule.enabled && loaded.rule.trigger.subject === 'patient' && loaded.rule.trigger.moment === 'entered_audience' && loaded.rule.segment_last_run_at) {
       update.segment_last_run_at = new Date().toISOString()
     }
   }

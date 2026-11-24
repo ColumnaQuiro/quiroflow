@@ -4,6 +4,7 @@ import { RUN_COLUMNS } from '~/server/utils/leadSequences'
 import { kickFormsJob, stalledFormsJobs } from '~/server/utils/practicehubFormPdfs'
 import { advanceRun, enrolDueSegments } from '~/server/utils/automationEngine'
 import { enrolAudienceEntries, enrolBonosRunningLow, enrolDateTriggers, enrolCarePlanMilestones, enrolCompletedDocs } from '~/server/utils/automationTriggers'
+import { enrolCreatedRows } from '~/server/utils/automationAtomRules'
 
 // Advances every automation run that is due -- a lead's drip, and since the
 // automation engine a patient's run too: a delay that has elapsed, a
@@ -52,6 +53,13 @@ export default defineEventHandler(async (event) => {
     enrolled += await enrolDateTriggers(supabase, origin)
   } catch (err) {
     console.error('[lead-sequence-cron] event enrolment failed:', (err as Error)?.message ?? err)
+  }
+  // A patient added, a bono bought, an invoice issued, a form sent, a care
+  // plan created, someone joining the waitlist (server/utils/automationAtomRules.ts).
+  try {
+    enrolled += await enrolCreatedRows(supabase, origin)
+  } catch (err) {
+    console.error('[lead-sequence-cron] new-row enrolment failed:', (err as Error)?.message ?? err)
   }
 
   // Only runs of a rule that is switched on. A paused automation pauses the

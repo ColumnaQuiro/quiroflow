@@ -230,7 +230,7 @@ export function scheduledSendLabel(startsAt: string, t: Translate, timeZone = DE
 
 /** The trigger node's second line: its filters, or its schedule for a segment. */
 export function triggerDetail(t: Translate, rule: DraftRule, lookup: NameLookup): string {
-  if (rule.trigger_event === 'segment') {
+  if (rule.trigger?.subject === 'group') {
     const s = rule.segment?.schedule
     if (!s) return ''
     if (s.kind === 'once') return s.starts_at && new Date(s.starts_at).getTime() > Date.now() ? t(`Once, ${scheduledSendLabel(s.starts_at, t)}`, `Una vez, ${scheduledSendLabel(s.starts_at, t)}`) : t('Once', 'Una vez')

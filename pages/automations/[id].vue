@@ -149,7 +149,7 @@ function toggleEnabled() {
     problems.value = b.problems.value.length ? b.problems.value : null
     return
   }
-  if (b.draft.value.rule.trigger_event === 'segment') segmentDialog.value = true
+  if (b.draft.value.rule.trigger.subject === 'group') segmentDialog.value = true
   else activateDialog.value = true
 }
 async function setEnabled(target: boolean) {
@@ -442,7 +442,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
     <AutomationsActivateDialog
       v-if="activateDialog"
       :name="b.draft.value.rule.name"
-      :trigger-event="b.draft.value.rule.trigger_event"
+      :trigger="b.draft.value.rule.trigger"
       :filters="b.draft.value.rule.filters"
       :lookup="b.lookup.value"
       :is-marketing="b.draft.value.rule.is_marketing"

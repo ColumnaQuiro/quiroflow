@@ -3225,6 +3225,12 @@ async function createAutomationRule(opts: {
   dryRun?: boolean
   /** automation_rules.filters, e.g. { appointment_type_ids: [...] }. */
   filters?: Record<string, unknown>
+  /**
+   * The trigger as an atom (utils/automationTrigger.ts). Given, it is stored
+   * as it is and triggerEvent should be 'atom' (or the old name it still is);
+   * left out, the database derives it from triggerEvent and filters.
+   */
+  trigger?: Record<string, unknown>
   actions: { type: string; config?: Record<string, unknown> }[]
 }) {
   const rule = unwrap(
@@ -3234,6 +3240,7 @@ async function createAutomationRule(opts: {
         account_id: opts.accountId,
         name: opts.name ?? 'cypress sequence',
         trigger_event: opts.triggerEvent,
+        ...(opts.trigger ? { trigger: opts.trigger as never } : {}),
         enabled: opts.enabled ?? true,
         is_marketing: opts.isMarketing ?? false,
         dry_run: opts.dryRun ?? false,

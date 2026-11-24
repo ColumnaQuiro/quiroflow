@@ -40,7 +40,7 @@ describe('Segment trigger', () => {
     cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fuera', tags: ['otro'] })
 
     cy.visit('/automations/new')
-    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="trigger-subject"]').select('group')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-filter-add"]').select('tag_contains')
     cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
@@ -112,7 +112,7 @@ describe('Segment trigger', () => {
     parked('Descartada', { recallDismissedAt: daysAgo(7) })
 
     cy.visit('/automations/new')
-    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="trigger-subject"]').select('group')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-filter-add"]').select('tag_contains')
     cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
@@ -174,7 +174,7 @@ describe('Segment trigger', () => {
     seen('Mes', 30)
 
     cy.visit('/automations/new')
-    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="trigger-subject"]').select('group')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-daily-limit"]').type('2')
     cy.get('[data-test="segment-filter-add"]').select('tag_contains')
@@ -231,7 +231,7 @@ describe('Segment trigger', () => {
     cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Sinplan', tags: [tag] })
 
     cy.visit('/automations/new')
-    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="trigger-subject"]').select('group')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-filter-add"]').select('tag_contains')
     cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)

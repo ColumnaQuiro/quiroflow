@@ -502,6 +502,29 @@ month in a day) and `NUXT_EMAIL_TRANSACTIONAL_RESERVE` (empty = a quarter of
 the day). A provider that refuses on quota is marked exhausted for the day
 whatever the config says, so a wrong limit costs a deferral, not lost email.
 
+## Automation triggers are atoms; `trigger_event` is only kept for old code
+
+What starts an automation is `automation_rules.trigger`
+(`utils/automationTrigger.ts`): a subject (appointment, patient, bono…), a
+moment of it (is booked, its start, their birthday…) and an optional timing
+("24 h before", "2 days after"). Everything narrower is an "only if" filter.
+The engine, the crons and the builder read `trigger` and nothing else.
+
+`trigger_event` and the old settings inside `filters` (`hours_before`,
+`days_after`, `trigger_tag`…) are still written beside it, by
+`ruleColumnsForAtom`, so a rollback to a release from before the atoms keeps
+working; an atom the old names cannot say is saved as `trigger_event = 'atom'`,
+which old code never selects. A database trigger
+(`automation_rules_derive_trigger`) derives `trigger` whenever code that only
+knows the old columns saves a rule. **Drop both in a later PR**, once no
+release from before `20261124120000_automation_trigger_atoms.sql` can come back.
+
+So: **a new kind of trigger is a new moment in `TRIGGER_MOMENTS`**, raised
+through `rulesForRaisedEvent` or found by a check in
+`server/utils/automationAtomRules.ts` -- never a new `trigger_event` value.
+A moment found by a check claims each row once in its own table (the old ones
+keep theirs, so nothing they sent is sent again).
+
 ## The AI receptionist: a booking failure is fixed in code or in an eval, not in the prompt
 
 Between 12 Oct and 23 Nov 2026 the receptionist took 140 commits, most of

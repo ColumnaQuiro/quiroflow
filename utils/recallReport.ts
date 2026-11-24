@@ -1,3 +1,4 @@
+import { isGroupAtom, ruleAtom } from './automationTrigger'
 // Reports › Recalls (pages/reports/recalls.vue): what the recall automations
 // brought back. For each rule, the patients it reached in the period, and of
 // them who replied, who booked, who came and who asked not to be contacted --
@@ -15,6 +16,7 @@ export interface RecallRule {
   id: string
   name: string
   trigger_event: string
+  trigger?: unknown
   entry_mode: string | null
 }
 /** One message a rule sent a patient: a WhatsApp or an email. */
@@ -76,8 +78,8 @@ export interface RecallRuleStats {
  * time until they book ("Recuperar tras la visita"). Reminders and
  * confirmations fire on every visit and are not recalls.
  */
-export function isRecallRule(rule: Pick<RecallRule, 'trigger_event' | 'entry_mode'>): boolean {
-  return rule.trigger_event === 'segment' || rule.entry_mode === 'one_at_a_time'
+export function isRecallRule(rule: Pick<RecallRule, 'trigger_event' | 'trigger' | 'entry_mode'>): boolean {
+  return isGroupAtom(ruleAtom(rule)) || rule.entry_mode === 'one_at_a_time'
 }
 
 /** Whether a visit counts as booked: anything not called off. */

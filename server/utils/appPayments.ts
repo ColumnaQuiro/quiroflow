@@ -13,6 +13,7 @@ import { refundedAgainstPaymentCents, type RefundInvoice } from '~/utils/payment
 import { refundDescription } from '~/utils/billingDescriptions'
 import { formatEur } from '~/utils/billing'
 import { completeVisit } from '~/utils/completeVisit'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 // A patient paying for a visit from the app, with nobody at the desk: ahead of
 // a booked visit, or for the one they have just had. Off unless the clinic
@@ -395,7 +396,7 @@ async function fireVisitRules(service: Service, accountId: string, appointmentId
       .eq('id', patientId)
       .maybeSingle()
     if (!patient) return
-    const { data: rules } = await service.from('automation_rules').select('id, filters').eq('account_id', accountId).eq('trigger_event', trigger).eq('enabled', true)
+    const rules = await rulesForRaisedEvent(service, accountId, trigger)
     for (const rule of rules ?? []) {
       if (!(await ruleFiltersMatch(service, patient.id, rule.filters as AutomationFilters, appointmentId))) continue
       await dispatchPatientRule(service, service, accountId, rule.id, patient, origin, appointmentId, { triggerEvent: trigger, patientId: patient.id, appointmentId })

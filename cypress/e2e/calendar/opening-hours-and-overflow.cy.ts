@@ -35,6 +35,8 @@ describe('Calendar: opening hours, remembered switches, Day view overflow', () =
       // Off by default: the grid starts at 08:00, grey until 16:00.
       hourMark('08:00').should('exist')
 
+      // The switches are in the toolbar's display popover.
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=display-openHoursOnly]').should('have.attr', 'aria-checked', 'false').click()
       hourMark('08:00').should('not.exist')
       hourMark('15:00').should('not.exist')
@@ -47,6 +49,7 @@ describe('Calendar: opening hours, remembered switches, Day view overflow', () =
       // Both stay as they were left after a reload.
       cy.reload()
       cy.contains('[data-cy=appt-block]', 'Paula Tarde').should('exist')
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=display-openHoursOnly]').should('have.attr', 'aria-checked', 'true')
       cy.get('[data-cy=display-hideRescheduled]').should('have.attr', 'aria-checked', 'true')
       hourMark('08:00').should('not.exist')

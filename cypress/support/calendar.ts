@@ -86,6 +86,29 @@ export function yesterday(): Date {
  * Asserting the tab is therefore an assertion about page state, not a wait
  * for time to pass.
  */
+/**
+ * Chooses an item from the calendar toolbar's "more" menu (Block time,
+ * Unplanned absence, New class, Cash shift) and waits for what it opens.
+ *
+ * The menu closes as an item is chosen and the panel it opens is
+ * lazy-loaded, so this cannot be clickUntil: a retry has to reopen the menu
+ * first, and only when it is not already open (its button toggles).
+ */
+export function chooseFromCalendarMore(item: string, until: string, attempt = 0) {
+  cy.get('body').then(($body) => {
+    if (!$body.find(`[data-cy=${item}]`).length) cy.get('[data-cy=calendar-more]').click({ force: true })
+  })
+  cy.get('body').then(($body) => {
+    if ($body.find(`[data-cy=${item}]`).length) cy.get(`[data-cy=${item}]`).click({ force: true })
+  })
+  cy.wait(500)
+  cy.get('body').then(($body) => {
+    if ($body.find(until).length) return
+    if (attempt >= 10) throw new Error(`"${item}" in the calendar's more menu never opened ${until}`)
+    chooseFromCalendarMore(item, until, attempt + 1)
+  })
+}
+
 export function openNewAppointmentPanel(practitionerName: string = SEEDED_PRACTITIONER) {
   cy.get('[data-testid="practitioner-tabs"]').contains('button', practitionerName).should('be.visible')
   // First click after a fresh visit can still race Vue hydration -- that is a

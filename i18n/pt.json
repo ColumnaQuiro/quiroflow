@@ -1567,7 +1567,8 @@
   "{0} bonos do not say how many sessions they hold ({1}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.": "{0} pacotes não dizem quantas sessões têm ({1}): chegam como faturas pagas, sem pacote de onde gastar sessões. Crie esses pacotes à mão.",
   "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ficam de fora {0} pagamentos ou faturas de teste e {1} numa moeda que não é o euro.",
   "{0} payments or invoices name no contact and are left out.": "{0} pagamentos ou faturas não têm contacto e ficam de fora.",
-  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos»."
+  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} faturas e pagamentos são de pacientes não importados: execute primeiro Pacientes ou escolha «Todos».",
+  "Pick a date: {0}": "Escolher data: {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10727,6 +10728,12 @@
   "Only for a clinic that charges through QuiroHiro.": "Só para uma clínica que cobra com o QuiroHiro.",
   "Invoices paid since": "Faturas pagas desde então",
   "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "O QuiroHiro não conta as sessões dos pacotes: as usadas são as visitas a que cada paciente veio desde o dia da compra, do pacote mais antigo ao mais recente. Cada pacote foi cobrado na venda, por isso as sessões gastas aqui não cobram mais nada.",
-  "No patient": "Sem paciente"
+  "No patient": "Sem paciente",
+  "Key": "Legenda",
+  "Whose agenda": "Agenda de",
+  "Who is in the clinic, and today in numbers": "Quem está na clínica, e o dia em números",
+  "In the clinic": "Na clínica",
+  "Display and key": "Visualização e legenda",
+  "Today in the clinic": "Hoje na clínica"
  }
 }

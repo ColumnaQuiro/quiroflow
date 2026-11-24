@@ -15,7 +15,7 @@ import { gridEndHour, gridLinearTops, gridOpenHourRange, gridMinuteAt, gridRowsP
 import { onlineBookingBands, type PractitionerDay } from '~/utils/calendarBookingWindows'
 import type { OnlineBookingWindows } from '~/utils/bookingSlots'
 import type { MoveClash } from '~/utils/moveClash'
-import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
+import { FILTER_DOT_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
 import { isRouteAllowed } from '~/utils/routePermissions'
@@ -188,27 +188,59 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // surfacing it directly on the calendar too, where staff actually work
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
-const mobileInfoOpen = ref(false)
-// At lg+ the left panel is a permanent 238px column; a clinic with several
-// practitioners side by side wants that width for the agenda. Hidden per
-// device, like the app sidebar's collapse, so it is a convenience and not a
-// setting. Below lg the panel is a drawer and this does not apply.
-const panelHidden = ref(false)
+// The "Today" drawer: who is in the building (the flow tracker) and the
+// day's numbers. It used to sit, with the mini month, the display switches
+// and the legend, in a permanent 238px column beside the grid; that column
+// is gone and the grid has the width. At lg+ the drawer opens as a column on
+// the right and stays as each device left it, like the app sidebar's
+// collapse; below lg it slides over the grid and is not remembered.
+const TODAY_PANEL_KEY = 'quiroflow-calendar-today-open'
+const todayOpen = ref(false)
+const wideScreen = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
 onMounted(() => {
   try {
-    panelHidden.value = localStorage.getItem('quiroflow-calendar-panel-hidden') === '1'
+    if (wideScreen()) todayOpen.value = localStorage.getItem(TODAY_PANEL_KEY) === '1'
   } catch {
-    // Storage blocked: the panel stays shown.
+    // Storage blocked: the drawer starts closed.
   }
 })
-function togglePanel() {
-  panelHidden.value = !panelHidden.value
+function toggleToday() {
+  todayOpen.value = !todayOpen.value
   try {
-    localStorage.setItem('quiroflow-calendar-panel-hidden', panelHidden.value ? '1' : '0')
+    if (wideScreen()) localStorage.setItem(TODAY_PANEL_KEY, todayOpen.value ? '1' : '0')
   } catch {
-    // Storage blocked: hidden for this visit only.
+    // Storage blocked: open for this visit only.
   }
 }
+
+// The toolbar's popovers (the mini month, display and key, the less-used
+// actions). One open at a time; a press anywhere outside the one that is
+// open, or Escape, closes it. A press rather than an overlay, so the grid
+// underneath stays usable with a popover open.
+type CalendarPop = 'date' | 'display' | 'more'
+const openPop = ref<CalendarPop | null>(null)
+function togglePop(pop: CalendarPop) {
+  openPop.value = openPop.value === pop ? null : pop
+}
+function fromToolbarMenu(action: () => void) {
+  openPop.value = null
+  action()
+}
+function onPopPointer(e: PointerEvent) {
+  const target = e.target as Element | null
+  if (openPop.value && !target?.closest?.(`[data-pop="${openPop.value}"]`)) openPop.value = null
+}
+function onPopKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && openPop.value) openPop.value = null
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onPopPointer, true)
+  document.addEventListener('keydown', onPopKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPopPointer, true)
+  document.removeEventListener('keydown', onPopKey)
+})
 // The phone header's "more" menu (view, cash shift, block time, the day's info).
 const phoneMenuOpen = ref(false)
 function phoneMenu(action: () => void) {
@@ -360,7 +392,7 @@ const absenceOpen = ref(false)
 const editingBlock = ref<AvailabilityBlock | null>(null)
 const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
-// "Display" toggles in the left panel, per the redesign spec.
+// "Display" toggles, in the toolbar's display popover (CalendarDisplayOptions).
 //
 // Cancelled visits leave the grid: the slot they held is free, and a struck-
 // through block sitting in it reads as "taken". showCancelled brings them
@@ -368,7 +400,6 @@ const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(
 // hideCancelled, default on; flipped so the switch reads the way it acts.)
 const settings = reactive({
   privacyMode: false,
-  flowTracker: true,
   showAvailability: true,
   showCancelled: false,
   hideRescheduled: false,
@@ -377,7 +408,6 @@ const settings = reactive({
 })
 const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
   { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
-  { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
   { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
   { key: 'showCancelled', label: t('Show cancelled', 'Mostrar canceladas') },
   { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
@@ -493,6 +523,10 @@ const rangeLabel = computed(() => {
   const days = visibleWeekDays.value
   return `${formatShortDate(weekStart.value)} – ${formatShortDate(days[days.length - 1])}`
 })
+/** The toolbar's label where it is short of room (below xl): "vie, 30 oct" for a day. */
+const rangeLabelShort = computed(() =>
+  viewMode.value === 'day' ? anchorDate.value.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short' }) : rangeLabel.value,
+)
 function stepDate(dir: -1 | 1) {
   // From the 1st, so 31 January steps to February rather than into March.
   if (viewMode.value === 'month') anchorDate.value = addMonths(startOfMonth(anchorDate.value), dir)
@@ -527,32 +561,6 @@ useShortcuts({
   m: () => (viewMode.value = 'month'),
 })
 
-// Single mini month in the sidebar, per the redesign spec (the old two-month
-// picker is dropped). Clicking a day jumps the main calendar there.
-const miniBase = ref(startOfMonth(anchorDate.value))
-const miniMonthLabel = computed(() => miniBase.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
-function miniCalendarGrid(monthStart: Date): (Date | null)[] {
-  const year = monthStart.getFullYear()
-  const month = monthStart.getMonth()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstWeekday = (monthStart.getDay() + 6) % 7
-  const cells: (Date | null)[] = Array(firstWeekday).fill(null)
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d))
-  return cells
-}
-const miniGrid = computed(() => miniCalendarGrid(miniBase.value))
-function selectMiniDate(d: Date) {
-  anchorDate.value = d
-}
-const miniWeekdayAbbrevs = computed(() => [
-  t('Mo', 'Lu'),
-  t('Tu', 'Ma'),
-  t('We', 'Mi'),
-  t('Th', 'Ju'),
-  t('Fr', 'Vi'),
-  t('Sa', 'Sá'),
-  t('Su', 'Do'),
-])
 
 // One request for the types, practitioners, overrides, clinic memberships
 // and this clinic's rooms (calendar_reference): they were five, fired
@@ -1282,11 +1290,15 @@ const dayHeaderPx = computed(() => (hasRooms.value ? DAY_HEADER_PX : 0))
 const weekHeaderPx = computed(() => (hasRooms.value ? WEEK_HEADER_PX : WEEK_HEADER_PX - WEEK_ROOM_ROW_PX))
 // Each room sub-column of the week: as wide as the screen allows up to
 // WEEK_ROOM_COL_PX, no narrower than WEEK_ROOM_COL_MIN_PX (past that, scroll).
-// 58 is the hour gutter. Before the grid is measured, the old width.
+// 58 is the hour gutter, and each day column draws a 1px border on top of
+// its sub-columns: left out, the week overflowed by a pixel or two whenever
+// the division came out nearly whole. Before the grid is measured, the old
+// width.
 const weekColPx = computed(() => {
-  const cols = visibleWeekDays.value.length * dayColumns.value.length
+  const days = visibleWeekDays.value.length
+  const cols = days * dayColumns.value.length
   if (!weekScrollerWidth.value || !cols) return WEEK_ROOM_COL_PX
-  return Math.max(WEEK_ROOM_COL_MIN_PX, Math.min(WEEK_ROOM_COL_PX, Math.floor((weekScrollerWidth.value - 58) / cols)))
+  return Math.max(WEEK_ROOM_COL_MIN_PX, Math.min(WEEK_ROOM_COL_PX, Math.floor((weekScrollerWidth.value - 58 - days) / cols)))
 })
 
 function blockLabel(block: AvailabilityBlock) {
@@ -1695,10 +1707,6 @@ const dayHeaderCountsByDay = computed(() => {
 function dayHeaderCounts(day: Date) {
   return dayHeaderCountsByDay.value.get(toDateKey(day)) ?? { unconfirmed: 0, owe: 0 }
 }
-
-// Stage key for the side panel: one row per stage, drawn with the same pill
-// the blocks use.
-const STAGE_KEY: AppointmentStage[] = ['pending', 'online', 'resched', 'confirmed', 'arrived', 'withp', 'checkout', 'completed', 'noshow']
 
 // Equal-width column positioning for an overlapping block: each lane gets
 // an even fraction of the column's width (_totalCols-wide), at its natural
@@ -3270,6 +3278,13 @@ function openAgendaItem(id: string) {
 const now = ref(new Date())
 // The phone header shows "Today" only when another day is on screen.
 const isTodayShown = computed(() => isSameDate(anchorDate.value, now.value))
+/** Whether the day, week or month on screen holds today: "Today" is offered only when it does not. */
+const rangeIncludesToday = computed(() => {
+  const n = now.value
+  if (viewMode.value === 'day') return isSameDate(anchorDate.value, n)
+  if (viewMode.value === 'month') return anchorDate.value.getFullYear() === n.getFullYear() && anchorDate.value.getMonth() === n.getMonth()
+  return visibleWeekDays.value.some((d) => isSameDate(d, n))
+})
 let nowTimer: ReturnType<typeof setInterval> | null = null
 // A tab left in the background can go minutes without its timers firing;
 // catch up the moment it is looked at again.
@@ -3369,113 +3384,226 @@ function showNowLineOn(day: Date) {
           <button v-if="can('payments_allocate')" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (cashShiftOpen = true))">
             {{ t('Cash shift', 'Turno de caja') }}
           </button>
-          <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
+          <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (todayOpen = true))">
             {{ t('Calendar info', 'Info del calendario') }}
           </button>
         </div>
       </template>
     </header>
 
-    <header class="hidden shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 md:flex lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
-      <div class="flex items-center gap-4">
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
-        <div class="flex items-center gap-1">
-          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-8 w-8 touch:h-11 touch:w-11 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(-1)">
-            <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
-          <button type="button" class="flex h-8 touch:h-11 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11" @click="goToday">{{ t('Today', 'Hoy') }}</button>
-          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-8 w-8 touch:h-11 touch:w-11 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(1)">
-            <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+    <!-- Tablets and computers: one 48px row. The date (which opens a mini
+         month), the view, whose agenda, then the day's people, display and
+         less-used actions behind icons, and the one main action. It used to
+         be a header, a row of practitioner tabs and a row of counts -- about
+         150px over the grid, and a 238px column beside it. The counts are in
+         the strip under the grid now; the column's contents are in the
+         popovers here and the "Today" drawer. -->
+    <!-- The page's headings, for a screen reader's outline: the toolbar has
+         no visible title (the sidebar already says where you are), and the
+         flow tracker's h2s are in a drawer that starts closed. -->
+    <h1 class="sr-only">{{ t('Calendar', 'Calendario') }}</h1>
+    <h2 class="sr-only" data-cy="calendar-range-heading">{{ rangeLabel }}</h2>
+    <header class="hidden h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-4 md:flex lg:px-5 xl:gap-3 touch:h-[60px]" data-cy="calendar-toolbar">
+      <div class="relative flex shrink-0 items-center gap-0.5" data-pop="date">
+        <button
+          type="button"
+          data-cy="calendar-date-picker"
+          :aria-expanded="openPop === 'date'"
+          :aria-label="t(`Pick a date: ${rangeLabel}`, `Elegir fecha: ${rangeLabel}`)"
+          class="-ml-1.5 flex h-8 items-center gap-1.5 rounded-ctl px-1.5 text-[16px] font-[640] tracking-tightTitle text-ink-900 hover:bg-surface-subtle touch:h-11"
+          :class="openPop === 'date' ? 'bg-surface-subtle' : ''"
+          @click="togglePop('date')"
+        >
+          <span class="hidden whitespace-nowrap first-letter:uppercase xl:inline">{{ rangeLabel }}</span>
+          <span class="whitespace-nowrap first-letter:uppercase xl:hidden">{{ rangeLabelShort }}</span>
+          <span v-if="viewMode === 'day' && isTodayShown" class="rounded-pill bg-brand-tint px-[7px] py-[3px] text-[11px] font-semibold leading-none tracking-normal text-brand-text">{{ t('Today', 'Hoy') }}</span>
+          <svg width="10" height="7" viewBox="0 0 11 7" fill="none" class="text-ink-faint" aria-hidden="true"><path d="M1 1L5.5 6L10 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-500 hover:bg-surface-subtle touch:h-11 touch:w-11" @click="stepDate(-1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none" aria-hidden="true"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-500 hover:bg-surface-subtle touch:h-11 touch:w-11" @click="stepDate(1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none" aria-hidden="true"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button v-if="!rangeIncludesToday" type="button" data-cy="calendar-today" class="ml-1 h-8 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle touch:h-11" @click="goToday">{{ t('Today', 'Hoy') }}</button>
+        <div v-if="openPop === 'date'" class="absolute left-0 top-[calc(100%+6px)] z-40 w-[252px] rounded-card border border-line bg-surface p-3 shadow-popover">
+          <CalendarMiniMonth :selected="anchorDate" @pick="(d: Date) => { anchorDate = d; openPop = null }" />
         </div>
-        <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
-        <button
-          type="button"
-          data-cy="calendar-panel-toggle"
-          :aria-pressed="panelHidden"
-          :aria-label="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
-          :title="panelHidden ? t('Show side panel', 'Mostrar panel lateral') : t('Hide side panel', 'Ocultar panel lateral')"
-          class="hidden h-8 w-8 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle lg:order-first lg:flex"
-          @click="togglePanel"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-            <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
-            <path d="M5 2v10" />
-            <path v-if="panelHidden" d="M7.5 5.5L9 7l-1.5 1.5" stroke-linecap="round" stroke-linejoin="round" />
-            <path v-else d="M9 5.5L7.5 7 9 8.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
-        (below), but that plus the optional flow-tracker column would eat
-        most of a phone's width -- so below lg it's an off-canvas drawer
-        instead, reached from here. On this row rather than at the end of the
-        actions, where on a tablet it wrapped onto a 44px row of its own. -->
-        <button
-          type="button"
-          class="ml-auto flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
-          @click="mobileInfoOpen = true"
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
-          {{ t('Info', 'Info') }}
-        </button>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
-          <option value="day">{{ t('Day', 'Día') }}</option>
-          <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
-          <option value="week">{{ t('Week', 'Semana') }}</option>
-          <option value="month">{{ t('Month', 'Mes') }}</option>
-        </select>
-        <!-- Visits at the same time side by side, or one under the other.
-             Not in the month, which draws no visits. Icons below 2xl: with
-             its labels the toolbar no longer fits beside the title at 1440px,
-             the header wraps to two lines and the grid loses 39px. -->
-        <div v-if="viewMode !== 'month'" role="group" :aria-label="t('Visits at the same time', 'Citas a la misma hora')" class="flex h-8 items-center gap-0.5 rounded-ctlSm border border-line-control bg-surface p-0.5 [@media(pointer:coarse)]:h-11" data-cy="stack-mode">
+
+      <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-8 shrink-0 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none touch:h-11">
+        <option value="day">{{ t('Day', 'Día') }}</option>
+        <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
+        <option value="week">{{ t('Week', 'Semana') }}</option>
+        <option value="month">{{ t('Month', 'Mes') }}</option>
+      </select>
+
+      <!-- Whose agenda: the whole clinic, one practitioner, or the visits
+           with nobody. Initials, with the name on the one chosen, and on all
+           of them from 2xl, where the row has the room. -->
+      <template v-if="!isPhone">
+        <div v-if="!referenceLoaded" data-cy="practitioner-tabs-loading" class="flex min-w-0 items-center gap-1.5 overflow-hidden" aria-busy="true">
+          <UiSkeleton v-for="(w, i) in [96, 22, 22, 22]" :key="i" class="h-[22px] shrink-0 rounded-pill" :style="{ width: `${w}px` }" />
+        </div>
+        <div
+          v-else-if="clinicTeamMembers.length > 0"
+          data-testid="practitioner-tabs"
+          role="group"
+          :aria-label="t('Whose agenda', 'Agenda de')"
+          class="flex min-w-0 items-center gap-0.5 overflow-x-auto p-0.5 [scrollbar-width:none]"
+        >
           <button
-            v-for="m in ([['columns', t('Side by side', 'En columnas')], ['rows', t('One under the other', 'En filas')]] as const)"
-            :key="m[0]"
             type="button"
-            class="flex h-full items-center gap-1.5 rounded-[5px] px-2 text-[12.5px] font-medium"
-            :class="stackMode === m[0] ? 'bg-chip-bg text-ink-900' : 'text-ink-muted hover:bg-surface-subtle'"
-            :aria-pressed="stackMode === m[0]"
-            :title="m[1]"
-            :aria-label="m[1]"
-            :data-cy="`stack-mode-${m[0]}`"
-            @click="stackMode = m[0]"
+            data-testid="practitioner-tab-all"
+            class="h-7 shrink-0 rounded-pill px-3 text-[12.5px] font-medium transition-colors touch:h-11"
+            :class="practitionerFilter === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600 hover:bg-surface-subtle'"
+            :aria-pressed="practitionerFilter === ALL_PRACTITIONERS"
+            @click="practitionerFilter = ALL_PRACTITIONERS"
           >
-            <svg v-if="m[0] === 'columns'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="3.6" height="11" rx="1" /><rect x="6.2" y="2.5" width="3.6" height="11" rx="1" /><rect x="10.9" y="2.5" width="3.6" height="11" rx="1" /></svg>
-            <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
-            <span class="hidden 2xl:inline">{{ m[1] }}</span>
+            {{ t('Whole clinic', 'Toda la clínica') }}
+          </button>
+          <button
+            v-for="m in clinicTeamMembers"
+            :key="m.id"
+            type="button"
+            data-testid="practitioner-tab"
+            class="flex h-7 shrink-0 items-center gap-1.5 rounded-pill pl-[5px] text-[12.5px] font-medium transition-colors touch:h-11"
+            :class="practitionerFilter === m.id ? 'bg-brand pr-3 text-brand-on' : 'pr-[5px] text-ink-600 hover:bg-surface-subtle 2xl:pr-3'"
+            :aria-pressed="practitionerFilter === m.id"
+            :aria-label="m.full_name"
+            :title="m.full_name"
+            @click="practitionerFilter = m.id"
+          >
+            <CalendarPractitionerBadge size="md" :initials="badgeLabels.get(m.id) ?? ''" :color="m.color || null" :name="m.full_name" :class="practitionerFilter === m.id ? 'ring-1 ring-brand-on' : ''" />
+            <span class="whitespace-nowrap" :class="practitionerFilter === m.id ? '' : 'hidden 2xl:inline'">{{ m.full_name }}</span>
+          </button>
+          <button
+            type="button"
+            data-testid="practitioner-tab-unassigned"
+            class="flex h-7 shrink-0 items-center gap-1.5 rounded-pill pl-[5px] text-[12.5px] font-medium transition-colors touch:h-11"
+            :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand pr-3 text-brand-on' : 'pr-[5px] text-ink-faint hover:bg-surface-subtle 2xl:pr-3'"
+            :aria-pressed="practitionerFilter === UNASSIGNED_PRACTITIONER"
+            :aria-label="t('No practitioner', 'Sin profesional')"
+            :title="t('No practitioner', 'Sin profesional')"
+            @click="practitionerFilter = UNASSIGNED_PRACTITIONER"
+          >
+            <CalendarPractitionerBadge size="md" initials="" :color="null" :name="null" class="bg-surface" />
+            <span class="whitespace-nowrap" :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? '' : 'hidden 2xl:inline'">{{ t('No practitioner', 'Sin profesional') }}</span>
           </button>
         </div>
-        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash shift', 'Turno de caja') }}</UiBtn>
-        <template v-if="!readOnly">
-          <span v-if="bookingFor" class="inline-flex h-8 items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="booking-for">
-            {{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}
-            <button
-              type="button"
-              class="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
-              :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
-              data-cy="booking-for-clear"
-              @click="stopBookingFor"
-            ><UiCloseIcon /></button>
-          </span>
-          <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
-          <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
-          <UiBtn variant="secondary" size="sm" data-cy="new-class-open" @click="newClassOpen = true">{{ t('New class', 'Nueva clase') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New appointment', '+ Nueva cita') }}</UiBtn>
-        </template>
-        <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
+      </template>
+
+      <span class="grow" />
+
+      <span v-if="readOnly" class="inline-flex h-7 shrink-0 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
+
+      <!-- Who is in the building now; opens the "Today" drawer. -->
+      <button
+        type="button"
+        data-cy="calendar-today-toggle"
+        aria-controls="calendar-today"
+        :aria-expanded="todayOpen"
+        :title="t('Who is in the clinic, and today in numbers', 'Quién está en la clínica, y el día en números')"
+        class="flex h-8 shrink-0 items-center gap-1.5 rounded-ctl border px-2.5 text-[12.5px] font-medium touch:h-11"
+        :class="todayOpen ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle'"
+        @click="toggleToday"
+      >
+        <span class="h-[7px] w-[7px] rounded-full bg-info-accent" aria-hidden="true" />
+        <span class="hidden xl:inline">{{ t('In the clinic', 'En clínica') }}</span>
+        <span class="rounded-pill bg-info-bg px-1.5 py-[3px] font-mono text-[11px] font-semibold leading-none text-info-text">{{ todayLoaded ? flowRows.length : '–' }}</span>
+      </button>
+
+      <div class="relative shrink-0" data-pop="display">
+        <button
+          type="button"
+          data-cy="calendar-display"
+          :aria-expanded="openPop === 'display'"
+          :aria-label="t('Display and key', 'Visualización y leyenda')"
+          :title="t('Display and key', 'Visualización y leyenda')"
+          class="flex h-8 w-8 items-center justify-center rounded-ctl border touch:h-11 touch:w-11"
+          :class="openPop === 'display' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle'"
+          @click="togglePop('display')"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7" /><circle cx="10.7" cy="4.5" r="1.8" /><circle cx="5.3" cy="11.5" r="1.8" /></svg>
+        </button>
+        <div v-if="openPop === 'display'" class="absolute right-0 top-[calc(100%+6px)] z-40 max-h-[calc(100vh-140px)] w-[300px] overflow-y-auto rounded-card border border-line bg-surface p-3.5 shadow-popover" data-cy="calendar-display-panel">
+          <CalendarDisplayOptions
+            :settings="settings"
+            :toggles="displayToggles"
+            :stack-mode="viewMode === 'month' ? null : stackMode"
+            @toggle="(k) => (settings[k] = !settings[k])"
+            @update:stack-mode="(m) => (stackMode = m)"
+          />
+        </div>
       </div>
+
+      <div v-if="!readOnly || can('payments_allocate')" class="relative shrink-0" data-pop="more">
+        <button
+          type="button"
+          data-cy="calendar-more"
+          aria-haspopup="menu"
+          :aria-expanded="openPop === 'more'"
+          :aria-label="t('More actions', 'Más acciones')"
+          :title="t('More actions', 'Más acciones')"
+          class="flex h-8 w-8 items-center justify-center rounded-ctl border touch:h-11 touch:w-11"
+          :class="openPop === 'more' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle'"
+          @click="togglePop('more')"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="13" cy="8" r="1.3" /></svg>
+        </button>
+        <div v-if="openPop === 'more'" role="menu" class="absolute right-0 top-[calc(100%+6px)] z-40 w-60 rounded-card border border-line bg-surface py-1 shadow-popover" data-cy="calendar-more-menu">
+          <template v-if="!readOnly">
+            <button type="button" role="menuitem" data-cy="block-time-open" class="flex h-9 w-full items-center gap-2.5 px-3.5 text-left text-[13px] text-ink-900 hover:bg-surface-subtle touch:h-11" @click="fromToolbarMenu(() => openBlockCreateModal())">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" class="text-ink-faint" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M4.2 11.8l7.6-7.6" /></svg>
+              {{ t('Block time', 'Bloquear horario') }}
+            </button>
+            <button type="button" role="menuitem" data-cy="absence-open" class="flex h-9 w-full items-center gap-2.5 px-3.5 text-left text-[13px] text-ink-900 hover:bg-surface-subtle touch:h-11" @click="fromToolbarMenu(() => (absenceOpen = true))">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" class="text-ink-faint" aria-hidden="true"><circle cx="8" cy="5.5" r="2.7" /><path d="M2.8 14c.6-2.6 2.6-4 5.2-4s4.6 1.4 5.2 4" /></svg>
+              {{ t('Unplanned absence', 'Ausencia imprevista') }}
+            </button>
+            <button type="button" role="menuitem" data-cy="new-class-open" class="flex h-9 w-full items-center gap-2.5 px-3.5 text-left text-[13px] text-ink-900 hover:bg-surface-subtle touch:h-11" @click="fromToolbarMenu(() => (newClassOpen = true))">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" class="text-ink-faint" aria-hidden="true"><circle cx="5.6" cy="6" r="2.2" /><circle cx="11.2" cy="6.6" r="1.7" /><path d="M1.8 13c.4-2 1.8-3.2 3.8-3.2S9 11 9.4 13M10.6 10.2c1.8 0 3 .9 3.5 2.6" /></svg>
+              {{ t('New class', 'Nueva clase') }}
+            </button>
+          </template>
+          <div v-if="!readOnly && can('payments_allocate')" class="my-1 h-px bg-line-divider" />
+          <button v-if="can('payments_allocate')" type="button" role="menuitem" data-cy="cash-shift-open" class="flex h-9 w-full items-center gap-2.5 px-3.5 text-left text-[13px] text-ink-900 hover:bg-surface-subtle touch:h-11" @click="fromToolbarMenu(() => (cashShiftOpen = true))">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" class="text-ink-faint" aria-hidden="true"><rect x="1.8" y="4" width="12.4" height="8" rx="1.6" /><circle cx="8" cy="8" r="1.7" /></svg>
+            {{ t('Cash shift', 'Turno de caja') }}
+          </button>
+        </div>
+      </div>
+
+      <UiBtn v-if="!readOnly" variant="primary" size="sm" data-cy="new-appointment" class="shrink-0" :aria-label="t('New appointment', 'Nueva cita')" @click="openCreateModal()">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M7 2.5v9M2.5 7h9" /></svg>
+        <span class="hidden xl:inline">{{ t('New appointment', 'Nueva cita') }}</span>
+      </UiBtn>
     </header>
 
-    <!-- One tab per practitioner, plus the whole clinic and the visits with
-         no practitioner at all. Until the team has loaded, placeholder tabs:
-         the "no practitioners" line below used to flash on every visit. -->
-    <div v-if="!referenceLoaded && !showAgenda" data-cy="practitioner-tabs-loading" class="flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12" aria-busy="true">
+    <!-- Booking for a patient (from their record, a plan or a lead): a
+         passing state, so a strip of its own like rescheduling below,
+         rather than a permanent place in the toolbar. -->
+    <div v-if="bookingFor && !readOnly" class="hidden h-10 shrink-0 items-center gap-3 border-b border-line bg-brand-tint px-4 md:flex lg:px-5">
+      <span class="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-brand-text" data-cy="booking-for">
+        <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
+        <button
+          type="button"
+          class="relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-pill hover:bg-surface touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
+          :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
+          data-cy="booking-for-clear"
+          @click="stopBookingFor"
+        ><UiCloseIcon /></button>
+      </span>
+    </div>
+
+    <!-- On a phone showing a week, the practitioners keep a row of their
+         own; from md up they are in the toolbar above. Until the team has
+         loaded, placeholder tabs: the "no practitioners" line below used to
+         flash on every visit. -->
+    <div v-if="isPhone && !referenceLoaded && !showAgenda" data-cy="practitioner-tabs-loading" class="flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12" aria-busy="true">
       <UiSkeleton v-for="w in [96, 64, 112, 88, 104]" :key="w" class="mx-1.5 h-3.5 shrink-0 rounded-ctlSm" :style="{ width: `${w}px` }" />
     </div>
-    <div v-else-if="clinicTeamMembers.length > 0 && !showAgenda" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
+    <div v-else-if="isPhone && clinicTeamMembers.length > 0 && !showAgenda" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
       <button
         type="button"
         data-testid="practitioner-tab-all"
@@ -3511,7 +3639,7 @@ function showNowLineOn(day: Date) {
         {{ t('No practitioner', 'Sin profesional') }}
       </button>
     </div>
-    <div v-else-if="!showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
+    <div v-else-if="referenceLoaded && clinicTeamMembers.length === 0 && !showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
       {{ t('Nobody on the team works at this clinic yet. Add them to it in Settings › Team.', 'Todavía nadie del equipo trabaja en esta clínica. Añádelos a ella en Ajustes › Equipo.') }}
     </div>
 
@@ -3542,183 +3670,7 @@ function showNowLineOn(day: Date) {
         {{ retryingRange ? t('Trying again…', 'Reintentando…') : t('Try again', 'Reintentar') }}
       </UiBtn>
     </div>
-    <!-- The day, counted. Each chip is a filter: it dims every block that
-         does not match, so the day keeps its shape while one kind stands out.
-         This is what "Today at a glance" used to be, moved to where the eye
-         already is and made to do something. -->
-    <div v-if="store.currentClinicId && loading && !showAgenda && viewMode !== 'month'" class="flex shrink-0 items-center gap-2 overflow-hidden border-b border-line bg-surface px-4 py-1.5 lg:px-6" aria-busy="true">
-      <UiSkeleton class="mr-1 h-4 w-24 shrink-0 rounded-ctlSm" />
-      <UiSkeleton v-for="w in [118, 96, 132]" :key="w" class="h-9 shrink-0 rounded-full [@media(pointer:coarse)]:h-11" :style="{ width: `${w}px` }" />
-    </div>
-    <div v-else-if="store.currentClinicId && !showAgenda && viewMode !== 'month'" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
-      <span class="shrink-0 pr-1 text-[13px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
-      <button
-        v-for="c in countChips"
-        :key="c.key"
-        type="button"
-        :data-cy="`day-filter-${c.key}`"
-        :aria-pressed="stageFilter === c.key"
-        class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors [@media(pointer:coarse)]:h-11"
-        :class="stageFilter === c.key ? 'border-[1.5px] border-brand bg-brand-tint text-brand-text' : 'border border-line-control bg-surface text-ink-700 hover:border-line-controlHover'"
-        @click="toggleStageFilter(c.key)"
-      >
-        <span class="h-2 w-2 shrink-0 rounded-full" :class="FILTER_DOT_CLASS[c.key]" aria-hidden="true" />
-        <strong class="font-semibold">{{ c.n }}</strong>{{ c.label }}
-      </button>
-      <span class="grow" />
-      <button
-        v-if="stageFilter"
-        type="button"
-        data-cy="day-filter-clear"
-        class="h-9 shrink-0 rounded-full px-3 text-[13px] font-medium text-brand-text hover:bg-brand-tint [@media(pointer:coarse)]:h-11"
-        @click="stageFilter = null"
-      >
-        {{ t('Show all', 'Ver todas') }}
-      </button>
-    </div>
-
     <div class="flex flex-1 overflow-hidden">
-      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-scrim/40 lg:hidden" @click="mobileInfoOpen = false" />
-
-      <!-- Left panel: mini month, display toggles, stage key. Off-canvas
-      below lg (see the Info button above); a permanent column at lg+. -->
-      <aside
-        class="fixed inset-y-0 left-0 z-40 w-[280px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar transition-transform duration-200 lg:static lg:z-auto lg:w-[238px] lg:translate-x-0"
-        :class="[mobileInfoOpen ? 'translate-x-0' : '-translate-x-full', panelHidden ? 'lg:hidden' : '']"
-      >
-        <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
-          <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
-            <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
-          </button>
-        </div>
-        <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <div class="flex items-center justify-between">
-            <button type="button" :aria-label="t('Previous month', 'Mes anterior')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)"><UiChevron dir="left" /></button>
-            <span class="text-[12.5px] font-[640] text-ink-900">{{ miniMonthLabel }}</span>
-            <button type="button" :aria-label="t('Next month', 'Mes siguiente')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)"><UiChevron dir="right" /></button>
-          </div>
-          <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[11px] font-medium uppercase text-ink-faint">{{ d }}</span>
-            <template v-for="(cell, i) in miniGrid" :key="i">
-              <button
-                v-if="cell"
-                type="button"
-                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px] touch:h-10 touch:w-10"
-                :class="[
-                  isSameDate(cell, new Date()) ? 'bg-brand font-semibold text-brand-on' : isSameDate(cell, anchorDate) ? 'font-semibold text-brand-text ring-1 ring-inset ring-brand' : 'text-ink-600 hover:bg-surface-subtle',
-                ]"
-                @click="selectMiniDate(cell)"
-              >
-                {{ cell.getDate() }}
-              </button>
-              <span v-else></span>
-            </template>
-          </div>
-        </div>
-
-        <!-- Who is in the building and the step each needs next. Inside this
-             panel rather than as a column of its own: a 220px column took
-             that width from the grid, and at 1440px the room columns fell to
-             ~197px -- narrow enough that blocks started dropping the
-             clinical-note icon. Here it costs the grid nothing, and it comes
-             along into the off-canvas drawer below lg. -->
-        <div v-if="settings.flowTracker" data-cy="flow-tracker" :aria-label="t('Flow tracker', 'Seguimiento de flujo')" role="region" class="mx-3 mb-3">
-          <CalendarFlowTracker :rows="flowRows" :privacy="settings.privacyMode" :loading="!todayLoaded" @advance="advanceFromFlow" @open="openFromFlow" />
-        </div>
-
-        <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
-          <!-- Money first, as a shift is closed: what came in, and what was charged. -->
-          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open Daily transactions', 'Abrir Transacciones del día')">
-            <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
-              <span class="block text-[11px] text-ink-muted">{{ row.label }}</span>
-              <UiSkeleton v-if="!takings.loaded.value" class="mt-1 h-4 w-14 rounded-ctlSm" />
-              <span v-else class="block font-mono text-[14px] font-semibold text-ink-900">{{ row.value }}</span>
-            </span>
-          </NuxtLink>
-          <div class="mt-2 space-y-1.5">
-            <div v-for="row in glanceRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-center justify-between text-[12.5px]">
-              <span :class="row.key === 'booked' ? 'text-ink-600' : row.tone">{{ row.label }}</span>
-              <UiSkeleton v-if="!todayLoaded" class="h-3.5 rounded-ctlSm" :class="row.key === 'booked' ? 'w-6' : 'w-14'" />
-              <span v-else class="font-mono text-[12.5px] font-medium" :class="row.tone">{{ row.value }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="mx-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
-          <div class="mt-2 space-y-2.5">
-            <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
-              <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
-              <button
-                type="button"
-                role="switch"
-                :aria-checked="settings[toggle.key]"
-                :aria-label="toggle.label"
-                :data-cy="`display-${toggle.key}`"
-                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
-                :class="settings[toggle.key] ? 'bg-brand' : 'bg-toggle-off'"
-                @click="settings[toggle.key] = !settings[toggle.key]"
-              >
-                <span class="inline-block h-3 w-3 transform rounded-full bg-white transition-transform" :class="settings[toggle.key] ? 'translate-x-[14px]' : 'translate-x-0.5'" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
-          <p class="mt-1 text-[11.5px] leading-snug text-ink-muted">{{ t('Dashed border: not confirmed yet. Red: money owed.', 'Borde discontinuo: sin confirmar. Rojo: dinero pendiente.') }}</p>
-          <div class="mt-2 space-y-1.5">
-            <div v-for="stage in STAGE_KEY" :key="stage" class="flex items-center gap-2 text-[12.5px] text-ink-600">
-              <span
-                class="h-3 w-4 shrink-0 rounded-[3px]"
-                :class="['pending', 'online'].includes(stage) ? 'border-[1.5px] border-dashed border-ink-faint' : stage === 'resched' ? 'border-[1.5px] border-dashed border-warning-accent bg-warning-bg' : stage === 'completed' ? 'border border-line bg-surface-subtle' : stage === 'noshow' ? 'border border-line-control bg-chip-bg' : 'border border-line-control bg-brand-tint'"
-                aria-hidden="true"
-              />
-              <span class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold" :class="STAGE_TONE_CLASS[STAGE_TONE[stage]]">
-                <CalendarStageIcon :stage="stage" />{{ stageLabel(stage) }}
-              </span>
-            </div>
-          </div>
-          <!-- The icons a block draws, in the colours it draws them: the €
-               dot in particular says nothing on its own, and week view shows
-               it instead of the amount. -->
-          <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Icons', 'Iconos') }}</p>
-          <ul class="mt-2 space-y-1.5 text-[12.5px] text-ink-600" data-cy="calendar-icon-key">
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center"><span class="flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-danger-on" aria-hidden="true">€</span></span>
-              {{ t('Owes money (the whole balance)', 'Debe dinero (todo su saldo)') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-ink-500"><CalendarBlockIcon kind="noNext" /></span>
-              {{ t('No next visit booked', 'Sin próxima cita reservada') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-danger-text"><CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" /></span>
-              {{ t('Red flags on the record', 'Señales rojas en la ficha') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-brand-text"><CalendarVisitMarkerIcon /></span>
-              {{ t('Care plan re-exam', 'Revisión del plan de tratamiento') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-warning-text"><CalendarBlockIcon kind="forms" /></span>
-              {{ t('Forms not completed', 'Formularios sin completar') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-warning-accent"><CalendarBlockIcon kind="note" /></span>
-              {{ t('Clinical note', 'Nota clínica') }}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="flex w-4 shrink-0 justify-center text-ink-muted"><CalendarBlockIcon kind="moved" /></span>
-              {{ t('Moved before (times)', 'Movida antes (veces)') }}
-            </li>
-          </ul>
-        </div>
-      </aside>
-
       <!-- Main content -->
       <!-- Each view below is its own scroller, both ways. The room and day
            headers are sticky, and sticky only works against the element that
@@ -4267,7 +4219,120 @@ function showNowLineOn(day: Date) {
           </div>
         </div>
       </div>
+
+      <!-- The "Today" drawer (toggleToday): a column on the right at lg+,
+           over the grid below that. -->
+      <div v-if="todayOpen" class="fixed inset-0 z-30 bg-scrim/40 lg:hidden" @click="todayOpen = false" />
+      <aside
+        v-if="todayOpen"
+        id="calendar-today"
+        data-cy="calendar-today-panel"
+        :aria-label="t('Today in the clinic', 'Hoy en la clínica')"
+        class="fixed inset-y-0 right-0 z-40 w-[300px] max-w-[88vw] shrink-0 overflow-y-auto border-l border-line bg-surface-sidebar pb-3 shadow-drawer lg:static lg:z-auto lg:w-[264px] lg:shadow-none"
+      >
+        <div class="sticky top-0 z-10 flex h-11 items-center justify-between bg-surface-sidebar pl-4 pr-2">
+          <span class="text-[13px] font-[640] text-ink-900">{{ t('Today in the clinic', 'Hoy en la clínica') }}</span>
+          <button type="button" data-cy="calendar-today-close" :aria-label="t('Close', 'Cerrar')" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-11 touch:w-11" @click="toggleToday">
+            <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" /></svg>
+          </button>
+        </div>
+
+        <!-- A phone has no toolbar: the mini month comes here. -->
+        <div v-if="isPhone" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
+          <CalendarMiniMonth :selected="anchorDate" @pick="(d: Date) => { anchorDate = d; todayOpen = false }" />
+        </div>
+
+        <div data-cy="flow-tracker" :aria-label="t('Flow tracker', 'Seguimiento de flujo')" role="region" class="mx-3 mb-3">
+          <CalendarFlowTracker :rows="flowRows" :privacy="settings.privacyMode" :loading="!todayLoaded" @advance="advanceFromFlow" @open="openFromFlow" />
+        </div>
+
+        <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
+          <!-- Takings sit in the strip under the grid, except on a phone. -->
+          <NuxtLink v-if="isPhone && takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open Daily transactions', 'Abrir Transacciones del día')">
+            <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
+              <span class="block text-[11px] text-ink-muted">{{ row.label }}</span>
+              <UiSkeleton v-if="!takings.loaded.value" class="mt-1 h-4 w-14 rounded-ctlSm" />
+              <span v-else class="block font-mono text-[14px] font-semibold text-ink-900">{{ row.value }}</span>
+            </span>
+          </NuxtLink>
+          <div class="mt-2 space-y-1.5">
+            <div v-for="row in glanceRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-center justify-between text-[12.5px]">
+              <span :class="row.key === 'booked' ? 'text-ink-600' : row.tone">{{ row.label }}</span>
+              <UiSkeleton v-if="!todayLoaded" class="h-3.5 rounded-ctlSm" :class="row.key === 'booked' ? 'w-6' : 'w-14'" />
+              <span v-else class="font-mono text-[12.5px] font-medium" :class="row.tone">{{ row.value }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isPhone" class="mx-3 rounded-card border border-line bg-surface p-3.5">
+          <CalendarDisplayOptions
+            :settings="settings"
+            :toggles="displayToggles"
+            :stack-mode="viewMode === 'month' ? null : stackMode"
+            @toggle="(k) => (settings[k] = !settings[k])"
+            @update:stack-mode="(m) => (stackMode = m)"
+          />
+        </div>
+      </aside>
     </div>
+
+    <!-- The day, counted, under the grid where a ledger keeps its totals.
+         Each count is a filter: it dims every block that does not match, so
+         the day keeps its shape while one kind stands out. Today's takings
+         at the far end. -->
+    <footer
+      v-if="store.currentClinicId && !showAgenda"
+      class="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-t border-line bg-surface-subtle px-4 [scrollbar-width:none] lg:px-5 touch:h-14"
+      data-cy="calendar-foot"
+    >
+      <template v-if="viewMode !== 'month'">
+        <div v-if="loading" class="flex shrink-0 items-center gap-2" aria-busy="true">
+          <UiSkeleton class="mr-1 h-3.5 w-20 shrink-0 rounded-ctlSm" />
+          <UiSkeleton v-for="w in [104, 88, 118]" :key="w" class="h-[26px] shrink-0 rounded-pill touch:h-11" :style="{ width: `${w}px` }" />
+        </div>
+        <div v-else data-cy="day-counts" class="flex shrink-0 items-center gap-2">
+          <span class="shrink-0 pr-1 text-[12.5px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
+          <button
+            v-for="c in countChips"
+            :key="c.key"
+            type="button"
+            :data-cy="`day-filter-${c.key}`"
+            :aria-pressed="stageFilter === c.key"
+            class="flex h-[26px] shrink-0 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] transition-colors touch:h-11"
+            :class="stageFilter === c.key ? 'border-brand bg-brand-tint text-brand-text shadow-[inset_0_0_0_0.5px_rgb(var(--color-brand))]' : 'border-line-control bg-surface text-ink-700 hover:border-line-controlHover'"
+            @click="toggleStageFilter(c.key)"
+          >
+            <span class="h-[7px] w-[7px] shrink-0 rounded-full" :class="FILTER_DOT_CLASS[c.key]" aria-hidden="true" />
+            <strong class="font-semibold">{{ c.n }}</strong>{{ c.label }}
+          </button>
+          <button
+            v-if="stageFilter"
+            type="button"
+            data-cy="day-filter-clear"
+            class="h-[26px] shrink-0 rounded-pill px-2.5 text-[12.5px] font-medium text-brand-text hover:bg-brand-tint touch:h-11"
+            @click="stageFilter = null"
+          >
+            {{ t('Show all', 'Ver todas') }}
+          </button>
+        </div>
+      </template>
+      <span class="grow" />
+      <NuxtLink
+        v-if="!isPhone && takingsRows.length"
+        to="/reports/daily-transactions"
+        data-cy="glance-takings"
+        :title="t('Open Daily transactions', 'Abrir Transacciones del día')"
+        class="-mr-2 flex shrink-0 items-baseline gap-3 whitespace-nowrap rounded-ctlSm px-2 py-1 text-[12.5px] text-ink-muted hover:bg-chip-bg"
+      >
+        <span class="text-ink-faint">{{ t('Today', 'Hoy') }}</span>
+        <span v-for="row in takingsRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-baseline gap-1.5">
+          {{ row.label }}
+          <UiSkeleton v-if="!takings.loaded.value" class="h-3.5 w-12 self-center rounded-ctlSm" />
+          <span v-else class="font-mono font-semibold text-ink-900">{{ row.value }}</span>
+        </span>
+      </NuxtLink>
+    </footer>
 
     <LazyCalendarNewAppointmentPanel
       v-if="modalOpen && modalMode === 'create'"

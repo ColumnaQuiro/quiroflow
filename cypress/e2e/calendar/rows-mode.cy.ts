@@ -28,7 +28,9 @@ describe('Visits at the same time, in rows', () => {
       cy.visit('/calendar')
       cy.contains('select', 'Work week').select('day')
 
-      // Columns: six lanes, the last of them the "+3 more" chip.
+      // Columns: six lanes, the last of them the "+3 more" chip. The switch
+      // is in the toolbar's display popover.
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=stack-mode-columns]').should('have.attr', 'aria-pressed', 'true')
       cy.get('[data-cy=appt-block]').should('have.length', 5)
       cy.contains('+3 more').should('exist')
@@ -64,6 +66,7 @@ describe('Visits at the same time, in rows', () => {
 
       // Remembered: a reload opens in rows.
       cy.reload()
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=stack-mode-rows]').should('have.attr', 'aria-pressed', 'true')
       cy.get('[data-cy=appt-block]').should('have.length', PATIENTS.length)
 
@@ -71,6 +74,7 @@ describe('Visits at the same time, in rows', () => {
       cy.get('[data-cy=stack-mode-columns]').click()
       cy.contains('+3 more').should('exist')
       cy.reload()
+      cy.clickUntil('[data-cy=calendar-display]', '[data-cy=calendar-display-panel]')
       cy.get('[data-cy=stack-mode-columns]').should('have.attr', 'aria-pressed', 'true')
       cy.contains('+3 more').should('exist')
     })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { FILTERS, FILTER_KEYS, defaultFilterValue, filtersInUse, say, type FilterKey } from '~/utils/automationCatalog'
 import { FIELD, FIELD_NUMBER, HINT, LINK_BTN, REMOVE_BTN } from '~/utils/automationUi'
+import { asAudienceRefs, type AudienceRef } from '~/utils/automationAudience'
 
 // "Only if…" under a trigger, and "Patients who…" under a segment: rows of
 // filter, comparison, value. Writes the same keys into automation_rules.filters
@@ -56,6 +57,18 @@ function setTypes(ids: string[]) {
   const next: Record<string, any> = { ...props.modelValue, appointment_type_ids: ids }
   delete next.appointment_type_id
   emit('update:modelValue', next)
+}
+
+// "In a list or segment": two lists of audiences, any-of and none-of, each
+// with an empty picker at the end to add one more.
+function audienceRefs(key: 'in_audiences' | 'not_in_audiences'): AudienceRef[] {
+  return asAudienceRefs(props.modelValue[key])
+}
+function setAudience(key: 'in_audiences' | 'not_in_audiences', i: number, ref: AudienceRef | null) {
+  const next = [...audienceRefs(key)]
+  if (ref) next[i] = ref
+  else next.splice(i, 1)
+  set({ [key]: next })
 }
 
 const lastVisitUnit = ref<'months' | 'days'>(Number(props.modelValue.last_visit_before_days) % 30 === 0 ? 'months' : 'days')
@@ -166,6 +179,26 @@ function setLastVisit(value: number, unit = lastVisitUnit.value) {
           :placeholder="t('Choose locations', 'Elige sedes')"
           @update:model-value="set({ clinic_ids: $event })"
         />
+        <div v-else-if="key === 'audience'" class="flex flex-col gap-2 text-[13px] text-ink-700" data-test="filter-audience">
+          <span>{{ t('Is in any of', 'Está en alguna de') }}</span>
+          <AutomationsAudiencePicker
+            v-for="(a, i) in [...audienceRefs('in_audiences'), null]"
+            :key="a ? `in:${a.kind}:${a.id}` : `in-new-${audienceRefs('in_audiences').length}`"
+            :model-value="a"
+            :test-id="`${testPrefix ?? 'filter'}-audience-in-${i}`"
+            @update:model-value="setAudience('in_audiences', i, $event)"
+          />
+          <span>{{ t('and is not in', 'y no está en') }}</span>
+          <AutomationsAudiencePicker
+            v-for="(a, i) in [...audienceRefs('not_in_audiences'), null]"
+            :key="a ? `out:${a.kind}:${a.id}` : `out-new-${audienceRefs('not_in_audiences').length}`"
+            :model-value="a"
+            :placeholder="a ? undefined : t('Nobody left out', 'Sin excluir a nadie')"
+            :test-id="`${testPrefix ?? 'filter'}-audience-out-${i}`"
+            @update:model-value="setAudience('not_in_audiences', i, $event)"
+          />
+          <span :class="HINT">{{ t('Checked when it fires. A segment is who matched it at its last refresh (every 15 minutes, and when it is saved).', 'Se comprueba al dispararse. Un segmento es quien coincidía en su último refresco (cada 15 minutos, y al guardarlo).') }}</span>
+        </div>
       </div>
       <button type="button" :class="REMOVE_BTN" :aria-label="t('Remove filter', 'Quitar filtro')" @click="remove(key)"><UiCloseIcon /></button>
     </div>

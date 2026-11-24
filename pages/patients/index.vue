@@ -17,6 +17,7 @@ import {
 import { usePatientSegments, type PatientSegment } from '~/composables/usePatientSegments'
 import { listFilters as filtersOfList, usePatientLists, type PatientList } from '~/composables/usePatientLists'
 import type { PatientSelection } from '~/composables/usePatientTypes'
+import { MAX_PICKED_PATIENTS } from '~/utils/automationAudience'
 import type { BulkEditKind } from '~/components/patients/BulkEditDialog.vue'
 import type { AudienceView } from '~/components/patients/AudienceTabs.vue'
 import type { AudienceRow } from '~/components/patients/AudienceTable.vue'
@@ -560,6 +561,41 @@ async function onAddToList(target: { listId: string } | { newName: string; share
   } finally {
     bulkBusy.value = false
   }
+}
+
+// "Send a message": a one-off send (Automations › Sends) to exactly the
+// people selected, chosen one by one -- the same send whether they were
+// ticked or are "all N that match". To keep a send aimed at whoever is in a
+// list or segment when it goes, it is aimed at the list or segment in the
+// builder instead; past MAX_PICKED_PATIENTS, that is the way.
+const broadcastRecipients = useBroadcastRecipients()
+async function sendToSelection() {
+  let ids = [...selectedIds.value]
+  if (allMatchingSelected.value) {
+    if (totalCount.value > MAX_PICKED_PATIENTS) {
+      showToast(
+        t(
+          `A send can name up to ${MAX_PICKED_PATIENTS} patients one by one. Save these filters as a segment and send to the segment from Automations › Sends.`,
+          `Un envío puede nombrar hasta ${MAX_PICKED_PATIENTS} pacientes uno a uno. Guarda estos filtros como segmento y envía al segmento desde Automatizaciones › Envíos.`,
+        ),
+        'error',
+      )
+      return
+    }
+    bulkBusy.value = true
+    const { data, error } = await supabase
+      .rpc('patients_matching', { p_filters: listFilters.value as Json, p_clinic_id: store.currentClinicId ?? undefined })
+      .select('id')
+      .range(0, MAX_PICKED_PATIENTS - 1)
+    bulkBusy.value = false
+    if (error) {
+      showToast(t('The patients could not be read. Try again.', 'No se han podido leer los pacientes. Vuelve a intentarlo.'), 'error')
+      return
+    }
+    ids = ((data ?? []) as { id: string }[]).map((p) => p.id)
+  }
+  broadcastRecipients.value = { patientIds: ids.slice(0, MAX_PICKED_PATIENTS) }
+  await router.push('/automations/new?kind=broadcast&from=patients')
 }
 
 async function removeSelectionFromList() {
@@ -1242,6 +1278,7 @@ function tagTone(tag: string) {
           <UiBtn v-if="can('patients_edit') && patientTypes.active.value.length" variant="secondary" size="sm" data-cy="bulk-patient-type" :disabled="bulkBusy" @click="bulkDialog = 'type'">{{ t('Patient type', 'Tipo de paciente') }}</UiBtn>
           <UiBtn v-if="can('exercises_manage')" variant="secondary" size="sm" data-cy="bulk-assign-exercises" :disabled="bulkBusy" @click="bulkDialog = 'exercises'">{{ t('Assign exercises', 'Asignar ejercicios') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="bulk-add-to-list" :disabled="bulkBusy" @click="addingToList = true">{{ t('Add to list', 'Añadir a lista') }}</UiBtn>
+          <UiBtn v-if="can('communication_config')" variant="secondary" size="sm" data-cy="bulk-send" :disabled="bulkBusy" @click="sendToSelection">{{ t('Send a message', 'Enviar un mensaje') }}</UiBtn>
           <UiBtn v-if="activeList && canManageList(activeList)" variant="secondary" size="sm" data-cy="bulk-remove-from-list" :disabled="bulkBusy" @click="removeSelectionFromList">
             {{ t('Remove from this list', 'Quitar de esta lista') }}
           </UiBtn>

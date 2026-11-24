@@ -3,7 +3,7 @@ import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/util
 import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, type AudienceRef, type RecallQueueState } from '~/utils/automationAudience'
 import { localParts } from '~/utils/automationTiming'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { audienceMemberIds } from '~/server/utils/audienceMembers'
+import { namedRecipients } from '~/server/utils/audienceMembers'
 
 // Who a segment matches today -- the live "143 patients match today" under the
 // segment trigger, and the count in the activation dialog.
@@ -92,7 +92,7 @@ export async function segmentAudience(
   accountId: string,
   filters: AutomationFilters | null | undefined,
   isMarketing: boolean,
-  saved?: { audience: AudienceRef; exclude: AudienceRef[] } | null,
+  saved?: { audience?: AudienceRef | null; exclude?: AudienceRef[]; patient_ids?: string[] } | null,
 ): Promise<SegmentAudience> {
   const f = filters ?? {}
   const patients = await allRows<PatientRow>((from, to) =>
@@ -112,8 +112,8 @@ export async function segmentAudience(
 
   // A saved list or segment, as enrolDueSegments takes it: its members within
   // the same gates, and no filters asked.
-  if (saved) {
-    const members = await audienceMemberIds(service, saved.audience, saved.exclude)
+  const members = await namedRecipients(service, saved)
+  if (members) {
     candidates = candidates.filter((p) => members.has(p.id))
     return audienceTotals(candidates)
   }

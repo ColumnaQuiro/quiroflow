@@ -592,6 +592,8 @@ function blockView(a: Appointment, c: Column): BlockView {
     id: a.id,
     name: shown(nameOf(a)),
     shortName: privacy.value ? shown(nameOf(a)) : shortPatientName(a.patients?.first_name, a.patients?.last_name),
+    firstName: privacy.value ? undefined : a.patients?.first_name?.trim(),
+    lastName: privacy.value ? undefined : a.patients?.last_name?.trim(),
     stage: stageOf(a),
     arrivedAt: arrivedAt(a),
     timeLabel: timeLabel(a.starts_at),

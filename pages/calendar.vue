@@ -1572,6 +1572,8 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     id: appt.id,
     name: `${appt.patients?.first_name ?? ''} ${appt.patients?.last_name ?? ''}`.trim(),
     shortName: shortPatientName(appt.patients?.first_name, appt.patients?.last_name),
+    firstName: appt.patients?.first_name?.trim(),
+    lastName: appt.patients?.last_name?.trim(),
     stage,
     arrivedAt: appt.checked_in_at ? formatTime(appt.checked_in_at) : null,
     timeLabel: formatTime(appt.starts_at),

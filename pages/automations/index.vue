@@ -5,6 +5,7 @@ import { emptyLookup, filtersText, triggerDetail, type NameLookup } from '~/util
 import type { Problem } from '~/utils/automationTree'
 import { serverMessage } from '~/utils/serverMessage'
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { ONE_OFF_SEND_TONE, oneOffSendLabel, oneOffSendStatus } from '~/utils/oneOffSendStatus'
 
 // Automations: every message and task that goes out on its own -- after an
 // appointment, on a birthday, to a group of patients, to a new lead. Replaces
@@ -33,6 +34,9 @@ interface Row {
   stepTypes: string[]
   hasConditions: boolean
   usesRuns: boolean
+  segment_last_run_at: string | null
+  /** A capped one-off send with people left for another day. */
+  carryingOver: boolean
 }
 interface Stats {
   inside: number
@@ -170,6 +174,15 @@ const visible = computed(() => {
 })
 
 // ---- what each row says
+// A send's dates on the clinic's clock, as the builder sets them.
+const { timeZone } = useAccountTimeZone()
+// Draft, scheduled, sending, paused or sent -- from the row as it is now, so
+// switching a scheduled send off says "Draft" at once.
+function sendStatus(r: Row) {
+  if (!isBroadcastRule(r)) return null
+  const s = stats.value[r.id]
+  return oneOffSendStatus(r, { running: (s?.inside ?? 0) - (s?.failedRuns ?? 0), carryingOver: r.carryingOver })
+}
 const TYPE_BADGE: Record<string, [string, string]> = {
   whatsapp_template: ['WhatsApp', 'WhatsApp'],
   email: ['Email', 'Email'],
@@ -387,6 +400,7 @@ function hideBanner() {
             <NuxtLink :to="`/automations/${r.id}`" class="flex min-w-0 flex-1 flex-col gap-1" data-test="rule-link">
               <span class="flex flex-wrap items-center gap-1.5">
                 <strong class="truncate text-[14px] text-ink-900">{{ r.name }}</strong>
+                <UiPill v-if="sendStatus(r)" :tone="ONE_OFF_SEND_TONE[sendStatus(r)!.state]" dot :data-test="`send-status-${sendStatus(r)!.state}`">{{ oneOffSendLabel(sendStatus(r)!, t, timeZone) }}</UiPill>
                 <UiPill v-if="isLeadTrigger(r.trigger_event)" tone="brand" data-test="badge-growth">Growth</UiPill>
                 <UiPill v-for="bdg in badges(r)" :key="bdg" tone="neutral">{{ bdg }}</UiPill>
                 <UiPill v-if="r.is_marketing" tone="warning">{{ t('Marketing', 'Marketing') }}</UiPill>

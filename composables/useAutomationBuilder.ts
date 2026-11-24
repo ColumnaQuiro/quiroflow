@@ -164,6 +164,10 @@ export function useAutomationBuilder() {
 
   const lookup = ref<NameLookup>(emptyLookup())
   const templates = ref<WhatsAppTemplate[]>([])
+  // Meta has them but has not approved them: just created, back in review
+  // after an edit, rejected or paused. Not offered to pick, but a step that
+  // already sends one is told it is waiting, not that it does not exist.
+  const templatesInReview = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
   // With their blocks: a branch can ask about an answer, and offers the
   // questions of the form it is about.
@@ -196,7 +200,7 @@ export function useAutomationBuilder() {
     return ((JSON.parse(original.value) as Draft).steps.find((s) => s.id === id) ?? null)
   }
 
-  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length ? (templates.value as never) : null))
+  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length || templatesInReview.value.length ? ([...templates.value, ...templatesInReview.value] as never) : null))
 
   // ------------------------------------------------------------ undo
   const history = ref<string[]>([])
@@ -238,6 +242,22 @@ export function useAutomationBuilder() {
     original.value = snapshot()
     lastState = original.value
     history.value = []
+  }
+
+  /**
+   * The on/off switch, flipped on an automation already saved: what is saved,
+   * not an edit. The baseline and the undo history take the same value, so it
+   * neither shows "Unsaved changes" nor comes back with Undo -- and any edit
+   * made meanwhile stays an edit.
+   */
+  function markEnabled(value: boolean) {
+    const withIt = (state: string) => (state ? JSON.stringify({ ...JSON.parse(state), enabled: value }) : state)
+    restoring = true
+    draft.value.enabled = value
+    original.value = withIt(original.value)
+    lastState = withIt(lastState)
+    history.value = history.value.map(withIt)
+    nextTick(() => (restoring = false))
   }
 
   // ------------------------------------------------------------ loading
@@ -295,8 +315,9 @@ export function useAutomationBuilder() {
 
   async function loadTemplates() {
     try {
-      const res = await useStaffFetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
+      const res = await useStaffFetch<{ templates: WhatsAppTemplate[]; inReview?: WhatsAppTemplate[] }>('/api/whatsapp/templates')
       templates.value = res.templates
+      templatesInReview.value = res.inReview ?? []
       templatesError.value = ''
       lookup.value = { ...lookup.value, templates: res.templates }
     } catch (e) {
@@ -556,6 +577,7 @@ export function useAutomationBuilder() {
     delayNowWaits,
     lookup,
     templates,
+    templatesInReview,
     templatesError,
     docTemplates,
     leadQuestions,
@@ -581,6 +603,7 @@ export function useAutomationBuilder() {
     setTrigger,
     save,
     discard,
+    markEnabled,
   }
 }
 

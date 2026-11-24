@@ -5,7 +5,8 @@ import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
 import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
 import { isValidQuietHours } from '~/utils/automationTiming'
-import { withAtom } from '~/utils/automationTree'
+import { findProblems, withAtom, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { STEP_COLUMNS } from '~/server/utils/automationRules'
 
 // The Automations list: every rule on the account, what its steps are, and
 // what it has done in the last 30 days.
@@ -41,6 +42,30 @@ export default defineEventHandler(async (event) => {
   }
   const createdAt = new Map((rules ?? []).map((r) => [r.id, r.created_at]))
 
+  // Why a paused automation cannot be switched on, so its switch says so
+  // rather than refusing after the click: the same checks saving runs
+  // (findProblems), minus the two that need another trip -- the WhatsApp
+  // templates (Meta) and whether a named list still exists. Those still
+  // refuse on the switch itself (enabled.post.ts). Only the paused ones,
+  // and their full steps read only for them: an email step carries its HTML.
+  const pausedIds = (rules ?? []).filter((r) => !r.enabled).map((r) => r.id)
+  const blockers = new Map<string, Problem['message'][]>()
+  if (pausedIds.length) {
+    const { data: full } = await supabase.from('automation_actions').select(STEP_COLUMNS).eq('account_id', accountId).in('rule_id', pausedIds)
+    const fullByRule = new Map<string, DraftStep[]>()
+    for (const s of (full ?? []) as unknown as (DraftStep & { rule_id: string })[]) {
+      const step = { ...s, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null }
+      const list = fullByRule.get(s.rule_id)
+      if (list) list.push(step)
+      else fullByRule.set(s.rule_id, [step])
+    }
+    for (const r of rules ?? []) {
+      if (r.enabled) continue
+      const found = findProblems(withAtom(r) as unknown as DraftRule, fullByRule.get(r.id) ?? [], null)
+      if (found.length) blockers.set(r.id, found.map((p) => p.message))
+    }
+  }
+
   return {
     rules: (rules ?? []).map((r) => {
       const ruleSteps = byRule.get(r.id) ?? []
@@ -49,6 +74,7 @@ export default defineEventHandler(async (event) => {
         // The atom, and the "only if" filters without the old trigger settings.
         ...withAtom(rest),
         stepCount: ruleSteps.length,
+        blockers: blockers.get(r.id) ?? [],
         stepTypes: [...new Set(ruleSteps.map((s) => s.action_type))],
         hasConditions: ruleSteps.some((s) => s.action_type === 'branch' || s.action_type === 'wait_until'),
         // The same test as the engine's ruleNeedsRun: whether people stay

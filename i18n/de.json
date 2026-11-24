@@ -1573,7 +1573,8 @@
   "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ausgelassen: {0} Zahlungen oder Rechnungen im Testmodus und {1} in einer anderen Währung als Euro.",
   "{0} payments or invoices name no contact and are left out.": "{0} Zahlungen oder Rechnungen nennen keinen Kontakt und werden ausgelassen.",
   "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} Rechnungen und Zahlungen gehören zu nicht importierten Patienten: Führen Sie zuerst Patienten aus oder wählen Sie „Alle“.",
-  "Pick a date: {0}": "Datum wählen: {0}"
+  "Pick a date: {0}": "Datum wählen: {0}",
+  "{0} used-up bonos ({1}) have no number of sessions in Quirocitas: they come in closed, as 1 session of 1.": "{0} aufgebrauchte Bonos ({1}) haben in Quirocitas keine Sitzungsanzahl: Sie werden geschlossen importiert, als 1 von 1 Sitzung."
  },
  "s": {
   " (half day)": " (halber Tag)",

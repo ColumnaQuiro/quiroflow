@@ -46,6 +46,11 @@ export interface BlockView {
   id: string
   name: string
   shortName: string
+  /** patients.first_name and last_name (both surnames), trimmed: week view
+   *  prints more of the name from them where a block has the room. Absent,
+   *  it keeps the short name. */
+  firstName?: string
+  lastName?: string
   stage: AppointmentStage
   /** "17:36", for "Llegó 17:36". */
   arrivedAt: string | null
@@ -138,6 +143,9 @@ const ladder = computed(() =>
     badgeText: props.view.practitioner ? props.view.practitioner.initials || '?' : undefined,
     pillText: pillText.value,
     nameText: props.density === 'week' ? props.view.shortName : props.view.name,
+    firstName: props.view.firstName,
+    lastName: props.view.lastName,
+    redFlag: !!props.view.redFlags,
     owesText: owesText.value,
     bonoText: bonoText.value,
   }),
@@ -225,7 +233,7 @@ const ariaLabel = computed(() =>
     :class="[
       boxClass,
       week ? 'rounded-[6px]' : 'rounded-ctl',
-      ladder.compact ? (week ? 'justify-center px-1 py-0.5' : 'justify-center px-2') : week ? 'gap-px px-[5px] py-1' : 'gap-[3px] px-[9px] py-1.5',
+      ladder.compact ? (week ? 'justify-center px-1 py-0.5' : 'justify-center px-2') : week ? (ladder.tight ? 'justify-center gap-px px-[5px] py-px' : 'gap-px px-[5px] py-1') : 'gap-[3px] px-[9px] py-1.5',
       selected ? 'ring-2 ring-brand ring-offset-2 ring-offset-brand-tint' : '',
       dim ? 'opacity-[.28]' : '',
     ]"
@@ -244,15 +252,16 @@ const ariaLabel = computed(() =>
         :class="view.stage === 'completed' || struck ? 'opacity-70' : ''"
       />
       <span
-        class="min-w-0 shrink truncate font-semibold leading-[1.2]"
+        class="min-w-0 shrink truncate font-semibold"
         :class="[
+          ladder.tight ? 'leading-[1.15]' : 'leading-[1.2]',
           week ? 'text-[11px]' : 'text-[13px]',
           view.stage === 'completed' ? 'text-ink-muted' : 'text-ink-900',
           struck ? 'line-through' : '',
           privacy ? 'select-none blur-sm' : '',
         ]"
         data-cy="appt-block-name"
-      >{{ ladder.shortName ? view.shortName : view.name }}</span>
+      >{{ ladder.nameLines?.[0] ?? ladder.fullerName ?? (ladder.shortName ? view.shortName : view.name) }}</span>
       <span
         v-if="ladder.marker"
         class="inline-flex shrink-0"
@@ -292,7 +301,15 @@ const ariaLabel = computed(() =>
       <span v-if="ladder.owes === 'inline'" class="shrink-0 whitespace-nowrap rounded-[5px] border border-danger-border bg-danger-bg px-1.5 py-0.5 text-[11px] font-bold text-danger-text" data-cy="appt-block-owes">{{ owesText }}</span>
     </div>
 
-    <div v-if="ladder.meta !== 'none' || ladder.owes === 'meta' || ladder.badge === 'meta'" class="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-muted" :class="ladder.wrap ? 'flex-wrap' : ''">
+    <!-- Week view's narrow columns: the surnames under the first name. -->
+    <span
+      v-if="ladder.nameLines"
+      class="min-w-0 truncate text-[11px] font-semibold"
+      :class="[ladder.tight ? 'leading-[1.15]' : 'leading-[1.2]', view.stage === 'completed' ? 'text-ink-muted' : 'text-ink-900', struck ? 'line-through' : '', privacy ? 'select-none blur-sm' : '']"
+      data-cy="appt-block-surname"
+    >{{ ladder.nameLines[1] }}</span>
+
+    <div v-if="ladder.meta !== 'none' || ladder.owes === 'meta' || ladder.badge === 'meta'" class="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-muted" :class="[ladder.wrap ? 'flex-wrap' : '', ladder.tight ? 'leading-none' : '']">
       <CalendarPractitionerBadge
         v-if="ladder.badge === 'meta' && view.practitioner"
         :initials="view.practitioner.initials"

@@ -161,6 +161,9 @@ export function useAutomationBuilder() {
   // What is stored, as of the last load or save (utils/automationVersion.ts):
   // sent with every save so one made elsewhere in between is not overwritten.
   const version = ref<string | null>(null)
+  // When a group send went out (segment_last_run_at): a one-off send with it
+  // set never goes again, whatever its date now says.
+  const lastRunAt = ref<string | null>(null)
 
   const stats = ref<{ rule: RuleTotals | null; steps: Record<string, RuleStepStats> }>({ rule: null, steps: {} })
   const canReadWhatsApp = ref(true)
@@ -169,6 +172,10 @@ export function useAutomationBuilder() {
 
   const lookup = ref<NameLookup>(emptyLookup())
   const templates = ref<WhatsAppTemplate[]>([])
+  // Meta has them but has not approved them: just created, back in review
+  // after an edit, rejected or paused. Not offered to pick, but a step that
+  // already sends one is told it is waiting, not that it does not exist.
+  const templatesInReview = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
   // With their blocks: a branch can ask about an answer, and offers the
   // questions of the form it is about.
@@ -201,7 +208,7 @@ export function useAutomationBuilder() {
     return ((JSON.parse(original.value) as Draft).steps.find((s) => s.id === id) ?? null)
   }
 
-  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length ? (templates.value as never) : null))
+  const problems = computed<Problem[]>(() => findProblems(draft.value.rule, draft.value.steps, templatesError.value ? null : templates.value.length || templatesInReview.value.length ? ([...templates.value, ...templatesInReview.value] as never) : null))
 
   // ------------------------------------------------------------ undo
   const history = ref<string[]>([])
@@ -316,8 +323,9 @@ export function useAutomationBuilder() {
 
   async function loadTemplates() {
     try {
-      const res = await useStaffFetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
+      const res = await useStaffFetch<{ templates: WhatsAppTemplate[]; inReview?: WhatsAppTemplate[] }>('/api/whatsapp/templates')
       templates.value = res.templates
+      templatesInReview.value = res.inReview ?? []
       templatesError.value = ''
       lookup.value = { ...lookup.value, templates: res.templates }
     } catch (e) {
@@ -338,7 +346,7 @@ export function useAutomationBuilder() {
     if (!UUID.test(id)) return null
     const accountId = store.accountId ?? ''
     const [rule, steps] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, segment_last_run_at, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
       supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', id).eq('account_id', accountId).order('position'),
     ])
     if (rule.error) throw rule.error
@@ -404,7 +412,10 @@ export function useAutomationBuilder() {
         else missing.value = true
         return
       }
-      const { enabled, created_at, ...rest } = tree.rule
+      const { enabled, created_at, segment_last_run_at, ...rest } = tree.rule
+      // Not part of the version (the engine sets it, not an edit): kept current
+      // even by a re-read that leaves the draft alone.
+      lastRunAt.value = segment_last_run_at ?? null
       // A re-read that finds what is already on screen leaves it alone (and
       // the undo history with it). One that finds unsaved edits on screen
       // leaves them too: they are this person's, and if the automation did
@@ -449,6 +460,7 @@ export function useAutomationBuilder() {
   function initNew(from?: { rule: DraftRule; steps: DraftStep[] }, opts: { unsaved?: boolean } = {}) {
     ruleId.value = null
     version.value = null
+    lastRunAt.value = null
     draft.value = from ? { rule: clone(from.rule), enabled: false, steps: normalizePositions(clone(from.steps)) } : { rule: { ...blankRule(), name: t('New automation', 'Nueva automatización') }, enabled: false, steps: [] }
     stats.value = { rule: null, steps: {} }
     hasGrowth.value = store.hasGrowthAddon
@@ -606,12 +618,14 @@ export function useAutomationBuilder() {
     savedAt,
     createdAt,
     version,
+    lastRunAt,
     stats,
     canReadWhatsApp,
     hasGrowth,
     delayNowWaits,
     lookup,
     templates,
+    templatesInReview,
     templatesError,
     docTemplates,
     leadQuestions,

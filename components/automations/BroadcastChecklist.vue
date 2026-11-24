@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { stepTitle, triggerDetail, filtersText } from '~/utils/automationDescribe'
+import { stepTitle, filtersText } from '~/utils/automationDescribe'
+import { ONE_OFF_SEND_TONE, oneOffSendLabel, oneOffSendStatus } from '~/utils/oneOffSendStatus'
 import { asAudienceRef, asPatientIds } from '~/utils/automationAudience'
 import { chainOf } from '~/utils/automationTree'
 import { HINT } from '~/utils/automationUi'
 
 // A one-off send (a group checked once) as a checklist rather than a canvas:
-// who, the message, when, and what counts as it working. Each "Change" opens
-// the same drawer the canvas would, so there is one way to edit each part;
-// "Show as a flow" is there for a send that grows follow-up steps.
+// who, the message, when, and what counts as it working. Who and the message
+// open the same drawer the canvas would, so there is one way to edit each;
+// when is chosen in place, with the drawer's own control. "Show as a flow"
+// is there for a send that grows follow-up steps.
 
 const emit = defineEmits<{ flow: [] }>()
 const b = useBuilder()
@@ -53,8 +55,18 @@ function addMessage(type: 'email' | 'whatsapp_template') {
   if (added) b.selection.value = { kind: 'step', id: added.id }
 }
 
-// ---- when
-const when = computed(() => triggerDetail(t, rule.value, b.lookup.value))
+// ---- when: on switching on, or on a date (AutomationsOnceSchedule, the
+// trigger drawer's own control), and where it stands -- the status the Sends
+// list shows. A new, unsaved send has none yet.
+const { timeZone } = useAccountTimeZone()
+const sendStatus = computed(() => {
+  if (b.isNew.value) return null
+  const live = b.stats.value.rule
+  return oneOffSendStatus(
+    { enabled: b.draft.value.enabled, segment: rule.value.segment, segment_last_run_at: b.lastRunAt.value },
+    { running: (live?.inside ?? 0) - (live?.failedRuns ?? 0) },
+  )
+})
 
 // ---- goal: bookings within two weeks of entering (automationStats.bookedAfter)
 const totals = computed(() => b.stats.value.rule)
@@ -109,8 +121,12 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
       <section :class="CARD" data-test="broadcast-when">
         <span :class="[TICK, 'bg-success-bg text-success-text']" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></span>
         <strong class="text-[14px] text-ink-900">{{ t('When', 'Cuándo') }}</strong>
-        <UiBtn size="sm" variant="ghost" @click="b.selection.value = { kind: 'trigger' }">{{ t('Change', 'Cambiar') }}</UiBtn>
-        <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ segment?.schedule?.starts_at ? when : t('As soon as it is switched on, within the sending hours in Settings.', 'En cuanto se active, dentro del horario de envío de Ajustes.') }}</span>
+        <UiPill v-if="sendStatus" :tone="ONE_OFF_SEND_TONE[sendStatus.state]" dot :data-test="`broadcast-status-${sendStatus.state}`">{{ oneOffSendLabel(sendStatus, t, timeZone) }}</UiPill>
+        <span v-else />
+        <div class="col-start-2 col-end-4 mt-1 flex flex-col gap-2">
+          <AutomationsOnceSchedule test-prefix="broadcast-when" />
+          <span :class="HINT">{{ t('Messages still keep to the sending hours in Settings.', 'Los mensajes respetan igualmente el horario de envío de Ajustes.') }}</span>
+        </div>
       </section>
 
       <!-- Goal -->

@@ -177,20 +177,41 @@ describe('Editing a WhatsApp template', () => {
     })
   })
 
-  it("says Meta's reason when it refuses the change, and edits nothing outside the account", () => {
+  it("says in plain words why Meta refuses the change, and what stops sending meanwhile; edits nothing outside the account", () => {
     cy.seedStaffAccount().then((account: Account) => {
       cy.task('db:startMetaGraphStub', {
-        templates: [{ name: 'recordatorio', language: 'es', status: 'APPROVED', body: 'Hola {{1}}, te esperamos mañana en consulta.', examples: ['Ana'] }],
+        templates: [
+          { name: 'recordatorio', language: 'es', status: 'APPROVED', body: 'Hola {{1}}, te esperamos mañana en consulta.', examples: ['Ana'] },
+          { name: 'oferta_pendiente', language: 'es', status: 'PENDING', body: 'Hola {{1}}, tienes un 10% en tu próximo bono.', examples: ['Ana'] },
+        ],
         refuseTemplate: 'You can only edit an approved template once every 24 hours.',
       })
       connect(account)
+      cy.intercept('PATCH', '**/rest/v1/accounts*').as('saveAccount')
       cy.login(account.email, account.password)
       cy.visit('/settings/whatsapp')
+      cy.get('[data-cy="whatsapp-settings"][data-ready="true"]')
 
-      editApproved('recordatorio')
+      // One Meta is still reviewing says why it has no Edit, rather than only Delete.
+      cy.get('[data-cy="whatsapp-templates-in-review"] [data-template-row="oferta_pendiente"]').within(() => {
+        cy.get('[data-cy="whatsapp-template-edit-blocked"]').should('contain', 'still reviewing')
+        cy.get('[data-cy="whatsapp-template-edit"]').should('not.exist')
+        cy.get('[data-cy="whatsapp-template-delete"]').should('exist')
+      })
+
+      // Chosen for the reminder: Edit sits beside it, and the dialog names the
+      // reminder as something that may stop while Meta reviews the change.
+      cy.get('[data-template-use="reminder"] [data-cy="whatsapp-template-select"] option').contains('recordatorio').then((option) => {
+        cy.get('[data-template-use="reminder"] [data-cy="whatsapp-template-select"]').select(String(option.val()))
+      })
+      cy.get('[data-cy="whatsapp-save"]').click()
+      cy.wait('@saveAccount')
+      cy.get('[data-template-use="reminder"] [data-cy="whatsapp-use-edit"]').click()
       cy.get('[data-cy="template-dialog"]').within(() => {
+        cy.get('[data-cy="template-edit-uses"]').should('contain', 'Appointment reminder')
         cy.get('[data-cy="template-submit"]').click()
-        cy.get('[data-cy="template-error"]').should('contain', 'Meta did not accept the change').and('contain', 'once every 24 hours')
+        // Meta's own English is not what the front desk reads.
+        cy.get('[data-cy="template-error"]').should('contain', 'once a day and up to 10 times a month').and('not.contain', 'once every 24 hours')
       })
       cy.get('[data-cy="template-dialog"]').should('exist')
 

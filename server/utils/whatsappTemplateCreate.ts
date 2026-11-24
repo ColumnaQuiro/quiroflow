@@ -13,6 +13,7 @@ import {
   templateEditBlocker,
   templateHeaderKind,
   templateMediaPath,
+  type Bilingual,
   type TemplateDraft,
 } from '~/utils/whatsappTemplateDraft'
 import { saveTemplateSendValues } from '~/server/utils/whatsappTemplateFill'
@@ -20,6 +21,7 @@ import { withMessagingTokens } from '~/server/utils/accountSecrets'
 import { templateMediaFile } from '~/server/utils/whatsappTemplateMedia'
 import { isOwnForm, saveTemplateForm } from '~/server/utils/whatsappTemplateForms'
 import type { WhatsAppTemplateSummary } from '~/server/utils/whatsappTemplates'
+import { templateMetaProblem } from '~/utils/whatsappTemplateMetaError'
 
 // Submits a new message template to Meta for review, from inside QuiroFlow.
 //
@@ -40,6 +42,8 @@ export class TemplateCreateError extends Error {
   constructor(
     message: string,
     public statusCode: number,
+    /** The same refusal in words a clinic can act on, both languages, for the dialog to show instead of Meta's English. */
+    public problem: Bilingual | null = null,
   ) {
     super(message)
   }
@@ -199,7 +203,7 @@ export async function createWhatsAppTemplate(supabase: any, accountId: string, d
       })
     } catch (err: any) {
       const detail = metaMessage(err)
-      throw new TemplateCreateError(detail ? `Meta refused the template: ${detail}` : 'Could not reach WhatsApp to submit the template.', 502)
+      throw new TemplateCreateError(detail ? `Meta refused the template: ${detail}` : 'Could not reach WhatsApp to submit the template.', 502, templateMetaProblem(err?.data?.error))
     }
     // After Meta accepted it: a refused template leaves no row behind. Always
     // written, so a template made again under a name an earlier one had does
@@ -243,7 +247,7 @@ export async function editWhatsAppTemplate(
   origin: string,
 ): Promise<EditedTemplate> {
   const blocked = templateEditBlocker(existing)
-  if (blocked) throw new TemplateCreateError(blocked.en, 409)
+  if (blocked) throw new TemplateCreateError(blocked.en, 409, blocked)
   // Neither can change at Meta; the draft carries what the template has.
   draft = { ...draft, name: existing.name, language: existing.language }
   await checkForm(supabase, accountId, draft)
@@ -284,7 +288,7 @@ export async function editWhatsAppTemplate(
       })
     } catch (err: any) {
       const detail = metaMessage(err)
-      throw new TemplateCreateError(detail ? `Meta refused the change: ${detail}` : 'Could not reach WhatsApp to submit the change.', 502)
+      throw new TemplateCreateError(detail ? `Meta refused the change: ${detail}` : 'Could not reach WhatsApp to submit the change.', 502, templateMetaProblem(err?.data?.error))
     }
   } catch (err) {
     await kept?.forget()

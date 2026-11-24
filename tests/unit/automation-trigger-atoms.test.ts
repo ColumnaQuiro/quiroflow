@@ -20,7 +20,7 @@ import {
 // filters it was saved with (including the shapes production holds on
 // 24 Nov 2026), and what it is as an atom. The backfill
 // (automation_trigger_from_legacy in 20261124120000_automation_trigger_atoms.sql)
-// is the same mapping; scripts/verify-trigger-atoms.mjs checks the two agree.
+// is the same mapping; scripts/verify-trigger-atoms.ts checks the two agree.
 
 type Case = { event: string; filters: Record<string, unknown>; atom: Partial<TriggerAtom>; implied?: Record<string, unknown> }
 

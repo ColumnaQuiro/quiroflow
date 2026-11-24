@@ -18,7 +18,7 @@
 --
 -- automation_trigger_from_legacy() is the same mapping as atomFromLegacy();
 -- tests/unit/automation-trigger-atoms.test.ts pins the TypeScript one, and
--- scripts/verify-trigger-atoms.mjs runs both over the same rules.
+-- scripts/verify-trigger-atoms.ts runs both over the same rules.
 --
 -- What an old trigger decided by itself is now an "only if" filter the
 -- backfill adds (appointment_statuses, reminder_unanswered, visit_number,

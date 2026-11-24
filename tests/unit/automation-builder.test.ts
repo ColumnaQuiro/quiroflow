@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findProblems, normalizePositions, structuralErrors, successorInNewTree, type DraftRule, type DraftStep } from '../../utils/automationTree'
+import { findProblems, normalizePositions, structuralErrors, successorInNewTree, type DraftRule, type DraftStep, withAtom } from '../../utils/automationTree'
 import { layoutTree } from '../../utils/automationLayout'
 import { FILTERS, defaultFilterValue, filtersInUse } from '../../utils/automationCatalog'
 
@@ -17,7 +17,9 @@ const step = (action_type: string, position: number, parent: DraftStep | null = 
   branch,
   position,
 })
-const rule = (extra: Partial<DraftRule> = {}): DraftRule => ({
+// Written with the old trigger name; withAtom gives it the atom it is.
+const rule = (extra: Partial<DraftRule> = {}): DraftRule =>
+  withAtom({
   name: 'Regla',
   trigger_event: 'appointment.completed',
   filters: {},
@@ -28,7 +30,7 @@ const rule = (extra: Partial<DraftRule> = {}): DraftRule => ({
   quiet_hours: null,
   segment: null,
   ...extra,
-})
+  }) as DraftRule
 
 describe('structural errors', () => {
   it('accepts a tree with two paths', () => {

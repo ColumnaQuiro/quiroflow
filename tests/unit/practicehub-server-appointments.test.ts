@@ -421,7 +421,7 @@ describe('planAppointmentTypes', () => {
 
   it('says when the copy has no prices to bring', async () => {
     const p = await planAppointmentTypes(ctxFor(clinicTables()), snapshot([{ id: 9500, appointment_type_id: 10 }]))
-    expect(p.warnings.some((w) => w.includes('2.0 API'))).to.equal(true)
+    expect(p.warnings.some((w) => w.includes('PracticeHub API'))).to.equal(true)
   })
 })
 

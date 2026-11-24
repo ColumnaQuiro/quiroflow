@@ -6,6 +6,7 @@ import { blockLadder, type BlockDensity } from '../../utils/appointmentBlock'
 import { pendingFormsLabel, type AppointmentStage } from '../../utils/appointmentStage'
 import { STAGE_TONE, STAGE_TONE_CLASS } from '../../composables/useAppointmentStage'
 import type { VisitBono } from '../../utils/visitPayment'
+import { calendarBlockColors } from '../../utils/calendarPalette'
 
 // One appointment on the grid, drawn the way the canvas's BlockAnatomy board
 // lays it out:
@@ -14,9 +15,10 @@ import type { VisitBono } from '../../utils/visitPayment'
 //   (unconfirmed, booked online, wants to move), solid once it is.
 // - The PILL says where the patient is in the visit.
 // - RED means money, and nothing else.
-// - The appointment type's colour is a tint and a small square, never a bar,
-//   and is mixed against the surface token so the same type reads correctly
-//   in dark mode.
+// - The appointment type's colour fills a live visit as chosen, never a bar;
+//   the text on it turns white or near-black (calendarBlockColors). Unfirm,
+//   done and struck visits keep their own looks, with the colour as an edge
+//   or a faint tint.
 //
 // What fits is decided by utils/appointmentBlock (blockLadder) from the size
 // this block actually renders at, which it measures itself.
@@ -154,6 +156,11 @@ const ladder = computed(() =>
 const week = computed(() => props.density === 'week')
 const typeColor = computed(() => props.view.typeColor || 'rgb(var(--color-brand))')
 const mix = (pct: number) => `color-mix(in srgb, ${typeColor.value} ${pct}%, rgb(var(--color-surface)))`
+// A live visit is painted in its type's colour exactly as the clinic chose it
+// (Settings > Appointment types): a deeper pick is a deeper block, a softer
+// pick a softer one, and the text turns white or near-black to stay readable.
+// The calendar does not tone it down; how loud it is is the clinic's call.
+const solid = computed(() => calendarBlockColors(props.view.typeColor))
 // A finished visit keeps its type's colour, greyed and a shade deeper than
 // a live one (the .appt-block-done rule below). Dropping the colour entirely
 // made a morning of done visits one grey slab, with no telling an Ajuste
@@ -165,7 +172,7 @@ const boxStyle = computed(() => {
   switch (props.view.stage) {
     case 'pending':
     case 'online':
-      return { background: 'rgb(var(--color-surface))', border: `1.5px dashed ${mix(80)}` }
+      return { background: 'rgb(var(--color-surface))', border: `1.5px dashed ${solid.value?.fill ?? mix(80)}` }
     case 'completed':
       return { '--appt-type': typeColor.value }
     case 'resched':
@@ -173,9 +180,13 @@ const boxStyle = computed(() => {
     case 'cancelled':
       return {}
     default:
+      if (solid.value) {
+        return { background: solid.value.fill, border: `1px solid ${solid.value.border}`, '--appt-on': solid.value.text, '--appt-on-muted': solid.value.textMuted }
+      }
       return { background: mix(16), border: `1px solid ${mix(50)}` }
   }
 })
+const isSolid = computed(() => !!solid.value && !['pending', 'online', 'completed', 'resched', 'noshow', 'cancelled'].includes(props.view.stage))
 const boxClass = computed(() => {
   switch (props.view.stage) {
     case 'completed':
@@ -232,6 +243,7 @@ const ariaLabel = computed(() =>
     class="relative flex h-full w-full flex-col overflow-hidden text-ink-900 transition-opacity"
     :class="[
       boxClass,
+      isSolid ? 'appt-solid' : '',
       week ? 'rounded-[6px]' : 'rounded-ctl',
       ladder.compact ? (week ? 'justify-center px-1 py-0.5' : 'justify-center px-2') : week ? (ladder.tight ? 'justify-center gap-px px-[5px] py-px' : 'gap-px px-[5px] py-1') : 'gap-[3px] px-[9px] py-1.5',
       selected ? 'ring-2 ring-brand ring-offset-2 ring-offset-brand-tint' : '',
@@ -317,7 +329,7 @@ const ariaLabel = computed(() =>
         :name="view.practitioner.name"
         :class="view.stage === 'completed' || struck ? 'opacity-70' : ''"
       />
-      <span class="h-2 w-2 shrink-0 rounded-[2px]" :class="view.stage === 'completed' ? 'opacity-70' : ''" :style="{ background: typeColor }" />
+      <span v-if="!isSolid" class="h-2 w-2 shrink-0 rounded-[2px]" :class="view.stage === 'completed' ? 'opacity-70' : ''" :style="{ background: typeColor }" />
       <span v-if="ladder.meta !== 'none'" class="min-w-0 shrink truncate">{{ metaText }}</span>
       <span class="grow" />
       <span v-if="ladder.moved" class="inline-flex shrink-0 items-center gap-0.5" :title="t('Moved before', 'Movida antes')" data-cy="appt-block-moved">
@@ -355,6 +367,36 @@ const ariaLabel = computed(() =>
 }
 [data-theme='dark'] .appt-block-done {
   --appt-done-base: var(--color-surface-page);
+}
+
+/* Live and filled with the type's colour: the block's own text follows the
+   fill (--appt-on, set from calendarBlockColors), and the little markers that
+   have no background of their own sit on a surface chip so they keep their
+   meaning -- a red flag stays red on a red-orange block. */
+.appt-solid {
+  color: rgb(var(--appt-on));
+}
+.appt-solid [data-cy='appt-block-name'],
+.appt-solid [data-cy='appt-block-surname'] {
+  color: rgb(var(--appt-on));
+}
+.appt-solid [data-cy='appt-block-lead-time'],
+.appt-solid .text-ink-muted {
+  color: rgb(var(--appt-on-muted));
+}
+.appt-solid [data-cy='appt-block-red-flags'],
+.appt-solid [data-cy='appt-block-forms'],
+.appt-solid [data-cy='appt-block-no-next'],
+.appt-solid [data-cy='appt-block-note'],
+.appt-solid [data-cy='appt-block-marker']:not([data-mismatch]) {
+  background: rgb(var(--color-surface));
+  border-radius: 9999px;
+  padding: 1px;
+}
+/* "Confirmada" is muted text with no chip of its own. */
+.appt-solid [data-cy='appt-block-stage']:not([class*='bg-']) {
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-ink-700));
 }
 
 /* A no-show keeps its slot visible but reads as "did not happen": stripes in

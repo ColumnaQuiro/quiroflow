@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
 import { fullWeek, hoursProblems, normalizeHours } from '~/utils/clinicHours'
-import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
 import { formatEur } from '~/utils/billing'
 import { absenceKindLabel } from '~/utils/staffShifts'
 
@@ -478,23 +477,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
               </div>
               <fieldset class="flex flex-col gap-2">
                 <legend class="mb-2 text-[13px] font-semibold text-ink-700">{{ t('Colour on the calendar', 'Color en el calendario') }}</legend>
-                <div class="flex flex-wrap gap-2" role="radiogroup">
-                  <button
-                    v-for="c in CALENDAR_PALETTE"
-                    :key="c.hex"
-                    type="button"
-                    role="radio"
-                    :aria-checked="form.color.toLowerCase() === c.hex"
-                    :aria-label="t(c.en, c.es)"
-                    :title="t(c.en, c.es)"
-                    data-cy="member-color"
-                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-full border-2"
-                    :class="form.color.toLowerCase() === c.hex ? 'border-ink-900' : 'border-transparent'"
-                    @click="form.color = c.hex"
-                  >
-                    <span class="h-8 w-8 rounded-full" :style="{ backgroundColor: c.hex }" />
-                  </button>
-                </div>
+                <CalendarColorPicker v-model="form.color" :label="t('Colour on the calendar', 'Color en el calendario')" swatch-cy="member-color" />
               </fieldset>
             </section>
 

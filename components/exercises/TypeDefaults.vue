@@ -18,11 +18,11 @@ const schedules = useExerciseSchedules({ accountId: () => store.accountId })
 const supabase = useSupabaseClient()
 
 const selectedId = ref<string | null>(null)
-const rules = ref<{ id: string; name: string; trigger_event: string; filters: Record<string, unknown> | null; enabled: boolean }[]>([])
+const rules = ref<{ id: string; name: string; trigger: { moment?: string; options?: Record<string, unknown> } | null; filters: Record<string, unknown> | null; enabled: boolean }[]>([])
 onMounted(async () => {
   await Promise.all([types.load(), programs.load(), schedules.load()])
   if (!selectedId.value) selectedId.value = types.active.value[0]?.id ?? null
-  const { data } = await supabase.from('automation_rules').select('id, name, trigger_event, filters, enabled').in('trigger_event', ['patient.type_added', 'patient.type_removed'])
+  const { data } = await supabase.from('automation_rules').select('id, name, trigger, filters, enabled').eq('trigger->>subject', 'patient').in('trigger->>moment', ['type_added', 'type_removed'])
   rules.value = (data ?? []) as typeof rules.value
 })
 const selected = computed(() => types.types.value.find((x) => x.id === selectedId.value) ?? null)
@@ -166,7 +166,7 @@ const membersLabel = (n: number) => (n === 1 ? t('1 patient', '1 paciente') : t(
                 <span class="h-1.5 w-1.5 rounded-full" :class="r.enabled ? 'bg-success-accent' : 'bg-ink-faint3'" aria-hidden="true" />
                 <NuxtLink v-if="can('communication_config')" :to="`/automations/${r.id}`" class="text-brand-text hover:underline">{{ r.name }}</NuxtLink>
                 <span v-else>{{ r.name }}</span>
-                <span class="text-[11.5px] text-ink-faint">{{ r.trigger_event === 'patient.type_added' ? t('when given', 'al ponerlo') : t('when taken away', 'al quitarlo') }}</span>
+                <span class="text-[11.5px] text-ink-faint">{{ r.trigger?.moment === 'type_added' ? t('when given', 'al ponerlo') : t('when taken away', 'al quitarlo') }}</span>
               </li>
             </ul>
             <NuxtLink v-if="can('communication_config')" to="/automations" class="self-start text-[12.5px] font-semibold text-brand-text hover:underline">{{ t('Go to Automations', 'Ir a Automatizaciones') }}</NuxtLink>

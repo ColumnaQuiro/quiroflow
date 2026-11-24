@@ -78,7 +78,8 @@ describe('Automation canvas', () => {
     cy.visit('/automations/new')
     cy.get('[data-test="node-trigger"]').should('be.visible')
     cy.get('[data-test="automation-name"]').clear().type('Seguimiento VIP')
-    cy.get('[data-test="trigger-select"]').should('have.value', 'appointment.completed')
+    cy.get('[data-test="trigger-subject"]').should('have.value', 'appointment')
+    cy.get('[data-test="trigger-moment"]').should('have.value', 'completed')
 
     add('[data-test="insert-root-root-0"]', 'whatsapp_template')
     cy.get('[data-test="template-select"]').select('primera::es')

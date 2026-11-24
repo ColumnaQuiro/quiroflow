@@ -24,7 +24,7 @@ const dirty = computed(() => !!saved.value && (saved.value.auto !== auto.value |
 onMounted(async () => {
   const [{ data: account }, { count }] = await Promise.all([
     supabase.from('accounts').select('waitlist_auto_offer, waitlist_offer_mode').eq('id', store.accountId!).maybeSingle(),
-    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger_event', 'waitlist.slot_offered').eq('enabled', true),
+    supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('trigger->>subject', 'waitlist').eq('trigger->>moment', 'slot_offered').eq('enabled', true),
   ])
   auto.value = !!account?.waitlist_auto_offer
   mode.value = account?.waitlist_offer_mode === 'all_at_once' ? 'all_at_once' : 'one_by_one'

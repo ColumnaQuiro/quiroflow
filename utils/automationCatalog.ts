@@ -703,6 +703,19 @@ export type FilterKey =
   | 'care_plan_overdue'
   | 'clinics'
   | 'audience'
+  | 'appointment_status'
+  | 'appointment_source'
+  | 'appointment_location'
+  | 'reminder_unanswered'
+  | 'visit_number'
+  | 'not_rated'
+  | 'invoice_unpaid'
+  | 'patient_types'
+  | 'age'
+  | 'contact'
+  | 'marketing_consent'
+  | 'care_plan_state'
+  | 'bono_active'
 
 export interface FilterDef {
   key: FilterKey
@@ -711,6 +724,8 @@ export interface FilterDef {
   appointment?: boolean
   /** Not offered on a segment (its patients have no appointment). */
   segment?: boolean
+  /** Only for these moments, as "subject.moment". */
+  moments?: string[]
 }
 
 // Exactly the filter set evaluateAutomationFilters understands (plus the two
@@ -739,6 +754,21 @@ export const FILTERS: FilterDef[] = [
   // In (or not in) one of the clinic's lists or segments. Not offered on a
   // group send, which is aimed at a list or segment directly instead.
   { key: 'audience', label: ['In a list or segment', 'En una lista o segmento'] },
+  // Added with the trigger atoms (utils/automationTrigger.ts): what the old
+  // timed triggers decided by themselves, and more of what a clinic asks.
+  { key: 'appointment_status', label: ['Appointment status', 'Estado de la cita'], appointment: true },
+  { key: 'appointment_source', label: ['Booked by', 'Reservada por'], appointment: true },
+  { key: 'appointment_location', label: ["Appointment's location", 'Sede de la cita'], appointment: true },
+  { key: 'reminder_unanswered', label: ['Has not answered a reminder', 'No ha contestado a un recordatorio'], appointment: true },
+  { key: 'visit_number', label: ['Visit number', 'Número de visita'], appointment: true },
+  { key: 'not_rated', label: ['Not asked to rate recently', 'Sin valoración pedida hace poco'] },
+  { key: 'invoice_unpaid', label: ['Still unpaid', 'Sin pagar'], moments: ['invoice.issued'] },
+  { key: 'patient_types', label: ['Patient type', 'Tipo de paciente'] },
+  { key: 'age', label: ['Age', 'Edad'] },
+  { key: 'contact', label: ['Contact details', 'Datos de contacto'] },
+  { key: 'marketing_consent', label: ['Marketing consent', 'Consentimiento de marketing'] },
+  { key: 'care_plan_state', label: ['Care plan', 'Plan de cuidado'] },
+  { key: 'bono_active', label: ['Bono with sessions left', 'Bono con sesiones'] },
 ]
 
 /** Which filters a rule's stored filters object currently uses, in display order. */
@@ -767,6 +797,19 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   if (f.membership_active === true || (Array.isArray(f.membership_ids) && f.membership_ids.length)) used.push('membership')
   if (Array.isArray(f.clinic_ids)) used.push('clinics')
   if (Array.isArray(f.in_audiences) || Array.isArray(f.not_in_audiences)) used.push('audience')
+  if (Array.isArray(f.appointment_statuses)) used.push('appointment_status')
+  if (Array.isArray(f.appointment_sources)) used.push('appointment_source')
+  if (Array.isArray(f.appointment_clinic_ids)) used.push('appointment_location')
+  if (f.reminder_unanswered === true) used.push('reminder_unanswered')
+  if (f.visit_number && typeof f.visit_number === 'object') used.push('visit_number')
+  if (has('not_rated_days')) used.push('not_rated')
+  if (f.invoice_unpaid === true) used.push('invoice_unpaid')
+  if (Array.isArray(f.patient_type_ids)) used.push('patient_types')
+  if (has('age_min') || has('age_max')) used.push('age')
+  if (has('has_email') || has('has_phone')) used.push('contact')
+  if (Array.isArray(f.marketing_channels_any)) used.push('marketing_consent')
+  if (has('care_plan_state')) used.push('care_plan_state')
+  if (has('bono_active')) used.push('bono_active')
   return used
 }
 
@@ -788,6 +831,19 @@ export const FILTER_KEYS: Record<FilterKey, string[]> = {
   membership: ['membership_active', 'membership_ids'],
   clinics: ['clinic_ids'],
   audience: ['in_audiences', 'not_in_audiences'],
+  appointment_status: ['appointment_statuses'],
+  appointment_source: ['appointment_sources'],
+  appointment_location: ['appointment_clinic_ids'],
+  reminder_unanswered: ['reminder_unanswered'],
+  visit_number: ['visit_number'],
+  not_rated: ['not_rated_days'],
+  invoice_unpaid: ['invoice_unpaid'],
+  patient_types: ['patient_type_ids'],
+  age: ['age_min', 'age_max'],
+  contact: ['has_email', 'has_phone'],
+  marketing_consent: ['marketing_channels_any'],
+  care_plan_state: ['care_plan_state'],
+  bono_active: ['bono_active'],
 }
 
 /** A filter's starting value when added. */
@@ -825,8 +881,51 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
       return { clinic_ids: [] }
     case 'audience':
       return { in_audiences: [] }
+    case 'appointment_status':
+      return { appointment_statuses: ['completed'] }
+    case 'appointment_source':
+      return { appointment_sources: ['online'] }
+    case 'appointment_location':
+      return { appointment_clinic_ids: [] }
+    case 'reminder_unanswered':
+      return { reminder_unanswered: true }
+    case 'visit_number':
+      return { visit_number: { first: true, every: 0 } }
+    case 'not_rated':
+      return { not_rated_days: 30 }
+    case 'invoice_unpaid':
+      return { invoice_unpaid: true }
+    case 'patient_types':
+      return { patient_type_ids: [] }
+    case 'age':
+      return { age_min: 18 }
+    case 'contact':
+      return { has_email: true }
+    case 'marketing_consent':
+      return { marketing_channels_any: ['whatsapp'] }
+    case 'care_plan_state':
+      return { care_plan_state: 'active' }
+    case 'bono_active':
+      return { bono_active: true }
   }
 }
+
+/** The appointment statuses the status filter offers. */
+export const APPOINTMENT_STATUS_OPTIONS: { value: string; label: Pair }[] = [
+  { value: 'booked', label: ['Booked', 'Reservada'] },
+  { value: 'completed', label: ['Attended', 'Completada'] },
+  { value: 'no_show', label: ['Did not attend', 'No asistió'] },
+  { value: 'cancelled', label: ['Cancelled', 'Cancelada'] },
+]
+
+/** Who booked the appointment (appointments.source). */
+export const APPOINTMENT_SOURCE_OPTIONS: { value: string; label: Pair }[] = [
+  { value: 'staff', label: ['The team', 'Recepción'] },
+  { value: 'online', label: ['Online or in the app', 'Online o en la app'] },
+  { value: 'receptionist', label: ['The AI receptionist', 'La recepcionista IA'] },
+  { value: 'waitlist', label: ['The waitlist', 'La lista de espera'] },
+  { value: 'api', label: ['The public API', 'La API pública'] },
+]
 
 // ------------------------------------------------------------------ WhatsApp variables
 

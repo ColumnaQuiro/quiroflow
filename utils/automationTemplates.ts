@@ -16,7 +16,7 @@
 
 import { CAMPAIGN_TEMPLATES, fillClinicPlaceholders } from './campaignTemplates'
 import { DEFAULT_QUIET_HOURS, type Pair } from './automationCatalog'
-import { newStepId, type DraftRule, type DraftStep } from './automationTree'
+import { newStepId, withAtom, type DraftRule, type DraftStep } from './automationTree'
 
 export interface TemplateStep {
   type: string
@@ -70,17 +70,21 @@ const recallSegment = (filters: Record<string, unknown>, reentryDays: number, da
 const recallEmail = (subject: string, intro: string) =>
   email(subject, `<p>Hola {{first_name}},</p><p>${intro}</p><p>Si te apetece volver, responde a este correo o reserva aquí: <a href="{{booking_link}}">{{booking_link}}</a></p><p>{{practitioner_first_name}} · {{clinic_name}}</p>`)
 const email = (subject: string, body: string): TemplateStep => ({ type: 'email', config: { subject, body } })
-const baseRule = (trigger: string, extra: Partial<DraftRule> = {}): Omit<DraftRule, 'name'> => ({
-  trigger_event: trigger,
-  filters: {},
-  is_marketing: false,
-  dry_run: false,
-  entry_mode: 'every_time',
-  exit_on: [],
-  quiet_hours: null,
-  segment: null,
-  ...extra,
-})
+// Written with the old trigger names, which read well here; withAtom turns
+// each into its atom (utils/automationTrigger.ts) and the filters that make it
+// behave as that trigger did.
+const baseRule = (trigger: string, extra: Partial<DraftRule> = {}): Omit<DraftRule, 'name'> =>
+  withAtom({
+    trigger_event: trigger,
+    filters: {},
+    is_marketing: false,
+    dry_run: false,
+    entry_mode: 'every_time' as const,
+    exit_on: [],
+    quiet_hours: null,
+    segment: null,
+    ...extra,
+  })
 
 export const FLOW_TEMPLATES: AutomationTemplate[] = [
   {

@@ -288,22 +288,27 @@ function pick(f: Filters, keys: string[]): Filters {
   return out
 }
 
-const SAME_EVENT: Record<string, [TriggerSubject, string]> = {
-  'appointment.booked': ['appointment', 'booked'],
-  'appointment.rescheduled': ['appointment', 'rescheduled'],
-  'appointment.cancelled': ['appointment', 'cancelled'],
-  'appointment.no_show': ['appointment', 'no_show'],
-  'appointment.checked_in': ['appointment', 'checked_in'],
-  'appointment.completed': ['appointment', 'completed'],
-  'invoice.paid': ['invoice', 'paid'],
-  'patient.referred': ['referral', 'referred'],
-  'membership.new_member': ['membership', 'started'],
-  'membership.removed': ['membership', 'cancelled'],
-  'membership.payment_processed': ['membership', 'charged'],
-  'waitlist.slot_offered': ['waitlist', 'slot_offered'],
-  'lead.created': ['lead', 'created'],
-  segment: ['group', 'scheduled'],
+// Written "subject.moment" (not as pairs, which the interface-string scanner
+// would take for English/Spanish).
+const SAME_EVENT_KEYS: Record<string, string> = {
+  'appointment.booked': 'appointment.booked',
+  'appointment.rescheduled': 'appointment.rescheduled',
+  'appointment.cancelled': 'appointment.cancelled',
+  'appointment.no_show': 'appointment.no_show',
+  'appointment.checked_in': 'appointment.checked_in',
+  'appointment.completed': 'appointment.completed',
+  'invoice.paid': 'invoice.paid',
+  'patient.referred': 'referral.referred',
+  'membership.new_member': 'membership.started',
+  'membership.removed': 'membership.cancelled',
+  'membership.payment_processed': 'membership.charged',
+  'waitlist.slot_offered': 'waitlist.slot_offered',
+  'lead.created': 'lead.created',
+  segment: 'group.scheduled',
 }
+const SAME_EVENT: Record<string, [TriggerSubject, string]> = Object.fromEntries(
+  Object.entries(SAME_EVENT_KEYS).map(([event, key]) => [event, key.split('.') as [TriggerSubject, string]]),
+)
 
 const OPTION_KEYS: Record<string, [TriggerSubject, string, string[]]> = {
   'patient.tag_added': ['patient', 'tag_added', ['trigger_tag']],
@@ -410,7 +415,8 @@ export function legacyFromAtom(a: TriggerAtom, filters: Filters = {}): { trigger
   const o = a.options ?? {}
   const statuses = Array.isArray(filters.appointment_statuses) ? (filters.appointment_statuses as string[]) : []
   const only = (s: string) => statuses.length === 1 && statuses[0] === s
-  const whole = (n: number) => Number.isInteger(n) && n >= 1
+  // The old triggers read any positive number (Number(x) > 0); the editor only writes whole ones.
+  const positiveAmount = (n: number) => Number.isFinite(n) && n > 0
   if (a.send_to === 'referrer') {
     return a.subject === 'appointment' && a.moment === 'completed' && !t ? { trigger_event: 'referral.visit_completed', settings: {} } : null
   }
@@ -421,7 +427,7 @@ export function legacyFromAtom(a: TriggerAtom, filters: Filters = {}): { trigger
     if (a.subject === s && a.moment === m && !t) return { trigger_event: event, settings: pick(o, keys) }
   }
   if (a.subject === 'appointment' && a.moment === 'start' && t) {
-    if (t.direction === 'before' && t.unit === 'hours' && !t.at && whole(t.amount) && only('booked')) {
+    if (t.direction === 'before' && t.unit === 'hours' && !t.at && positiveAmount(t.amount) && only('booked')) {
       return { trigger_event: 'appointment.hours_before', settings: { hours_before: t.amount, skip_if_answered: filters.reminder_unanswered === true } }
     }
     if (t.direction === 'before' && t.unit === 'days' && t.amount === 0 && t.at === '09:00' && only('booked') && filters.reminder_unanswered !== true) {
@@ -429,7 +435,7 @@ export function legacyFromAtom(a: TriggerAtom, filters: Filters = {}): { trigger
     }
     return null
   }
-  if (a.subject === 'appointment' && a.moment === 'end' && t && t.direction === 'after' && only('completed') && whole(t.amount)) {
+  if (a.subject === 'appointment' && a.moment === 'end' && t && t.direction === 'after' && only('completed') && positiveAmount(t.amount)) {
     const vn = plain(filters.visit_number) ? filters.visit_number : null
     if (t.unit === 'days' && !vn && filters.not_rated_days === undefined) return { trigger_event: 'appointment.review_request', settings: { days_after: t.amount } }
     if (t.unit === 'hours' && vn && filters.not_rated_days === 30) {
@@ -437,7 +443,7 @@ export function legacyFromAtom(a: TriggerAtom, filters: Filters = {}): { trigger
     }
     return null
   }
-  if (a.subject === 'invoice' && a.moment === 'issued' && t && t.unit === 'days' && t.direction === 'after' && whole(t.amount) && filters.invoice_unpaid === true) {
+  if (a.subject === 'invoice' && a.moment === 'issued' && t && t.unit === 'days' && t.direction === 'after' && positiveAmount(t.amount) && filters.invoice_unpaid === true) {
     return { trigger_event: 'invoice.overdue', settings: { days_overdue: t.amount } }
   }
   if (a.subject === 'patient' && a.moment === 'birthday' && t && t.amount === 0) return { trigger_event: 'patient.birthday', settings: {} }
@@ -448,7 +454,9 @@ export function legacyFromAtom(a: TriggerAtom, filters: Filters = {}): { trigger
     if (a.subject === 'membership' && a.moment === 'started') return { trigger_event: 'patient.date', settings: { trigger_date: 'membership_start', trigger_days: days } }
     if (a.subject === 'care_plan' && a.moment === 'started') return { trigger_event: 'patient.date', settings: { trigger_date: 'care_plan_start', trigger_days: days } }
   }
-  if (days !== null && a.subject === 'patient' && a.moment === 'date_field' && typeof o.trigger_date === 'string') {
+  if (days !== null && a.subject === 'patient' && a.moment === 'date_field') {
+    // No field chosen yet: the old trigger with no date, which never fired either.
+    if (typeof o.trigger_date !== 'string') return { trigger_event: 'patient.date', settings: { trigger_days: days } }
     return { trigger_event: 'patient.date', settings: { trigger_date: o.trigger_date, trigger_days: days, ...(t!.direction === 'before' ? { trigger_when: 'before' } : {}) } }
   }
   return null
@@ -536,4 +544,37 @@ export function defaultFiltersFor(a: TriggerAtom): Filters {
   if (a.subject === 'appointment' && a.moment === 'end') return { appointment_statuses: ['completed'] }
   if (a.subject === 'invoice' && a.moment === 'issued' && a.timing) return { invoice_unpaid: true }
   return {}
+}
+
+// ------------------------------------------------------------------ filters the atoms added
+
+/** "Visit number": the first completed visit, and/or every Nth (0 = never). */
+export interface VisitNumberFilter {
+  first?: boolean
+  every?: number
+}
+
+/** Whether the patient's nth completed visit (this one included) is one the filter asks about. */
+export function visitNumberMatches(vn: VisitNumberFilter, n: number): boolean {
+  const every = Math.max(0, Math.round(Number(vn.every) || 0))
+  return (vn.first !== false && n === 1) || (every > 0 && n > 0 && n % every === 0)
+}
+
+/** Whole years between a YYYY-MM-DD date of birth and a day. Null without a usable date. */
+export function ageInYears(dateOfBirth: string | null | undefined, on: Date): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateOfBirth ?? ''))
+  if (!m) return null
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  let age = on.getUTCFullYear() - y
+  if (on.getUTCMonth() + 1 < mo || (on.getUTCMonth() + 1 === mo && on.getUTCDate() < d)) age -= 1
+  return age
+}
+
+/** Age between two edges, either of which may be absent. Nobody without a date of birth matches an age. */
+export function ageMatches(dateOfBirth: string | null | undefined, min: number | undefined, max: number | undefined, on: Date): boolean {
+  const age = ageInYears(dateOfBirth, on)
+  if (age === null) return false
+  if (typeof min === 'number' && age < min) return false
+  if (typeof max === 'number' && age > max) return false
+  return true
 }

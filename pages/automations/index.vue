@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { isLeadTrigger, triggerTitle } from '~/utils/automationCatalog'
+import { isLeadAtom, type TriggerAtom } from '~/utils/automationTrigger'
+import { atomTitle } from '~/utils/automationTriggerText'
 import { isBroadcastRule } from '~/composables/useAutomationBuilder'
 import { emptyLookup, filtersText, triggerDetail, type NameLookup } from '~/utils/automationDescribe'
 import type { Problem } from '~/utils/automationTree'
@@ -23,6 +24,7 @@ interface Row {
   id: string
   name: string
   trigger_event: string
+  trigger: TriggerAtom
   enabled: boolean
   filters: Record<string, any>
   is_marketing: boolean
@@ -138,7 +140,7 @@ const viewCounts = computed(() => ({ sends: rules.value.filter((r) => isBroadcas
 type Filter = 'all' | 'active' | 'paused' | 'patients' | 'leads' | 'failed'
 const filter = ref<Filter>('all')
 const search = ref('')
-const lockedLead = (r: Row) => isLeadTrigger(r.trigger_event) && !hasGrowth.value
+const lockedLead = (r: Row) => isLeadAtom(r.trigger) && !hasGrowth.value
 const isActive = (r: Row) => r.enabled && !lockedLead(r)
 // Counted within the open tab, as the list below is.
 const counts = computed(() => {
@@ -163,10 +165,10 @@ const visible = computed(() => {
     if (!inView(r)) return false
     if (filter.value === 'active' && !isActive(r)) return false
     if (filter.value === 'paused' && isActive(r)) return false
-    if (filter.value === 'patients' && isLeadTrigger(r.trigger_event)) return false
-    if (filter.value === 'leads' && !isLeadTrigger(r.trigger_event)) return false
+    if (filter.value === 'patients' && isLeadAtom(r.trigger)) return false
+    if (filter.value === 'leads' && !isLeadAtom(r.trigger)) return false
     if (filter.value === 'failed' && !(stats.value[r.id]?.failedRuns ?? 0)) return false
-    if (q && !normalizeSearchTerm(`${r.name} ${triggerTitle(t, r.trigger_event, r.filters)}`).includes(q)) return false
+    if (q && !normalizeSearchTerm(`${r.name} ${atomTitle(t, r.trigger, r.filters)}`).includes(q)) return false
     return true
   })
 })
@@ -183,8 +185,8 @@ function badges(r: Row) {
   return r.stepTypes.filter((s) => TYPE_BADGE[s]).map((s) => t(TYPE_BADGE[s]![0], TYPE_BADGE[s]![1]))
 }
 function subline(r: Row) {
-  const parts = [triggerTitle(t, r.trigger_event, r.filters)]
-  const detail = r.trigger_event === 'segment' ? triggerDetail(t, { ...r, segment: r.segment } as never, lookup.value) : filtersText(t, r.filters, lookup.value)
+  const parts = [atomTitle(t, r.trigger, r.filters)]
+  const detail = r.trigger.subject === 'group' ? triggerDetail(t, { ...r, segment: r.segment } as never, lookup.value) : filtersText(t, r.filters, lookup.value)
   if (detail) parts[0] += ` · ${detail}`
   parts.push(t(`${r.stepCount} step${r.stepCount === 1 ? '' : 's'}`, `${r.stepCount} paso${r.stepCount === 1 ? '' : 's'}`))
   if (r.hasConditions) parts.push(t('with conditions', 'con condiciones'))
@@ -194,7 +196,7 @@ const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / 
 function third(r: Row): { value: string; label: string } {
   const s = stats.value[r.id]
   if (r.dry_run) return { value: String((s?.whatsapp.recorded ?? 0) + (s?.email.recorded ?? 0)), label: t('recorded (test)', 'registrados (prueba)') }
-  if (isLeadTrigger(r.trigger_event)) return { value: String(s?.converted ?? 0), label: t('became patients', 'reservaron') }
+  if (isLeadAtom(r.trigger)) return { value: String(s?.converted ?? 0), label: t('became patients', 'reservaron') }
   // A send's goal: who booked within two weeks of receiving it.
   if (isBroadcastRule(r) && s?.entered) return { value: `${s.booked} / ${s.entered}`, label: t('booked', 'reservaron') }
   if (canReadWhatsApp.value && s?.whatsapp.sent) return { value: pct(s.whatsapp.read, s.whatsapp.sent), label: t('read', 'leídos') }
@@ -223,7 +225,7 @@ function blockedReason(r: Row) {
 function toggle(r: Row) {
   if (toggling.value || blockedReason(r)) return
   if (r.enabled) return setEnabled(r, false)
-  if (r.trigger_event === 'segment') segmentFor.value = r
+  if (r.trigger.subject === 'group') segmentFor.value = r
   else activateFor.value = r
 }
 async function setEnabled(r: Row, on: boolean) {
@@ -407,7 +409,7 @@ function hideBanner() {
             <NuxtLink :to="`/automations/${r.id}`" class="flex min-w-0 flex-1 flex-col gap-1" data-test="rule-link">
               <span class="flex flex-wrap items-center gap-1.5">
                 <strong class="truncate text-[14px] text-ink-900">{{ r.name }}</strong>
-                <UiPill v-if="isLeadTrigger(r.trigger_event)" tone="brand" data-test="badge-growth">Growth</UiPill>
+                <UiPill v-if="isLeadAtom(r.trigger)" tone="brand" data-test="badge-growth">Growth</UiPill>
                 <UiPill v-for="bdg in badges(r)" :key="bdg" tone="neutral">{{ bdg }}</UiPill>
                 <UiPill v-if="r.is_marketing" tone="warning">{{ t('Marketing', 'Marketing') }}</UiPill>
                 <UiPill v-if="r.dry_run" tone="info" data-test="badge-test">{{ t('Test mode', 'Modo prueba') }}</UiPill>
@@ -449,7 +451,7 @@ function hideBanner() {
     <AutomationsActivateDialog
       v-if="activateFor"
       :name="activateFor.name"
-      :trigger-event="activateFor.trigger_event"
+      :trigger="activateFor.trigger"
       :filters="activateFor.filters"
       :lookup="lookup"
       :is-marketing="activateFor.is_marketing"

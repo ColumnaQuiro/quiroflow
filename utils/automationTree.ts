@@ -8,7 +8,7 @@
 import { asEmailDesign, emailDesignHasContent } from './emailDesign'
 import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from './automationAudience'
 import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, stepDef, waitEventDef, type Pair } from './automationCatalog'
-import { asTriggerAtom, atomFromLegacy, atomProblem, isGroupAtom, isLeadAtom, onlyIfFilters, type TriggerAtom } from './automationTrigger'
+import { asTriggerAtom, atomFromLegacy, atomProblem, isGroupAtom, isLeadAtom, onlyIfFilters, ruleAtom, type TriggerAtom } from './automationTrigger'
 
 export interface DraftStep {
   id: string
@@ -202,7 +202,8 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   const add = (stepId: string | null, en: string, es: string) => problems.push({ stepId, message: [en, es] })
 
   if (!rule.name.trim()) add(null, 'The automation has no name.', 'La automatización no tiene nombre.')
-  const atom = rule.trigger
+  // The stored atom, or -- for a rule written with an old trigger name -- the atom it is.
+  const atom = ruleAtom(rule)
   const atomIssue = atomProblem(atom)
   if (atomIssue) add(null, atomIssue[0], atomIssue[1])
   if (steps.length === 0) add(null, 'Add at least one step.', 'Añade al menos un paso.')
@@ -326,8 +327,8 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
             add(step.id, 'An if/else step has a condition with no question.', 'Un paso «Si / si no» tiene una condición sin pregunta.')
             continue
           }
-          if (def.subject === 'lead' && !isLeadAtom(rule.trigger)) add(step.id, `"${def.label[0]}" only applies to leads.`, `«${def.label[1]}» solo aplica a leads.`)
-          if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadAtom(rule.trigger)) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
+          if (def.subject === 'lead' && !isLeadAtom(ruleAtom(rule))) add(step.id, `"${def.label[0]}" only applies to leads.`, `«${def.label[1]}» solo aplica a leads.`)
+          if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadAtom(ruleAtom(rule))) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
           if (def.value === 'doc_answer' && !(isUuid(cond.doc_template_id) && cond.doc_field_id)) {
             add(step.id, 'A form-answer condition does not say which form and question.', 'Una condición de respuesta no dice qué formulario y qué pregunta.')
           }
@@ -346,11 +347,11 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         break
       case 'patient_type':
         if (!c.type_id) add(step.id, 'A patient type step has no type.', 'Un paso de tipo de paciente no tiene tipo.')
-        if (isLeadAtom(rule.trigger)) add(step.id, 'Patient types apply to patients, not leads.', 'Los tipos de paciente son de pacientes, no de leads.')
+        if (isLeadAtom(ruleAtom(rule))) add(step.id, 'Patient types apply to patients, not leads.', 'Los tipos de paciente son de pacientes, no de leads.')
         break
       case 'assign_exercises':
         if (!c.program_id && !c.schedule_id) add(step.id, 'An assign-exercises step has no programme or schedule.', 'Un paso de asignar ejercicios no tiene programa ni pauta.')
-        if (isLeadAtom(rule.trigger)) add(step.id, 'Exercises are for patients, not leads.', 'Los ejercicios son de pacientes, no de leads.')
+        if (isLeadAtom(ruleAtom(rule))) add(step.id, 'Exercises are for patients, not leads.', 'Los ejercicios son de pacientes, no de leads.')
         break
       case 'notify': {
         const to = c.to ?? {}

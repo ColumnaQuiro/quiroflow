@@ -34,26 +34,26 @@ describe('structural errors', () => {
   it('accepts a tree with two paths', () => {
     const b = step('branch', 0)
     const steps = [b, step('tag', 0, b, 'yes', { tag: 'x' }), step('delay', 0, b, 'no', { delay_minutes: 60 })]
-    expect(structuralErrors(steps, 'appointment.completed')).toEqual([])
+    expect(structuralErrors(steps, false)).toEqual([])
   })
 
   it('refuses a chain under a step with no such outlet, and a parent from elsewhere', () => {
     const d = step('delay', 0)
     const orphan: DraftStep = { ...step('tag', 0), parent_id: id(), branch: 'yes' }
     const wrongOutlet = step('tag', 0, d, 'yes')
-    const errors = structuralErrors([d, orphan, wrongOutlet], 'appointment.completed')
+    const errors = structuralErrors([d, orphan, wrongOutlet], false)
     expect(errors.some((e) => e.includes('not in this automation'))).toBe(true)
     expect(errors.some((e) => e.includes('does not have'))).toBe(true)
   })
 
   it('refuses a step after a fork in its own chain, which the engine could never reach', () => {
     const b = step('branch', 0)
-    expect(structuralErrors([b, step('tag', 1)], 'appointment.completed').join(' ')).toContain('Nothing can follow')
+    expect(structuralErrors([b, step('tag', 1)], false).join(' ')).toContain('Nothing can follow')
   })
 
   it('refuses lead steps outside a lead automation', () => {
-    expect(structuralErrors([step('lead_stage', 0, null, null, { stage: 'contacted' })], 'appointment.completed').join(' ')).toContain('lead automation')
-    expect(structuralErrors([step('lead_stage', 0, null, null, { stage: 'contacted' })], 'lead.created')).toEqual([])
+    expect(structuralErrors([step('lead_stage', 0, null, null, { stage: 'contacted' })], false).join(' ')).toContain('lead automation')
+    expect(structuralErrors([step('lead_stage', 0, null, null, { stage: 'contacted' })], true)).toEqual([])
   })
 })
 

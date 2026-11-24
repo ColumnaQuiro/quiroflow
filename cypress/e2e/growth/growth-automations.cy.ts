@@ -250,7 +250,7 @@ describe('Automations list', () => {
 
           // A patient automation offers no lead steps at all.
           cy.visit(`/automations/${patientRule.id}`)
-          cy.get('[data-test="trigger-select"]').find('option[value="lead.created"]').should('be.disabled')
+          cy.get('[data-test="trigger-subject"]').find('option[value="lead"]').should('be.disabled')
           cy.get('[data-test="insert-root-root-0"]').click({ force: true })
           cy.get('[data-test="add-step-menu"]').should('be.visible')
           cy.get('[data-test="add-step-lead_stage"]').should('not.exist')

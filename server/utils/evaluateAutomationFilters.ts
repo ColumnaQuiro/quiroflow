@@ -1,4 +1,6 @@
 import { carePlanOverdueDays } from '~/utils/carePlanOverdue'
+import { ageMatches, visitNumberMatches, type VisitNumberFilter } from '~/utils/automationTrigger'
+import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
 import { asAudienceRefs, audienceFilterMatches, needsAudienceMembership, needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
 // automation_rules.filters narrows a trigger down to a specific audience --
 // e.g. "only when the appointment type is Primera visita, and only the
@@ -84,6 +86,43 @@ export interface AutomationFilters {
   // same membership a group send and "enters a list or segment" read.
   in_audiences?: { kind: 'list' | 'segment'; id: string }[]
   not_in_audiences?: { kind: 'list' | 'segment'; id: string }[]
+
+  // ---- Added with the trigger atoms (utils/automationTrigger.ts): what the
+  // old timed triggers decided by themselves, and more the clinic can ask.
+  //
+  // The appointment's status, any of these. A timed appointment moment's
+  // check reads it in its query too (server/utils/automationAtomRules.ts).
+  appointment_statuses?: string[]
+  // How it was booked (appointments.source), any of these.
+  appointment_sources?: string[]
+  // The appointment's own location (appointments.clinic_id), any of these.
+  appointment_clinic_ids?: string[]
+  // The patient has not answered a reminder for this appointment --
+  // confirmed, or asked to change it -- so a second reminder does not ask
+  // again (the old skip_if_answered). Only an answer to a REMINDER counts.
+  reminder_unanswered?: boolean
+  // Which completed visit of theirs this appointment is: the first, and/or
+  // every Nth (the old satisfaction trigger's rule).
+  visit_number?: VisitNumberFilter
+  // Not asked "how did we do?" in this many days, by any automation.
+  not_rated_days?: number
+  // Read by the invoice check (server/utils/invoiceReminders.ts): only
+  // invoices still owed. Not a patient filter.
+  invoice_unpaid?: boolean
+  // Has any of these patient types.
+  patient_type_ids?: string[]
+  // Age in whole years, from the date of birth; either edge may be absent.
+  age_min?: number
+  age_max?: number
+  // Has an email address / a phone number on the record.
+  has_email?: boolean
+  has_phone?: boolean
+  // Accepted marketing by any of these channels (patients.marketing_channels).
+  marketing_channels_any?: string[]
+  // Their latest care plan: running, finished (every visit of it had), or none at all.
+  care_plan_state?: 'active' | 'finished' | 'none'
+  // Has (or has not) a bono with sessions left.
+  bono_active?: boolean
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
@@ -221,6 +260,8 @@ export async function ruleFiltersMatch(
     if (!audienceFilterMatches(filters, memberOf)) return false
   }
 
+  if (!(await atomFiltersMatch(supabase, patientId, filters, appointmentId))) return false
+
   if (filters.membership_active || filters.membership_ids?.length) {
     let query = supabase.from('patient_memberships').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'active')
     if (filters.membership_ids?.length) query = query.in('membership_id', filters.membership_ids)
@@ -228,5 +269,88 @@ export async function ruleFiltersMatch(
     if ((count ?? 0) === 0) return false
   }
 
+  return true
+}
+
+/** The filters the trigger atoms added. */
+async function atomFiltersMatch(supabase: any, patientId: string, filters: AutomationFilters, appointmentId?: string): Promise<boolean> {
+  const statuses = filters.appointment_statuses?.length ? filters.appointment_statuses : null
+  const sources = filters.appointment_sources?.length ? filters.appointment_sources : null
+  const apptClinics = filters.appointment_clinic_ids?.length ? filters.appointment_clinic_ids : null
+  const vn = filters.visit_number && typeof filters.visit_number === 'object' ? filters.visit_number : null
+  if (statuses || sources || apptClinics || filters.reminder_unanswered === true || vn) {
+    // Each of these is about the appointment the moment brought: without one, nothing matches.
+    if (!appointmentId) return false
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('id, status, source, clinic_id, starts_at, confirmation_status, confirmation_answered_at, reminder_sent_at')
+      .eq('id', appointmentId)
+      .maybeSingle()
+    if (!appt) return false
+    if (statuses && !statuses.includes(appt.status)) return false
+    if (sources && !sources.includes(appt.source ?? 'staff')) return false
+    if (apptClinics && (!appt.clinic_id || !apptClinics.includes(appt.clinic_id))) return false
+    if (filters.reminder_unanswered === true && (await answeredAReminderAmong(supabase, [appt])).has(appt.id)) return false
+    if (vn) {
+      // Their completed visits up to and including this one.
+      const { count } = await supabase
+        .from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('patient_id', patientId)
+        .eq('status', 'completed')
+        .is('deleted_at', null)
+        .lte('starts_at', appt.starts_at)
+      if (!visitNumberMatches(vn, count ?? 0)) return false
+    }
+  }
+
+  if (typeof filters.not_rated_days === 'number' && filters.not_rated_days > 0) {
+    const since = new Date(Date.now() - filters.not_rated_days * 86_400_000).toISOString()
+    const { data: asked, error } = await supabase.from('satisfaction_surveys').select('id, appointments!inner(patient_id)').eq('appointments.patient_id', patientId).gte('sent_at', since).limit(1)
+    // Unreadable is not "never asked": a person is not asked twice on a guess.
+    if (error || (asked ?? []).length > 0) return false
+  }
+
+  if (filters.patient_type_ids?.length) {
+    const { data: types } = await supabase.from('patient_type_members').select('type_id').eq('patient_id', patientId)
+    if (!((types ?? []) as { type_id: string }[]).some((x) => filters.patient_type_ids!.includes(x.type_id))) return false
+  }
+
+  const needsPatient =
+    filters.age_min !== undefined || filters.age_max !== undefined || filters.has_email !== undefined || filters.has_phone !== undefined || !!filters.marketing_channels_any?.length
+  if (needsPatient) {
+    const { data: p } = await supabase.from('patients').select('date_of_birth, email, phone, marketing_channels').eq('id', patientId).maybeSingle()
+    if (!p) return false
+    if ((filters.age_min !== undefined || filters.age_max !== undefined) && !ageMatches(p.date_of_birth, filters.age_min, filters.age_max, new Date())) return false
+    if (filters.has_email !== undefined && !!String(p.email ?? '').trim() !== filters.has_email) return false
+    if (filters.has_phone !== undefined && !!String(p.phone ?? '').trim() !== filters.has_phone) return false
+    if (filters.marketing_channels_any?.length && !((p.marketing_channels ?? []) as string[]).some((c) => filters.marketing_channels_any!.includes(c))) return false
+  }
+
+  if (filters.care_plan_state) {
+    const { data: plan } = await supabase.from('care_plans').select('started_at, total_visits').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    let state: 'active' | 'finished' | 'none' = 'none'
+    if (plan) {
+      state = 'active'
+      if (plan.total_visits) {
+        // Finished: as many completed visits since it started as the plan has.
+        const { count } = await supabase
+          .from('appointments')
+          .select('id', { count: 'exact', head: true })
+          .eq('patient_id', patientId)
+          .is('deleted_at', null)
+          .eq('status', 'completed')
+          .gte('starts_at', `${plan.started_at}T00:00:00Z`)
+        if ((count ?? 0) >= plan.total_visits) state = 'finished'
+      }
+    }
+    if (state !== filters.care_plan_state) return false
+  }
+
+  if (typeof filters.bono_active === 'boolean') {
+    const { data: bonos } = await supabase.from('package_purchases').select('sessions_total, sessions_used, is_closed').eq('patient_id', patientId)
+    const has = ((bonos ?? []) as { sessions_total: number; sessions_used: number; is_closed: boolean | null }[]).some((x) => !x.is_closed && x.sessions_used < x.sessions_total)
+    if (has !== filters.bono_active) return false
+  }
   return true
 }

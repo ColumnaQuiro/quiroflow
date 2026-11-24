@@ -21,7 +21,7 @@ describe('Scheduling a group send', () => {
     cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bea', tags: [tag] })
 
     cy.visit('/automations/new')
-    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="trigger-subject"]').select('group')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-once-scheduled"]').click()
     const day = new Date(Date.now() + 3 * 86_400_000)

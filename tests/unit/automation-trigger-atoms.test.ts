@@ -257,3 +257,26 @@ describe('timing', () => {
     for (const m of TRIGGER_MOMENTS) expect(atomProblem(defaultAtom(m.subject, m.moment)), `${m.subject}.${m.moment}`).toBeNull()
   })
 })
+
+describe('filters the atoms added', () => {
+  it('visit number: the first, every Nth, or both -- as the satisfaction trigger asked', async () => {
+    const { visitNumberMatches } = await import('../../utils/automationTrigger')
+    expect(visitNumberMatches({ first: true, every: 10 }, 1)).toBe(true)
+    expect(visitNumberMatches({ first: true, every: 10 }, 2)).toBe(false)
+    expect(visitNumberMatches({ first: true, every: 10 }, 20)).toBe(true)
+    expect(visitNumberMatches({ first: false, every: 10 }, 1)).toBe(false)
+    expect(visitNumberMatches({ first: false, every: 0 }, 10)).toBe(false)
+    expect(visitNumberMatches({ first: true, every: 0 }, 0)).toBe(false)
+  })
+
+  it('age counts whole years, birthday included', async () => {
+    const { ageInYears, ageMatches } = await import('../../utils/automationTrigger')
+    const on = new Date('2026-11-24T12:00:00Z')
+    expect(ageInYears('2010-11-24', on)).toBe(16)
+    expect(ageInYears('2010-11-25', on)).toBe(15)
+    expect(ageInYears(null, on)).toBeNull()
+    expect(ageMatches('2010-11-25', 16, undefined, on)).toBe(false)
+    expect(ageMatches('1980-01-01', 18, 65, on)).toBe(true)
+    expect(ageMatches(null, undefined, 65, on)).toBe(false)
+  })
+})

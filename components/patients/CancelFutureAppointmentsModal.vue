@@ -60,7 +60,8 @@ onMounted(async () => {
       .from('automation_rules')
       .select('id', { count: 'exact', head: true })
       .eq('account_id', store.accountId!)
-      .eq('trigger_event', 'appointment.cancelled')
+      .eq('trigger->>subject', 'appointment')
+      .eq('trigger->>moment', 'cancelled')
       .eq('enabled', true),
   ])
   appointments.value = (data as unknown as FutureAppointment[] | null) ?? []

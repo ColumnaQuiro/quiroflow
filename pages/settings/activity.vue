@@ -45,6 +45,9 @@ const AREAS = computed(() => [
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
   { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate', 'check_in_portal', 'receptionist_settings', 'email_template', 'care_plan_template'] },
+  // One row per finished import step: the rows an import writes are not
+  // audited one by one (20261124105403_import_writes_skip_row_audit.sql).
+  { key: 'imports', label: t('Imports', 'Importaciones'), types: ['import_job'] },
 ])
 const areaFilter = ref('')
 
@@ -162,7 +165,14 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   third_party_charge: t('Third-party charge', 'Cargo a tercero'),
   third_party_payment: t('Third-party payment', 'Cobro de tercero'),
   third_party_allocation: t('Third-party payment applied', 'Cobro de tercero aplicado'),
+  import_job: t('Import', 'Importación'),
 }))
+
+// "Quirocitas · Citas: 104503" from the row an import step writes.
+function importSummary(snapshot: unknown) {
+  const s = snapshot as { source?: string; step?: string; written?: number }
+  return `${importSourceName(s.source)} · ${importJobStepLabel(s.step ?? '', t, s.source)}: ${s.written ?? 0}`
+}
 
 function actionLabel(action: string) {
   if (action === 'created') return t('created', 'creado')
@@ -327,6 +337,7 @@ function hasDetail(row: AuditRow) {
                       <UiPill :tone="actionTone(row.action)">{{ actionLabel(row.action) }}</UiPill>
                       <span v-if="row.action === 'updated' && row.changes" class="truncate text-ink-muted">{{ Object.keys(row.changes as object).map(fieldName).join(', ') }}</span>
                       <span v-else-if="row.entity_type === 'appointment' && row.action === 'updated'" class="truncate text-ink-muted">{{ row.summary }}</span>
+                      <span v-else-if="row.entity_type === 'import_job' && row.snapshot" class="truncate text-ink-muted">{{ importSummary(row.snapshot) }}</span>
                     </span>
                     <NuxtLink v-if="row.patient_id && row.patient_name" :to="`/patients/${row.patient_id}`" class="shrink-0 truncate text-[13px] font-medium text-brand-text hover:text-brand-hover sm:max-w-[200px]" @click.stop>{{ row.patient_name }}</NuxtLink>
                   </button>

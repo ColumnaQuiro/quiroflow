@@ -702,6 +702,7 @@ export type FilterKey =
   | 'no_whatsapp_sent'
   | 'care_plan_overdue'
   | 'clinics'
+  | 'audience'
 
 export interface FilterDef {
   key: FilterKey
@@ -735,6 +736,9 @@ export const FILTERS: FilterDef[] = [
   { key: 'balance', label: ['Balance', 'Saldo'], segment: true },
   { key: 'membership', label: ['Membership', 'Membresía'], segment: true },
   { key: 'clinics', label: ['Location', 'Sede'], segment: true },
+  // In (or not in) one of the clinic's lists or segments. Not offered on a
+  // group send, which is aimed at a list or segment directly instead.
+  { key: 'audience', label: ['In a list or segment', 'En una lista o segmento'] },
 ]
 
 /** Which filters a rule's stored filters object currently uses, in display order. */
@@ -762,6 +766,7 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   if (f.balance === 'debit' || f.balance === 'credit') used.push('balance')
   if (f.membership_active === true || (Array.isArray(f.membership_ids) && f.membership_ids.length)) used.push('membership')
   if (Array.isArray(f.clinic_ids)) used.push('clinics')
+  if (Array.isArray(f.in_audiences) || Array.isArray(f.not_in_audiences)) used.push('audience')
   return used
 }
 
@@ -782,6 +787,7 @@ export const FILTER_KEYS: Record<FilterKey, string[]> = {
   balance: ['balance'],
   membership: ['membership_active', 'membership_ids'],
   clinics: ['clinic_ids'],
+  audience: ['in_audiences', 'not_in_audiences'],
 }
 
 /** A filter's starting value when added. */
@@ -817,6 +823,8 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
       return { membership_active: true }
     case 'clinics':
       return { clinic_ids: [] }
+    case 'audience':
+      return { in_audiences: [] }
   }
 }
 

@@ -442,6 +442,7 @@ function hideBanner() {
     <AutomationsSegmentActivateDialog
       v-if="segmentFor"
       :filters="segmentFor.segment?.filters ?? {}"
+      :named="segmentFor.segment"
       :is-marketing="segmentFor.is_marketing"
       :schedule="segmentFor.segment?.schedule"
       :daily-limit="segmentFor.segment?.daily_limit ?? null"

@@ -4,6 +4,8 @@
 // return last: an open receipt read before its voided twin dropped the visit
 // off the list as if nothing were owed.
 
+import { chooseFromCalendarMore } from '../../support/calendar'
+
 function todayAt(h: number) {
   const d = new Date()
   d.setHours(h, 0, 0, 0)
@@ -31,7 +33,7 @@ describe('The cash shift, a visit with a voided receipt', () => {
 
       cy.login(account.email, account.password)
       cy.visit('/calendar')
-      cy.contains('button', 'Cash shift').click()
+      chooseFromCalendarMore('cash-shift-open', '[role=dialog]:contains("Cash shift")')
       cy.contains('li', 'Rehecha Caja').should('be.visible')
       cy.contains('li', 'Pagada Caja').should('not.exist')
     })

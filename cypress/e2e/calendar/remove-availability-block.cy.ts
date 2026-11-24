@@ -1,4 +1,4 @@
-import { dateInputValue } from '../../support/calendar'
+import { chooseFromCalendarMore, dateInputValue } from '../../support/calendar'
 
 /**
  * Monday of the current week, in the browser's own timezone.
@@ -31,7 +31,7 @@ describe('Removing an availability block', () => {
 
       const monday = dateInputValue(mondayOfThisWeek())
 
-      cy.contains('button', 'Block time').click()
+      chooseFromCalendarMore('block-time-open', '[role=dialog]:contains("Block time")')
       cy.get('.fixed.inset-0.z-50').within(() => {
         cy.contains('h2', 'Block time').should('be.visible')
         // Practitioner and Room keep their defaults (all practitioners,

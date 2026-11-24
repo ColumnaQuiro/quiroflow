@@ -142,6 +142,12 @@ async function persist(opts: { enabled?: boolean; removedPolicy?: 'move_on' | 't
     // Asked for (switching on): show what is missing. Typed: the status says
     // so, and Review opens it -- not a dialog in the middle of a sentence.
     if (!auto) problems.value = result.problems
+    // Switching on a PAUSED automation was refused, and its edits with it.
+    // Paused, they can be saved as they are: written right after this.
+    if (!auto && !live.value) {
+      autosave.flush()
+      return { ok: false, state: 'held', message: '' }
+    }
     return { ok: false, state: 'held', message: missingMessage() }
   }
   if (!auto) showToast(result.error, 'error')

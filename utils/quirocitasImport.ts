@@ -522,7 +522,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const zone = await clinicZone()
     const patients = await patientIds()
     const { rows } = quirocitasBonoRows(s, zone)
-    const existing = await readAll<{ id: string; external_reference: string; patient_id: string; sessions_used: number; is_closed: boolean; owed_cents: number | null }>('package_purchases', 'id, external_reference, patient_id, sessions_used, is_closed, owed_cents', 'QC-bono-')
+    const existing = await readAll<{ id: string; external_reference: string; patient_id: string; sessions_total: number; sessions_used: number; is_closed: boolean; owed_cents: number | null }>('package_purchases', 'id, external_reference, patient_id, sessions_total, sessions_used, is_closed, owed_cents', 'QC-bono-')
     const byRef = new Map(existing.map((p) => [p.external_reference, p]))
     const ready = rows.filter((b) => patients.has(b.ownerRef))
     const inserts = ready.filter((b) => !byRef.has(b.ref))
@@ -544,7 +544,10 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     // a bono Quirocitas still has open, and whose last sessions were used
     // here, stays closed.
     const closed = (b: (typeof rows)[number], here: (typeof existing)[number]) => b.isClosed || here.sessions_used >= b.sessionsTotal
-    const updates = ready.filter((b) => byRef.has(b.ref)).map((b) => ({ b, here: byRef.get(b.ref)! })).filter(({ b, here }) => b.sessionsUsed > here.sessions_used || closed(b, here) !== here.is_closed || b.owedCents !== (here.owed_cents ?? 0))
+    // The total only rises too: a bono first imported as 1 of 1 because its
+    // count could not be read ("26 Aj Total", its type since retired) takes
+    // the real count once a later version can read it from the name.
+    const updates = ready.filter((b) => byRef.has(b.ref)).map((b) => ({ b, here: byRef.get(b.ref)! })).filter(({ b, here }) => b.sessionsTotal > here.sessions_total || b.sessionsUsed > here.sessions_used || closed(b, here) !== here.is_closed || b.owedCents !== (here.owed_cents ?? 0))
 
     return {
       stats: [
@@ -587,7 +590,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         let done = inserts.length
         await withConcurrency(updates, 8, async ({ b, here }) => {
           if (shouldStop()) return
-          const { error } = await supabase.from('package_purchases').update({ sessions_used: Math.max(b.sessionsUsed, here.sessions_used), is_closed: closed(b, here), owed_cents: b.owedCents }).eq('id', here.id)
+          const { error } = await supabase.from('package_purchases').update({ sessions_total: Math.max(b.sessionsTotal, here.sessions_total), sessions_used: Math.max(b.sessionsUsed, here.sessions_used), is_closed: closed(b, here), owed_cents: b.owedCents }).eq('id', here.id)
           if (error) errors.push(error.message); else written++
           progress(++done)
         })

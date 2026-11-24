@@ -404,6 +404,18 @@ describe('quirocitas rows', () => {
     it('still takes the count from a name that ends in one', () => {
       expect(bono('Bono 12', 0)).toMatchObject({ sessionsTotal: 12, sessionsUsed: 12, sizeUnknown: false })
     })
+
+    it('reads the count from a retired type\'s name: leading, or before "Aj"', () => {
+      expect(bono('26 Aj Total', 0)).toMatchObject({ sessionsTotal: 26, sessionsUsed: 26, sizeUnknown: false })
+      expect(bono('Mant. 9 Aj Plazos', 2)).toMatchObject({ sessionsTotal: 9, sessionsUsed: 7 })
+      // The 45 is minutes: the count is the leading 5.
+      expect(bono('5 Medio Cuerpo 45', 5)).toMatchObject({ sessionsTotal: 5, sessionsUsed: 0 })
+    })
+
+    it('takes no count from a duration', () => {
+      expect(bono('Ajuste + Masaje 30m', 0)).toMatchObject({ sessionsTotal: 1, sizeUnknown: true })
+      expect(bono('A + Masaje 1h', 0)).toMatchObject({ sessionsTotal: 1, sizeUnknown: true })
+    })
   })
 
   describe('which patients a read fetches', () => {

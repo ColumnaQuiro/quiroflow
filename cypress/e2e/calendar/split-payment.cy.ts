@@ -52,6 +52,9 @@ describe('Splitting an appointment payment across methods', () => {
             cy.contains('Balance due: 50,00 €').should('be.visible')
 
             cy.contains('button', 'Process').parents('form').as('paymentForm')
+            // The form opens on card (useVisitCharging visitDefaultMethod),
+            // so the cash half is picked by hand.
+            cy.get('@paymentForm').find('select').eq(0).select('Cash')
             cy.get('@paymentForm').find('input[type="number"]').eq(0).clear().type('30')
             cy.get('@paymentForm').contains('button', 'Split into another method').click()
             // select[0] is this row-method select (no invoice picker here,

@@ -141,7 +141,9 @@ describe('Charging a visit from the first screen of its panel', () => {
           cy.get('[data-cy=appt-sheet]').within(() => {
             cy.get('[data-cy=visit-checkout]').within(() => {
               cy.get('[data-cy=checkout-money]').click().should('have.attr', 'aria-checked', 'true')
-              cy.get('[data-cy=checkout-method]').should('be.visible')
+              // Card, not the clinic's first method (cash, as seeded): most
+              // visits are paid by card at the desk.
+              cy.get('[data-cy=checkout-method]').should('be.visible').and('have.value', 'card')
               // cy.contains: formatEur puts a non-breaking space before the €.
               cy.contains('[data-cy=checkout-process]', 'charge 55,00 €').click()
             })
@@ -152,6 +154,7 @@ describe('Charging a visit from the first screen of its panel', () => {
             expect(payments, 'one payment').to.have.length(1)
             expect(payments[0].amount_cents, 'for the whole price').to.eq(5500)
             expect(payments[0].purpose).to.eq('visit')
+            expect(payments[0].method, 'taken by card, the method it opened on').to.eq('card')
           })
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
             expect(eff.purchase.sessions_used, 'the bono is untouched').to.eq(8)

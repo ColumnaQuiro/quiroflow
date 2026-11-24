@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { momentDef } from '~/utils/automationTrigger'
 import {
   BALANCE_OPTIONS,
   BRANCH_FIELDS,
@@ -87,7 +88,7 @@ function setLeadOp(i: number, op: string) {
 const conditions = computed<Cond[]>(() => (Array.isArray(config.value.conditions) ? config.value.conditions : []))
 const fields = computed(() =>
   BRANCH_FIELDS.filter((f) => (f.subject === 'lead' ? b.isLead.value : f.subject === 'patient' ? !b.isLead.value : true)).filter(
-    (f) => !f.appointment || !['patient.birthday', 'patient.referred', 'referral.visit_completed', 'segment', 'membership.new_member', 'membership.removed', 'membership.payment_processed', 'waitlist.slot_offered'].includes(b.draft.value.rule.trigger_event),
+    (f) => !f.appointment || (!!momentDef(b.draft.value.rule.trigger.subject, b.draft.value.rule.trigger.moment)?.appointmentContext && b.draft.value.rule.trigger.send_to !== 'referrer'),
   ),
 )
 

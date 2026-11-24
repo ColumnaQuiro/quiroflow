@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { OUTLETS, say, stepDef, triggerDef } from '~/utils/automationCatalog'
+import { OUTLETS, stepDef } from '~/utils/automationCatalog'
+import { atomTitle } from '~/utils/automationTriggerText'
 import { stepEyebrow, stepTitle } from '~/utils/automationDescribe'
 import { subtreeIds } from '~/utils/automationTree'
 
@@ -17,7 +18,7 @@ const step = computed(() => (sel.value?.kind === 'step' ? (b.stepsById.value.get
 const eyebrow = computed(() => {
   if (sel.value?.kind === 'trigger') {
     const r = b.draft.value.rule
-    if (r.trigger_event === 'segment') return t('Trigger · a group', 'Disparador · un segmento')
+    if (r.trigger.subject === 'group') return t('Trigger · a group', 'Disparador · un segmento')
     if (b.isLead.value) return t('Trigger · leads', 'Disparador · leads')
     return t('Trigger · an event', 'Disparador · un evento')
   }
@@ -34,8 +35,8 @@ const eyebrow = computed(() => {
 })
 const title = computed(() => {
   if (sel.value?.kind === 'trigger') {
-    const def = triggerDef(b.draft.value.rule.trigger_event)
-    return b.draft.value.rule.trigger_event === 'segment' ? b.draft.value.rule.name : def ? say(t, def.label) : ''
+    const r = b.draft.value.rule
+    return r.trigger.subject === 'group' ? r.name : atomTitle(t, r.trigger, r.filters)
   }
   if (step.value) return stepTitle(t, step.value, b.lookup.value)
   if (sel.value?.kind === 'insert') return t('Add a step', 'Añadir un paso')

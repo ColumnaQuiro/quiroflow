@@ -5,6 +5,7 @@ import { refundVisitCardPayments } from '~/server/utils/appPayments'
 import { offerNextWaitlistEntry } from '~/server/utils/waitlistOffer'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 // A patient cancelling their own visit, from the app or the web portal.
 //
@@ -56,12 +57,7 @@ export default defineEventHandler(async (event) => {
       .eq('id', appt.patient_id)
       .maybeSingle()
     if (!patient) return
-    const { data: rules } = await service
-      .from('automation_rules')
-      .select('id, filters')
-      .eq('account_id', appt.account_id)
-      .eq('trigger_event', 'appointment.cancelled')
-      .eq('enabled', true)
+    const rules = await rulesForRaisedEvent(service, appt.account_id, 'appointment.cancelled')
     for (const rule of rules ?? []) {
       if (!(await ruleFiltersMatch(service, patient.id, rule.filters as AutomationFilters, appt.id))) continue
       await dispatchPatientRule(service, service, appt.account_id, rule.id, patient, origin, appt.id, {

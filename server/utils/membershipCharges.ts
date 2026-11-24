@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 // What one collected membership period becomes, whichever provider collected
 // it. Lifted out of stripeWebhookHandlers.ts when GoCardless arrived, so a
@@ -133,12 +134,7 @@ export async function fireMembershipPaymentProcessed(supabase: SupabaseClient<Da
     .maybeSingle()
   if (!patient) return
 
-  const { data: rules } = await supabase
-    .from('automation_rules')
-    .select('id, filters')
-    .eq('account_id', accountId)
-    .eq('trigger_event', 'membership.payment_processed')
-    .eq('enabled', true)
+  const rules = await rulesForRaisedEvent(supabase, accountId, 'membership.payment_processed')
   for (const rule of rules ?? []) {
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
     await dispatchPatientRule(supabase, supabase, accountId, rule.id, patient, origin, undefined, {

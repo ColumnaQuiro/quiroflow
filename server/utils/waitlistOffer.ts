@@ -2,6 +2,7 @@ import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters
 import { ruleFiltersMatch } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { offerExpiresAt as offerDeadline, waitlistEntryMatches } from '~/utils/waitlistOffer'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 export { WAITLIST_OFFER_TTL_HOURS } from '~/utils/waitlistOffer'
 
@@ -139,12 +140,7 @@ export async function offerNextWaitlistEntry(supabase: any, origin: string, slot
   const chosen = toAll ? matching.slice(0, MAX_OFFERED_TOGETHER) : matching.slice(0, 1)
   if (chosen.length === 0) return 0
 
-  const { data: rules } = await supabase
-    .from('automation_rules')
-    .select('id, filters')
-    .eq('account_id', slot.accountId)
-    .eq('trigger_event', 'waitlist.slot_offered')
-    .eq('enabled', true)
+  const rules = await rulesForRaisedEvent(supabase, slot.accountId, 'waitlist.slot_offered')
   const slotDatetime = new Date(slot.startsAt).toLocaleString('es-ES', {
     weekday: 'long',
     day: 'numeric',

@@ -47,7 +47,7 @@ describe('Automations list', () => {
       ],
     }).then((rule) => {
       cy.visit('/automations')
-      cy.get(`[data-test="rule-${rule.id}"]`).should('contain', 'Bienvenida').and('contain', 'New lead').and('contain', '3 steps')
+      cy.get(`[data-test="rule-${rule.id}"]`).should('contain', 'Bienvenida').and('contain', 'Lead · arrives').and('contain', '3 steps')
       cy.get(`[data-test="rule-${rule.id}"] [data-test="badge-growth"]`).should('exist')
       // Zero says zero: a new automation has not run, and that is worth seeing.
       cy.get(`[data-test="rule-${rule.id}"] [data-test="stat-entered"]`).should('have.text', '0')
@@ -55,7 +55,7 @@ describe('Automations list', () => {
       cy.get(`[data-test="rule-${rule.id}"] [data-test="rule-link"]`).click()
       cy.location('pathname').should('eq', `/automations/${rule.id}`)
       cy.get('[data-test="canvas-fit"]').click()
-      cy.get('[data-test="node-trigger"]').should('contain', 'New lead')
+      cy.get('[data-test="node-trigger"]').should('contain', 'Lead · arrives')
       cy.task<{ id: string; action_type: string; position: number }[]>('auto:actionsForRule', { ruleId: rule.id }).then((steps) => {
         cy.get(`[data-test="node-${steps[0]!.id}"]`).should('contain', 'welcome_1')
         cy.get(`[data-test="node-${steps[1]!.id}"]`).should('contain', 'Wait 1 day')
@@ -168,7 +168,7 @@ describe('Automations list', () => {
 
         // On: a dialog says what starts it, and nothing changes until confirmed.
         cy.get(`${row} [data-test="rule-toggle"]`).click()
-        cy.get('[data-test="activate-when"]').should('contain', 'Appointment completed')
+        cy.get('[data-test="activate-when"]').should('contain', 'Appointment · is completed')
         cy.get('[data-cy="confirm-dialog-cancel"]').click()
         cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'false')
         cy.task<{ enabled: boolean }>('auto:ruleRow', { ruleId: rule.id }).its('enabled').should('eq', false)
@@ -188,7 +188,7 @@ describe('Automations list', () => {
         // The builder's header has the same switch and the same dialog.
         cy.visit(`/automations/${rule.id}`)
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false').click()
-        cy.get('[data-test="activate-when"]').should('contain', 'Appointment completed')
+        cy.get('[data-test="activate-when"]').should('contain', 'Appointment · is completed')
         cy.get('[data-cy="confirm-dialog-confirm"]').click()
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
         // Switching is not an edit: nothing waits to be saved.
@@ -250,7 +250,7 @@ describe('Automations list', () => {
 
           // A patient automation offers no lead steps at all.
           cy.visit(`/automations/${patientRule.id}`)
-          cy.get('[data-test="trigger-select"]').find('option[value="lead.created"]').should('be.disabled')
+          cy.get('[data-test="trigger-subject"]').find('option[value="lead"]').should('be.disabled')
           cy.get('[data-test="insert-root-root-0"]').click({ force: true })
           cy.get('[data-test="add-step-menu"]').should('be.visible')
           cy.get('[data-test="add-step-lead_stage"]').should('not.exist')

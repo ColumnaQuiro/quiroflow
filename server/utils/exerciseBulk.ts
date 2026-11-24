@@ -52,7 +52,8 @@ export async function fireTypeTriggers(
     .select('id', { count: 'exact', head: true })
     .eq('account_id', accountId)
     .eq('enabled', true)
-    .in('trigger_event', ['patient.type_added', 'patient.type_removed'])
+    .eq('trigger->>subject', 'patient')
+    .in('trigger->>moment', ['type_added', 'type_removed'])
   if (!count) return 0
   let fired = 0
   for (const [event, list] of [['patient.type_added', added], ['patient.type_removed', removed]] as const) {

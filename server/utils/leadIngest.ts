@@ -4,6 +4,7 @@ import { insertLead, type LEAD_CHANNELS } from '~/server/utils/leads'
 import { sequenceRunForSamePerson, startLeadSequence } from '~/server/utils/automationEngine'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { FOLD_WINDOW_DAYS, whatsAppLeadToFoldInto, type FoldCandidate } from '~/utils/leadFold'
+import { rulesForRaisedEvent } from '~/server/utils/automationAtomRules'
 
 // Filing an enquiry, once it has been read and checked.
 //
@@ -284,14 +285,9 @@ export async function fileLead(supabase: any, accountId: string, lead: LeadToFil
   // committed, and deliberately non-fatal: a rule that throws must not lose
   // the enquiry itself, which is the thing that cannot be recovered.
   try {
-    const { data: rules } = await loose(supabase)
-      .from('automation_rules')
-      .select('id, name')
-      .eq('account_id', accountId)
-      .eq('trigger_event', 'lead.created')
-      .eq('enabled', true)
+    const rules = await rulesForRaisedEvent(loose(supabase), accountId, 'lead.created')
 
-    for (const rule of (rules ?? []) as { id: string; name: string | null }[]) {
+    for (const rule of rules) {
       // One voice per person. Somebody the receptionist is already talking
       // to on WhatsApp does not also get the welcome drip: the two wrote over
       // each other, the drip welcoming at 9:00 somebody offered times at

@@ -87,7 +87,7 @@ describe('Role permission catalogue', () => {
   })
 
   it('names the switch that includes another, and both are shown', () => {
-    const shown = new Set(permissionGroups(es).flatMap((g) => g.rows.map((r) => r.key)))
+    const shown = new Set<string>(permissionGroups(es).flatMap((g) => g.rows.map((r) => r.key)))
     for (const [child, parent] of Object.entries(INCLUDED_BY)) {
       expect(shown.has(child), child).to.eq(true)
       expect(shown.has(parent!), parent).to.eq(true)

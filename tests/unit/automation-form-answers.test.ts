@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { evaluateBranch, factKey } from '../../utils/automationConditions'
-import { findProblems, formsSentBefore, stepsBefore, type DraftRule, type DraftStep } from '../../utils/automationTree'
+import { findProblems, formsSentBefore, stepsBefore, type DraftRule, type DraftStep, withAtom } from '../../utils/automationTree'
 import { conditionText, emptyLookup  } from '../../utils/automationDescribe'
 import { templateVariantForLanguage } from '../../utils/templateLanguage'
 
@@ -21,7 +21,9 @@ const step = (action_type: string, position: number, parent: DraftStep | null = 
   branch,
   position,
 })
-const rule = (extra: Partial<DraftRule> = {}): DraftRule => ({
+// Written with the old trigger name; withAtom gives it the atom it is.
+const rule = (extra: Partial<DraftRule> = {}): DraftRule =>
+  withAtom({
   name: 'Revisión',
   trigger_event: 'appointment.completed',
   filters: {},
@@ -32,7 +34,7 @@ const rule = (extra: Partial<DraftRule> = {}): DraftRule => ({
   quiet_hours: null,
   segment: null,
   ...extra,
-})
+  }) as DraftRule
 const recommends = (op: 'gte' | 'lte' | 'is', value: unknown) => ({ field: 'doc_answer', op, value, doc_template_id: FORM, doc_field_id: QUESTION }) as const
 
 describe('branching on a form answer', () => {

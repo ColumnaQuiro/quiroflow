@@ -5,6 +5,8 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { isBirthdayOn, localDateString } from '~/utils/birthday'
 import { runInvoiceReminders } from '~/server/utils/invoiceReminders'
+import { rulesOnMoment } from '~/server/utils/automationAtomRules'
+import { shiftDate } from '~/utils/automationTriggerMatch'
 
 // See server/utils/concurrency.ts -- bounds how many patients' birthday
 // actions run at once so a day with birthdays across many accounts still
@@ -21,7 +23,8 @@ type PatientRow = {
   date_of_birth: string | null
 } & Record<string, any>
 
-// Fires the 'patient.birthday' trigger -- the one automation trigger that
+// Fires the automations on a patient's birthday (subject patient, moment
+// birthday: on the day, or N days before or after it) -- the one automation trigger that
 // isn't a client action, so unlike every other trigger in fire.post.ts it
 // has to be invoked on a schedule. There's no scheduled-function wiring
 // between this Nitro build and Netlify, so a Postgres pg_cron job calls
@@ -50,6 +53,14 @@ export default defineEventHandler(async (event) => {
     return 0
   })
 
+  // The rules first: with none, nobody's birthday needs reading. Each one's
+  // timing says which birthday it is about today -- today's for "on the day",
+  // the one N days ago for "N days after", the one in N days for "before".
+  const rules = await rulesOnMoment(supabase, 'patient', 'birthday')
+  const shiftOf = (r: (typeof rules)[number]) => (r.atom.timing?.unit === 'days' ? (r.atom.timing.direction === 'before' ? 1 : -1) * Math.round(Number(r.atom.timing.amount) || 0) : 0)
+  if (rules.length === 0) return { fired: 0, invoiceReminders }
+  const shifts = [...new Set(rules.map(shiftOf))]
+
   // Every patient with a date of birth, a page at a time: PostgREST caps a
   // response at 1000 rows (supabase/config.toml max_rows), and a clinic past
   // that used to have everyone after the thousandth quietly skipped.
@@ -60,6 +71,7 @@ export default defineEventHandler(async (event) => {
       .from('patients')
       .select('id, account_id, clinic_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, preferred_language')
       .not('date_of_birth', 'is', null)
+      .in('account_id', [...new Set(rules.map((r) => r.account_id))])
       .order('id')
       .range(from, from + PAGE - 1)
     if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -70,7 +82,7 @@ export default defineEventHandler(async (event) => {
   // Whatever zone a clinic is in, its "today" is UTC's yesterday, today or
   // tomorrow -- so only those birthdays need a clinic looked up at all.
   const now = new Date()
-  const nearby = [-1, 0, 1].map((d) => localDateString(new Date(now.getTime() + d * 24 * 3600 * 1000), 'UTC'))
+  const nearby = [-1, 0, 1].flatMap((d) => shifts.map((shift) => shiftDate(localDateString(new Date(now.getTime() + d * 24 * 3600 * 1000), 'UTC'), shift)))
   const candidates = all.filter((p) => nearby.some((date) => isBirthdayOn(p.date_of_birth, date)))
   if (candidates.length === 0) return { fired: 0, invoiceReminders }
 
@@ -93,21 +105,12 @@ export default defineEventHandler(async (event) => {
 
   const birthdayPatients = candidates
     .map((patient) => ({ patient, localDate: localDateString(now, zoneOf(patient)) }))
-    .filter(({ patient, localDate }) => isBirthdayOn(patient.date_of_birth, localDate))
+    .filter(({ patient, localDate }) => shifts.some((shift) => isBirthdayOn(patient.date_of_birth, shiftDate(localDate, shift))))
   if (birthdayPatients.length === 0) return { fired: 0, invoiceReminders }
-
-  const accountIds = [...new Set(birthdayPatients.map(({ patient }) => patient.account_id))]
-  const { data: rules } = await supabase
-    .from('automation_rules')
-    .select('id, account_id, filters')
-    .in('account_id', accountIds)
-    .eq('trigger_event', 'patient.birthday')
-    .eq('enabled', true)
-  if (!rules || rules.length === 0) return { fired: 0, invoiceReminders }
 
   const origin = getRequestURL(event).origin
   const firedCounts = await mapWithConcurrency(birthdayPatients, SEND_CONCURRENCY, async ({ patient, localDate }) => {
-    const accountRules = rules.filter((r) => r.account_id === patient.account_id)
+    const accountRules = rules.filter((r) => r.account_id === patient.account_id && isBirthdayOn(patient.date_of_birth, shiftDate(localDate, shiftOf(r))))
     let count = 0
     for (const rule of accountRules) {
       if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue

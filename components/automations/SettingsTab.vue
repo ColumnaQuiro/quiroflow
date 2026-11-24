@@ -92,7 +92,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
         <SettingsSwitchRow
           :model-value="rule.is_marketing"
           :title="t('It is a marketing message', 'Es una comunicación comercial')"
-          :description="t('Each channel only reaches patients who accepted it (Marketing channels, on their record). Reminders and confirmations are not marketing.', 'Cada canal solo llega a quien lo aceptó (Canales de marketing, en su ficha). Los recordatorios y confirmaciones no lo son.') + (rule.trigger_event === 'patient.birthday' && !rule.is_marketing ? ' ' + t('Birthday messages usually are.', 'Las felicitaciones de cumpleaños suelen serlo.') : '')"
+          :description="t('Each channel only reaches patients who accepted it (Marketing channels, on their record). Reminders and confirmations are not marketing.', 'Cada canal solo llega a quien lo aceptó (Canales de marketing, en su ficha). Los recordatorios y confirmaciones no lo son.') + ((rule.trigger.subject === 'patient' && rule.trigger.moment === 'birthday') && !rule.is_marketing ? ' ' + t('Birthday messages usually are.', 'Las felicitaciones de cumpleaños suelen serlo.') : '')"
           data-test="marketing-toggle"
           @update:model-value="b.updateRule({ is_marketing: $event })"
         />

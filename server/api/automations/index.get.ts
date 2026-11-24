@@ -5,7 +5,8 @@ import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
 import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
 import { isValidQuietHours, segmentDailyLimit } from '~/utils/automationTiming'
-import { findProblems, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { findProblems, withAtom, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
+import { isGroupAtom, ruleAtom } from '~/utils/automationTrigger'
 import { STEP_COLUMNS } from '~/server/utils/automationRules'
 
 // The Automations list: every rule on the account, what its steps are, and
@@ -24,7 +25,7 @@ export default defineEventHandler(async (event) => {
     canReadWhatsApp(supabase, teamMember),
     supabase
       .from('automation_rules')
-      .select('id, name, trigger_event, enabled, filters, is_marketing, dry_run, segment, segment_last_run_at, entry_mode, exit_on, quiet_hours, created_at')
+      .select('id, name, trigger, trigger_event, enabled, filters, is_marketing, dry_run, segment, segment_last_run_at, entry_mode, exit_on, quiet_hours, created_at')
       .eq('account_id', accountId)
       .order('created_at', { ascending: false }),
     supabase.from('automation_actions').select('rule_id, action_type, parent_id').eq('account_id', accountId),
@@ -48,8 +49,8 @@ export default defineEventHandler(async (event) => {
   // the engine's own test (enrolDueSegments): runs started since its last
   // claim, with a minute of slack for the two clocks. Only those few rules
   // are counted.
-  const isOneOff = (r: { trigger_event: string; segment: unknown }) =>
-    r.trigger_event === 'segment' && (r.segment as { schedule?: { kind?: string } } | null)?.schedule?.kind === 'once'
+  const isOneOff = (r: { trigger: unknown; trigger_event: string; segment: unknown }) =>
+    isGroupAtom(ruleAtom(r)) && (r.segment as { schedule?: { kind?: string } } | null)?.schedule?.kind === 'once'
   const carryingOver = new Set<string>()
   await Promise.all(
     (rules ?? [])
@@ -84,7 +85,7 @@ export default defineEventHandler(async (event) => {
     }
     for (const r of rules ?? []) {
       if (r.enabled) continue
-      const found = findProblems(r as unknown as DraftRule, fullByRule.get(r.id) ?? [], null)
+      const found = findProblems(withAtom(r) as unknown as DraftRule, fullByRule.get(r.id) ?? [], null)
       if (found.length) blockers.set(r.id, found.map((p) => p.message))
     }
   }
@@ -94,7 +95,8 @@ export default defineEventHandler(async (event) => {
       const ruleSteps = byRule.get(r.id) ?? []
       const { entry_mode, exit_on, quiet_hours, ...rest } = r
       return {
-        ...rest,
+        // The atom, and the "only if" filters without the old trigger settings.
+        ...withAtom(rest),
         stepCount: ruleSteps.length,
         blockers: blockers.get(r.id) ?? [],
         stepTypes: [...new Set(ruleSteps.map((s) => s.action_type))],

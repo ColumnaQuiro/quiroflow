@@ -2983,6 +2983,7 @@ export type Database = {
           quiet_hours: Json | null
           segment: Json | null
           segment_last_run_at: string | null
+          trigger: Json
           trigger_event: string
         }
         Insert: {
@@ -3000,6 +3001,7 @@ export type Database = {
           quiet_hours?: Json | null
           segment?: Json | null
           segment_last_run_at?: string | null
+          trigger?: Json
           trigger_event: string
         }
         Update: {
@@ -3017,6 +3019,7 @@ export type Database = {
           quiet_hours?: Json | null
           segment?: Json | null
           segment_last_run_at?: string | null
+          trigger?: Json
           trigger_event?: string
         }
         Relationships: [
@@ -3032,6 +3035,45 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_trigger_claims: {
+        Row: {
+          account_id: string
+          claimed_at: string
+          occurrence: string
+          rule_id: string
+          source_id: string
+        }
+        Insert: {
+          account_id: string
+          claimed_at?: string
+          occurrence?: string
+          rule_id: string
+          source_id: string
+        }
+        Update: {
+          account_id?: string
+          claimed_at?: string
+          occurrence?: string
+          rule_id?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_trigger_claims_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_trigger_claims_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
             referencedColumns: ["id"]
           },
         ]

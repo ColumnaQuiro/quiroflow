@@ -45,7 +45,7 @@ async function load() {
     // Replies and bookings can come up to 30 days after the last message.
     const until = new Date(to.getTime() + RECALL_WINDOW_DAYS * 86_400_000)
     const [ruleRows, waRows, emailRows] = await Promise.all([
-      supabase.from('automation_rules').select('id, name, trigger_event, entry_mode').order('name'),
+      supabase.from('automation_rules').select('id, name, trigger, trigger_event, entry_mode').order('name'),
       fetchAllRows<{ rule_id: string; patient_id: string; created_at: string }>((f, tt) =>
         supabase.from('whatsapp_messages').select('rule_id, patient_id, created_at').eq('direction', 'outbound').not('rule_id', 'is', null).not('patient_id', 'is', null).gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).neq('status', 'failed').order('created_at').range(f, tt),
       ),

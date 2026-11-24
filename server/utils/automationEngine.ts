@@ -1,5 +1,6 @@
 import { fireLeadStageTrigger, firePatientTrigger } from '~/server/utils/automationTriggers'
 import { triggerTagMatches } from '~/utils/automationTriggerMatch'
+import { eventDelayMinutes, isUpcomingVisitAtom, ruleAtom } from '~/utils/automationTrigger'
 import {
   MAX_STEP_ATTEMPTS,
   RUN_COLUMNS,
@@ -93,6 +94,7 @@ interface EngineRule {
   account_id: string
   name: string
   trigger_event: string
+  trigger?: unknown
   enabled: boolean
   dry_run: boolean
   quiet_hours: QuietHours | null
@@ -136,11 +138,25 @@ const BUDGET_SEND_WINDOW: QuietHours = { from: '09:00', to: '20:00' }
  * contain a delay -- so those keep going through runRuleActions untouched.
  */
 export async function ruleNeedsRun(supabase: any, ruleId: string): Promise<boolean> {
+  return (await rulePlan(supabase, ruleId)).needsRun
+}
+
+/**
+ * How firing a rule goes: straight to its sends, or through a run -- and,
+ * for an event its trigger holds back ("3 hours after check-in"), how long
+ * the run waits before its first step.
+ */
+async function rulePlan(supabase: any, ruleId: string): Promise<{ needsRun: boolean; delayMinutes: number }> {
   const [{ data: rule }, { data: actions }] = await Promise.all([
-    supabase.from('automation_rules').select('entry_mode, exit_on, quiet_hours').eq('id', ruleId).maybeSingle(),
+    supabase.from('automation_rules').select('entry_mode, exit_on, quiet_hours, trigger, trigger_event, filters').eq('id', ruleId).maybeSingle(),
     supabase.from('automation_actions').select('action_type, parent_id').eq('rule_id', ruleId),
   ])
-  if (!rule) return false
+  if (!rule) return { needsRun: false, delayMinutes: 0 }
+  const delayMinutes = eventDelayMinutes(ruleAtom(rule))
+  return { needsRun: delayMinutes > 0 || ruleNeedsRunFor(rule, actions ?? []), delayMinutes }
+}
+
+function ruleNeedsRunFor(rule: { entry_mode?: string | null; exit_on?: unknown; quiet_hours?: unknown }, actions: { action_type: string; parent_id: string | null }[]): boolean {
   if ((actions ?? []).some((a: { action_type: string; parent_id: string | null }) => a.parent_id || !isMessage(a))) return true
   if (rule.entry_mode && rule.entry_mode !== 'every_time') return true
   if (Array.isArray(rule.exit_on) && rule.exit_on.length > 0) return true
@@ -167,11 +183,24 @@ export async function dispatchPatientRule(
   extraContext?: Partial<MergeContext>,
   opts: { force?: boolean } = {},
 ) {
-  if (!(await ruleNeedsRun(service, ruleId))) {
+  const plan = await rulePlan(service, ruleId)
+  if (!plan.needsRun) {
     await runRuleActions(supabase, accountId, ruleId, patient, origin, appointmentId, triggerBody, extraContext)
     return
   }
-  await startPatientRun(service, { accountId, ruleId, patientId: patient.id, origin, appointmentId, triggerBody, extraContext, force: opts.force })
+  // "Send now" means now, whatever the trigger would have waited.
+  const delay = opts.force ? 0 : plan.delayMinutes
+  await startPatientRun(service, {
+    accountId,
+    ruleId,
+    patientId: patient.id,
+    origin,
+    appointmentId,
+    triggerBody,
+    extraContext,
+    force: opts.force,
+    ...(delay > 0 ? { resumeAt: new Date(Date.now() + delay * 60_000).toISOString(), advance: false, recheckFilters: true } : {}),
+  })
 }
 
 // ------------------------------------------------------------------ starting
@@ -197,6 +226,10 @@ export async function startPatientRun(
     extraContext?: Partial<MergeContext>
     force?: boolean
     advance?: boolean
+    /** When the first step is due: later than now for an event its trigger holds back. */
+    resumeAt?: string
+    /** Ask the rule's "only if" filters again when the run first walks (after the hold). */
+    recheckFilters?: boolean
   },
 ): Promise<string | null> {
   if (!opts.force) {
@@ -220,10 +253,11 @@ export async function startPatientRun(
       // Set here rather than left to the column's now(): the claim that walks
       // it compares against this server's clock, and a database clock a few
       // milliseconds ahead would make a run started now look not yet due.
-      resume_at: new Date().toISOString(),
+      resume_at: opts.resumeAt ?? new Date().toISOString(),
       context: {
         triggerBody: opts.triggerBody ?? null,
         extraContext: opts.extraContext ?? null,
+        ...(opts.recheckFilters ? { recheckFilters: true } : {}),
       },
     })
     .select(RUN_COLUMNS)
@@ -246,10 +280,13 @@ export async function startPatientRun(
  * receives the drip twice.
  */
 export async function startLeadSequence(supabase: any, accountId: string, ruleId: string, leadId: string, origin: string) {
+  // A trigger that holds the lead back ("2 hours after they arrive") starts
+  // the run parked until then; the tick walks it when it is due.
+  const { delayMinutes } = await rulePlan(supabase, ruleId)
   const { data: run } = await supabase
     .from('automation_sequence_runs')
     // resume_at from this clock for the same reason as startPatientRun.
-    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId, resume_at: new Date().toISOString() })
+    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId, resume_at: new Date(Date.now() + delayMinutes * 60_000).toISOString() })
     .select(RUN_COLUMNS)
     .maybeSingle()
 
@@ -258,7 +295,7 @@ export async function startLeadSequence(supabase: any, accountId: string, ruleId
   if (!run) return null
 
   await logRunEvent(supabase, run, { outcome: 'started' })
-  await advanceRun(supabase, run as SequenceRun, origin)
+  if (delayMinutes === 0) await advanceRun(supabase, run as SequenceRun, origin)
   return run.id as string
 }
 
@@ -444,7 +481,7 @@ async function releaseRun(supabase: any, runId: string, until: string) {
 
 async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' }) {
   const [{ data: ruleRow }, { data: actionRows }] = await Promise.all([
-    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours, filters, is_marketing').eq('id', run.rule_id).maybeSingle(),
+    supabase.from('automation_rules').select('id, account_id, name, trigger_event, trigger, enabled, dry_run, quiet_hours, filters, is_marketing').eq('id', run.rule_id).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', run.rule_id).order('position'),
   ])
   const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', enabled: true, dry_run: false, quiet_hours: null }
@@ -469,6 +506,17 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
     : null
   if (await appointmentGone(supabase, run, rule, appointment)) return
   const late = lateForVisit(run, rule, appointment)
+
+  // An event the trigger held back ("3 hours after check-in"): what the rule
+  // asked of the person then is asked again now, before its first step --
+  // somebody who has since booked, or been tagged, is not who it was for.
+  if (subject.kind === 'patient' && !run.current_action_id && (run.context as { recheckFilters?: boolean } | null)?.recheckFilters) {
+    if (!(await ruleFiltersMatch(supabase, subject.patient.id, rule.filters as AutomationFilters, run.appointment_id ?? undefined))) {
+      await stopRun(supabase, run, 'no_longer_matches')
+      return
+    }
+    await supabase.from('automation_sequence_runs').update({ context: { ...(run.context as object), recheckFilters: false } }).eq('id', run.id)
+  }
 
   // ---- where to start
   let start: EngineAction | null
@@ -824,10 +872,11 @@ async function loadSubject(supabase: any, run: SequenceRun): Promise<Subject | n
 
 /**
  * Rules whose whole subject is a visit that is still going to happen: a
- * reminder "N hours before" it. Once that visit is cancelled, every step left
- * in the run is about an appointment the patient no longer has.
+ * reminder before its start (utils/automationTrigger.ts: isUpcomingVisitAtom).
+ * Once that visit is cancelled, every step left in the run is about an
+ * appointment the patient no longer has.
  */
-const UPCOMING_VISIT_TRIGGERS = ['appointment.hours_before']
+const countsDownToVisit = (rule: EngineRule) => isUpcomingVisitAtom(ruleAtom(rule))
 
 /**
  * Ends a run whose appointment is no longer there, and says so. Returns true
@@ -851,20 +900,21 @@ async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule
     await stopRun(supabase, run, 'appointment_deleted')
     return true
   }
-  if (appt.status === 'cancelled' && UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event)) {
+  if (appt.status === 'cancelled' && countsDownToVisit(rule)) {
     await stopRun(supabase, run, 'appointment_cancelled')
     return true
   }
   // "Remind; wait two days; remind again" in one automation: the patient
   // answered the first -- Confirmar, or asked to change it -- so the second
   // has nothing left to ask. The same rule hours-before-cron applies before a
-  // run starts, with the same switch (filters.skip_if_answered, on unless
-  // false), and only for an answer given after a reminder: a Confirmar on the
-  // booking message is not one (server/utils/reminderAnswers.ts). Moving the
-  // visit clears the answer, so a run for a moved visit carries on.
+  // run starts, with the same switch (the "has not answered a reminder" filter,
+  // filters.reminder_unanswered), and only for an answer given after a
+  // reminder: a Confirmar on the booking message is not one (server/utils/
+  // reminderAnswers.ts). Moving the visit clears the answer, so a run for a
+  // moved visit carries on.
   if (
-    UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event) &&
-    (rule.filters as { skip_if_answered?: boolean } | null | undefined)?.skip_if_answered !== false &&
+    countsDownToVisit(rule) &&
+    (rule.filters as { reminder_unanswered?: boolean } | null | undefined)?.reminder_unanswered === true &&
     appt.id &&
     (await answeredAReminderAmong(supabase, [{ id: appt.id, confirmation_status: appt.confirmation_status ?? null, confirmation_answered_at: appt.confirmation_answered_at ?? null, reminder_sent_at: appt.reminder_sent_at ?? null }])).has(appt.id)
   ) {
@@ -900,7 +950,7 @@ interface AppointmentState {
  * shares the walk's due time, since a walk only ever stops at a park.
  */
 function lateForVisit(run: SequenceRun, rule: EngineRule, appt: AppointmentState | null): string | null {
-  if (!appt || !UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event)) return null
+  if (!appt || !countsDownToVisit(rule)) return null
   const visit = new Date(appt.starts_at).getTime()
   const now = Date.now()
   // An event wake leaves resume_at in the future (the wait's deadline): its
@@ -1496,7 +1546,8 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
   const { data: rules } = await supabase
     .from('automation_rules')
     .select('id, account_id, segment, segment_last_run_at, created_at, is_marketing')
-    .eq('trigger_event', 'segment')
+    .eq('trigger->>subject', 'group')
+    .eq('trigger->>moment', 'scheduled')
     .eq('enabled', true)
   let enrolled = 0
 

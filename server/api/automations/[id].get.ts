@@ -4,7 +4,7 @@ import { hasGrowth } from '~/server/utils/requireGrowth'
 import { loadRuleTree } from '~/server/utils/automationRules'
 import { canReadWhatsApp, statsForRule } from '~/server/utils/automationStats'
 import { DELAYS_HONOURED_SINCE } from '~/server/utils/automationDelayChange'
-import { isLeadTrigger } from '~/utils/automationCatalog'
+import { isLeadAtom } from '~/utils/automationTrigger'
 
 // One automation for the builder: the rule, its tree of steps, and what each
 // step has done in the last 30 days.
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     // rulesWhoseDelayNowWaits' question, asked of this rule's own steps
     // rather than by reading every rule on the account.
     delayNowWaits:
-      !isLeadTrigger(loaded.rule.trigger_event) &&
+      !isLeadAtom(loaded.rule.trigger) &&
       loaded.steps.some((s) => s.action_type === 'delay') &&
       loaded.rule.created_at < DELAYS_HONOURED_SINCE,
   }

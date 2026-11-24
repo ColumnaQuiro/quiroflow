@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { isLeadTrigger, triggerTitle } from '~/utils/automationCatalog'
+import { isLeadAtom, type TriggerAtom } from '~/utils/automationTrigger'
+import { atomTitle } from '~/utils/automationTriggerText'
 import { filtersText, type NameLookup } from '~/utils/automationDescribe'
 
 // Switching an automation on, said before it happens: from now on, who enters
@@ -11,7 +12,7 @@ import { filtersText, type NameLookup } from '~/utils/automationDescribe'
 
 const props = defineProps<{
   name: string
-  triggerEvent: string
+  trigger: TriggerAtom
   filters: Record<string, any> | null | undefined
   lookup: NameLookup
   isMarketing: boolean
@@ -25,9 +26,10 @@ const t = useT()
 
 const when = computed(() => {
   const detail = filtersText(t, props.filters, props.lookup)
-  return detail ? `${triggerTitle(t, props.triggerEvent, props.filters)} · ${detail}` : triggerTitle(t, props.triggerEvent, props.filters)
+  const head = atomTitle(t, props.trigger, props.filters)
+  return detail ? `${head} · ${detail}` : head
 })
-const lead = computed(() => isLeadTrigger(props.triggerEvent))
+const lead = computed(() => isLeadAtom(props.trigger))
 const title = computed(() => t(`Switch on "${props.name}"?`, `¿Activar «${props.name}»?`))
 </script>
 

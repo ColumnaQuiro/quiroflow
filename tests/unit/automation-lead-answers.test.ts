@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { conditionHolds, evaluateBranch, factKey } from '../../utils/automationConditions'
 import { answerKey, automationFieldValue, findLeadAnswer, readableAnswer } from '../../utils/automationFields'
-import { findProblems, type DraftRule, type DraftStep } from '../../utils/automationTree'
+import { findProblems, type DraftRule, type DraftStep, withAtom } from '../../utils/automationTree'
 import { conditionText, emptyLookup } from '../../utils/automationDescribe'
 
 // A branch on what a lead answered on the ad's form: "En una escala del 1 al
@@ -16,7 +16,8 @@ const facts = (answer: string | undefined) => ({ [factKey(urgent)]: answer })
 let n = 0
 const id = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`
 const step = (config: Record<string, any>): DraftStep => ({ id: id(), action_type: 'branch', config, parent_id: null, branch: null, position: 0 })
-const rule = (trigger_event = 'lead.created'): DraftRule => ({
+const rule = (trigger_event = 'lead.created'): DraftRule =>
+  withAtom({
   name: 'Leads',
   trigger_event,
   filters: {},
@@ -26,7 +27,7 @@ const rule = (trigger_event = 'lead.created'): DraftRule => ({
   exit_on: [],
   quiet_hours: null,
   segment: null,
-})
+  }) as DraftRule
 
 describe('branching on a lead form answer', () => {
   it('keys each question apart, so two answers in one branch do not collide', () => {

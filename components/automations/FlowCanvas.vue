@@ -2,7 +2,8 @@
 import { layoutTree, type InsertPoint } from '~/utils/automationLayout'
 import type { CanvasJourney } from '~/utils/automationJourney'
 import { outletLabel, stepDetail, stepEyebrow, stepTitle, triggerDetail } from '~/utils/automationDescribe'
-import { say, stepDef, triggerTitle, KIND_LABEL } from '~/utils/automationCatalog'
+import { say, stepDef, KIND_LABEL } from '~/utils/automationCatalog'
+import { atomTitle } from '~/utils/automationTriggerText'
 
 // The builder's canvas: the automation laid out as a tree
 // (utils/automationLayout.ts), a "+" wherever a step can go, and zoom / pan /
@@ -205,7 +206,7 @@ function pickStep(type: string) {
           v-if="node.kind === 'trigger'"
           kind="trigger"
           :eyebrow="say(t, KIND_LABEL.trigger)"
-          :title="triggerTitle(t, b.draft.value.rule.trigger_event, b.draft.value.rule.filters)"
+          :title="atomTitle(t, b.draft.value.rule.trigger, b.draft.value.rule.filters)"
           :detail="triggerDetail(t, b.draft.value.rule, b.lookup.value)"
           :stats="triggerStats"
           :run-state="journey ? 'ok' : undefined"

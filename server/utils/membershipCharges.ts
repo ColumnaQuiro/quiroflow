@@ -24,6 +24,8 @@ export interface MembershipPeriodCharge {
   periodStart: string
   method: 'card' | 'direct_debit'
   stripePaymentIntentId?: string | null
+  /** The Stripe invoice this period is, which keeps the same charge from being counted twice (stripeMembershipSync.ts). */
+  stripeInvoiceId?: string | null
   gocardlessPaymentId?: string | null
 }
 
@@ -62,6 +64,7 @@ export async function bookMembershipPeriod(supabase: SupabaseClient<Database>, a
       amount_cents: charge.amountCents,
       method: charge.method,
       stripe_payment_intent_id: charge.stripePaymentIntentId ?? null,
+      stripe_invoice_id: charge.stripeInvoiceId ?? null,
       gocardless_payment_id: charge.gocardlessPaymentId ?? null,
       purpose: 'membership',
     })

@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
     const edited = await editWhatsAppTemplate(serverSupabaseServiceRole(event), teamMember.account_id, existing, draft, isMediaHeader(draft.header) ? file : null, origin)
     return { id, name: existing.name, language: existing.language, ...edited }
   } catch (err) {
-    if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message })
+    if (err instanceof TemplateCreateError) throw createError({ statusCode: err.statusCode, statusMessage: err.message, ...(err.problem ? { data: { problem: err.problem } } : {}) })
     throw err
   }
 })

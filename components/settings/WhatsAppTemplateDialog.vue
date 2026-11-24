@@ -66,6 +66,15 @@ const language = ref(start?.language ?? 'es')
 const category = ref<TemplateCategory>(start?.category ?? 'UTILITY')
 // Meta keeps an approved template's category: changing it is refused.
 const categoryLocked = computed(() => props.template?.status === 'APPROVED')
+// An approved one goes back to Meta's review when changed, and what sends it
+// may not go out until Meta approves it again: named here, before the button.
+// A list that cannot be read only leaves the warning out; the edit still works.
+const usesDuringReview = ref<{ en: string; es: string }[]>([])
+if (props.template?.status === 'APPROVED') {
+  useStaffFetch<{ uses: { en: string; es: string }[] }>('/api/whatsapp/template-uses', { query: { name: props.template.name, language: props.template.language } })
+    .then((r) => (usesDuringReview.value = r.uses ?? []))
+    .catch(() => {})
+}
 // A new one starts with nothing at the top: most messages are text alone.
 const header = ref<TemplateHeaderKind>(start?.header ?? 'none')
 const file = ref<File | null>(null)
@@ -291,6 +300,12 @@ async function submit() {
       emit('created', created)
     }
   } catch (e) {
+    // Meta's refusal in words the clinic can act on, when the server knows it.
+    const problem = (e as { data?: { data?: { problem?: { en: string; es: string } } } })?.data?.data?.problem
+    if (problem) {
+      error.value = t(problem.en, problem.es)
+      return
+    }
     error.value = withServerDetail(
       editing.value ? t('Meta did not accept the change.', 'Meta no ha aceptado el cambio.') : t('Meta did not accept the template.', 'Meta no ha aceptado la plantilla.'),
       e,
@@ -346,6 +361,11 @@ const HEADER_CHOICES: { kind: TemplateHeaderKind; en: string; es: string }[] = [
             <span :class="SECTION">{{ t('Template', 'Plantilla') }}</span>
             <span class="text-[14px] text-ink-900"><span class="font-mono" data-cy="template-name">{{ name }}</span> <span class="text-ink-muted">· {{ language }}</span></span>
             <span :class="HINT">{{ t('Meta does not let a template change its name or language. For another language, create it again.', 'Meta no deja cambiar el nombre ni el idioma de una plantilla. Para otro idioma, créala de nuevo.') }}</span>
+            <div v-if="usesDuringReview.length" class="mt-2 flex flex-col gap-1 rounded-ctl bg-warning-bg px-3 py-2.5 text-[13px] leading-snug text-warning-text" data-cy="template-edit-uses">
+              <strong>{{ t('Until Meta approves the change, these messages may not be sent:', 'Hasta que Meta apruebe el cambio, puede que estos mensajes no se envíen:') }}</strong>
+              <span v-for="u in usesDuringReview" :key="u.en">· {{ t(u.en, u.es) }}</span>
+              <span>{{ t('Meta usually answers within minutes, sometimes up to 24 hours.', 'Meta suele responder en unos minutos, a veces hasta 24 horas.') }}</span>
+            </div>
           </div>
           <label v-else :class="LABEL">
             {{ t('Name', 'Nombre') }}

@@ -1566,7 +1566,8 @@
   "{0} bonos do not say how many sessions they hold ({1}): they come in as paid invoices, with no bono to draw sessions from. Create those bonos by hand.": "{0} Pakete geben nicht an, wie viele Sitzungen sie enthalten ({1}): Sie kommen als bezahlte Rechnungen an, ohne Paket, aus dem Sitzungen genutzt werden. Legen Sie diese Pakete von Hand an.",
   "Left out: {0} test-mode payments or invoices and {1} in a currency other than euros.": "Ausgelassen: {0} Zahlungen oder Rechnungen im Testmodus und {1} in einer anderen Währung als Euro.",
   "{0} payments or invoices name no contact and are left out.": "{0} Zahlungen oder Rechnungen nennen keinen Kontakt und werden ausgelassen.",
-  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} Rechnungen und Zahlungen gehören zu nicht importierten Patienten: Führen Sie zuerst Patienten aus oder wählen Sie „Alle“."
+  "{0} invoices and payments belong to patients not imported: run Patients first, or choose \"Everyone\".": "{0} Rechnungen und Zahlungen gehören zu nicht importierten Patienten: Führen Sie zuerst Patienten aus oder wählen Sie „Alle“.",
+  "Pick a date: {0}": "Datum wählen: {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10729,6 +10730,12 @@
   "Payments and bonos": "Zahlungen und Pakete",
   "Only for a clinic that charges through QuiroHiro.": "Nur für eine Praxis, die über QuiroHiro abrechnet.",
   "Invoices paid since": "Seitdem bezahlte Rechnungen",
-  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "QuiroHiro zählt keine Paketsitzungen: Als genutzt gelten die Besuche, die jeder Patient seit dem Kauftag wahrgenommen hat, ältestes Paket zuerst. Jedes Paket wurde beim Verkauf berechnet, daher kosten die hier genutzten Sitzungen nichts mehr."
+  "QuiroHiro does not count bono sessions: the sessions used are the visits each patient attended from the day the bono was bought, oldest bono first. Each bono was charged when it was sold, so the sessions drawn from it here charge nothing more.": "QuiroHiro zählt keine Paketsitzungen: Als genutzt gelten die Besuche, die jeder Patient seit dem Kauftag wahrgenommen hat, ältestes Paket zuerst. Jedes Paket wurde beim Verkauf berechnet, daher kosten die hier genutzten Sitzungen nichts mehr.",
+  "Key": "Legende",
+  "Whose agenda": "Kalender von",
+  "Who is in the clinic, and today in numbers": "Wer in der Praxis ist, und der Tag in Zahlen",
+  "In the clinic": "In der Praxis",
+  "Display and key": "Anzeige und Legende",
+  "Today in the clinic": "Heute in der Praxis"
  }
 }

@@ -1,4 +1,4 @@
-import { dateInputValue } from '../../support/calendar'
+import { chooseFromCalendarMore, dateInputValue } from '../../support/calendar'
 
 // Group classes: an appointment type with places, put on the calendar as
 // sessions ("Nueva clase"), shown as one block "taken/places"; each place an
@@ -59,8 +59,8 @@ describe('Group classes', () => {
         tomorrow.setDate(tomorrow.getDate() + 1)
         cy.login(account.email, account.password)
         cy.visit('/calendar')
-        cy.get('[data-cy=new-class-open]', { timeout: 20000 })
-        cy.clickUntil('[data-cy=new-class-open]', '[data-cy=new-class]')
+        cy.get('[data-cy=calendar-more]', { timeout: 20000 })
+        chooseFromCalendarMore('new-class-open', '[data-cy=new-class]')
         cy.get('[data-cy=new-class-type]').should('contain', 'Escuela de espalda')
         cy.get('[data-cy=new-class-date]').clear().type(dateInputValue(tomorrow))
         cy.get('[data-cy=new-class-time]').clear().type('19:00')

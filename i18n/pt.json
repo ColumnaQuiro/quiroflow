@@ -1592,7 +1592,9 @@
   "Note: {0}": "Nota: {0}",
   "Saved {0} care plans.": "Foram guardados {0} planos de cuidados.",
   "The history notes of plans {0}-{1} were not removed (the next sync removes them): {2}": "As notas do histórico dos planos {0}-{1} não foram removidas (a próxima sincronização remove-as): {2}",
-  "{0} plans stay as a note in the patient's history: they are switched off in PracticeHub, or have a cadence a care plan here cannot hold (more than 7 visits a period, or a period in days).": "{0} planos ficam como nota no histórico do paciente: estão desativados no PracticeHub, ou têm uma frequência que um plano daqui não admite (mais de 7 visitas por período, ou um período em dias)."
+  "{0} plans stay as a note in the patient's history: they are switched off in PracticeHub, or have a cadence a care plan here cannot hold (more than 7 visits a period, or a period in days).": "{0} planos ficam como nota no histórico do paciente: estão desativados no PracticeHub, ou têm uma frequência que um plano daqui não admite (mais de 7 visitas por período, ou um período em dias).",
+  "Opens each patient's own copy of \"{0}\". The form is chosen in the step, beside the email.": "Abre a cópia de cada paciente de «{0}». O formulário escolhe-se no passo, junto ao email.",
+  "Each patient gets a link to their own copy of \"{0}\", filed on their record. It is made when the email really goes out: a test shows an example link.": "Cada paciente recebe uma ligação para a sua própria cópia de «{0}», guardada na sua ficha. É criada quando o email é realmente enviado: um teste mostra uma ligação de exemplo."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10830,6 +10832,15 @@
   "The preview lists every plan and what it becomes, so you can check it first.": "A pré-visualização mostra cada plano e em que se converte, para que o verifique antes.",
   "Times shown per day": "Horários mostrados por dia",
   "Between 1 and 24, or empty to show them all.": "Entre 1 e 24, ou vazio para mostrar todos.",
-  "On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.": "Na página de marcações, dos horários livres de cada dia só se mostram estes, distribuídos ao longo do dia, para que a agenda pareça com procura. Quando um é marcado, outro horário livre ocupa o seu lugar. Vazio: todos os horários livres. A equipa pode continuar a marcar a qualquer hora a partir da agenda."
+  "On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.": "Na página de marcações, dos horários livres de cada dia só se mostram estes, distribuídos ao longo do dia, para que a agenda pareça com procura. Quando um é marcado, outro horário livre ocupa o seu lugar. Vazio: todos os horários livres. A equipa pode continuar a marcar a qualquer hora a partir da agenda.",
+  "Choose the form in the step, beside the email: until then this button is not sent.": "Escolha o formulário no passo, junto ao email: até lá este botão não é enviado.",
+  "Button to fill in the form": "Botão para preencher o formulário",
+  "Form to fill in or sign": "Formulário para preencher ou assinar",
+  "A health questionnaire or a consent, for instance: each patient gets a link to their own copy, which is filed on their record.": "Um questionário de saúde ou um consentimento, por exemplo: cada paciente recebe uma ligação para a sua própria cópia, que fica guardada na sua ficha.",
+  "Nothing in the email links to the form yet: add a button that opens \"Fill in or sign a form\".": "Nada no email liga ainda ao formulário: adicione um botão que abra «Preencher ou assinar um formulário».",
+  "Nothing in the email links to the form yet: switch on its button above, or insert the form link field in the message.": "Nada no email liga ainda ao formulário: ative o botão acima ou insira o campo da ligação ao formulário na mensagem.",
+  "Leads have no patient record to attach a form to, so this email is not sent to them while it carries one.": "Um lead não tem ficha à qual anexar um formulário, por isso este email não lhe é enviado enquanto levar um.",
+  "Link to the form chosen for this email": "Ligação ao formulário escolhido para este email",
+  "Fill in or sign a form": "Preencher ou assinar um formulário"
  }
 }

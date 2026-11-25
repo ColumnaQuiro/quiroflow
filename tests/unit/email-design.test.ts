@@ -4,13 +4,16 @@ import {
   emailDesignHasContent,
   emailDesignHtml,
   emailDesignTokens,
+  emailStepSendsForm,
   legacyEmailDesign,
   linkHref,
   resolveEmailTheme,
   safeUrl,
   starterEmailDesign,
+  withFormButton,
   type EmailDesign,
 } from '../../utils/emailDesign'
+import { automationEmailHtml } from '../../utils/automationEmail'
 
 // The block email compiler: what the builder shows, "Send test" sends and a
 // patient receives is this one function's output, so its shape is pinned
@@ -126,5 +129,44 @@ describe('reading a design', () => {
     expect(asEmailDesign({ version: 2, blocks: [] })).toBeNull()
     expect(asEmailDesign({ version: 1, blocks: [{ id: 'x', type: 'iframe' }] })).toBeNull()
     expect(asEmailDesign({ version: 1, blocks: [] })).toEqual({ version: 1, blocks: [] })
+  })
+
+  describe("an email step's form", () => {
+    it('links a form button to {{form_link}}, merged per patient like the other links', () => {
+      expect(linkHref({ kind: 'form' })).toBe('{{form_link}}')
+      const d = design([{ id: 'b', type: 'button', text: 'Rellenar', link: { kind: 'form' }, align: 'center' }])
+      expect(emailDesignTokens(d).has('form_link')).toBe(true)
+      expect(emailDesignHtml(d)).toContain('href="{{form_link}}"')
+    })
+
+    it('knows when a step sends its form: a token in blocks or body, or the plain editor switch', () => {
+      expect(emailStepSendsForm({ design: design([{ id: 't', type: 'text', html: '<p>{{form_link}}</p>' }]) })).toBe(true)
+      expect(emailStepSendsForm({ design: design([{ id: 't', type: 'text', html: '<p>Hola</p>' }]), form_button: true })).toBe(false)
+      expect(emailStepSendsForm({ body: '<a href="{{form_link}}">aquí</a>' })).toBe(true)
+      expect(emailStepSendsForm({ body: '<p>Hola</p>', form_button: true })).toBe(true)
+      expect(emailStepSendsForm({ body: '<p>Hola</p>' })).toBe(false)
+      expect(emailStepSendsForm(null)).toBe(false)
+    })
+
+    it('adds one button to the form, before any footer, and only when nothing links to it yet', () => {
+      const d = design([{ id: 't', type: 'text', html: '<p>Hola</p>' }, { id: 'f', type: 'footer', html: '<p>Pie</p>' }])
+      const withButton = withFormButton(d)
+      expect(withButton.blocks.map((b) => b.type)).toEqual(['text', 'button', 'footer'])
+      expect(withButton.blocks[1]).toMatchObject({ type: 'button', link: { kind: 'form' } })
+      expect(withFormButton(withButton)).toBe(withButton)
+    })
+
+    it('carries the plain editor form button over when switching to blocks', () => {
+      const d = legacyEmailDesign({ body: '<p>Hola</p>', form_button: true, form_button_text: 'Cuestionario', booking_button: true })
+      expect(d.blocks.map((b) => (b.type === 'button' ? b.link.kind : b.type))).toEqual(['text', 'form', 'booking'])
+    })
+
+    it('renders the plain editor form button above the booking one, and none without a link', () => {
+      const html = automationEmailHtml('<p>Hola</p>', { formButton: { text: '', url: 'https://app.example/doc/abc' }, button: { text: '', url: 'https://app.example/book/x' } })
+      expect(html.indexOf('/doc/abc')).toBeGreaterThan(-1)
+      expect(html.indexOf('/doc/abc')).toBeLessThan(html.indexOf('/book/x'))
+      expect(html).toContain('Rellenar el formulario')
+      expect(automationEmailHtml('<p>Hola</p>', { formButton: { text: 'X', url: '' } })).not.toContain('X</a>')
+    })
   })
 })

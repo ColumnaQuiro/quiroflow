@@ -29,23 +29,30 @@ export function emptyBodyPlaceholderHtml(text: string): string {
 /** The default words on the booking button, when the step does not set its own. */
 export const DEFAULT_BOOKING_BUTTON_TEXT = 'Reserva tu próxima cita'
 
+/** The default words on the form button (an email step's chosen form), when the step does not set its own. */
+export const DEFAULT_FORM_BUTTON_TEXT = 'Rellenar el formulario'
+
 /**
  * The whole HTML of an automation email. `bodyHtml` is already merged and
  * styled. Optional blocks an email step can switch on (Settings of the step):
  * the clinic's logo above the message, and a button to the clinic's online
  * booking page under it -- the same envelope the step's live preview shows.
+ * `formButton` is the step's form, above the booking button: what the email
+ * is for comes first.
  */
 export function automationEmailHtml(
   bodyHtml: string,
-  opts: { unsubscribe?: UnsubscribeLinks | null; clinicName?: string | null; logoUrl?: string | null; button?: { text: string; url: string } | null } = {},
+  opts: { unsubscribe?: UnsubscribeLinks | null; clinicName?: string | null; logoUrl?: string | null; button?: { text: string; url: string } | null; formButton?: { text: string; url: string } | null } = {},
 ): string {
   const footer = opts.unsubscribe ? unsubscribeFooterHtml(opts.unsubscribe.page, opts.clinicName) : ''
   const logo = opts.logoUrl
     ? `<div style="padding:28px 32px 0;text-align:center;"><img src="${escapeHtml(opts.logoUrl)}" alt="${escapeHtml(opts.clinicName?.trim() || '')}" style="max-height:56px;max-width:200px;" /></div>`
     : ''
-  const button = opts.button?.url
-    ? `<div style="padding:0 32px 32px;text-align:center;"><a href="${escapeHtml(opts.button.url)}" style="display:inline-block;background:#111827;color:#FFFFFF;text-decoration:none;font-weight:600;font-size:14px;padding:12px 22px;border-radius:10px;">${escapeHtml(opts.button.text?.trim() || DEFAULT_BOOKING_BUTTON_TEXT)}</a></div>`
-    : ''
+  const buttonHtml = (b: { text: string; url: string } | null | undefined, fallback: string) =>
+    b?.url
+      ? `<div style="padding:0 32px 32px;text-align:center;"><a href="${escapeHtml(b.url)}" style="display:inline-block;background:#111827;color:#FFFFFF;text-decoration:none;font-weight:600;font-size:14px;padding:12px 22px;border-radius:10px;">${escapeHtml(b.text?.trim() || fallback)}</a></div>`
+      : ''
+  const button = buttonHtml(opts.formButton, DEFAULT_FORM_BUTTON_TEXT) + buttonHtml(opts.button, DEFAULT_BOOKING_BUTTON_TEXT)
   return `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">${logo}

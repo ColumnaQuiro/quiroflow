@@ -112,6 +112,7 @@ watch(() => props.job.id, () => { stopping.value = false })
         </button>
       </div>
       <p class="text-[12.5px] text-ink-muted2">{{ t('This runs on QuiroFlow\'s server: you can close this page or the browser. You will get an email when it finishes.', 'Esto se hace en el servidor de QuiroFlow: puedes cerrar esta página o el navegador. Te llegará un email cuando termine.') }}</p>
+      <p v-if="progress.paused" class="text-[12.5px] text-warning-text" data-cy="qc-job-paused">{{ t('Paused for a moment: QuiroFlow\'s database is busy, and the import waits so the clinics are not slowed down. It carries on by itself.', 'En pausa un momento: la base de datos de QuiroFlow está ocupada y la importación espera para no ralentizar a las clínicas. Sigue sola.') }}</p>
       <p v-if="progress.lastError" class="text-[12.5px] text-warning-text">{{ t(`Retrying after a problem: ${progress.lastError}`, `Reintentando tras un problema: ${progress.lastError}`) }}</p>
     </template>
 

@@ -30,6 +30,12 @@ export interface ImportJobProgress {
    * ever counted them. Set when a slice starts, cleared when one saves.
    */
   unfinished?: number
+  /**
+   * The job is waiting because the database is short of memory or slow to
+   * answer (server/utils/importPressure.ts): since when, why, and how many
+   * times it has looked. Cleared by the first slice that finds it well again.
+   */
+  paused?: { since: string; reason: string; checks: number }
   // --- reading PracticeHub, page by page (server/utils/practicehubImportJob.ts)
   /** The read's own id: its pages only become the copy once it finishes. */
   pass?: string

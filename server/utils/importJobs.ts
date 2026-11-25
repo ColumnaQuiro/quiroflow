@@ -27,6 +27,8 @@ import { practiceHubApplySlice, practiceHubReadSlice } from '~/server/utils/prac
 import type { PracticeHubStepKind } from '~/utils/practicehubImport'
 import { QuirohiroError } from '~/server/utils/quirohiro'
 import { quirohiroApplySlice, quirohiroReadSlice } from '~/server/utils/quirohiroImportJob'
+import { readDbPressure, type DbPressure } from '~/server/utils/importPressure'
+import { alertOps } from '~/server/utils/opsAlert'
 import type { QuirohiroStepKind } from '~/utils/quirohiroImport'
 import type { QuirohiroWho } from '~/utils/quirohiroRows'
 
@@ -72,6 +74,11 @@ const LEASE_MS = 65_000
 const MAX_FAILURES = 4
 /** Slices in a row that run out of time having written nothing: something takes longer than a slice, and repeating it will not help. */
 const MAX_STALLS = 3
+
+/** A job the database is too strained for waits this long before it looks again (server/utils/importPressure.ts). */
+const PAUSE_MS = 3 * 60_000
+/** Strained for this long without a break, a job stops instead of waiting on: something else is wrong, and someone should look. */
+const MAX_PAUSE_MS = 2 * 60 * 60_000
 
 const CONCURRENCY = 3
 const TECHNIQUE_BATCH = 20
@@ -154,6 +161,8 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
   let status = 'running'
   let error: string | null = null
   let threw = false
+  /** The database is busy: this slice works, but the next waits for the cron instead of starting straight away. */
+  let rest = false
 
   // A slice the platform cuts off -- out of time or out of memory -- never
   // reaches its save below and throws nothing the catch could count, so a
@@ -190,6 +199,19 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
       )
       console.error(`[import-jobs] ${job.id} step ${job.steps[stepIndex]} was cut off ${MAX_FAILURES} times in a row; failing it`)
     } else {
+      // The brake (25 Nov 2026, importPressure.ts): an import is the one big
+      // load on the database that can wait, so it does whenever the database
+      // is short of memory or slow to answer -- before this slice writes
+      // anything, not after.
+      const pressure = await readDbPressure(admin, job.id)
+      if (pressure.level === 'strained') return await pauseForPressure(admin, job, progress, pressure, t)
+      rest = pressure.level === 'busy'
+      if (rest) console.warn(`[import-jobs] ${job.id} database busy, resting after this slice: ${pressure.reasons.join('; ')}`)
+      if (progress.paused) {
+        await reportImportPressure('info', `Import resumed after a ${Math.round((Date.now() - new Date(progress.paused.since).getTime()) / 60_000)} min pause`, job, { paused: progress.paused, pressure })
+        const { paused: _resumed, ...kept } = progress
+        progress = kept
+      }
       const { error: markError } = await admin.from('import_jobs').update({ progress: { ...progress, unfinished } as unknown as Json }).eq('id', job.id)
       if (markError) throw new Error(`import_jobs: ${markError.message}`)
       const step = job.steps[stepIndex]!
@@ -263,7 +285,106 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
   // A slice that failed is not handed straight on: Quirocitas being down for a
   // moment would otherwise use up every retry in a few seconds. The cron
   // tries again within a minute, so MAX_FAILURES spans a few minutes.
-  return { claimed: true, more: !finished && !threw, retryLater: !finished && threw }
+  return { claimed: true, more: !finished && !threw && !rest, retryLater: !finished && (threw || rest) }
+}
+
+/**
+ * Leaves the job untouched for PAUSE_MS instead of working, because the
+ * database is short of memory or slow to answer. The cron picks it up again
+ * once its hold runs out; the first slice that finds the database well again
+ * carries on where this one would have. Strained for MAX_PAUSE_MS without a
+ * break, the job stops as failed rather than wait for ever -- without the
+ * "import failed" email to whoever started it: ops gets the email and
+ * restarts it by hand.
+ *
+ * Logged three ways so a pause is never silent: the function log, Sentry
+ * (one issue, "Import paused: database under strain"), and an email to ops
+ * at most once an hour. The clinic sees "Paused" on its import screen.
+ */
+async function pauseForPressure(
+  admin: Admin,
+  job: ImportJob,
+  progress: ImportJobProgress,
+  pressure: DbPressure,
+  t: (en: string, es: string) => string,
+): Promise<{ claimed: boolean; more: boolean; retryLater: boolean }> {
+  const now = new Date()
+  const since = progress.paused?.since ?? now.toISOString()
+  const minutes = Math.round((now.getTime() - new Date(since).getTime()) / 60_000)
+  const giveUp = now.getTime() - new Date(since).getTime() >= MAX_PAUSE_MS
+  const reason = pressure.reasons.join('; ')
+  const paused = { since, reason, checks: (progress.paused?.checks ?? 0) + 1 }
+  // This slice never got as far as marking itself, so there is no mark of
+  // its own to clear -- but a mark left by an earlier slice would count a
+  // pause as a slice that died.
+  const { unfinished: _unmarked, ...kept } = progress
+  const saved = { ...kept, paused }
+
+  const { error: saveError } = await admin
+    .from('import_jobs')
+    .update(giveUp
+      ? {
+          status: 'failed',
+          progress: saved as unknown as Json,
+          error: t(
+            `Stopped: the database stayed too busy for ${minutes} minutes, so the import waited instead of slowing down every clinic, and then gave up. What was imported until then stays; starting again carries on from there.`,
+            `Parado: la base de datos ha estado demasiado ocupada durante ${minutes} minutos, así que la importación esperó para no ralentizar a todas las clínicas, y al final se detuvo. Lo importado hasta entonces se queda; al volver a empezar sigue desde ahí.`,
+          ),
+          locked_until: null,
+          finished_at: now.toISOString(),
+          // Not the clinic's to act on: QuiroFlow restarts it by hand once
+          // the database is well. Marked as told, so neither this slice nor
+          // import-jobs-cron's catch-up sends the "import failed" email.
+          notified_at: now.toISOString(),
+        }
+      : { progress: saved as unknown as Json, locked_until: new Date(now.getTime() + PAUSE_MS).toISOString() })
+    .eq('id', job.id)
+  if (saveError) console.error(`[import-jobs] ${job.id} could not save its pause:`, saveError.message)
+
+  if (giveUp) {
+    await reportImportPressure('error', `Import stopped: database strained for ${minutes} min`, job, { paused, pressure })
+  } else if (!progress.paused) {
+    await reportImportPressure('warning', 'Import paused: database under strain', job, { paused, pressure })
+  } else {
+    console.warn(`[import-jobs] ${job.id} still paused (${minutes} min, check ${paused.checks}): ${reason}`)
+  }
+  return { claimed: true, more: false, retryLater: !giveUp }
+}
+
+/** The log line, the Sentry event and, for a pause or a stop, the ops email. Never throws. */
+async function reportImportPressure(
+  level: 'info' | 'warning' | 'error',
+  message: string,
+  job: ImportJob,
+  extra: { paused: NonNullable<ImportJobProgress['paused']>; pressure: DbPressure },
+) {
+  const step = job.steps[job.step_index] ?? '?'
+  const line = `[import-jobs] ${job.id} (${job.source}, account ${job.account_id}, step ${step}) ${message}: ${extra.pressure.reasons.join('; ') || 'database well again'}`
+  if (level === 'info') console.info(line)
+  else console.warn(line)
+  try {
+    // Loaded here, not at the top: server/utils is evaluated on every cold
+    // start (CLAUDE.md), and only a pause needs it.
+    const Sentry = await import('@sentry/nuxt')
+    Sentry.captureMessage(message, {
+      level,
+      tags: { feature: 'import', import_source: job.source, account_id: job.account_id, step },
+      extra: { job_id: job.id, ...extra },
+      fingerprint: ['import-pressure', level],
+    })
+    await Sentry.flush(2000)
+  } catch (e) {
+    console.error('[import-jobs] could not report to Sentry', e)
+  }
+  if (level === 'info') return
+  const p = extra.pressure
+  await alertOps(level === 'error' ? 'import-stopped-pressure' : 'import-paused-pressure', `${message} (${job.source}, step ${step})`, [
+    `Import job ${job.id} for account ${job.account_id} ${level === 'error' ? 'has stopped' : 'is waiting'} because the database is under strain: ${p.reasons.join('; ')}.`,
+    `Probe: ${p.probe_ms ?? 'no answer'} ms. Memory free: ${p.available != null ? `${Math.round(p.available * 100)}%` : 'unknown'}. Swap used: ${p.swap_used != null ? `${Math.round(p.swap_used * 100)}%` : 'unknown'}.`,
+    level === 'error'
+      ? 'It waited two hours for the database to recover and then gave up. The clinic has NOT been emailed: start it again by hand (import_jobs, same steps and options) once you know what else was loading the database.'
+      : 'It looks again every 3 minutes and carries on by itself once the database recovers; after two hours of strain it stops as failed. Nothing needs doing unless this repeats.',
+  ], 1)
 }
 
 // --- reading Quirocitas ---------------------------------------------------------------

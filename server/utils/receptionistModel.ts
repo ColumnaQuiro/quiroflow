@@ -10,7 +10,7 @@ import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/recep
 import { receptionistSystemBlocks, withTailBreakpoint, type ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, ASK_WHY_CANCELLED, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, OFFER_TIMES, RECORD_CANCELLATION_REASON, STOP_EARLIER_TIME_OFFERS, STOP_FOLLOW_UPS, WRITE_BACK_ON, type OfferDraft, type OfferHints } from '~/server/utils/receptionistBooking'
 import type { OfferedSlot, SlotLanguage } from '~/utils/receptionistConversion'
-import { confirmationInWords, confirmationIsPlain, offerInWords, wordsMatchOffer, type BookedDetails } from '~/utils/receptionistOffers'
+import { confirmationInWords, confirmationIsPlain, offerInWords, withOfferLead, wordsMatchOffer, type BookedDetails } from '~/utils/receptionistOffers'
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UNEXPLAINED_HANDOVER_REASON } from '~/utils/receptionistFollowThrough'
@@ -245,6 +245,8 @@ function textOf(content: Anthropic.ContentBlock[]): string {
     .map((block) => block.text)
     .join('')
 }
+
+const OFFER_LEAD_NOTE = 'What you wrote beside this call is sent as it is, in front of your reply: do not greet them again or repeat it, write only what follows.'
 
 const EMPTY_REPLY_NOTE = 'Your reply had no text, so nothing would reach them. Write the message to send them now, in Spanish unless they write in another language: if you offered times with offer_times, name those same times in words and ask which they prefer. Do not call offer_times again for them.'
 
@@ -525,8 +527,16 @@ async function runOnce(
       // for want of a sentence.
       const offering = choices === 'times' && offeredSlots.length > 0 && !bookedVisit
       if (!text && offering) {
-        text = offerWords && wordsMatchOffer(clockTimes(offerWords), offeredSlots, { standing: opts.standingTimes, max: opts.maxTimesPerReply }) ? offerWords : offerInWords(offer?.slots ?? offeredSlots, language)
+        text = offerWords && wordsMatchOffer(clockTimes(offerWords), offeredSlots, { standing: opts.standingTimes, max: opts.maxTimesPerReply }) ? offerWords : withOfferLead(offerWords, offerInWords(offer?.slots ?? offeredSlots, language))
         checks.push(text === offerWords ? 'empty_offer_words_used' : 'empty_offer_in_code')
+      } else if (text && offering && offerWords) {
+        // What it wrote beside offer_times -- the greeting, the answer to
+        // what they asked -- goes in front of the times (withOfferLead).
+        const whole = withOfferLead(offerWords, text)
+        if (whole !== text) {
+          text = whole
+          checks.push('offer_lead_kept')
+        }
       }
       if (!text && bookedDetails && confirmationIsPlain(bookedDetails)) {
         text = confirmationInWords(bookedDetails, language)
@@ -653,11 +663,10 @@ async function runOnce(
       return run(reply, false)
     }
 
-    // What it wrote beside an offer: the reply, should the turn after come back empty.
-    if (uses.some((use) => use.name === 'offer_times')) {
-      const words = cleanReply(textOf(message.content))
-      if (words) offerWords = words
-    }
+    // What it wrote beside an offer: sent in front of the reply that follows
+    // (withOfferLead), or as the reply should that come back empty. The last
+    // offer's words only: an earlier offer's are not this one's.
+    if (uses.some((use) => use.name === 'offer_times')) offerWords = cleanReply(textOf(message.content))
     // The whole turn goes back, thinking blocks included and unchanged, and
     // every result in one message.
     messages.push({ role: 'assistant', content: message.content })
@@ -767,6 +776,8 @@ async function runOnce(
           for (const t of clockTimes(JSON.stringify(use.input ?? {}))) done.add(t)
         }
         toolUses.push({ name: use.name, input: (use.input ?? {}) as Record<string, unknown>, ok: !result.isError })
+        // Told, so it does not write them again: they go out in front of its reply (withOfferLead).
+        if (use.name === 'offer_times' && !result.isError && offerWords) result = { ...result, content: `${result.content} ${OFFER_LEAD_NOTE}` }
         return { type: 'tool_result', tool_use_id: use.id, content: result.content, is_error: result.isError }
         })(),
       )

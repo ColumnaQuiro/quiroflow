@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptedUnbookedReason, confirmationInWords, confirmationIsPlain, matchAcceptedSlot, offerInWords, slotInWords, wordsMatchOffer, type BookedDetails } from '../../utils/receptionistOffers'
+import { acceptedUnbookedReason, confirmationInWords, confirmationIsPlain, matchAcceptedSlot, offerInWords, slotInWords, withOfferLead, wordsMatchOffer, type BookedDetails } from '../../utils/receptionistOffers'
 import { clockTimes } from '../../utils/receptionistHistory'
 import { slotTitle } from '../../utils/receptionistConversion'
 
@@ -113,5 +113,35 @@ describe('what a person is told about a time accepted and not booked', () => {
   it('names the time', () => {
     expect(acceptedUnbookedReason({ date: '2026-12-02', time: '09:05' })).toContain(slotInWords({ date: '2026-12-02', time: '09:05' }, 'es'))
     expect(slotInWords({ date: '2026-12-02', time: '09:05' }, 'es')).toBe('miércoles 2 de diciembre a las 9:05')
+  })
+})
+
+describe('withOfferLead: the words beside offer_times, in front of the reply', () => {
+  const lead = 'Hola, gracias por escribirnos. Vemos a muchos pacientes con dolor de espalda, y en la primera visita hacemos una valoración completa.'
+  const times = 'Las dos opciones son:\n\n- Hoy, miércoles 25 de noviembre, a las 16:00, con Laura.\n- Mañana, jueves 26 de noviembre, a las 18:00, con Pablo.\n\n¿Cuál prefieres?'
+
+  it('puts a greeting written beside the call before the times', () => {
+    expect(withOfferLead(lead, times)).toBe(`${lead}\n\n${times}`)
+  })
+
+  it('puts times written beside the call before a question that follows', () => {
+    const offer = 'Tengo el miércoles 25 a las 16:00 o el jueves 26 a las 18:00.'
+    expect(withOfferLead(offer, '¿Cuál prefieres?')).toBe(`${offer}\n\n¿Cuál prefieres?`)
+  })
+
+  it('does not repeat words the reply already has', () => {
+    expect(withOfferLead(lead, `${lead}\n\n${times}`)).toBe(`${lead}\n\n${times}`)
+    // The same opening, worded on differently after it.
+    expect(withOfferLead('Hola, Ana.\nTe cuento.', 'Hola, Ana.\n\nTengo hoy a las 16:00.')).toBe('Hola, Ana.\n\nTengo hoy a las 16:00.')
+  })
+
+  it('keeps only the reply when both offer times, so the list is not sent twice', () => {
+    expect(withOfferLead('Te propongo el miércoles a las 16:00 o el jueves a las 18:00.', times)).toBe(times)
+  })
+
+  it('is the reply alone, or the lead alone, when the other is empty', () => {
+    expect(withOfferLead('', times)).toBe(times)
+    expect(withOfferLead('  ', times)).toBe(times)
+    expect(withOfferLead(lead, '')).toBe(lead)
   })
 })

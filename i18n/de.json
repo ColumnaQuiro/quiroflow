@@ -4746,6 +4746,7 @@
   "Income paid": "Eingenommener Umsatz",
   "Income paid by month": "Eingenommener Umsatz pro Monat",
   "Income paid by practitioner": "Eingenommener Umsatz nach Behandler",
+  "Paused for a moment: QuiroFlow's database is busy, and the import waits so the clinics are not slowed down. It carries on by itself.": "Kurz pausiert: Die Datenbank von QuiroFlow ist ausgelastet, und der Import wartet, damit die Praxen nicht langsamer werden. Er läuft von selbst weiter.",
   "Refer your friends!": "Empfehlen Sie uns weiter!",
   "The discount applies once the new clinic starts a paid subscription, on the regular plan price.": "Der Rabatt gilt, sobald die neue Praxis ein kostenpflichtiges Abo abschließt, auf den regulären Planpreis.",
   "What each completed visit was worth: the bono session it used, or else its invoice. Visits with neither (membership, not charged) are left out": "Was jede erledigte Behandlung wert war: die verwendete Bono-Sitzung, sonst ihre Rechnung. Behandlungen ohne beides (Mitgliedschaft, nicht abgerechnet) zählen nicht",

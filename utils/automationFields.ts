@@ -53,6 +53,8 @@ export interface MergeContext {
   emailBranding?: Partial<EmailTheme>
   /** The patient's default practitioner's first name; {{practitioner_first_name}} falls back to clinicName. */
   practitionerFirstName?: string
+  /** The triggering appointment's practitioner's first name; {{appointment_practitioner_first_name}} falls back to clinicName. */
+  appointmentPractitionerFirstName?: string
   /** When the patient's last completed visit started, for {{last_visit_month}}. */
   lastVisitAt?: string
   /** referral.visit_completed: the first name of the patient they referred, for {{referred_first_name}}. */
@@ -213,6 +215,7 @@ function fieldValue(recipient: MergeRecipient, source: string, context?: MergeCo
   // and a recall that never goes out helps nobody.
   if (source === 'referred_first_name') return (context?.referredFirstName ?? '').trim()
   if (source === 'practitioner_first_name') return (context?.practitionerFirstName ?? '').trim() || context?.clinicName || ''
+  if (source === 'appointment_practitioner_first_name') return (context?.appointmentPractitionerFirstName ?? '').trim() || context?.clinicName || ''
   // "desde junio": the month of the last completed visit, in the language
   // the message goes out in. Empty for someone who has never completed one.
   if (source === 'last_visit_month') {

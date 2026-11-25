@@ -953,6 +953,11 @@ export const VARIABLE_SOURCES: { value: string; label: Pair; group?: VariableGro
   // name when the patient has no practitioner, so Meta never gets an empty
   // parameter (it refuses the whole message over one).
   { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'], group: 'patient' },
+  // The practitioner of the appointment that fired the rule -- "Soy Marta"
+  // on a first visit booked online, where the patient has no practitioner of
+  // their own yet and {{practitioner_first_name}} would name whoever is
+  // first on the team. The clinic's name outside an appointment trigger.
+  { value: 'appointment_practitioner_first_name', label: ["Appointment's practitioner (first name)", 'Profesional de la cita (nombre)'], group: 'appointment' },
   { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'], group: 'patient' },
   // Only on "Referred patient completes a visit": who they referred.
   { value: 'referred_first_name', label: ['First name of who they referred', 'Nombre del paciente referido'], group: 'patient' },

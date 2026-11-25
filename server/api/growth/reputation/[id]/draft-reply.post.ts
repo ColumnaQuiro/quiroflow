@@ -14,7 +14,9 @@ import { toConfig, toneWording } from '~/server/utils/receptionist'
 // change: posting needs the platform OAuth that does not exist yet. When it
 // does, approval stays a separate deliberate step -- see the note in
 // approve-reply.
-const MODEL = 'claude-opus-5'
+// Haiku: two to four sentences of thanks or apology, which a person reads and
+// approves before anything is posted. Opus 5 cost 50 times as much per token.
+const MODEL = 'claude-haiku-5-5'
 const MAX_TOKENS = 512
 
 export default defineEventHandler(async (event) => {

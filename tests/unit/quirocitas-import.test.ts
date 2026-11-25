@@ -307,6 +307,17 @@ describe('quirocitas rows', () => {
     expect(invoiceNotes[0]!.note).toContain('[Factura Quirocitas 13/2026]')
   })
 
+  it('brings a refund in as a negative payment on the patient, tied to no visit or bono', () => {
+    const s = snapshot()
+    s.ledger[1]!.card = 450
+    // Money given back on a bono is a row of its own with a negative amount.
+    s.ledger.push({ ...s.ledger[1]!, date: '20-10-2026', card: -100, bonoPaymentId: '701', note: 'Genérico' })
+    const { payments } = quirocitasLedgerRows(s, quirocitasBonoRows(s, zone).bonoOfSale, zone)
+    expect(payments.find((p) => p.ref === 'QC-pay-pb701-card')).toMatchObject({ amountCents: -10000, method: 'card', chargeRef: null, bonoRef: null })
+    // Everything the page printed is accounted for, the refund taken off.
+    expect(payments.reduce((a, p) => a + p.amountCents, 0)).toBe(4000 + 45000 - 10000)
+  })
+
   describe('who an appointment is with', () => {
     const team = [{ id: 'oriol', full_name: 'Oriol Demo Prueba' }, { id: 'isabel', full_name: 'Isabel' }]
 

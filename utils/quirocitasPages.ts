@@ -110,6 +110,14 @@ export interface QuirocitasPatient {
   inactive: string
   company: { name: string; nif: string; address: string; postcode: string; city: string } | null
   hasPhoto: boolean
+  /**
+   * Set by the Files step, not read from the page: the photo was asked for
+   * and came back a blank placeholder, or not at all. Without it, a clinic
+   * whose every record "has" a blank photo asked for the same few hundred on
+   * every slice, wrote nothing, and was stopped as making no progress. A new
+   * read of the record clears it, so the photo is asked for once more.
+   */
+  photoAbsent?: boolean
   plans: { times: string; per: string; during: string }[]
   family: string[]
   /** One per appointment, with the id the history and the ledger use. */
@@ -124,7 +132,8 @@ export interface QuirocitasHistory {
   generalNotes: string
   visits: { number: string; date: string; type: string; notes: string; citaId: string }[]
   segments: string[]
-  tests: { id: string; description: string; category: string; file: string; src: string | null }[]
+  /** `absent`: set by the Files step when Quirocitas' server does not have the file (see photoAbsent). */
+  tests: { id: string; description: string; category: string; file: string; src: string | null; absent?: boolean }[]
   biomechanics: { segments: { segment: string; left: boolean; right: boolean }[]; fields: Record<string, string> }
   anamnesis: Record<string, string>
 }

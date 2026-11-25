@@ -54,10 +54,14 @@ export interface QuirocitasPlan {
   warnings: string[]
   /** Units of work Apply will do, for its progress bar. */
   total: number
-  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[] }>
+  /** `skipped`: items found to have nothing to write and remembered, so a run that only finds those still counts as progress. */
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; skipped?: number }>
 }
 
 export interface QuirocitasFileResult { storagePath?: string; size?: number; contentType?: string; missing?: true; blank?: true }
+
+/** A photo or test file Quirocitas does not really have, by the snapshot record it is on. */
+export interface QuirocitasAbsentFile { recordId: string; photo?: true; testId?: string }
 
 export interface QuirocitasImportContext {
   supabase: SupabaseClient<Database>
@@ -69,6 +73,8 @@ export interface QuirocitasImportContext {
   fetchFile(body: { patientId: string; src: string; kind: 'photo' | 'test'; testId?: string }): Promise<QuirocitasFileResult>
   /** Re-encodes a stored file and makes its thumbnail (processStoredPatientFile). */
   compressFile(fileId: string): Promise<unknown>
+  /** Remembers, on the copy read from Quirocitas, files it turned out not to have (markQuirocitasFilesAbsent). */
+  forgetFiles?(absent: QuirocitasAbsentFile[]): Promise<void>
 }
 
 const CHUNK = 200
@@ -647,6 +653,7 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const paymentsWaiting = ledger.payments.filter((p) => !havePayments.has(p.ref)).length - payments.length
     const invoiceNotes = ledger.invoiceNotes.filter((n) => patients.has(n.patientRef) && !logged.has(n.ref))
     const bonosMissing = payments.filter((p) => p.bonoRef && !bonoIds.has(p.bonoRef)).length
+    const refunds = payments.filter((p) => p.amountCents < 0)
 
     // What it leaves each patient with: payments less charges, as the
     // patient list will show it.
@@ -697,6 +704,10 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         ),
         t('Invoices Quirocitas issued for a bono sale come in as a note on the patient with all their details: QuiroFlow charges a bono by its visits, so an invoice for the sale itself would bill the patient twice.', 'Las facturas que Quirocitas emitió por la venta de un bono llegan como nota en el paciente con todos sus datos: QuiroFlow cobra el bono visita a visita, y una factura por la venta lo cobraría dos veces.'),
         ...blocked,
+        ...(refunds.length ? [t(
+          `${nf.format(refunds.length)} refunds in the cash ledger (${eur(-refunds.reduce((a, p) => a + p.amountCents, 0))} given back) come in as negative payments on the patient, as QuiroFlow records a refund.`,
+          `${nf.format(refunds.length)} devoluciones de la caja (${eur(-refunds.reduce((a, p) => a + p.amountCents, 0))} devueltos) llegan como pagos negativos en el paciente, como QuiroFlow registra una devolución.`,
+        )] : []),
         ...(!tooVisitless && ledger.visitless.length ? [t(
           `${nf.format(ledger.visitless.length)} visits in the cash ledger match no appointment in the patient's record: their payments come in, their charges do not.`,
           `${nf.format(ledger.visitless.length)} visitas de la caja no coinciden con ninguna cita de la ficha del paciente: llegan sus pagos, no sus cargos.`,
@@ -742,8 +753,9 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
     const patients = await patientIds()
     const stored = new Set((await readAll<{ external_reference: string; storage_path: string | null }>('patient_files', 'external_reference, storage_path', 'QC-test-')).filter((f) => f.storage_path).map((f) => f.external_reference))
     const photoless = new Set((await readAll<{ external_reference: string; photo_storage_path: string | null }>('patients', 'external_reference, photo_storage_path', 'QC-')).filter((p) => !p.photo_storage_path).map((p) => p.external_reference))
-    const files = Object.values(s.patients).flatMap((r) => quirocitasFileRows(r)).filter((f) => patients.has(f.patientRef) && !stored.has(f.ref))
-    const photos = Object.values(s.patients).filter((r) => r.ficha.hasPhoto && photoless.has(qcPatientRef(r.ficha.id))).map((r) => ({ ref: qcPatientRef(r.ficha.id), id: r.ficha.id, name: r.ficha.name }))
+    // By the key of the record they are on, which is what marks one absent.
+    const files = Object.entries(s.patients).flatMap(([recordId, r]) => quirocitasFileRows(r).map((f) => ({ ...f, recordId }))).filter((f) => patients.has(f.patientRef) && !stored.has(f.ref))
+    const photos = Object.entries(s.patients).filter(([, r]) => r.ficha.hasPhoto && !r.ficha.photoAbsent && photoless.has(qcPatientRef(r.ficha.id))).map(([recordId, r]) => ({ recordId, ref: qcPatientRef(r.ficha.id), id: r.ficha.id, name: r.ficha.name }))
     const waiting = Object.values(s.patients).flatMap((r) => quirocitasFileRows(r)).filter((f) => !patients.has(f.patientRef)).length
 
     return {
@@ -764,13 +776,17 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         let written = 0
         let done = 0
         let missing = 0
+        // What Quirocitas turned out not to have is remembered on the copy, so
+        // the next slice asks for what comes after it. Only what is remembered
+        // counts as progress: without ctx.forgetFiles nothing is.
+        const absent: QuirocitasAbsentFile[] = []
         // Files go through the server into Storage one at a time each: some are
         // videos of tens of megabytes.
         await withConcurrency(files, 3, async (f) => {
           if (shouldStop()) return
           try {
             const res = await ctx.fetchFile({ patientId: patients.get(f.patientRef)!, src: f.src, kind: 'test', testId: f.testId })
-            if (res.missing || !res.storagePath) { missing++; return }
+            if (res.missing || !res.storagePath) { missing++; absent.push({ recordId: f.recordId, testId: f.testId }); return }
             // The reference's unique index is partial (where not null), which
             // PostgREST's upsert cannot target: look first, then write.
             const row = { file_name: f.fileName, file_type: res.contentType ?? null, size_bytes: res.size ?? null, storage_path: res.storagePath, is_xray: f.isXray }
@@ -792,11 +808,18 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         await withConcurrency(photos, 3, async (p) => {
           if (shouldStop()) return
           try {
-            const res = await ctx.fetchFile({ patientId: patients.get(p.ref)!, src: `${p.id}/photo.jpg`, kind: 'photo' })
+            // The record's page names the photo with whatever extension it was
+            // saved under, and the copy kept only that there is one: a .png
+            // asked for as .jpg is simply not there.
+            let res = await ctx.fetchFile({ patientId: patients.get(p.ref)!, src: `${p.id}/photo.jpg`, kind: 'photo' })
+            if (res.missing) res = await ctx.fetchFile({ patientId: patients.get(p.ref)!, src: `${p.id}/photo.png`, kind: 'photo' })
             if (res.storagePath) {
               const { error } = await supabase.from('patients').update({ photo_storage_path: res.storagePath }).eq('id', patients.get(p.ref)!)
               if (error) throw error
               written++
+            } else {
+              // A blank placeholder or no file at all: either way, no photo.
+              absent.push({ recordId: p.recordId, photo: true })
             }
           } catch (e) {
             errors.push(`${p.name}: ${errText(e)}`)
@@ -804,8 +827,17 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
             progress(++done)
           }
         })
+        let skipped = 0
+        if (absent.length && ctx.forgetFiles) {
+          try {
+            await ctx.forgetFiles(absent)
+            skipped = absent.length
+          } catch (e) {
+            errors.push(t(`Could not note which files Quirocitas does not have: ${errText(e)}`, `No se pudo anotar qué archivos no tiene Quirocitas: ${errText(e)}`))
+          }
+        }
         if (missing) errors.unshift(t(`${missing} files are listed in Quirocitas but missing on its server (they do not open there either).`, `${missing} archivos aparecen en Quirocitas pero faltan en su servidor (allí tampoco se abren).`))
-        return { written, errors }
+        return { written, errors, skipped }
       },
     }
   }

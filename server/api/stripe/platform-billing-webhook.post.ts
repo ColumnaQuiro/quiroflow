@@ -2,12 +2,14 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { billingLanguage, stripeForPlatformBilling, syncInvoiceLanguage } from '~/server/utils/platformBillingStripe'
 import { isSupersededSubscriptionEvent } from '~/utils/billing'
+import { onReferralInvoiceCreated, onReferralInvoicePaid } from '~/server/utils/clinicReferralRewards'
 import type Stripe from 'stripe'
 
 // Register this URL once in the platform-billing Stripe account's own
 // webhook settings (NOT the Connect "connected accounts" listener --
 // server/api/stripe/webhook.post.ts already owns that), subscribed to
-// customer.subscription.created/updated/deleted. There's no
+// customer.subscription.created/updated/deleted, plus invoice.created and
+// invoice.paid for the clinic referral discount. There's no
 // checkout.session.completed handling here on purpose: whatever creates the
 // Checkout Session should set subscription_data.metadata.account_id, and
 // Stripe always fires a customer.subscription.created event once that
@@ -45,6 +47,22 @@ export default defineEventHandler(async (event) => {
     stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, config.stripePlatformBillingWebhookSecret)
   } catch (err: any) {
     throw createError({ statusCode: 400, statusMessage: `Invalid signature: ${err?.message}` })
+  }
+
+  // The clinic referral discount (server/utils/clinicReferralRewards.ts). Its
+  // own events, so a failure here -- answered 500 for Stripe to retry --
+  // never holds up the subscription sync below, which is what unlocks a
+  // clinic that has paid.
+  if (stripeEvent.type === 'invoice.created' || stripeEvent.type === 'invoice.paid') {
+    const invoice = stripeEvent.data.object as Stripe.Invoice
+    const db = serverSupabaseServiceRole<Database>(event)
+    try {
+      const result = stripeEvent.type === 'invoice.created' ? await onReferralInvoiceCreated(stripe, db, invoice) : await onReferralInvoicePaid(db, invoice)
+      return { received: true, ...result }
+    } catch (err) {
+      console.error(`[platform-billing-webhook] ${stripeEvent.type} ${invoice.id}: clinic referral reward failed`, err)
+      throw createError({ statusCode: 500, statusMessage: 'Could not apply the clinic referral reward' })
+    }
   }
 
   if (!['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(stripeEvent.type)) {

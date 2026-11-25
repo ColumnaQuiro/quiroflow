@@ -4,6 +4,7 @@ import { planIncludesGrowth, receptionistLineWanted } from '~/utils/growthPlans'
 import { checkoutTrialEnd, graceBackdate, graceCatchUpCents } from '~/utils/billing'
 import { billingLanguage, retrieveChangeableSubscription, stripeForPlatformBilling, stripeLocale } from '~/server/utils/platformBillingStripe'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
+import { checkoutReferralCoupon } from '~/server/utils/clinicReferralRewards'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -315,8 +316,25 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // A clinic that came through another clinic's referral link gets its 10%
+  // on its first paid invoice. Without a trial that invoice is charged the
+  // moment Checkout completes, with no draft for the webhook to add it to, so
+  // the coupon goes on the Session; with one, the webhook adds it to the
+  // invoice Stripe drafts when the trial ends (clinicReferralRewards.ts).
+  // Never in the way of subscribing: if it fails, the reward stays pending
+  // and lands on a later invoice.
+  let referralCoupon: string | null = null
+  if (!trialEnd) {
+    try {
+      referralCoupon = await checkoutReferralCoupon(stripe, serviceRole, teamMember.account_id)
+    } catch (err) {
+      console.error(`[billing/subscribe] account=${teamMember.account_id}: clinic referral coupon failed`, err)
+    }
+  }
+
   const origin = getRequestURL(event).origin
   const session = await stripe.checkout.sessions.create({
+    ...(referralCoupon ? { discounts: [{ coupon: referralCoupon }] } : {}),
     mode: 'subscription',
     customer: subscription?.stripe_customer_id ?? undefined,
     customer_email: subscription?.stripe_customer_id ? undefined : (user?.email ?? undefined),

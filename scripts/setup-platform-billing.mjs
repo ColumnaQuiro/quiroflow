@@ -210,7 +210,8 @@ console.log(
 
 console.log('--- Still to do by hand in the Stripe dashboard ---\n')
 console.log('1. Webhook endpoint -> https://app.quiroflow.com/api/stripe/platform-billing-webhook')
-console.log('   Events: customer.subscription.created, customer.subscription.updated, customer.subscription.deleted')
+console.log('   Events: customer.subscription.created, customer.subscription.updated, customer.subscription.deleted,')
+console.log('           invoice.created, invoice.paid (the clinic referral discount)')
 console.log('   Put the signing secret in STRIPE_PLATFORM_BILLING_WEBHOOK_SECRET.')
 console.log('2. Activate the Customer Portal (Settings > Billing > Customer portal), or')
 console.log('   "Manage payment method & invoices" on /subscription will fail.')

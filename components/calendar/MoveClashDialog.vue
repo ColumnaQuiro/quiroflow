@@ -2,26 +2,23 @@
 import { formatTime } from '~/utils/billing'
 import type { MoveClash } from '~/utils/moveClash'
 
-// "That time is taken": what a move, resize or change of time would land on,
-// before it is saved. The same choice the create panel's "allow double
-// booking" gives a new booking -- going back is the default, moving it on
-// top anyway is possible but has to be asked for.
+// "That time is blocked": the blocked time a move, resize or change of time
+// would land in, before it is saved. Another patient at the same time is not
+// asked about (utils/moveClash says why). Going back is the default, moving
+// it into the block anyway is possible but has to be asked for.
 
 defineProps<{ clashes: MoveClash[]; busy?: boolean }>()
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const t = useT()
 
 function line(c: MoveClash) {
-  const when = `${formatTime(c.startsAt)}–${formatTime(c.endsAt)}`
-  if (c.kind === 'block') return { what: c.note ? t(`Blocked: ${c.note}`, `Bloqueado: ${c.note}`) : t('Blocked time', 'Tiempo bloqueado'), when }
-  const name = c.patientName || t('Another patient', 'Otro paciente')
-  return { what: c.via === 'room' ? t(`${name} (same room)`, `${name} (misma sala)`) : name, when }
+  return { what: c.note ? t(`Blocked: ${c.note}`, `Bloqueado: ${c.note}`) : t('Blocked time', 'Tiempo bloqueado'), when: `${formatTime(c.startsAt)}–${formatTime(c.endsAt)}` }
 }
 </script>
 
 <template>
   <UiConfirmDialog
-    :title="t('That time is taken', 'Ese hueco está ocupado')"
+    :title="t('That time is blocked', 'Ese hueco está bloqueado')"
     :confirm-label="t('Move it anyway', 'Moverla igualmente')"
     :cancel-label="t('Choose another time', 'Elegir otra hora')"
     :busy="busy"
@@ -29,14 +26,14 @@ function line(c: MoveClash) {
     @cancel="emit('cancel')"
   >
     <div data-cy="move-clash" class="flex flex-col gap-2 text-[14px] leading-relaxed text-ink-500">
-      <p>{{ t('The new time overlaps:', 'La nueva hora coincide con:') }}</p>
+      <p>{{ t('The new time falls in:', 'La nueva hora cae en:') }}</p>
       <ul class="flex flex-col gap-1.5 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px]">
         <li v-for="(c, i) in clashes" :key="i" class="flex items-baseline justify-between gap-3" data-cy="move-clash-item">
           <span class="font-semibold text-warning-text">{{ line(c).what }}</span>
           <span class="shrink-0 font-mono text-ink-700">{{ line(c).when }}</span>
         </li>
       </ul>
-      <p>{{ t('Moving it anyway keeps both at the same time. Nothing else is moved or cancelled.', 'Si la mueves igualmente, quedan las dos a la vez. No se mueve ni se cancela nada más.') }}</p>
+      <p>{{ t('Moving it anyway keeps the visit inside the blocked time. The block is not changed.', 'Si la mueves igualmente, la cita queda dentro del bloqueo. El bloqueo no se cambia.') }}</p>
     </div>
   </UiConfirmDialog>
 </template>

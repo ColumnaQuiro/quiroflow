@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { findChiropractor, loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
-import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
+import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput, type ReceptionistAvailability } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import { isNoReply, replyActed } from '~/utils/receptionistAutoReply'
@@ -14,6 +14,8 @@ import { confirmationInWords, confirmationIsPlain, offerInWords, wordsMatchOffer
 import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UNEXPLAINED_HANDOVER_REASON } from '~/utils/receptionistFollowThrough'
+import { contradictingTimes, fullClaimNote, noFreeTimeClaim, type FreeTimesSource } from '~/utils/receptionistFullClaims'
+import { shiftDate } from '~/utils/automationTriggerMatch'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -122,7 +124,22 @@ export interface ReceptionistToolUse {
   ok: boolean
 }
 
-export type FreeTimesLookup = (input: unknown) => Promise<{ content: string; isError: boolean }>
+/**
+ * find_free_times. `source` is what an answer listed, for reading a reply's
+ * "nothing free" back against it (receptionistFullClaims.ts).
+ */
+export type FreeTimesLookup = (input: unknown) => Promise<{ content: string; isError: boolean; source?: FreeTimesSource }>
+
+/**
+ * The free times a prompt lists, as a FreeTimesSource: from the clinic's
+ * today through the booking window, for `freeTimes` on the reply.
+ */
+export function promptFreeTimes(calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null }, bookingWindowDays: number): FreeTimesSource | null {
+  if (!calendar.availability) return null
+  const from = clinicDateOf(calendar.now, calendar.timeZone)
+  const to = clinicDateOf(new Date(calendar.now.getTime() + bookingWindowDays * 86400000 - 1), calendar.timeZone)
+  return { from, to, groups: calendar.availability.groups.map((group) => ({ days: group.days, truncatedAfter: group.truncatedAfter })) }
+}
 
 /**
  * Whose times find_free_times reads when for_name is given: a child or an
@@ -198,6 +215,12 @@ export function freeTimesLookup(
     return {
       content: [`Free start times${forName ? ` for ${forName}` : ''}${withWhom ? ` with ${withWhom} only` : ''} for ${span}, in the clinic's local time. A day not listed has nothing free.${withWhom ? ` Book any of them with chiropractor "${withWhom}".` : ''}`, ...availabilityLists(calendar.availability, `in ${span}`)].join('\n\n'),
       isError: false,
+      source: {
+        from: query.from,
+        to: shiftDate(query.from, query.days - 1),
+        groups: calendar.availability.groups.map((group) => ({ days: group.days, truncatedAfter: group.truncatedAfter })),
+        scoped: Boolean(forName || withWhom),
+      },
     }
   }
 }
@@ -285,6 +308,13 @@ async function runOnce(
     system: ReceptionistPrompt
     messages: Anthropic.MessageParam[]
     findFreeTimes?: FreeTimesLookup | null
+    /**
+     * The free times the prompt lists (promptFreeTimes). A reply calling a
+     * day, a week or a part of the day full while they, or a find_free_times
+     * answer in this reply, have a time in it is written again once and
+     * refused the second time (receptionistFullClaims.ts).
+     */
+    freeTimes?: FreeTimesSource | null
     /**
      * Offer hand_over_to_colleague: on when the reply is sent without a
      * person reading it first, so that what a draft's reader would have
@@ -437,6 +467,10 @@ async function runOnce(
   // again, the words it wrote beside its last offer_times call go instead.
   let emptyRewritten = false
   let offerWords = ''
+  // What find_free_times answered in this reply, and whether a reply calling
+  // free dates full has already been sent back once.
+  const lookedUpTimes: FreeTimesSource[] = []
+  let fullClaimRewritten = false
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -532,6 +566,27 @@ async function runOnce(
         checks.push('visit_time_rewritten')
         messages.push({ role: 'assistant', content: message.content })
         messages.push({ role: 'user', content: misstatedVisitNote(misstated, opts.standingTimes!) })
+        continue
+      }
+      // "No tenemos huecos por la mañana hasta el 14" while the list has a
+      // morning in it (24 Nov 2026): back once with the times, refused the
+      // second time. Not after a booking, which a second round must not be
+      // tempted to repeat. A lookup narrowed to one chiropractor or someone
+      // else is what such a sentence is then about, so the prompt's
+      // team-wide list does not count against it.
+      const fullClaim = opts.freeTimes && text && !booked && !isNoReply(text) ? noFreeTimeClaim(text, opts.freeTimes.from, opts.teamNames) : null
+      const sources = lookedUpTimes.some((source) => source.scoped) ? lookedUpTimes : [...lookedUpTimes, ...(opts.freeTimes ? [opts.freeTimes] : [])]
+      const contradicted = fullClaim ? contradictingTimes(fullClaim, sources) : null
+      if (fullClaim && contradicted) {
+        if (fullClaimRewritten) {
+          console.warn(`[receptionist] withheld a reply for ${opts.logLabel}: it calls dates full that have free times`)
+          checks.push('full_claim_withheld')
+          return run('', true)
+        }
+        fullClaimRewritten = true
+        checks.push('full_claim_rewritten')
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: fullClaimNote(fullClaim, contradicted) })
         continue
       }
       // The house style, checked in code (utils/receptionistStyle.ts): what
@@ -652,6 +707,8 @@ async function runOnce(
             return { content: 'The calendar could not be read. Do not offer a time: say your colleague will confirm an exact time shortly.', isError: true }
           })
           if (!result.isError) {
+            const source = (result as { source?: FreeTimesSource }).source
+            if (source) lookedUpTimes.push(source)
             const looked = (use.input ?? {}) as { any_chiropractor?: unknown; chiropractor?: unknown; for_name?: unknown }
             lookedUp = { anyChiropractor: looked.any_chiropractor === true, chiropractor: typeof looked.chiropractor === 'string' ? looked.chiropractor : null, forName: typeof looked.for_name === 'string' ? looked.for_name : null }
           }

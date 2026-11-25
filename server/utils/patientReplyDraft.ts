@@ -12,7 +12,7 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
-import { freeTimesLookup, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, promptFreeTimes, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { acceptOfferedTime, alreadyBookedNote, keepOffer } from '~/server/utils/receptionistOffers'
 import { choiceLanguage } from '~/utils/cancellationReason'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
@@ -442,6 +442,7 @@ export async function draftPatientReply(
     // yesterday's offer is today, not a week from now.
     messages: withImages(asHistory(withDayMarks(turns.map((m) => ({ direction: m.direction, content: m.body, at: m.created_at })), calendar.timeZone)), images),
     findFreeTimes,
+    freeTimes: promptFreeTimes(calendar, config.bookingWindowDays),
     handOver: sends,
     book,
     waitlist,

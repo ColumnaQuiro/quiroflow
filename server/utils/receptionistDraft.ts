@@ -11,7 +11,7 @@ import { clinicDateOf } from '~/utils/clinicClock'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
 import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadChangesWithoutComing, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, promptFreeTimes, receptionistFallbackModel, receptionistModelName, runReceptionistModel, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { acceptOfferedTime, alreadyBookedNote, keepOffer } from '~/server/utils/receptionistOffers'
 import { cameFromAd, formAnswerToHandOverNow, formHandOverNote, formHandOverReason, leadFormAnswers } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -417,6 +417,7 @@ export async function draftLeadReply(
     // yesterday's offer is today, not a week from now.
     messages: withImages(withDayMarks(dated, calendar.timeZone).map(({ role, content }: { role: 'user' | 'assistant'; content: string }) => ({ role, content })), images),
     findFreeTimes,
+    freeTimes: promptFreeTimes(calendar, config.bookingWindowDays),
     handOver: sends,
     mustHandOver: formAnswer ? formHandOverReason(formAnswer) : null,
     book,

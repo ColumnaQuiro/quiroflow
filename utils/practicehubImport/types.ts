@@ -20,7 +20,7 @@ import type { Database } from '~/types/database.types'
 
 export type PracticeHubStepKind =
   | 'patients' | 'appointment_types' | 'appointments' | 'ledger' | 'bonos'
-  | 'treatment_notes' | 'care_plans' | 'patient_logs' | 'sticky_notes' | 'custom_form_responses'
+  | 'treatment_notes' | 'care_plans' | 'patient_logs' | 'sticky_notes' | 'custom_form_responses' | 'exercises'
   | 'profile_photos' | 'file_attachments'
 
 // The order a full sync runs them in, which is the order they depend on each
@@ -30,11 +30,11 @@ export type PracticeHubStepKind =
 // visits; and settle_imported_invoices pools family bonos through
 // package_purchase_shares, which Bonos writes -- so Bonos settles again after
 // it has written shares (see the Bonos planner). The clinical steps only need
-// their patient. Photos and files go last: they download every byte, and the
+// their patient, and Exercises only theirs. Photos and files go last: they download every byte, and the
 // rest is useful to the clinic sooner.
 export const PRACTICEHUB_STEPS: PracticeHubStepKind[] = [
   'patients', 'appointments', 'appointment_types', 'ledger', 'bonos',
-  'treatment_notes', 'care_plans', 'patient_logs', 'sticky_notes', 'custom_form_responses',
+  'treatment_notes', 'care_plans', 'patient_logs', 'sticky_notes', 'custom_form_responses', 'exercises',
   'profile_photos', 'file_attachments',
 ]
 
@@ -58,6 +58,10 @@ export const PRACTICEHUB_LISTS = [
   '/patient_logs',
   '/custom_form_responses',
   '/v3/patients',
+  // Classic's exercise library and every patient's exercises, in one list
+  // (utils/practicehubImport/exercises.ts). Last, for the same reason as
+  // '/v3/patients' above: a read under way keeps its place by index.
+  '/exercises',
 ] as const
 export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
 

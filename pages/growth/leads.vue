@@ -8,9 +8,9 @@ const { hasGrowth, resolved } = useGrowthTier()
 const { columns, summary, loading, error, moveLead, reload, search: searchLeads, expand, showAll } = useGrowthLeads()
 const { lead: openLead, loading: leadLoading, loadLead, refreshLead, close: closeLead } = useGrowthLeadDetail()
 
-// Same key that gates the Growth dashboard and Campaigns -- see
-// pages/growth/index.vue for why this reuses communication_config.
-const allowed = computed(() => can('communication_config'))
+// "See leads" (leads_access), or "Communication and Growth", which includes
+// it -- the same pair the lead routes accept (server/utils/requireGrowth.ts).
+const allowed = computed(() => can('leads_access') || can('communication_config'))
 
 // ?lead=<id> opens that lead's drawer -- how Automations > Executions links
 // from a run to the person it was for.

@@ -1350,8 +1350,9 @@ const templateTarget = computed(() => {
 const templateAllowed = computed(() => {
   const c = selected.value
   if (!c) return false
-  // The route's own rule: a lead needs communication_config alone.
-  if (c.leadId && !c.patientId) return can('communication_config')
+  // The routes' own rule: listing templates and sending one to a lead both
+  // take "See leads" or communication_config, which includes it.
+  if (c.leadId && !c.patientId) return can('leads_access') || can('communication_config')
   return can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
 })
 // Whether they have ever written on this channel: "more than 24 hours since

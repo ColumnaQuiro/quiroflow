@@ -178,7 +178,7 @@ const STICKY_CONCURRENCY = 8
 const previewDate = (at: string) => (/^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : at)
 
 /** The account's patients that came from an import, by their reference. A failed page throws (see readAllForAccount): half the patients would read as the rest being unmatched. */
-async function patientsHereByRef(ctx: PracticeHubImportContext): Promise<Map<string, PracticeHubPatientHere>> {
+export async function patientsHereByRef(ctx: PracticeHubImportContext): Promise<Map<string, PracticeHubPatientHere>> {
   const rows = await readAllForAccount<{ id: string; external_reference: string | null; first_name: string; last_name: string | null }>(
     ctx.supabase, ctx.accountId, 'patients', 'id, external_reference, first_name, last_name',
     (q) => q.not('external_reference', 'is', null),

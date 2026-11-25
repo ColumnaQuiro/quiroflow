@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireLeads } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireLeads(event)
   // ?? {} as well as the catch: readBody RESOLVES to undefined for a request
   // with no body at all, so the catch never fires and the first property
   // access throws. A bare POST with no options is the commonest call this

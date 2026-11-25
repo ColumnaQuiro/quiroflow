@@ -264,10 +264,14 @@ export async function recordBonoSale(supabase: any, deps: BonoSaleDeps, input: B
  * none: left blank, unreadable, or the bono's own price. Null is what the
  * sale is sent when nothing was changed, so a price another member edits in
  * Settings in the meantime is still the one sold at.
+ *
+ * A number as well as a string: Vue's v-model on an <input type="number">
+ * hands back a number once something is typed, and only '' while it is empty.
  */
-export function specialBonoPriceCents(listCents: number, typed: string): number | null {
-  if (!typed.trim()) return null
-  const value = Number(typed.replace(',', '.'))
+export function specialBonoPriceCents(listCents: number, typed: string | number | null | undefined): number | null {
+  const text = typed == null ? '' : String(typed).trim()
+  if (!text) return null
+  const value = Number(text.replace(',', '.'))
   if (!Number.isFinite(value)) return null
   const cents = Math.round(value * 100)
   return cents === listCents ? null : cents

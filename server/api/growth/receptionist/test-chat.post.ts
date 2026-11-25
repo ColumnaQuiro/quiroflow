@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
-import { freeTimesLookup, receptionistModelName, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, promptFreeTimes, receptionistModelName, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesAfterFirstVisit, typesForAudience, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { isNoReply } from '~/utils/receptionistAutoReply'
@@ -128,6 +128,7 @@ export default defineEventHandler(async (event) => {
       system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices, clinicDetails, team }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
       findFreeTimes,
+      freeTimes: promptFreeTimes(calendar, config.bookingWindowDays),
       // Offered as when it answers on its own; here it only reports.
       handOver: true,
       internalNotes: internalNotes(config),

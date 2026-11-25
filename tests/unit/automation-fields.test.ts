@@ -30,6 +30,14 @@ describe('Automation merge fields', () => {
     expect(automationFieldValue(laura, 'practitioner_first_name', {})).toBe('')
   })
 
+  it("names the appointment's own practitioner, which need not be the patient's usual one", () => {
+    const ctx = { practitionerFirstName: 'Pablo', appointmentPractitionerFirstName: 'Marta', clinicName: 'Clínica Centro' }
+    expect(automationFieldValue(laura, 'appointment_practitioner_first_name', ctx)).toBe('Marta')
+    expect(automationFieldValue(laura, 'practitioner_first_name', ctx)).toBe('Pablo')
+    // Outside an appointment trigger, or one with nobody on it: never empty.
+    expect(automationFieldValue(laura, 'appointment_practitioner_first_name', { clinicName: 'Clínica Centro' })).toBe('Clínica Centro')
+  })
+
   it('names the month of the last visit in the language the message goes out in', () => {
     const lastVisitAt = '2026-06-30T22:30:00Z' // 1 July in Madrid, still June in Bogotá
     expect(automationFieldValue(laura, 'last_visit_month', { lastVisitAt, clinicTimezone: 'Europe/Madrid' })).toBe('julio')

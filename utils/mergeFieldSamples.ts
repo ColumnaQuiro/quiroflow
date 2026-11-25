@@ -26,6 +26,7 @@ export const MERGE_FIELD_SAMPLES: Record<string, string> = {
   invoice_amount_owed: '45,00 €',
   invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
   practitioner_first_name: 'Ana',
+  appointment_practitioner_first_name: 'Ana',
   last_visit_month: 'julio',
   referred_first_name: 'Marta',
   clinic_phone: '+34 600 000 000',

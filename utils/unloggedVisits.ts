@@ -54,9 +54,24 @@ export interface CoveredVisit {
   paidBy: string | null
 }
 
+// A booking today the patient has not been checked in for yet. Not offered by
+// Log session -- spending a session before anyone has arrived is what the
+// check-in rule below exists to stop -- but it is the visit the session is
+// almost always for, and checking it out on the calendar takes the session
+// itself. On 29 Oct 2026 reception logged a session three minutes before a
+// patient's 17:00 booking: the dialog could not see the booking, so it offered
+// only "not on the calendar", which invented a typeless visit at 16:57; the
+// real visit was checked out 28 seconds later and took a second session.
+export interface BookedVisit {
+  id: string
+  starts_at: string
+  typeName: string | null
+}
+
 export interface VisitsForLogging {
   unlogged: UnloggedVisit[]
   covered: CoveredVisit[]
+  bookedToday: BookedVisit[]
 }
 
 interface VisitReceipt {
@@ -107,17 +122,41 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
   since.setHours(0, 0, 0, 0)
   since.setDate(since.getDate() - UNLOGGED_VISIT_LOOKBACK_DAYS)
 
-  const { data: appts } = await supabase
-    .from('appointments')
-    .select('id, starts_at, practitioner_id, appointment_types(name), practitioner:team_members!appointments_practitioner_id_fkey(full_name)')
-    .eq('patient_id', patientId)
-    .neq('status', 'cancelled')
-    .or('status.eq.completed,checked_in_at.not.is.null')
-    .is('deleted_at', null)
-    .gte('starts_at', since.toISOString())
-    .lte('starts_at', new Date().toISOString())
-    .order('starts_at', { ascending: false })
-  if (!appts || appts.length === 0) return { unlogged: [], covered: [] }
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const dayEnd = new Date(dayStart)
+  dayEnd.setDate(dayEnd.getDate() + 1)
+
+  const [{ data: appts }, { data: booked }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, starts_at, practitioner_id, appointment_types(name), practitioner:team_members!appointments_practitioner_id_fkey(full_name)')
+      .eq('patient_id', patientId)
+      .neq('status', 'cancelled')
+      .or('status.eq.completed,checked_in_at.not.is.null')
+      .is('deleted_at', null)
+      .gte('starts_at', since.toISOString())
+      .lte('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: false }),
+    // Earlier today as well as later: a booking whose time has passed with
+    // nobody checked in is still the visit the patient came for.
+    supabase
+      .from('appointments')
+      .select('id, starts_at, appointment_types(name)')
+      .eq('patient_id', patientId)
+      .eq('status', 'booked')
+      .is('checked_in_at', null)
+      .is('deleted_at', null)
+      .gte('starts_at', dayStart.toISOString())
+      .lt('starts_at', dayEnd.toISOString())
+      .order('starts_at', { ascending: true }),
+  ])
+  const bookedToday: BookedVisit[] = (booked ?? []).map((a) => ({
+    id: a.id,
+    starts_at: a.starts_at,
+    typeName: (a.appointment_types as unknown as { name: string } | null)?.name ?? null,
+  }))
+  if (!appts || appts.length === 0) return { unlogged: [], covered: [], bookedToday }
 
   const ids = appts.map((a) => a.id)
   const [{ data: sessions }, { data: invoices }] = await Promise.all([
@@ -184,7 +223,7 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
       }
     })
 
-  return { unlogged, covered }
+  return { unlogged, covered, bookedToday }
 }
 
 // What the Log session dialog hands back: a visit from the list, or a day for

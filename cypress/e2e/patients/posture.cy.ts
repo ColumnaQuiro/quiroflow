@@ -81,6 +81,11 @@ describe('Posture assessment', () => {
         cy.login(account.email, account.password)
         visitCapture(patient.id)
         cy.get('[data-cy=posture-height]').clear().type('168')
+        // Two scales, one under each foot: optional, but both or neither.
+        cy.get('[data-cy=posture-scale-left]').type('32.5')
+        cy.get('[data-cy=posture-scale-warning]').should('be.visible')
+        cy.get('[data-cy=posture-scale-right]').type('38.2')
+        cy.get('[data-cy=posture-scale-warning]').should('not.exist')
         cy.get('[data-cy=posture-take]').should('be.visible')
         photo()
         cy.get('[data-cy=posture-found]', { timeout: 20000 }).should('have.attr', 'data-found', 'true')
@@ -108,12 +113,18 @@ describe('Posture assessment', () => {
         cy.get('[data-cy=posture-row]').should('have.length', 1)
         cy.get('[data-cy=posture-kpi-weight]').should('contain', 'kg')
         cy.get('[data-cy=posture-compare-photo] [data-cy=posture-overlay]').should('have.length', 1)
-        cy.task<{ height_cm: number; views: Record<string, { photo: string; points: Record<string, number[]> }>; metrics: Record<string, unknown>; shared_with_patient: boolean }[]>('db:selectRows', {
+        // The scales, not the points, give the left-right split.
+        cy.get('[data-cy=posture-balance]').should('have.attr', 'data-right', '54')
+        cy.get('[data-cy=posture-balance-kg]').should('contain', '38.2 kg right').and('contain', '32.5 kg left')
+        cy.get('[data-cy=posture-balance-estimate]').should('contain', 'The photo estimated')
+        cy.task<{ height_cm: number; scale_left_kg: number; scale_right_kg: number; views: Record<string, { photo: string; points: Record<string, number[]> }>; metrics: Record<string, unknown>; shared_with_patient: boolean }[]>('db:selectRows', {
           table: 'posture_assessments',
-          columns: 'height_cm, views, metrics, shared_with_patient',
+          columns: 'height_cm, scale_left_kg, scale_right_kg, views, metrics, shared_with_patient',
           match: { patient_id: patient.id },
         }).then(([a]) => {
           expect(Number(a!.height_cm)).to.eq(168)
+          expect(Number(a!.scale_left_kg)).to.eq(32.5)
+          expect(Number(a!.scale_right_kg)).to.eq(38.2)
           expect(Object.keys(a!.views).sort()).to.deep.eq(['front', 'right'])
           expect(a!.views.front!.photo).to.match(new RegExp(`^${account.accountId}/posture/[0-9a-f-]+/front\\.jpg$`))
           // jsonb keeps keys in its own order.
@@ -121,6 +132,13 @@ describe('Posture assessment', () => {
           expect(a!.metrics).to.have.keys(['front', 'right'])
           expect(a!.shared_with_patient).to.eq(false)
         })
+        // Corrected afterwards on the record.
+        cy.get('[data-cy=posture-scale-edit]').click()
+        cy.get('[data-cy=posture-scale-form] [data-cy=posture-scale-left]').clear().type('35')
+        cy.get('[data-cy=posture-scale-form] [data-cy=posture-scale-right]').clear().type('35')
+        cy.get('[data-cy=posture-scale-save]').click()
+        cy.get('[data-cy=posture-balance]').should('have.attr', 'data-right', '50')
+        cy.task<{ scale_right_kg: number }[]>('db:selectRows', { table: 'posture_assessments', columns: 'scale_right_kg', match: { patient_id: patient.id } }).its('0.scale_right_kg').then(Number).should('eq', 35)
 
         // The report: drawn by the server from the stored photos and handed
         // back as a link, which the page opens in the tab it opened on the tap.

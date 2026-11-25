@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { alignmentIndex, postureBalance, postureCallouts, postureHeadline, postureMissing, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { alignmentIndex, postureBalance, postureCallouts, scaleRightShare, postureHeadline, postureMissing, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
 import { postureSuggestions } from '../../utils/postureSuggestions'
 import { ghostPoints } from '../../utils/postureCompare'
 import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
@@ -37,6 +37,9 @@ interface Assessment {
   metrics: Partial<Record<PostureView, ViewMetrics>>
   notes: string | null
   shared_with_patient: boolean
+  /** kg on the scale under each foot, when the clinic weighed the patient. */
+  scale_left_kg: number | null
+  scale_right_kg: number | null
   team_members: { full_name: string } | null
 }
 const list = ref<Assessment[]>([])
@@ -47,7 +50,7 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('posture_assessments')
-    .select('id, taken_at, height_cm, views, metrics, notes, shared_with_patient, team_members(full_name)')
+    .select('id, taken_at, height_cm, views, metrics, notes, shared_with_patient, scale_left_kg, scale_right_kg, team_members(full_name)')
     .eq('patient_id', props.patientId)
     .eq('kind', 'posture')
     .order('taken_at')
@@ -131,7 +134,43 @@ const kpiClass = (k: { now: number | null; then: number | null; higherBetter?: b
 // The latest of the two picked (or the one): where its weight falls over the
 // feet, and the exercises its measurements suggest.
 const newest = computed(() => pair.value[pair.value.length - 1] ?? null)
-const balance = computed(() => (newest.value ? postureBalance(newest.value.views, Number(newest.value.height_cm)) : null))
+// Two scales, one under each foot, measure the left-right split outright, so
+// when they were read the points' estimate only stands beside it.
+const scaleOf = (a: Assessment) => (a.scale_left_kg === null || a.scale_right_kg === null ? null : { leftKg: Number(a.scale_left_kg), rightKg: Number(a.scale_right_kg) })
+const balance = computed(() => {
+  const a = newest.value
+  if (!a) return null
+  const photo = postureBalance(a.views, Number(a.height_cm))
+  const scale = scaleOf(a)
+  const measured = scale ? scaleRightShare(scale.leftKg, scale.rightKg) : null
+  return { rightShare: measured ?? photo.rightShare, forwardCm: photo.forwardCm, scale: measured === null ? null : scale, estimate: measured === null ? null : photo.rightShare }
+})
+// Weighing is optional and often written down after the photos, so the
+// readings can be added or corrected here on the newest assessment.
+const scaleEditing = ref(false)
+const scaleLeft = ref<number | ''>('')
+const scaleRight = ref<number | ''>('')
+const scaleSaving = ref(false)
+const kgOk = (v: number | '') => typeof v === 'number' && v >= 0 && v <= 300
+const scaleValid = computed(() => kgOk(scaleLeft.value) && kgOk(scaleRight.value) && Number(scaleLeft.value) + Number(scaleRight.value) > 0)
+function editScale() {
+  const a = newest.value
+  scaleLeft.value = a?.scale_left_kg === null || a?.scale_left_kg === undefined ? '' : Number(a.scale_left_kg)
+  scaleRight.value = a?.scale_right_kg === null || a?.scale_right_kg === undefined ? '' : Number(a.scale_right_kg)
+  scaleEditing.value = true
+}
+async function saveScale(clear = false) {
+  const a = newest.value
+  if (!a || (!clear && !scaleValid.value)) return
+  const values = clear ? { scale_left_kg: null, scale_right_kg: null } : { scale_left_kg: Number(scaleLeft.value), scale_right_kg: Number(scaleRight.value) }
+  scaleSaving.value = true
+  const { error } = await supabase.from('posture_assessments').update(values).eq('id', a.id)
+  scaleSaving.value = false
+  if (error) return showToast(error.message, 'error')
+  Object.assign(a, values)
+  scaleEditing.value = false
+}
+watch(() => newest.value?.id, () => (scaleEditing.value = false))
 const suggestions = computed(() => (newest.value ? postureSuggestions(again(newest.value)) : []))
 // The measurements beside their points on the photos compared.
 const showValues = ref(false)
@@ -395,9 +434,26 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
         </div>
       </div>
 
-      <section v-if="balance && (balance.rightShare !== null || balance.forwardCm !== null)" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip>
+      <section v-if="balance && (balance.rightShare !== null || balance.forwardCm !== null || can('visit_notes_edit'))" class="rounded-card border border-line bg-surface p-3.5" data-pdf-skip data-cy="posture-balance-card">
         <h4 class="mb-2 text-[14px] font-semibold text-ink-900">{{ t(`Where the weight falls · ${day(newest!.taken_at)}`, `Dónde cae el peso · ${day(newest!.taken_at)}`) }}</h4>
-        <PostureBalance :right-share="balance.rightShare" :forward-cm="balance.forwardCm" from="ankle" />
+        <PostureBalance :right-share="balance.rightShare" :forward-cm="balance.forwardCm" from="ankle" :scale="balance.scale" :estimate="balance.estimate">
+          <template v-if="can('visit_notes_edit')">
+            <form v-if="scaleEditing" class="mt-2 flex flex-wrap items-end gap-2" data-cy="posture-scale-form" @submit.prevent="saveScale()">
+              <label class="flex flex-col gap-1 text-[12px] font-semibold text-ink-700">
+                {{ t('Left foot', 'Pie izquierdo') }}
+                <span class="flex items-center gap-1.5"><input v-model.number="scaleLeft" type="number" inputmode="decimal" min="0" max="300" step="0.1" class="h-9 w-[84px] rounded-ctl border border-line-control bg-surface px-2.5 font-mono text-[14px] touch:h-11" data-cy="posture-scale-left" /><span class="font-normal text-ink-muted">kg</span></span>
+              </label>
+              <label class="flex flex-col gap-1 text-[12px] font-semibold text-ink-700">
+                {{ t('Right foot', 'Pie derecho') }}
+                <span class="flex items-center gap-1.5"><input v-model.number="scaleRight" type="number" inputmode="decimal" min="0" max="300" step="0.1" class="h-9 w-[84px] rounded-ctl border border-line-control bg-surface px-2.5 font-mono text-[14px] touch:h-11" data-cy="posture-scale-right" /><span class="font-normal text-ink-muted">kg</span></span>
+              </label>
+              <button type="submit" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on disabled:opacity-60 touch:h-11" :disabled="!scaleValid || scaleSaving" data-cy="posture-scale-save">{{ t('Save', 'Guardar') }}</button>
+              <button v-if="balance.scale" type="button" class="inline-flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60 touch:h-11" :disabled="scaleSaving" data-cy="posture-scale-clear" @click="saveScale(true)">{{ t('Remove', 'Quitar') }}</button>
+              <button type="button" class="inline-flex h-9 items-center px-2 text-[13px] text-ink-muted hover:text-ink-900 touch:h-11" @click="scaleEditing = false">{{ t('Cancel', 'Cancelar') }}</button>
+            </form>
+            <button v-else type="button" class="mt-1 self-start text-[12.5px] font-semibold text-brand-text hover:underline" data-cy="posture-scale-edit" @click="editScale">{{ balance.scale ? t('Edit scale readings', 'Editar pesos de báscula') : t('Add scale readings (one under each foot)', 'Añadir pesos de báscula (una bajo cada pie)') }}</button>
+          </template>
+        </PostureBalance>
       </section>
 
       <PostureSuggestions :patient-id="patientId" :suggestions="suggestions" />

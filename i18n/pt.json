@@ -1607,7 +1607,9 @@
   "Could not save that day: {0}": "Não foi possível guardar esse dia: {0}",
   "Could not remove it: {0}": "Não foi possível remover: {0}",
   "{0} works {1}.": "{0} trabalha {1}.",
-  "{0} is off {1}.": "{0} não trabalha {1}."
+  "{0} is off {1}.": "{0} não trabalha {1}.",
+  "Scales: {0} kg right · {1} kg left ({2} kg)": "Balanças: {0} kg direita · {1} kg esquerda ({2} kg)",
+  "The photo estimated {0}% right": "A foto estimava {0} % à direita"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10876,6 +10878,14 @@
   "Works": "Trabalha",
   "Two stretches: 09:30-14:00, 16:00-20:00": "Dois períodos: 09:30-14:00, 16:00-20:00",
   "That day already has hours set: these replace them.": "Esse dia já tem um horário: este substitui-o.",
-  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Clique num dia para alterar só esse dia; o horário habitual volta com “Habitual”. Num profissional, a agenda e a marcação online também o seguem."
+  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Clique num dia para alterar só esse dia; o horário habitual volta com “Habitual”. Num profissional, a agenda e a marcação online também o seguem.",
+  "Left–right measured on two scales.": "Direita–esquerda medido com duas balanças.",
+  "Left–right measured on two scales; forward–back estimated from the points.": "Direita–esquerda medido com duas balanças; frente–trás estimado a partir dos pontos.",
+  "Scales (optional)": "Balanças (opcional)",
+  "Left foot": "Pé esquerdo",
+  "Right foot": "Pé direito",
+  "Fill in both feet, or leave both empty.": "Indique o peso dos dois pés ou deixe os dois vazios.",
+  "Edit scale readings": "Editar pesos da balança",
+  "Add scale readings (one under each foot)": "Adicionar pesos da balança (uma sob cada pé)"
  }
 }

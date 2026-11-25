@@ -1607,7 +1607,9 @@
   "Could not save that day: {0}": "Dieser Tag konnte nicht gespeichert werden: {0}",
   "Could not remove it: {0}": "Konnte nicht entfernt werden: {0}",
   "{0} works {1}.": "{0} arbeitet am {1}.",
-  "{0} is off {1}.": "{0} arbeitet am {1} nicht."
+  "{0} is off {1}.": "{0} arbeitet am {1} nicht.",
+  "Scales: {0} kg right · {1} kg left ({2} kg)": "Waagen: {0} kg rechts · {1} kg links ({2} kg)",
+  "The photo estimated {0}% right": "Das Foto schätzte {0} % rechts"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10876,6 +10878,14 @@
   "Works": "Arbeitet",
   "Two stretches: 09:30-14:00, 16:00-20:00": "Zwei Zeitblöcke: 09:30-14:00, 16:00-20:00",
   "That day already has hours set: these replace them.": "Für diesen Tag sind schon Zeiten eingetragen: diese ersetzen sie.",
-  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Klicke auf einen Tag, um nur diesen Tag zu ändern; mit „Üblich“ gelten wieder die üblichen Zeiten. Bei Behandelnden folgen auch Kalender und Online-Buchung."
+  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Klicke auf einen Tag, um nur diesen Tag zu ändern; mit „Üblich“ gelten wieder die üblichen Zeiten. Bei Behandelnden folgen auch Kalender und Online-Buchung.",
+  "Left–right measured on two scales.": "Rechts–links mit zwei Waagen gemessen.",
+  "Left–right measured on two scales; forward–back estimated from the points.": "Rechts–links mit zwei Waagen gemessen; vorne–hinten aus den Punkten geschätzt.",
+  "Scales (optional)": "Waagen (optional)",
+  "Left foot": "Linker Fuß",
+  "Right foot": "Rechter Fuß",
+  "Fill in both feet, or leave both empty.": "Beide Füße eintragen oder beide leer lassen.",
+  "Edit scale readings": "Waagenwerte bearbeiten",
+  "Add scale readings (one under each foot)": "Waagenwerte hinzufügen (eine unter jedem Fuß)"
  }
 }

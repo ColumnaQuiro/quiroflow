@@ -59,6 +59,9 @@ function insertLink() {
 // host, which goes nowhere.
 function withScheme(url: string) {
   const trimmed = url.trim()
+  // A merge field ({{form_link}}, {{booking_link}}) is each patient's own
+  // address, filled in when the email goes out.
+  if (/^\{\{\w+\}\}$/.test(trimmed)) return trimmed
   if (/^(https?:|mailto:|tel:)/i.test(trimmed)) return trimmed
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) return `mailto:${trimmed}`
   return `https://${trimmed}`

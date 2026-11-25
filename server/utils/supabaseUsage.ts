@@ -48,7 +48,7 @@ export interface SupabaseUsage {
   storage: { bytes: number; objects: number; buckets: { bucket: string; objects: number; bytes: number }[] } | null
 }
 
-interface Sample {
+export interface Sample {
   name: string
   labels: Record<string, string>
   value: number
@@ -258,12 +258,13 @@ export async function recordSupabaseUsage(): Promise<{ usage: SupabaseUsage; ale
   return { usage, alerts: alerts.map((a) => a.name) }
 }
 
-async function scrapeMetrics(): Promise<Sample[] | null> {
+/** The project's Prometheus metrics, or null when the endpoint cannot be read (it never can locally). */
+export async function scrapeMetrics(timeoutMs = 8000): Promise<Sample[] | null> {
   try {
     const url = `${useRuntimeConfig().public.supabase.url}/customer/v1/privileged/metrics`
     const res = await fetch(url, {
       headers: { Authorization: `Basic ${Buffer.from(`service_role:${serverSecretKey()}`).toString('base64')}` },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) {
       console.error(`[supabase-usage] metrics endpoint answered ${res.status}`)

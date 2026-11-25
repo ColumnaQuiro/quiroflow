@@ -10,6 +10,7 @@ import {
   formatWeekdayDate,
   meterPercent,
   nextChargeTotal,
+  limitsGrandfathered,
   planLimitsWaived,
   pricePerMonth,
   seatAllowance,
@@ -212,5 +213,15 @@ describe('Plan limits during the free trial', () => {
 
   it('waives them for a comped account whatever its status says', () => {
     expect(planLimitsWaived({ status: 'active', comped: true, stripe_subscription_id: null })).to.eq(true)
+  })
+
+  it('waives them on the plan an account was grandfathered on, and only there', () => {
+    // subscriptions.limits_waived_on_plan (20261125062215): Clinic as it was before 19 Nov.
+    const paying = { status: 'active', comped: false, stripe_subscription_id: 'sub_1', limits_waived_on_plan: 'clinic' }
+    expect(planLimitsWaived({ ...paying, plan_id: 'clinic' }), 'on Clinic').to.eq(true)
+    expect(planLimitsWaived({ ...paying, plan_id: 'starter' }), 'moved to Solo').to.eq(false)
+    expect(limitsGrandfathered({ plan_id: 'clinic', limits_waived_on_plan: 'clinic' })).to.eq(true)
+    expect(limitsGrandfathered({ plan_id: 'clinic', limits_waived_on_plan: null }), 'no waiver').to.eq(false)
+    expect(limitsGrandfathered({ plan_id: undefined, limits_waived_on_plan: undefined }), 'nothing read yet').to.eq(false)
   })
 })

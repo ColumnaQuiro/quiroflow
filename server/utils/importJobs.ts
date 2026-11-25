@@ -293,7 +293,9 @@ export async function runImportSlice(admin: Admin, jobId: string): Promise<{ cla
  * database is short of memory or slow to answer. The cron picks it up again
  * once its hold runs out; the first slice that finds the database well again
  * carries on where this one would have. Strained for MAX_PAUSE_MS without a
- * break, the job stops as failed rather than wait for ever.
+ * break, the job stops as failed rather than wait for ever -- without the
+ * "import failed" email to whoever started it: ops gets the email and
+ * restarts it by hand.
  *
  * Logged three ways so a pause is never silent: the function log, Sentry
  * (one issue, "Import paused: database under strain"), and an email to ops
@@ -330,6 +332,10 @@ async function pauseForPressure(
           ),
           locked_until: null,
           finished_at: now.toISOString(),
+          // Not the clinic's to act on: QuiroFlow restarts it by hand once
+          // the database is well. Marked as told, so neither this slice nor
+          // import-jobs-cron's catch-up sends the "import failed" email.
+          notified_at: now.toISOString(),
         }
       : { progress: saved as unknown as Json, locked_until: new Date(now.getTime() + PAUSE_MS).toISOString() })
     .eq('id', job.id)
@@ -337,7 +343,6 @@ async function pauseForPressure(
 
   if (giveUp) {
     await reportImportPressure('error', `Import stopped: database strained for ${minutes} min`, job, { paused, pressure })
-    await notifyImportJobFinished(admin, job.id).catch((e) => console.error(`[import-jobs] ${job.id} email:`, e))
   } else if (!progress.paused) {
     await reportImportPressure('warning', 'Import paused: database under strain', job, { paused, pressure })
   } else {
@@ -377,7 +382,7 @@ async function reportImportPressure(
     `Import job ${job.id} for account ${job.account_id} ${level === 'error' ? 'has stopped' : 'is waiting'} because the database is under strain: ${p.reasons.join('; ')}.`,
     `Probe: ${p.probe_ms ?? 'no answer'} ms. Memory free: ${p.available != null ? `${Math.round(p.available * 100)}%` : 'unknown'}. Swap used: ${p.swap_used != null ? `${Math.round(p.swap_used * 100)}%` : 'unknown'}.`,
     level === 'error'
-      ? 'It waited two hours for the database to recover and then gave up. Find out what else is loading the database before starting it again.'
+      ? 'It waited two hours for the database to recover and then gave up. The clinic has NOT been emailed: start it again by hand (import_jobs, same steps and options) once you know what else was loading the database.'
       : 'It looks again every 3 minutes and carries on by itself once the database recovers; after two hours of strain it stops as failed. Nothing needs doing unless this repeats.',
   ], 1)
 }

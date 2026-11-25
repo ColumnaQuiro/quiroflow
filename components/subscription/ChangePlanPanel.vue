@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MONTHS_PER_YEAR, formatEur } from '~/utils/billing'
+import { MONTHS_PER_YEAR, billingMethodLabel, formatEur } from '~/utils/billing'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 
 export interface ChangePlanRow {
@@ -9,7 +9,6 @@ export interface ChangePlanRow {
   annual_price_cents: number
   included_professionals: number | null
   included_clinics: number | null
-  included_storage_gb: number | null
   extra_professional_price_cents: number | null
   extra_clinic_price_cents: number | null
 }
@@ -28,7 +27,7 @@ const props = defineProps<{
   growthAddon: { monthly_price_cents: number; annual_price_cents: number } | null
   currentReceptionist: boolean
   receptionistAddon: { monthly_price_cents: number; annual_price_cents: number } | null
-  card: { brand: string; last4: string } | null
+  card: { brand: string; last4: string | null } | null
   renewalDate: string | null
 }>()
 
@@ -120,7 +119,6 @@ function featuresFor(plan: ChangePlanRow) {
     ...(plan.extra_clinic_price_cents
       ? [{ key: 'extra-clinics', label: t(`Extra clinics ${formatEur(plan.extra_clinic_price_cents)}/mo each`, `Clínicas extra ${formatEur(plan.extra_clinic_price_cents)}/mes cada una`) }]
       : []),
-    { key: 'storage', label: t(`${plan.included_storage_gb ?? 0} GB of patient files`, `${plan.included_storage_gb ?? 0} GB de archivos de pacientes`) },
   ]
   features.push(
     includesGrowth
@@ -471,7 +469,7 @@ const summary = computed(() => {
         <div class="flex-1">
           <p class="text-[13.5px] font-semibold text-ink-900">{{ summary }}</p>
           <p class="mt-1.5 text-[12.5px] text-ink-muted">
-            <template v-if="card">{{ t('Charged to', 'Se cobra a') }} {{ card.brand }} ·· {{ card.last4 }}. </template>
+            <template v-if="card">{{ t('Charged to', 'Se cobra a') }} {{ billingMethodLabel(card) }}. </template>
             {{ t('Cancel or change the card in Stripe — we never hold it here.', 'Cancela o cambia la tarjeta en Stripe: aquí nunca la guardamos.') }}
           </p>
           <p v-if="confirmError" role="alert" class="mt-1.5 text-[12.5px] text-danger-text">{{ confirmError }}</p>

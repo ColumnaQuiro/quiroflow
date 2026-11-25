@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { billingMethodLabel, formatEur } from '~/utils/billing'
 
 // One charge. The amount shown is the total Stripe took, IVA INCLUDED -- the
 // old table put "Transaction Amount" and "Tax Amount" in adjacent columns,
@@ -14,7 +14,7 @@ const props = defineProps<{
   totalCents: number
   taxCents: number
   status: 'success' | 'failed' | 'pending'
-  method: { brand: string; last4: string } | null
+  method: { brand: string; last4: string | null } | null
   /** Stripe's page for the invoice: view it, pay it if open, download it. */
   invoiceUrl: string | null
   /** The PDF itself. Optional for callers that only have the page. */
@@ -120,7 +120,7 @@ async function copyReference() {
       <div class="flex-1">
         <p class="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-muted">{{ t('Paid with', 'Pagado con') }}</p>
         <p class="mt-2.5 font-mono text-[12.5px] capitalize text-ink-700">
-          {{ method ? `${method.brand} ·· ${method.last4}` : t('—', '—') }}
+          {{ method ? billingMethodLabel(method) : t('—', '—') }}
         </p>
         <p class="mt-4 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-muted">
           {{ t('Reference, only needed if you write to support', 'Referencia, solo si escribes a soporte') }}

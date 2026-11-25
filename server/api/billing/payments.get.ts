@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { resolveBillingPaymentMethod, type BillingPaymentMethod } from '~/server/utils/billingPaymentMethod'
 
 export interface PlatformPaymentRow {
   saleId: string
@@ -9,7 +10,7 @@ export interface PlatformPaymentRow {
   transactionAmountCents: number
   taxAmountCents: number
   status: 'success' | 'failed' | 'pending'
-  method: { brand: string; last4: string } | null
+  method: BillingPaymentMethod | null
   /** Stripe's invoice page: the invoice on screen, with its own download buttons. */
   invoiceUrl: string | null
   /** The invoice PDF itself, for a one-click download. */
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)
-  const { data: subscription } = await supabase.from('subscriptions').select('stripe_customer_id, plans(name)').eq('account_id', teamMember.account_id).maybeSingle()
+  const { data: subscription } = await supabase.from('subscriptions').select('stripe_customer_id, stripe_subscription_id, plans(name)').eq('account_id', teamMember.account_id).maybeSingle()
   if (!subscription?.stripe_customer_id) {
     return { payments: [] as PlatformPaymentRow[] }
   }
@@ -39,20 +40,19 @@ export default defineEventHandler(async (event) => {
   // This API version moved per-invoice payment/charge details behind a
   // separate InvoicePayment sub-resource (no more Invoice.payment_intent),
   // which would mean an extra Stripe call per row to resolve. Rather than
-  // pay that N+1 cost, every row shows whichever card is on the customer
+  // pay that N+1 cost, every row shows whichever method Stripe would charge
   // today -- accurate for the common case (one card for the account's whole
   // lifetime) and a reasonable simplification when it isn't.
-  let method: { brand: string; last4: string } | null = null
-  const defaultPmResult = await stripe.customers.retrieve(subscription.stripe_customer_id, { expand: ['invoice_settings.default_payment_method'] })
-  if (!defaultPmResult.deleted) {
-    const defaultPm = defaultPmResult.invoice_settings?.default_payment_method
-    if (defaultPm && typeof defaultPm !== 'string' && defaultPm.card) {
-      method = { brand: defaultPm.card.brand, last4: defaultPm.card.last4 }
-    } else {
-      const methods = await stripe.paymentMethods.list({ customer: subscription.stripe_customer_id, type: 'card', limit: 1 })
-      const pm = methods.data[0]
-      if (pm?.card) method = { brand: pm.card.brand, last4: pm.card.last4 }
-    }
+  const customer = await stripe.customers.retrieve(subscription.stripe_customer_id, { expand: ['invoice_settings.default_payment_method'] })
+  let method: BillingPaymentMethod | null = null
+  if (!customer.deleted) {
+    const stripeSubscription = subscription.stripe_subscription_id
+      ? await stripe.subscriptions.retrieve(subscription.stripe_subscription_id, { expand: ['default_payment_method'] }).catch(() => null)
+      : null
+    method = await resolveBillingPaymentMethod(stripe, subscription.stripe_customer_id, [
+      stripeSubscription?.default_payment_method,
+      customer.invoice_settings?.default_payment_method,
+    ])
   }
 
   const invoices = await stripe.invoices.list({ customer: subscription.stripe_customer_id, limit: 24 })

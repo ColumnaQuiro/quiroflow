@@ -6,7 +6,7 @@ import { formatEur } from '~/utils/billing'
 defineProps<{
   amountCents: number | null
   attemptedOn: string | null
-  card: { brand: string; last4: string } | null
+  card: { brand: string; last4: string | null } | null
   declineReason: string | null
   nextAttemptAt: string | null
   cancelAt: string | null
@@ -24,7 +24,7 @@ const { formatLongDate } = useDates()
     <p class="mt-2 text-[13px] leading-[1.55] text-ink-700">
       <template v-if="amountCents !== null && attemptedOn">
         {{ t('We tried to charge', 'Intentamos cobrar') }} <strong class="font-mono font-semibold">{{ formatEur(amountCents) }}</strong>
-        {{ t('on', 'el') }} {{ formatLongDate(attemptedOn) }}<template v-if="card">&nbsp;{{ t('to', 'a la') }} <span class="capitalize">{{ card.brand }}</span> ·· {{ card.last4 }}</template>.
+        {{ t('on', 'el') }} {{ formatLongDate(attemptedOn) }}<template v-if="card">&nbsp;{{ t('to', 'a la') }} <span class="capitalize">{{ card.brand }}</span><template v-if="card.last4"> ·· {{ card.last4 }}</template></template>.
       </template>
       <template v-if="declineReason">{{ declineReason }}</template>
     </p>

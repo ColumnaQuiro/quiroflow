@@ -6,7 +6,7 @@ export interface PaymentEntry {
   transactionAmountCents: number
   taxAmountCents: number
   status: 'success' | 'failed' | 'pending'
-  method: { brand: string; last4: string } | null
+  method: { brand: string; last4: string | null } | null
   invoiceUrl: string | null
   pdfUrl: string | null
 }

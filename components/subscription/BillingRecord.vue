@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { billingMethodLabel } from '~/utils/billing'
+
 // One record rather than the two nearly-empty cards this replaced: the old
 // Billing tab spent a whole screen on a country code and a card brand.
 //
@@ -10,7 +12,7 @@ const props = defineProps<{
   country: string | null
   taxId: string | null
   address: { line1: string | null; line2: string | null; postalCode: string | null; city: string | null } | null
-  card: { brand: string; last4: string; expMonth: number; expYear: number } | null
+  card: { brand: string; last4: string | null; expMonth: number | null; expYear: number | null } | null
 }>()
 
 defineEmits<{ portal: [] }>()
@@ -80,8 +82,8 @@ const addressLine = computed(() => {
         <dt class="w-[168px] shrink-0 text-[12.5px] text-ink-muted">{{ t('Payment method', 'Método de pago') }}</dt>
         <dd class="flex-1 font-mono text-[13.5px] font-medium capitalize text-ink-900">
           <template v-if="card">
-            {{ card.brand }} ·· {{ card.last4 }}
-            <span class="mt-[3px] block font-sans text-[12px] font-normal normal-case text-ink-muted">
+            {{ billingMethodLabel(card) }}
+            <span v-if="card.expMonth && card.expYear" class="mt-[3px] block font-sans text-[12px] font-normal normal-case text-ink-muted">
               {{ t('Expires', 'Caduca') }} {{ String(card.expMonth).padStart(2, '0') }}/{{ card.expYear }}
             </span>
           </template>

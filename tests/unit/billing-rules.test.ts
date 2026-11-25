@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MONTHS_PER_YEAR,
+  billingMethodLabel,
   clinicAllowance,
   dateBlock,
   formatEur,
@@ -188,6 +189,13 @@ describe('es-ES formatting', () => {
     expect(formatGb(0.39)).to.eq('0,39 GB')
     expect(formatGb(19.8)).to.eq('19,8 GB')
     expect(formatGb(104.25)).to.eq('104,3 GB')
+  })
+
+  it('labels the payment method without inventing a card number', () => {
+    expect(billingMethodLabel({ brand: 'visa', last4: '4242' })).to.eq('visa ·· 4242')
+    // Stripe Link carries no card details: a clinic paying with it must not
+    // read "Link ·· null" or, worse, "No card on file".
+    expect(billingMethodLabel({ brand: 'Link', last4: null })).to.eq('Link')
   })
 
   it('caps the meter at full and reports none when there is no allowance', () => {

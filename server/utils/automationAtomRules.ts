@@ -249,7 +249,8 @@ interface CreatedMoment {
 export const CREATED_MOMENTS: CreatedMoment[] = [
   // Imports bring patients in by the thousand; none of them is new to the clinic.
   { subject: 'patient', moment: 'created', table: 'patients', at: 'created_at', patient: 'id', narrow: (q) => q.is('external_reference', null).neq('status', 'inactive') },
-  { subject: 'care_plan', moment: 'created', table: 'care_plans', at: 'created_at', patient: 'patient_id' },
+  // An imported plan is the patient's history from the previous software, not a plan made today.
+  { subject: 'care_plan', moment: 'created', table: 'care_plans', at: 'created_at', patient: 'patient_id', narrow: (q) => q.is('external_reference', null) },
   { subject: 'bono', moment: 'bought', table: 'package_purchases', at: 'purchased_at', patient: 'patient_id', narrow: (q) => q.is('external_reference', null) },
   {
     subject: 'form',

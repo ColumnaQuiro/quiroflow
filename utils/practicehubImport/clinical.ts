@@ -6,11 +6,11 @@ import { buildStickyNotePlan, collectFieldNames, detectStickyField, type Existin
 
 // The clinical steps of a PracticeHub import, run on the server
 // (server/utils/importJobs.ts) from the copy of PracticeHub's Classic API in
-// import_snapshots: Treatment notes, Care plans (Classic), Patient logs and
-// Sticky notes. Each is its browser importer with the screen taken away --
+// import_snapshots: Treatment notes, Patient logs and Sticky notes (Care
+// plans, which become care plans, are in ./carePlans.ts). Each is its
+// browser importer with the screen taken away --
 //
 //   components/import/PracticeHubClinicalNotesImporter.vue  -> planTreatmentNotes
-//   components/import/PracticeHubCarePlansImporter.vue      -> planCarePlans
 //   components/import/PracticeHubPatientLogsImporter.vue    -> planPatientLogs
 //   components/import/PracticeHubStickyNotesImporter.vue    -> planStickyNotes
 //
@@ -18,8 +18,8 @@ import { buildStickyNotePlan, collectFieldNames, detectStickyField, type Existin
 // is one copy of it.
 //
 // Treatment notes go onto the visit they were written at (visit_notes,
-// "PH-clinicalnote-"); care plans and logs go into the patient's contact
-// history (contact_log, "PH-careplan-", "PH-log-"). Each is recognised by its
+// "PH-clinicalnote-"); logs go into the patient's contact history
+// (contact_log, "PH-log-"). Each is recognised by its
 // PracticeHub id, so a second run -- or the next slice of this one -- adds
 // only what is new. Sticky notes are a column on the patient, and
 // a note that already matches PracticeHub's is left alone. Nothing here
@@ -481,30 +481,6 @@ export const planTreatmentNotes: PracticeHubStepPlanner = async (ctx, snapshot):
       return { written, errors }
     },
   }
-}
-
-/** Care plans (Classic): each patient's course of treatment, as an entry in their contact history. */
-export const planCarePlans: PracticeHubStepPlanner = (ctx, snapshot) => {
-  const { t } = ctx
-  return planContactLogStep<PracticeHubCarePlan>(ctx, snapshot, {
-    list: '/care_plans',
-    prefix: 'PH-careplan-',
-    note: (plan) => `[care_plan] ${practiceHubCarePlanSummary(plan)}`,
-    createdAt: (plan) => plan.start_date,
-    stats: (n) => [
-      { label: t('Will import', 'Se importarán'), value: n.will, tone: 'good' },
-      { label: t('Already imported', 'Ya importados'), value: n.already },
-      { label: t('No matching patient', 'Sin paciente coincidente'), value: n.unmatched },
-    ],
-    columns: [
-      { key: 'start', label: t('Starts', 'Empieza') },
-      { key: 'patient', label: t('Patient', 'Paciente') },
-      { key: 'plan', label: t('Plan', 'Plan'), wrap: true },
-    ],
-    row: (c) => ({ start: c.source.start_date, patient: c.patientLabel, plan: practiceHubCarePlanSummary(c.source) }),
-    unmatched: (n) => t(`${n} care plans are skipped because their patient is not here yet. Run Patients first.`, `Se omiten ${n} planes porque su paciente aún no está aquí. Ejecuta antes Pacientes.`),
-    failed: (from, to, message) => t(`Care plans ${from}-${to} were not saved: ${message}`, `No se guardaron los planes ${from}-${to}: ${message}`),
-  })
 }
 
 /** Patient logs: each patient's history entries, into their contact history. */

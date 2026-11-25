@@ -1587,7 +1587,12 @@
   "{0} exercises given to patients were skipped: their patient is not here yet. Run Patients, then this step again.": "{0} zugewiesene Übungen wurden übersprungen: Ihr Patient ist noch nicht hier. Importieren Sie die Patienten und führen Sie diesen Schritt erneut aus.",
   "Library exercises {0}-{1} were not saved: {2}": "Bibliotheksübungen {0}-{1} wurden nicht gespeichert: {2}",
   "\"{0}\" could not be linked to PracticeHub: {1}": "„{0}“ konnte nicht mit PracticeHub verknüpft werden: {1}",
-  "Patients' exercises {0}-{1} were not saved: {2}": "Patientenübungen {0}-{1} wurden nicht gespeichert: {2}"
+  "Patients' exercises {0}-{1} were not saved: {2}": "Patientenübungen {0}-{1} wurden nicht gespeichert: {2}",
+  "Care plan notes {0}-{1} were not saved: {2}": "Die Plannotizen {0}-{1} wurden nicht gespeichert: {2}",
+  "Note: {0}": "Notiz: {0}",
+  "Saved {0} care plans.": "{0} Behandlungspläne gespeichert.",
+  "The history notes of plans {0}-{1} were not removed (the next sync removes them): {2}": "Die Verlaufsnotizen der Pläne {0}-{1} wurden nicht entfernt (die nächste Synchronisierung entfernt sie): {2}",
+  "{0} plans stay as a note in the patient's history: they are switched off in PracticeHub, or have a cadence a care plan here cannot hold (more than 7 visits a period, or a period in days).": "{0} Pläne bleiben eine Notiz im Verlauf des Patienten: Sie sind in PracticeHub deaktiviert oder haben einen Rhythmus, den ein Plan hier nicht abbilden kann (mehr als 7 Besuche pro Zeitraum oder ein Zeitraum in Tagen)."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10808,6 +10813,19 @@
   "New in the library": "Neu in der Bibliothek",
   "Already in the library": "Bereits in der Bibliothek",
   "To give to patients": "Patienten zuzuweisen",
-  "Already given": "Bereits zugewiesen"
+  "Already given": "Bereits zugewiesen",
+  " (moved from the history)": " (aus dem Verlauf verschoben)",
+  ", then ": ", dann ",
+  "As a note (switched off or unsupported)": "Als Notiz (deaktiviert oder nicht unterstützt)",
+  "As care plans": "Als Behandlungspläne",
+  "Brings each patient's care plan across from PracticeHub's API as a care plan here: its phases (\"2 a week for 3 weeks, then 1 a week for 9\") and its re-exam visits. Plans imported earlier as a note in the patient's history are moved.": "Übernimmt den Behandlungsplan jedes Patienten aus der PracticeHub-API als Behandlungsplan hier: seine Phasen („2 pro Woche für 3 Wochen, dann 1 pro Woche für 9“) und seine Nachuntersuchungen. Pläne, die früher als Notiz im Verlauf des Patienten importiert wurden, werden verschoben.",
+  "Each patient's care plan, with its phases and re-exam visits.": "Der Behandlungsplan jedes Patienten, mit seinen Phasen und Nachuntersuchungen.",
+  "Each plan is matched to its patient by their PracticeHub reference, and a re-exam visit to the appointment type of the same name. A plan switched off in PracticeHub stays a note in the patient's history.": "Jeder Plan wird seinem Patienten über die PracticeHub-Referenz zugeordnet, und jede Nachuntersuchung der Terminart mit demselben Namen. Ein in PracticeHub deaktivierter Plan bleibt eine Notiz im Verlauf des Patienten.",
+  "Moved from the history to care plans": "Aus dem Verlauf in Behandlungspläne verschoben",
+  "Phases in them": "Phasen darin",
+  "Plans already here are skipped, and kept as the clinic has them.": "Bereits vorhandene Pläne werden übersprungen und bleiben so, wie die Praxis sie hat.",
+  "Run Patients and Appointment types first.": "Führen Sie zuerst Patienten und Terminarten aus.",
+  "Save the care plans": "Pläne speichern",
+  "The preview lists every plan and what it becomes, so you can check it first.": "Die Vorschau zeigt jeden Plan und was daraus wird, damit Sie ihn vorher prüfen können."
  }
 }

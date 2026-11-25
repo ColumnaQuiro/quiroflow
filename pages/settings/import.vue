@@ -43,7 +43,7 @@ const { job: quirohiroJob } = useImportJob('quirohiro')
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
-function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'patient_docs' | 'patient_files' | 'exercises', prefix?: string) {
+function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'care_plans' | 'patient_docs' | 'patient_files' | 'exercises', prefix?: string) {
   return () => {
     const q = supabase.from(table).select('*', { count: 'exact', head: true }).eq('account_id', store.accountId!)
     // Unprefixed is PracticeHub's (bare numbers): not the "QC-" rows Quirocitas
@@ -107,7 +107,7 @@ const sources = computed<Source[]>(() => [
         label: t('3 · Clinical', '3 · Clínico'),
         steps: [
           { key: 'treatment_notes', label: t('Treatment notes', 'Notas de tratamiento'), hint: t('Notes written at a visit.', 'Notas escritas en la visita.'), count: counted('contact_log', 'PH-clinicalnote-') },
-          { key: 'care_plans', label: t('Care plans', 'Planes de cuidados'), hint: t('Course of treatment.', 'Plan de cuidados.'), count: counted('contact_log', 'PH-careplan-') },
+          { key: 'care_plans', label: t('Care plans', 'Planes de cuidados'), hint: t('Each patient\'s care plan, with its phases and re-exam visits.', 'El plan de cuidados de cada paciente, con sus fases y visitas de revisión.'), count: counted('care_plans', 'PH-careplan-') },
           { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries.', 'Entradas del historial.'), count: counted('contact_log', 'PH-log-') },
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders.', 'Recordatorios de recepción.') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form.', 'También crea una plantilla de documento por formulario.'), count: counted('patient_docs', 'PH-form-') },

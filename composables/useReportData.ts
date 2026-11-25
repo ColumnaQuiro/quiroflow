@@ -3,6 +3,7 @@ import type { InjectionKey } from 'vue'
 // there ~ is mobile/.
 import { fetchAllRows } from './useFetchAllRows'
 import { leadReach } from '../utils/leadReach'
+import { visitValues as valueVisits, type VisitInvoiceRow, type VisitSessionRow } from '../utils/visitValue'
 import type { Appt, BonoData, LeadRow, MembershipRow, Money, MoneyLine, Names, Need, PatientRow, RecallRow, ReportData, SpendRow, WhatsappRow } from '../utils/reportMetrics'
 import type { ReportViewer } from '../utils/reportViewer'
 
@@ -53,6 +54,7 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
   let money = new Map<string, Money>()
   let whatsapp = new Map<string, WhatsappRow[]>()
   let leads = new Map<string, { leads: LeadRow[]; spend: SpendRow[]; defaultValueCents: number | null }>()
+  let visitValues = new Map<string, Map<string, number>>()
   const names: Names = { member: new Map(), clinic: new Map(), type: new Map(), service: new Map(), package: new Map(), method: (key) => labelFor(key) }
   const typeStage = new Map<string, string | null>()
 
@@ -173,6 +175,38 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
       for (const pay of i.payments) if (pay.invoice_id) m.paidByInvoice.set(pay.invoice_id, (m.paidByInvoice.get(pay.invoice_id) ?? 0) + pay.amount_cents)
     }
     money.set(rangeKey(r), m)
+  }
+
+  // What each visit starting in the period was worth (utils/visitValue.ts):
+  // the bono session it used, else its invoices. Read by the visit's start,
+  // not by when anything was paid -- that difference is the whole point.
+  async function loadVisitValues(r: Range) {
+    const from = r.from.toISOString()
+    const to = r.to.toISOString()
+    const [sessions, invoices] = await Promise.all([
+      fetchAllRows<VisitSessionRow>(
+        (f, t) =>
+          supabase
+            .from('package_sessions')
+            .select('appointment_id, amount_cents, appointments!package_sessions_appointment_id_fkey!inner(starts_at)')
+            .gte('appointments.starts_at', from)
+            .lte('appointments.starts_at', to)
+            .order('id')
+            .range(f, t) as unknown as PromiseLike<{ data: VisitSessionRow[] | null; error: unknown }>,
+      ),
+      fetchAllRows<VisitInvoiceRow>(
+        (f, t) =>
+          supabase
+            .from('invoices')
+            .select('appointment_id, total_cents, status, appointments!invoices_appointment_id_fkey!inner(starts_at)')
+            .neq('status', 'void')
+            .gte('appointments.starts_at', from)
+            .lte('appointments.starts_at', to)
+            .order('id')
+            .range(f, t) as unknown as PromiseLike<{ data: VisitInvoiceRow[] | null; error: unknown }>,
+      ),
+    ])
+    visitValues.set(rangeKey(r), valueVisits(sessions, invoices))
   }
 
   async function loadPatients() {
@@ -325,6 +359,7 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
           if (need === 'money') jobs.push(once(key, () => loadMoney(r)))
           else if (need === 'whatsapp') jobs.push(once(key, () => loadWhatsapp(r)))
           else if (need === 'leads') jobs.push(once(key, () => loadLeads(r)))
+          else if (need === 'visitValues') jobs.push(once(key, () => loadVisitValues(r)))
         }
     }
     await Promise.all(jobs)
@@ -371,6 +406,8 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
     get carePlans() {
       return carePlans
     },
+    // Keyed by visit, so a wider period's map answers for any part of it as it is.
+    visitValues: (from, to) => visitValues.get(rangeKey({ from, to })) ?? within(visitValues, from, to, (m) => m) ?? new Map(),
     names,
   }
 
@@ -379,6 +416,7 @@ export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
     money = new Map()
     whatsapp = new Map()
     leads = new Map()
+    visitValues = new Map()
     appts = []
     patients = []
     memberships = []

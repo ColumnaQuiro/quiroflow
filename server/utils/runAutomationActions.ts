@@ -369,9 +369,18 @@ async function runForRecipient(
   // name, phone and address are variables of their own (clinic_*), so a
   // clinic's WhatsApp template can say how to reach that location.
   let clinic: { name: string | null; phone: string | null; address: string | null; timezone: string | null; logo_storage_path?: string | null } | null = null
+  // {{appointment_practitioner_first_name}}: who this appointment is with --
+  // the team member, else the name an import or the API left on the row.
+  let appointmentPractitionerFirstName: string | undefined
   if (appointmentId) {
-    const { data: appt } = await supabase.from('appointments').select('starts_at, clinics(name, phone, address, timezone, logo_storage_path)').eq('id', appointmentId).maybeSingle()
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('starts_at, practitioner_name, team_members(full_name), clinics(name, phone, address, timezone, logo_storage_path)')
+      .eq('id', appointmentId)
+      .maybeSingle()
     nextAppointmentAt = appt?.starts_at ?? undefined
+    const practitioner = String((appt?.team_members as { full_name?: string } | null)?.full_name ?? appt?.practitioner_name ?? '').trim()
+    appointmentPractitionerFirstName = practitioner.split(/\s+/)[0] || undefined
     clinic = (appt?.clinics as typeof clinic) ?? null
   }
   if (!clinic) {
@@ -459,6 +468,7 @@ async function runForRecipient(
     googleReviewUrl,
     satisfactionUrl,
     practitionerFirstName,
+    appointmentPractitionerFirstName,
     lastVisitAt,
     // The language an email goes out in. A WhatsApp step overrides it with
     // the template language it settles on.

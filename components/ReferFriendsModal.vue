@@ -13,10 +13,9 @@ const { showToast } = useToast()
 
 const referralLink = computed(() => `${window.location.origin}/signup?ref=${store.accountSlug}`)
 
-// The offer the dialog promises. Nothing applies it automatically: signup
-// only records referred_by_account_id on the new clinic, and the discount is
-// given by hand on both subscriptions.
-const DISCOUNT_PERCENT = 10
+// The offer the dialog promises, from the same constant the billing webhook
+// applies it with (utils/clinicReferral.ts, server/utils/clinicReferralRewards.ts).
+const DISCOUNT_PERCENT = CLINIC_REFERRAL_DISCOUNT_PERCENT
 
 const copied = ref(false)
 let copiedTimer: ReturnType<typeof setTimeout> | undefined

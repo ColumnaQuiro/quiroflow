@@ -3887,6 +3887,60 @@ export type Database = {
           },
         ]
       }
+      clinic_referral_rewards: {
+        Row: {
+          account_id: string
+          amount_cents: number | null
+          applied_at: string | null
+          created_at: string
+          id: string
+          referred_account_id: string
+          role: string
+          status: string
+          stripe_coupon_id: string | null
+          stripe_invoice_id: string | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents?: number | null
+          applied_at?: string | null
+          created_at?: string
+          id?: string
+          referred_account_id: string
+          role: string
+          status?: string
+          stripe_coupon_id?: string | null
+          stripe_invoice_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number | null
+          applied_at?: string | null
+          created_at?: string
+          id?: string
+          referred_account_id?: string
+          role?: string
+          status?: string
+          stripe_coupon_id?: string | null
+          stripe_invoice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_referral_rewards_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinic_referral_rewards_referred_account_id_fkey"
+            columns: ["referred_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           account_id: string

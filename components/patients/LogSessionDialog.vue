@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
-import { localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
+import { localDateStr, type BookedVisit, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 // Logging a bono session: which visit it pays for, and what that does to the
 // bono, before anything is written.
@@ -20,6 +20,9 @@ import { localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVi
 // Nor is "not on the calendar" picked when today already has a visit that
 // something paid for (coveredVisits): logging a session then is a second
 // visit, and the dialog says so instead of making it the one-click default.
+// The same when today has a booking nobody has been checked in for
+// (bookedToday): the session is for that visit, and checking it out on the
+// calendar takes it.
 
 const props = defineProps<{
   bonoName: string
@@ -31,6 +34,7 @@ const props = defineProps<{
   chargedAtPurchase?: boolean
   visits: UnloggedVisit[]
   coveredVisits: CoveredVisit[]
+  bookedToday: BookedVisit[]
   loading: boolean
   busy: boolean
 }>()
@@ -53,6 +57,8 @@ const newDate = ref(today)
 // Visits already paid for on the day "not on the calendar" would record one.
 const coveredOnNewDate = computed(() => props.coveredVisits.filter((v) => localDateStr(new Date(v.starts_at)) === newDate.value))
 const coveredToday = computed(() => props.coveredVisits.some((v) => localDateStr(new Date(v.starts_at)) === today))
+// Only today has bookings to warn about (loadUnloggedVisits).
+const bookedOnNewDate = computed(() => (newDate.value === today ? props.bookedToday : []))
 
 // Re-evaluated once the list arrives, not only on mount: the parent opens the
 // dialog straight away and loads the visits into it.
@@ -61,7 +67,7 @@ watch(
   ([loading]) => {
     if (loading || selected.value !== null) return
     if (todaysVisit.value) selected.value = todaysVisit.value.id
-    else if (props.visits.length === 0 && !coveredToday.value) selected.value = NEW
+    else if (props.visits.length === 0 && !coveredToday.value && props.bookedToday.length === 0) selected.value = NEW
   },
   { immediate: true },
 )
@@ -78,6 +84,10 @@ function visitLabel(v: UnloggedVisit) {
 function coveredLabel(v: CoveredVisit) {
   const when = [formatTime(v.starts_at), v.typeName].filter(Boolean).join(' · ')
   return v.paidBy ? `${when} (${v.paidBy})` : when
+}
+
+function bookedLabel(v: BookedVisit) {
+  return [formatTime(v.starts_at), v.typeName].filter(Boolean).join(' · ')
 }
 
 function confirm() {
@@ -159,6 +169,18 @@ function confirm() {
                 t(
                   `This day already has a visit paid for: ${coveredOnNewDate.map(coveredLabel).join(', ')}. Logging this records a second visit and uses another session for it.`,
                   `Este día ya tiene una visita pagada: ${coveredOnNewDate.map(coveredLabel).join(', ')}. Si la registras, se crea una segunda visita y se consume otra sesión.`,
+                )
+              }}
+            </span>
+            <span
+              v-if="bookedOnNewDate.length"
+              data-cy="log-session-booked-today"
+              class="mt-2 block rounded-ctl bg-warning-bg px-3 py-2 text-[12px] text-warning-text"
+            >
+              {{
+                t(
+                  `The patient has a booking today: ${bookedOnNewDate.map(bookedLabel).join(', ')}. If this session is for that visit, don't log it here: checking the visit out on the calendar uses the session. Logging it here records a second visit and uses another session.`,
+                  `El paciente tiene cita hoy: ${bookedOnNewDate.map(bookedLabel).join(', ')}. Si la sesión es de esa visita, no la registres aquí: al cobrar la cita en el calendario se descuenta del bono. Si la registras aquí, se crea una segunda visita y se consume otra sesión.`,
                 )
               }}
             </span>

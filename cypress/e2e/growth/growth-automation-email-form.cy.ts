@@ -130,6 +130,9 @@ describe('Email step with a form', () => {
   it('in dry run, records the email for a patient without making a copy of the form', () => {
     flow({
       triggerEvent: 'appointment.completed',
+      // Not "every time": a rule of messages only would run inline, with no
+      // run to record what each step did.
+      entryMode: 'once_ever',
       steps: [{ type: 'email', config: { subject: 'Antes de tu visita', body: '<p>Rellénalo: {{form_link}}</p>', doc_template_id: formId } }],
     }).then((rule) => {
       cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nora', lastName: 'Forma', email: `nora.${unique()}@example.test`, phone: randomPhone() }).then((p) => {
@@ -152,6 +155,9 @@ describe('Email step with a form', () => {
   it('fails a step that links to a form but has none chosen', () => {
     flow({
       triggerEvent: 'appointment.completed',
+      // Not "every time": a rule of messages only would run inline, with no
+      // run to record what each step did.
+      entryMode: 'once_ever',
       steps: [{ type: 'email', config: { subject: 'Antes de tu visita', body: '<p>Rellénalo: {{form_link}}</p>' } }],
     }).then((rule) => {
       cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Forma', email: `olga.${unique()}@example.test`, phone: randomPhone() }).then((p) => {

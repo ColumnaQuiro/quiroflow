@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { bookMembershipPeriod, countScheduleInstallment, fireMembershipPaymentProcessed } from '~/server/utils/membershipCharges'
+import { claimImportedGoCardlessPayment } from '~/server/utils/gocardlessSubscriptionImport'
 
 // What a GoCardless event means here. Shared by the webhook (one endpoint
 // for every connected clinic) and the reconcile cron, which replays the
@@ -88,7 +89,7 @@ async function scheduleForSubscription(supabase: Admin, accountId: string, subsc
   if (!subscriptionId) return null
   const { data } = await supabase
     .from('payment_schedules')
-    .select('id, patient_id, patient_membership_id, package_purchase_id, status')
+    .select('id, patient_id, patient_membership_id, package_purchase_id, status, origin')
     .eq('account_id', accountId)
     .eq('gocardless_subscription_id', subscriptionId)
     .maybeSingle()
@@ -97,9 +98,11 @@ async function scheduleForSubscription(supabase: Admin, accountId: string, subsc
 
 async function handlePaymentEvent(supabase: Admin, request: GoCardlessRequest, accountId: string, event: GcEvent, origin: string) {
   const { payments: payment } = await request<{ payments: GcPayment }>('GET', `/payments/${event.links.payment}`)
-  // Only payments of subscriptions QuiroFlow created are ours to book. A
-  // payment of PracticeHub's subscription on the same mandate, or one the
-  // clinic raised by hand in GoCardless, belongs to whoever raised it.
+  // Only payments of subscriptions a schedule here names are ours to book:
+  // those QuiroFlow created, and another app's (PracticeHub's) that the clinic
+  // synced from Settings > Import (gocardlessSubscriptionImport.ts). A payment
+  // of an unsynced subscription, or one the clinic raised by hand in
+  // GoCardless, belongs to whoever raised it.
   const schedule = await scheduleForSubscription(supabase, accountId, payment.links.subscription)
   if (!schedule) return
 
@@ -125,7 +128,17 @@ async function handlePaymentEvent(supabase: Admin, request: GoCardlessRequest, a
       if (error.code === '23505') return
       throw error
     }
-    if (schedule.patient_membership_id) {
+    // A synced subscription is still PracticeHub's, so while the clinic keeps
+    // syncing its ledger from there the same collection may already be here
+    // as a PracticeHub payment. That one is marked as this collection
+    // instead of a second being booked.
+    const claimed =
+      schedule.origin === 'imported'
+        ? await claimImportedGoCardlessPayment(supabase, accountId, { patientId: schedule.patient_id, amountCents: payment.amount, chargeDate: payment.charge_date, gocardlessPaymentId: payment.id })
+        : null
+    if (claimed) {
+      if (schedule.patient_membership_id) await fireMembershipPaymentProcessed(supabase, accountId, schedule.patient_membership_id, origin)
+    } else if (schedule.patient_membership_id) {
       const paymentId = await bookMembershipPeriod(supabase, accountId, {
         patientId: schedule.patient_id,
         membershipId: schedule.patient_membership_id,
@@ -364,4 +377,22 @@ async function handleSubscriptionEvent(supabase: Admin, request: GoCardlessReque
   if (!schedule) return
   const status = subscription.status === 'cancelled' ? 'canceled' : subscription.status === 'finished' ? 'completed' : null
   if (status) await supabase.from('payment_schedules').update({ status }).eq('id', schedule.id)
+
+  if (schedule.origin !== 'imported') return
+  // A synced subscription belongs to the app that created it, and that app
+  // (or the clinic in GoCardless) can stop it without QuiroFlow being asked.
+  // The membership is left as it is -- the usual reason is the clinic
+  // replacing it with a direct debit of ours, on the same membership -- and
+  // the desk is told, since nothing is collecting it any more.
+  if (status && schedule.status !== 'canceled' && schedule.status !== 'completed') {
+    await tellTheDesk(supabase, accountId, schedule.patient_id, 'La domiciliación que cobraba PracticeHub se ha cancelado: activa el cobro domiciliado en QuiroFlow o da de baja la membresía')
+    return
+  }
+  // Paused or resumed where it was created: the membership says the same.
+  // Only on those two events -- a subscription event arrives with every
+  // payment it raises, and those must not undo a pause the desk set here.
+  const membership = event.action === 'paused' && subscription.status === 'paused' ? 'paused' : event.action === 'resumed' && subscription.status === 'active' ? 'active' : null
+  if (membership && schedule.patient_membership_id) {
+    await supabase.from('patient_memberships').update({ status: membership }).eq('id', schedule.patient_membership_id).eq('account_id', accountId).in('status', ['active', 'paused'])
+  }
 }

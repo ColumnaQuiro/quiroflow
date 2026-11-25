@@ -279,6 +279,91 @@ describe('GoCardless direct debit', () => {
     })
   })
 
+  it('syncs PracticeHub’s subscription as a membership, books its collections once, and tells the desk when it stops', () => {
+    seed({ connected: true }).then((s) => {
+      // gocardless_subscription_id is unique across every clinic in the database.
+      const phSubscription = `SB-PH-${s.organisationId}`
+      const holdings = practiceHubHoldings(s)
+      holdings.subscriptions[0]!.id = phSubscription
+      cy.task('gc:start', {
+        ...holdings,
+        payments: [
+          // PracticeHub's ledger already has this one; the next is new.
+          { id: 'PM-OLD', status: 'confirmed', amount: 4500, currency: 'EUR', charge_date: '2026-12-01', links: { mandate: 'MD1', subscription: phSubscription, creditor: 'CR-STUB' } },
+          { id: 'PM-NEW', status: 'confirmed', amount: 4500, currency: 'EUR', charge_date: '2027-01-04', links: { mandate: 'MD1', subscription: phSubscription, creditor: 'CR-STUB' } },
+        ],
+      })
+      cy.task('db:insertRows', {
+        table: 'patient_gocardless_mandates',
+        rows: [{ account_id: s.account.accountId, patient_id: s.patientId, gocardless_mandate_id: 'MD1', gocardless_customer_id: 'CU1', status: 'active', matched_by: 'email' }],
+      })
+      // The plan it is, found by its price: the same 45,00 every month.
+      cy.task<{ id: string }[]>('db:insertRows', {
+        table: 'memberships',
+        rows: [{ account_id: s.account.accountId, name: 'Mantenimiento', price_cents: 4500, billing_interval: 'month', billing_interval_count: 1 }],
+        select: 'id',
+      }).then(([plan]) => {
+        // The December charge as the PracticeHub sync recorded it, a day late.
+        cy.task('db:insertRows', {
+          table: 'payments',
+          rows: [{ account_id: s.account.accountId, patient_id: s.patientId, amount_cents: 4500, method: 'card', paid_at: '2026-12-02T10:00:00Z', external_reference: `phpay-${s.organisationId}` }],
+        })
+
+        cy.login(s.account.email, s.account.password)
+        cy.visit('/settings/import?source=practicehub&type=gocardless')
+        cy.get(`[data-cy=gocardless-subscription][data-subscription=${phSubscription}]`, SLOW).within(() => {
+          cy.get('[data-cy=gocardless-sync-plan]').should('have.value', plan!.id)
+          cy.get('[data-cy=gocardless-sync]').click()
+          cy.get('[data-cy=gocardless-synced]', SLOW).should('contain.text', 'Synced · Mantenimiento')
+        })
+        // Nothing was asked of GoCardless but to read it.
+        cy.task<{ created: unknown[]; cancelled: unknown[] }>('gc:state').should((state) => {
+          expect(state.created).to.have.length(0)
+          expect(state.cancelled).to.have.length(0)
+        })
+        cy.task<{ origin: string; provider: string; patient_membership_id: string; status: string }[]>('db:selectRows', {
+          table: 'payment_schedules',
+          columns: 'origin, provider, patient_membership_id, status',
+          match: { gocardless_subscription_id: phSubscription },
+        }).then((rows) => {
+          expect(rows).to.have.length(1)
+          expect(rows[0]).to.include({ origin: 'imported', provider: 'gocardless', status: 'active' })
+          cy.task<{ membership_id: string; price_cents: number; status: string }[]>('db:selectRows', { table: 'patient_memberships', columns: 'membership_id, price_cents, status', match: { id: rows[0]!.patient_membership_id } })
+            .its(0)
+            .should('include', { membership_id: plan!.id, price_cents: 4500, status: 'active' })
+        })
+
+        const confirmed = (id: string, payment: string) => ({ id, created_at: '2027-01-06T09:00:00Z', resource_type: 'payments', action: 'confirmed', links: { payment, organisation: s.organisationId } })
+        deliver([confirmed('EV-OLD', 'PM-OLD'), confirmed('EV-NEW', 'PM-NEW')]).its('status').should('eq', 200)
+        cy.task<{ id: string; external_reference: string | null; gocardless_payment_id: string | null }[]>('db:selectRows', {
+          table: 'payments',
+          columns: 'id, external_reference, gocardless_payment_id',
+          match: { account_id: s.account.accountId, patient_id: s.patientId },
+        }).should((rows) => {
+          // December: PracticeHub's payment, now known as the collection. Not a second one.
+          expect(rows.filter((r) => r.gocardless_payment_id === 'PM-OLD').map((r) => r.external_reference)).to.deep.equal([`phpay-${s.organisationId}`])
+          // January: booked as a paid period of the membership.
+          expect(rows.filter((r) => r.gocardless_payment_id === 'PM-NEW')).to.have.length(1)
+          expect(rows).to.have.length(2)
+        })
+
+        // Cancelled where it was created: the desk hears that nothing collects it now.
+        cy.task('gc:update', { subscriptions: [{ ...holdings.subscriptions[0], status: 'cancelled' }] })
+        deliver([{ id: 'EV-CANCEL', created_at: '2027-01-10T09:00:00Z', resource_type: 'subscriptions', action: 'cancelled', links: { subscription: phSubscription, organisation: s.organisationId } }])
+          .its('status')
+          .should('eq', 200)
+        cy.task<{ status: string }[]>('db:selectRows', { table: 'payment_schedules', columns: 'status', match: { gocardless_subscription_id: phSubscription } })
+          .its('0.status')
+          .should('eq', 'canceled')
+        cy.task<{ title: string }[]>('db:selectRows', { table: 'staff_tasks', columns: 'title', match: { account_id: s.account.accountId, patient_id: s.patientId } })
+          .should((rows) => {
+            expect(rows).to.have.length(1)
+            expect(rows[0]!.title).to.contain('cobraba PracticeHub se ha cancelado')
+          })
+      })
+    })
+  })
+
   it('suggests a similar name, opens the search empty when the name finds nobody, and tags and untags the customer', () => {
     seed({ connected: true }).then((s) => {
       cy.task('gc:start', {

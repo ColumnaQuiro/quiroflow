@@ -101,10 +101,11 @@ export interface PracticeHubLedgerInput {
   /** External references of the payments already here. */
   havePaymentRefs: Set<string>
   /**
-   * Charges the Stripe webhook booked that no PracticeHub payment has claimed
-   * yet (payments with a stripe_invoice_id and no external reference). A
-   * PracticeHub payment that is one of them adopts it instead of being
-   * created a second time (utils/stripeMembershipSync.ts).
+   * Charges the Stripe or GoCardless webhook booked that no PracticeHub
+   * payment has claimed yet (payments with a stripe_invoice_id or a
+   * gocardless_payment_id, and no external reference). A PracticeHub payment
+   * that is one of them adopts it instead of being created a second time
+   * (utils/stripeMembershipSync.ts, server/utils/gocardlessSubscriptionImport.ts).
    */
   stripeBooked?: StripeBookedCharge[]
   timezoneOfClinic: (clinicId: string | null) => string | null | undefined
@@ -243,7 +244,12 @@ async function readAll<T>(ctx: PracticeHubImportContext, table: string, columns:
   return readAllForAccount<T>(ctx.supabase, ctx.accountId, table, columns, refPrefix ? (q) => q.like('external_reference', `${refPrefix}%`) : undefined)
 }
 
-/** Charges the Stripe sync booked that no PracticeHub payment has claimed yet. */
+/**
+ * Charges a webhook booked that no PracticeHub payment has claimed yet: a
+ * Stripe invoice, or a GoCardless collection -- which, on a clinic that
+ * synced PracticeHub's own subscriptions (gocardlessSubscriptionImport.ts),
+ * PracticeHub records as well.
+ */
 async function readStripeBooked(ctx: PracticeHubImportContext): Promise<StripeBookedCharge[]> {
   const PAGE = 1000
   const out: StripeBookedCharge[] = []
@@ -251,7 +257,7 @@ async function readStripeBooked(ctx: PracticeHubImportContext): Promise<StripeBo
     const { data, error } = await (ctx.supabase.from('payments' as never) as any)
       .select('id, patient_id, amount_cents, paid_at, method')
       .eq('account_id', ctx.accountId)
-      .not('stripe_invoice_id', 'is', null)
+      .or('stripe_invoice_id.not.is.null,gocardless_payment_id.not.is.null')
       .is('external_reference', null)
       .order('id')
       .range(from, from + PAGE - 1)
@@ -369,8 +375,8 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
         : []),
       ...(paymentsToAdopt.length
         ? [t(
-          `${nf.format(paymentsToAdopt.length)} payments are Stripe charges already recorded here by the Stripe sync, so they are matched to those instead of created again.`,
-          `${nf.format(paymentsToAdopt.length)} pagos son cobros de Stripe ya registrados aquí por la sincronización de Stripe, así que se emparejan con ellos en vez de crearse otra vez.`,
+          `${nf.format(paymentsToAdopt.length)} payments are charges already recorded here by the Stripe or GoCardless sync, so they are matched to those instead of created again.`,
+          `${nf.format(paymentsToAdopt.length)} pagos son cobros ya registrados aquí por la sincronización de Stripe o GoCardless, así que se emparejan con ellos en vez de crearse otra vez.`,
         )]
         : []),
       ...(invoicesToLink.length
@@ -476,7 +482,7 @@ export const planLedger: PracticeHubStepPlanner = async (ctx, snapshot): Promise
           .eq('account_id', accountId)
           .is('external_reference', null)
           .select('id')
-        if (error) errors.push(t(`A Stripe charge was not matched to PracticeHub payment ${adopt.ref}: ${error.message}`, `Un cobro de Stripe no se emparejó con el pago de PracticeHub ${adopt.ref}: ${error.message}`))
+        if (error) errors.push(t(`A Stripe or GoCardless charge was not matched to PracticeHub payment ${adopt.ref}: ${error.message}`, `Un cobro de Stripe o GoCardless no se emparejó con el pago de PracticeHub ${adopt.ref}: ${error.message}`))
         else written += data?.length ?? 0
         progress(++done)
       }

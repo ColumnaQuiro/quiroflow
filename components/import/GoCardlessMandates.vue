@@ -9,9 +9,11 @@
 // or name, utils/gocardlessMatch.ts) is only a starting point.
 //
 // It also shows what is already collecting on each mandate. On a clinic in
-// the middle of leaving PracticeHub, that is PracticeHub's subscription, and
-// it has to be cancelled -- the subscription, never the mandate -- before
-// QuiroFlow starts its own, or the patient pays twice.
+// the middle of leaving PracticeHub, that is PracticeHub's subscription. It
+// can be synced -- left collecting as it is, its payments booked here as the
+// patient's membership (server/utils/gocardlessSubscriptionImport.ts) -- or
+// replaced by one of ours, which needs it cancelled first -- the
+// subscription, never the mandate -- or the patient pays twice.
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -32,8 +34,23 @@ interface MandateRow {
   /** A similar name rather than the same one ("J. Muestra" for "Jorge Muestra"). */
   suggestedLoosely: boolean
   ambiguous: boolean
-  subscriptions: { id: string; name: string | null; status: string; amountCents: number; intervalUnit: string; interval: number; nextChargeDate: string | null; ours: boolean }[]
+  subscriptions: SubscriptionRow[]
 }
+interface SubscriptionRow {
+  id: string
+  name: string | null
+  status: string
+  amountCents: number
+  intervalUnit: string
+  interval: number
+  nextChargeDate: string | null
+  /** Created by QuiroFlow, from the patient's Billing tab. */
+  ours: boolean
+  /** Another app's, synced: the membership it is booked as here. */
+  syncedAs: string | null
+  suggestedPlanId: string | null
+}
+interface PlanRow { id: string; name: string; priceCents: number; interval: string; intervalCount: number }
 
 const loading = ref(true)
 const notConnected = ref(false)
@@ -41,13 +58,18 @@ const loadError = ref('')
 const mandates = ref<MandateRow[]>([])
 const otherSubscriptionsKnown = ref(true)
 const filter = ref<'all' | 'unmatched' | 'matched'>('all')
+const plans = ref<PlanRow[]>([])
+/** The plan chosen for each subscription to sync, by subscription id ('' for none yet). */
+const planChoice = ref<Record<string, string>>({})
 
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await useStaffFetch<{ mandates: MandateRow[]; otherSubscriptionsKnown: boolean }>('/api/gocardless/mandates')
+    const res = await useStaffFetch<{ mandates: MandateRow[]; plans: PlanRow[]; otherSubscriptionsKnown: boolean }>('/api/gocardless/mandates')
     mandates.value = res.mandates
+    plans.value = res.plans
+    for (const m of res.mandates) for (const s of m.subscriptions) if (!(s.id in planChoice.value)) planChoice.value[s.id] = s.suggestedPlanId ?? ''
     otherSubscriptionsKnown.value = res.otherSubscriptionsKnown
     notConnected.value = false
   } catch (e: any) {
@@ -85,6 +107,50 @@ async function confirm(m: MandateRow, patientId = m.patient?.id, by = m.suggeste
 async function confirmAll() {
   for (const m of confirmable.value) await confirm(m)
   showToast(t('Suggested matches confirmed.', 'Emparejamientos sugeridos confirmados.'))
+}
+
+// Syncing another app's subscription: QuiroFlow books its payments as the
+// patient's membership while it keeps collecting exactly as it was
+// (server/api/gocardless/subscriptions/import). Only on a paired mandate --
+// the patient is whoever the mandate is paired with -- and only one that is
+// collecting.
+const syncable = (m: MandateRow, s: SubscriptionRow) => m.matched && !s.ours && !s.syncedAs && (s.status === 'active' || s.status === 'paused')
+const syncReady = computed(() => mandates.value.flatMap((m) => m.subscriptions.filter((s) => syncable(m, s) && planChoice.value[s.id]).map((s) => ({ m, s }))))
+const syncing = ref<string | null>(null)
+
+async function sync(s: SubscriptionRow, quiet = false): Promise<boolean> {
+  const planId = planChoice.value[s.id]
+  if (!planId) return false
+  syncing.value = s.id
+  try {
+    await useStaffFetch('/api/gocardless/subscriptions/import', { method: 'POST', body: { subscriptionId: s.id, planId } })
+    s.syncedAs = plans.value.find((p) => p.id === planId)?.name ?? ''
+    if (!quiet) showToast(t('Synced: QuiroFlow will record its payments.', 'Sincronizada: QuiroFlow registrará sus cobros.'))
+    return true
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? t('Could not sync the subscription.', 'No se pudo sincronizar la suscripción.'), 'error')
+    return false
+  } finally {
+    syncing.value = null
+  }
+}
+
+async function syncAll() {
+  let done = 0
+  for (const { s } of syncReady.value) if (await sync(s, true)) done++
+  if (done) showToast(t(`${done} subscriptions synced.`, `${done} suscripciones sincronizadas.`))
+}
+
+async function unsync(s: SubscriptionRow) {
+  syncing.value = s.id
+  try {
+    await useStaffFetch('/api/gocardless/subscriptions/unlink', { method: 'POST', body: { subscriptionId: s.id } })
+    s.syncedAs = null
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? t('Could not undo the sync.', 'No se pudo deshacer la sincronización.'), 'error')
+  } finally {
+    syncing.value = null
+  }
 }
 
 async function unmatch(m: MandateRow) {
@@ -164,7 +230,12 @@ const everyLabel = (unit: string, n: number) => {
     </p>
 
     <div class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px] leading-snug text-warning-text">
-      {{ t('Moving a membership from PracticeHub: cancel PracticeHub’s subscription for that patient — the subscription, never the mandate — and then start the direct debit in QuiroFlow from the patient’s Billing tab. A cancelled mandate is the one thing that would make the patient sign again.', 'Para pasar una membresía desde PracticeHub: cancela en PracticeHub la suscripción de ese paciente —la suscripción, nunca la domiciliación— y luego activa el cobro domiciliado en QuiroFlow desde la pestaña Facturación del paciente. Cancelar la domiciliación es lo único que obligaría al paciente a volver a firmar.') }}
+      <p>
+        {{ t('PracticeHub’s subscriptions can keep collecting as they are: sync each one with its membership plan and QuiroFlow records its payments from now on, with their invoice. The patient notices nothing. Its amount and day cannot be changed from QuiroFlow.', 'Las suscripciones de PracticeHub pueden seguir cobrando como hasta ahora: sincroniza cada una con su plan de membresía y QuiroFlow registrará sus cobros a partir de ahora, con su factura. El paciente no nota nada. Su importe y su día no se pueden cambiar desde QuiroFlow.') }}
+      </p>
+      <p class="mt-1.5">
+        {{ t('To change one, move it to QuiroFlow: cancel PracticeHub’s subscription — the subscription, never the mandate — and start the direct debit from the patient’s Billing tab. A cancelled mandate is the one thing that would make the patient sign again.', 'Para cambiar una, pásala a QuiroFlow: cancela la suscripción de PracticeHub —la suscripción, nunca la domiciliación— y activa el cobro domiciliado desde la pestaña Facturación del paciente. Cancelar la domiciliación es lo único que obligaría al paciente a volver a firmar.') }}
+      </p>
     </div>
 
     <div v-if="loading" class="flex flex-col gap-2">
@@ -198,6 +269,9 @@ const everyLabel = (unit: string, n: number) => {
         <span class="flex-1" />
         <UiBtn v-if="confirmable.length" variant="primary" :disabled="Boolean(busy)" data-cy="gocardless-confirm-all" @click="confirmAll">
           {{ t(`Confirm ${confirmable.length} suggested`, `Confirmar ${confirmable.length} sugeridas`) }}
+        </UiBtn>
+        <UiBtn v-if="syncReady.length" :disabled="Boolean(syncing)" data-cy="gocardless-sync-all" @click="syncAll">
+          {{ t(`Sync ${syncReady.length} subscriptions`, `Sincronizar ${syncReady.length} suscripciones`) }}
         </UiBtn>
       </div>
 
@@ -256,10 +330,33 @@ const everyLabel = (unit: string, n: number) => {
           </div>
 
           <ul v-if="m.subscriptions.length" class="flex flex-col gap-1 pl-1">
-            <li v-for="s in m.subscriptions" :key="s.id" class="flex flex-wrap items-center gap-2 text-[12.5px]" data-cy="gocardless-subscription">
-              <UiPill :tone="s.ours ? 'success' : 'warning'">{{ s.ours ? 'QuiroFlow' : t('Another app (e.g. PracticeHub)', 'Otra app (p. ej. PracticeHub)') }}</UiPill>
+            <li v-for="s in m.subscriptions" :key="s.id" class="flex flex-wrap items-center gap-2 text-[12.5px]" data-cy="gocardless-subscription" :data-subscription="s.id">
+              <UiPill v-if="s.ours" tone="success">QuiroFlow</UiPill>
+              <UiPill v-else-if="s.syncedAs !== null" tone="success" dot data-cy="gocardless-synced">{{ t(`Synced · ${s.syncedAs}`, `Sincronizada · ${s.syncedAs}`) }}</UiPill>
+              <UiPill v-else tone="warning">{{ t('Another app (e.g. PracticeHub)', 'Otra app (p. ej. PracticeHub)') }}</UiPill>
               <span class="text-ink-700">{{ s.name ?? s.id }} · {{ formatEur(s.amountCents) }} {{ everyLabel(s.intervalUnit, s.interval) }}</span>
               <span v-if="s.nextChargeDate" class="text-ink-muted">· {{ t('next charge', 'próximo cobro') }} {{ s.nextChargeDate }}</span>
+
+              <template v-if="syncable(m, s)">
+                <span class="flex-1" />
+                <select
+                  v-if="plans.length"
+                  v-model="planChoice[s.id]"
+                  :aria-label="t(`Membership plan for ${s.name ?? s.id}`, `Plan de membresía para ${s.name ?? s.id}`)"
+                  class="rounded-md border border-line-control bg-surface px-2 py-1 text-[12.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  data-cy="gocardless-sync-plan"
+                >
+                  <option value="">{{ t('Choose its membership plan', 'Elige su plan de membresía') }}</option>
+                  <option v-for="p in plans" :key="p.id" :value="p.id">{{ p.name }} · {{ formatEur(p.priceCents) }}</option>
+                </select>
+                <NuxtLink v-else to="/settings/memberships" class="font-semibold text-brand-text hover:underline">{{ t('Create its membership plan first', 'Crea antes su plan de membresía') }}</NuxtLink>
+                <UiBtn v-if="plans.length" :disabled="!planChoice[s.id] || syncing === s.id" data-cy="gocardless-sync" @click="sync(s)">{{ t('Sync', 'Sincronizar') }}</UiBtn>
+              </template>
+              <span v-else-if="!m.matched && !s.ours && s.syncedAs === null" class="text-ink-muted">· {{ t('pair the mandate to sync it', 'empareja la domiciliación para sincronizarla') }}</span>
+              <template v-else-if="s.syncedAs !== null">
+                <span class="flex-1" />
+                <button type="button" class="text-ink-600 hover:underline" :disabled="syncing === s.id" data-cy="gocardless-unsync" @click="unsync(s)">{{ t('Undo', 'Deshacer') }}</button>
+              </template>
             </li>
           </ul>
         </li>

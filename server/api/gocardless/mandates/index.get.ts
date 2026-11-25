@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { suggestMandatePatient, type MatchablePatient } from '~/utils/gocardlessMatch'
+import { suggestPlanForSubscription, type ImportablePlan } from '~/utils/gocardlessSubscriptionImport'
 
 // Settings > Import > GoCardless direct debits: every collectable mandate in
 // the clinic's GoCardless account, whoever created it, with the patient it is
@@ -13,6 +14,9 @@ import { suggestMandatePatient, type MatchablePatient } from '~/utils/gocardless
 // Also the subscriptions already running on each mandate. On a clinic coming
 // from PracticeHub those are PracticeHub's, still collecting; QuiroFlow will
 // not start its own on a mandate until they stop, or the patient pays twice.
+// One can instead be synced -- booked here as a membership while it keeps
+// collecting (gocardlessSubscriptionImport.ts) -- so each comes with the plan
+// it most likely is, and the one it was synced as.
 // If GoCardless will not show us another app's subscriptions, the answer says
 // so (`otherSubscriptionsKnown: false`) instead of claiming there are none.
 export default defineEventHandler(async (event) => {
@@ -48,16 +52,23 @@ export default defineEventHandler(async (event) => {
     otherSubscriptionsKnown = false
   }
 
-  const [{ data: matched }, { data: patients }, { data: ours }] = await Promise.all([
+  const [{ data: matched }, { data: patients }, { data: schedules }, { data: plans }] = await Promise.all([
     admin.from('patient_gocardless_mandates').select('gocardless_mandate_id, patient_id, matched_by, reference').eq('account_id', teamMember.account_id),
     admin.from('patients').select('id, first_name, last_name, email, phone_search').eq('account_id', teamMember.account_id).neq('status', 'archived'),
-    admin.from('payment_schedules').select('gocardless_subscription_id').eq('account_id', teamMember.account_id).not('gocardless_subscription_id', 'is', null),
+    admin
+      .from('payment_schedules')
+      .select('gocardless_subscription_id, origin, patient_memberships(membership_name)')
+      .eq('account_id', teamMember.account_id)
+      .not('gocardless_subscription_id', 'is', null),
+    // The catalogue a synced subscription is booked as (gocardlessSubscriptionImport.ts).
+    admin.from('memberships').select('id, name, price_cents, billing_interval, billing_interval_count').eq('account_id', teamMember.account_id).order('name'),
   ])
 
   const customerById = new Map(customers.map((c) => [c.id, c]))
   const bankById = new Map(bankAccounts.map((b) => [b.id, b]))
   const matchedById = new Map((matched ?? []).map((m) => [m.gocardless_mandate_id, m]))
-  const oursIds = new Set((ours ?? []).map((s) => s.gocardless_subscription_id))
+  const scheduleBySubscription = new Map((schedules ?? []).map((s) => [s.gocardless_subscription_id, s]))
+  const planList = (plans ?? []) as ImportablePlan[]
   const patientList = (patients ?? []) as MatchablePatient[]
   const patientById = new Map(patientList.map((p) => [p.id, p]))
 
@@ -73,6 +84,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     otherSubscriptionsKnown,
+    plans: planList.map((p) => ({ id: p.id, name: p.name, priceCents: p.price_cents, interval: p.billing_interval, intervalCount: p.billing_interval_count })),
     mandates: mandates.map((m) => {
       const customer = customerById.get(m.links.customer)
       const bank = bankById.get(m.links.customer_bank_account)
@@ -98,16 +110,24 @@ export default defineEventHandler(async (event) => {
         ambiguous: suggestion && 'ambiguous' in suggestion ? suggestion.ambiguous : false,
         subscriptions: subscriptions
           .filter((s) => s.links.mandate === m.id)
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            status: s.status,
-            amountCents: s.amount,
-            intervalUnit: s.interval_unit,
-            interval: s.interval,
-            nextChargeDate: s.upcoming_payments?.[0]?.charge_date ?? null,
-            ours: oursIds.has(s.id),
-          })),
+          .map((s) => {
+            const schedule = scheduleBySubscription.get(s.id)
+            const synced = schedule?.origin === 'imported'
+            return {
+              id: s.id,
+              name: s.name,
+              status: s.status,
+              amountCents: s.amount,
+              intervalUnit: s.interval_unit,
+              interval: s.interval,
+              nextChargeDate: s.upcoming_payments?.[0]?.charge_date ?? null,
+              // Created by QuiroFlow (the Billing tab).
+              ours: Boolean(schedule) && !synced,
+              // Another app's, booked here as this membership.
+              syncedAs: synced ? ((schedule!.patient_memberships as { membership_name: string } | null)?.membership_name ?? '') : null,
+              suggestedPlanId: schedule ? null : (suggestPlanForSubscription({ name: s.name, amountCents: s.amount, intervalUnit: s.interval_unit, interval: s.interval }, planList)?.planId ?? null),
+            }
+          }),
       }
     }),
   }

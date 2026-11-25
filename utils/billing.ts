@@ -442,10 +442,20 @@ export function readOnlyAllowsRequest(method: string, path: string): boolean {
  * practitioner_seat_allowance() and clinic_location_allowance() in the
  * database (20260924100032), so the page never prints a limit the database
  * does not enforce, or the reverse.
+ *
+ * Also an account on grandfathered terms while it is on the plan they were
+ * granted for (subscriptions.limits_waived_on_plan, 20261125062215).
  */
-export function planLimitsWaived(row: { status: string; comped: boolean; stripe_subscription_id: string | null } | null | undefined): boolean {
+export function planLimitsWaived(
+  row: { status: string; comped: boolean; stripe_subscription_id: string | null; plan_id?: string | null; limits_waived_on_plan?: string | null } | null | undefined,
+): boolean {
   if (!row) return false
-  return row.comped || (row.status === 'trialing' && !row.stripe_subscription_id)
+  return row.comped || limitsGrandfathered(row) || (row.status === 'trialing' && !row.stripe_subscription_id)
+}
+
+/** On the plan its grandfathered terms were granted for, so that plan's practitioner and location limits do not apply. */
+export function limitsGrandfathered(row: { plan_id?: string | null; limits_waived_on_plan?: string | null } | null | undefined): boolean {
+  return !!row?.limits_waived_on_plan && row.limits_waived_on_plan === row.plan_id
 }
 
 /**

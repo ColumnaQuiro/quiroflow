@@ -17,6 +17,8 @@ export interface ChangePlanRow {
 const props = defineProps<{
   plans: ChangePlanRow[]
   currentPlanId: string
+  /** Plan on which this account has no practitioner or location limit (subscriptions.limits_waived_on_plan). */
+  limitsWaivedOnPlan?: string | null
   currentInterval: 'monthly' | 'annual'
   currentExtraSeats: number
   currentExtraClinics: number
@@ -45,13 +47,20 @@ const selectedPlanId = ref(props.currentPlanId)
 const selectedPlan = computed(() => props.plans.find((p) => p.id === selectedPlanId.value) ?? null)
 const selectedIncludesGrowth = computed(() => planIncludesGrowth(selectedPlanId.value))
 
+// Grandfathered terms: on this one plan the account has no practitioner or
+// location limit (20261125062215), so it is shown as unlimited and never sold
+// extra locations it does not need. Every other plan reads as for anyone.
+const unlimitedOn = (planId: string | undefined) => !!props.limitsWaivedOnPlan && props.limitsWaivedOnPlan === planId
+const selectedUnlimited = computed(() => unlimitedOn(selectedPlanId.value))
+
 // Extra locations exist only on a plan that prices them. The stepper keeps
 // its number while another plan is looked at, so going to Practice and back
 // does not lose it; what is charged and sent is this.
-const sellsExtraClinics = computed(() => !!selectedPlan.value?.extra_clinic_price_cents)
+const sellsExtraClinics = computed(() => !!selectedPlan.value?.extra_clinic_price_cents && !selectedUnlimited.value)
 const extraClinicsChosen = computed(() => (sellsExtraClinics.value ? extraClinics.value : 0))
 /** How many open locations the choice does not cover; the server refuses the change while it is above zero. */
 const clinicsShort = computed(() => {
+  if (selectedUnlimited.value) return 0
   const included = selectedPlan.value?.included_clinics
   if (included === null || included === undefined) return 0
   return Math.max(0, props.openClinicCount - included - extraClinicsChosen.value)
@@ -97,11 +106,11 @@ const chargeCents = computed(() =>
 function featuresFor(plan: ChangePlanRow) {
   const includesGrowth = planIncludesGrowth(plan.id)
   const seats =
-    plan.included_professionals === null
+    plan.included_professionals === null || unlimitedOn(plan.id)
       ? t('Unlimited practitioner seats', 'Plazas de profesional ilimitadas')
       : t(`${plan.included_professionals} practitioner seats`, `${plan.included_professionals} plazas de profesional`)
   const clinics =
-    plan.included_clinics === null
+    plan.included_clinics === null || unlimitedOn(plan.id)
       ? t('Unlimited clinics', 'Clínicas ilimitadas')
       : t(`${plan.included_clinics} ${plan.included_clinics === 1 ? 'clinic' : 'clinics'}`, `${plan.included_clinics} ${plan.included_clinics === 1 ? 'clínica' : 'clínicas'}`)
   const features: { key: string; label: string; muted?: boolean }[] = [
@@ -297,7 +306,7 @@ const summary = computed(() => {
         <div class="flex-1">
           <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Practitioner seats', 'Plazas de profesional') }}</h3>
           <p class="mt-1.5 text-[12.5px] leading-[1.5] text-ink-muted">
-            <template v-if="selectedPlan?.included_professionals !== null && selectedPlan">
+            <template v-if="selectedPlan?.included_professionals !== null && selectedPlan && !selectedUnlimited">
               {{ t(`${selectedPlan.name} includes ${selectedPlan.included_professionals}.`, `${selectedPlan.name} incluye ${selectedPlan.included_professionals}.`) }}
               {{ t('Extra seats are', 'Las plazas extra cuestan') }} {{ formatEur(selectedPlan.extra_professional_price_cents ?? 0) }}{{ t('/mo + IVA each.', '/mes + IVA cada una.') }}
             </template>

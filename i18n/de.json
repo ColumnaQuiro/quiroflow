@@ -1597,7 +1597,13 @@
   "The history notes of plans {0}-{1} were not removed (the next sync removes them): {2}": "Die Verlaufsnotizen der Pläne {0}-{1} wurden nicht entfernt (die nächste Synchronisierung entfernt sie): {2}",
   "{0} plans stay as a note in the patient's history: they are switched off in PracticeHub, or have a cadence a care plan here cannot hold (more than 7 visits a period, or a period in days).": "{0} Pläne bleiben eine Notiz im Verlauf des Patienten: Sie sind in PracticeHub deaktiviert oder haben einen Rhythmus, den ein Plan hier nicht abbilden kann (mehr als 7 Besuche pro Zeitraum oder ein Zeitraum in Tagen).",
   "Opens each patient's own copy of \"{0}\". The form is chosen in the step, beside the email.": "Öffnet die eigene Kopie von „{0}\" jedes Patienten. Das Formular wird im Schritt neben der E-Mail gewählt.",
-  "Each patient gets a link to their own copy of \"{0}\", filed on their record. It is made when the email really goes out: a test shows an example link.": "Jeder Patient erhält einen Link zu seiner eigenen Kopie von „{0}\", abgelegt in seiner Akte. Sie wird erstellt, wenn die E-Mail wirklich versendet wird: Ein Test zeigt einen Beispiel-Link."
+  "Each patient gets a link to their own copy of \"{0}\", filed on their record. It is made when the email really goes out: a test shows an example link.": "Jeder Patient erhält einen Link zu seiner eigenen Kopie von „{0}\", abgelegt in seiner Akte. Sie wird erstellt, wenn die E-Mail wirklich versendet wird: Ein Test zeigt einen Beispiel-Link.",
+  "{0} subscriptions synced.": "{0} Abonnements synchronisiert.",
+  "Sync {0} subscriptions": "{0} Abonnements synchronisieren",
+  "Synced · {0}": "Synchronisiert · {0}",
+  "Membership plan for {0}": "Mitgliedschaftsplan für {0}",
+  "{0} payments are charges already recorded here by the Stripe or GoCardless sync, so they are matched to those instead of created again.": "{0} Zahlungen sind Abbuchungen, die die Stripe- oder GoCardless-Synchronisierung hier schon erfasst hat; sie werden diesen zugeordnet statt erneut angelegt.",
+  "A Stripe or GoCardless charge was not matched to PracticeHub payment {0}: {1}": "Eine Stripe- oder GoCardless-Abbuchung wurde der PracticeHub-Zahlung {0} nicht zugeordnet: {1}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -10845,6 +10851,15 @@
   "Nothing in the email links to the form yet: switch on its button above, or insert the form link field in the message.": "Noch verlinkt nichts in der E-Mail auf das Formular: Schalte oben die Schaltfläche ein oder füge das Feld mit dem Formular-Link in die Nachricht ein.",
   "Leads have no patient record to attach a form to, so this email is not sent to them while it carries one.": "Ein Lead hat keine Patientenakte, an die ein Formular angehängt werden kann, daher wird ihm diese E-Mail nicht gesendet, solange sie eines enthält.",
   "Link to the form chosen for this email": "Link zum für diese E-Mail gewählten Formular",
-  "Fill in or sign a form": "Ein Formular ausfüllen oder unterschreiben"
+  "Fill in or sign a form": "Ein Formular ausfüllen oder unterschreiben",
+  "Synced: QuiroFlow will record its payments.": "Synchronisiert: QuiroFlow erfasst ab jetzt seine Abbuchungen.",
+  "Could not sync the subscription.": "Das Abonnement konnte nicht synchronisiert werden.",
+  "Could not undo the sync.": "Die Synchronisierung konnte nicht rückgängig gemacht werden.",
+  "PracticeHub’s subscriptions can keep collecting as they are: sync each one with its membership plan and QuiroFlow records its payments from now on, with their invoice. The patient notices nothing. Its amount and day cannot be changed from QuiroFlow.": "Die Abonnements aus PracticeHub können weiter wie bisher abbuchen: Synchronisieren Sie jedes mit seinem Mitgliedschaftsplan, und QuiroFlow erfasst ab jetzt seine Abbuchungen mit Rechnung. Der Patient merkt nichts. Betrag und Tag lassen sich in QuiroFlow nicht ändern.",
+  "To change one, move it to QuiroFlow: cancel PracticeHub’s subscription — the subscription, never the mandate — and start the direct debit from the patient’s Billing tab. A cancelled mandate is the one thing that would make the patient sign again.": "Um eines zu ändern, übernehmen Sie es in QuiroFlow: Kündigen Sie das Abonnement in PracticeHub — das Abonnement, niemals das Mandat — und starten Sie die Lastschrift über den Tab Abrechnung des Patienten. Ein gekündigtes Mandat ist das Einzige, wofür der Patient erneut unterschreiben müsste.",
+  "Choose its membership plan": "Mitgliedschaftsplan wählen",
+  "Create its membership plan first": "Legen Sie zuerst den Mitgliedschaftsplan an",
+  "Sync": "Synchronisieren",
+  "pair the mandate to sync it": "ordnen Sie das Mandat zu, um es zu synchronisieren"
  }
 }

@@ -25,6 +25,7 @@ function fakeSupabase(tables: Record<string, Row[]>, settle: { pending: number; 
       kind === 'eq' ? r[col] === v
         : kind === 'is' ? (r[col] ?? null) === v
           : kind === 'not' ? (r[col] ?? null) !== v
+          : kind === 'or' ? col.split(',').some((part) => (r[part.split('.')[0]!] ?? null) !== null)
           : String(r[col] ?? '').startsWith(String(v).replace(/%$/, '')))
     const run = () => {
       if (q.op === 'insert') {
@@ -51,6 +52,8 @@ function fakeSupabase(tables: Record<string, Row[]>, settle: { pending: number; 
       is: filter('is'),
       like: filter('like'),
       not: (col: string, _op: string, v: unknown) => { q.filters.push(['not', col, v]); return b },
+      // Only the "a.not.is.null,b.not.is.null" form the ledger uses.
+      or: (expr: string) => { q.filters.push(['or', expr, null]); return b },
       range: (a: number, z: number) => { q.range = [a, z]; return b },
       then: (ok: (v: unknown) => unknown, no: (e: unknown) => unknown) => Promise.resolve().then(run).then(ok, no),
     }
@@ -293,7 +296,7 @@ describe('the Ledger step on the server', () => {
     // The Stripe sync booked p2's 100,00 a day before PracticeHub stamped it.
     tables.payments!.push({ id: 'stripe-1', account_id: ACCOUNT, external_reference: null, stripe_invoice_id: 'in_1', patient_id: 'p2', amount_cents: 10000, paid_at: '2026-09-08T09:00:00Z', method: 'card' })
     const p = await plan(tables)
-    expect(p.warnings.some((w) => w.includes('1 payments are Stripe charges already recorded here'))).toBe(true)
+    expect(p.warnings.some((w) => w.includes('1 payments are charges already recorded here'))).toBe(true)
     await p.apply(() => {}, () => false)
     const mine = tables.payments!.filter((x) => x.account_id === ACCOUNT)
     // One payment for that money, now carrying PracticeHub's reference.
@@ -301,6 +304,16 @@ describe('the Ledger step on the server', () => {
     // And the next run sees it as imported.
     const again = await plan(tables)
     expect(again.rows.some((r) => String(r.what).startsWith('Payment'))).toBe(false)
+  })
+
+  it('adopts a GoCardless collection of a synced PracticeHub subscription the webhook already booked', async () => {
+    const tables = clinic()
+    // p2's 100,00 by direct debit: PracticeHub's own subscription, synced, so
+    // the GoCardless webhook booked it before PracticeHub's ledger arrived.
+    tables.payments!.push({ id: 'gc-1', account_id: ACCOUNT, external_reference: null, stripe_invoice_id: null, gocardless_payment_id: 'PM1', patient_id: 'p2', amount_cents: 10000, paid_at: '2026-09-10T09:00:00Z', method: 'direct_debit' })
+    await (await plan(tables)).apply(() => {}, () => false)
+    const mine = tables.payments!.filter((x) => x.account_id === ACCOUNT && x.patient_id === 'p2')
+    expect(mine.map((x) => [x.id, x.external_reference])).toEqual([['gc-1', 'phpay-702']])
   })
 
   it('does not adopt a booked charge of a different amount or a week away', async () => {

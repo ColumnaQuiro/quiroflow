@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
+import { hoursKnownOn, practitionerWindowsOn, withinWindows } from '~/utils/businessHours'
 import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { hasArrived, isUnconfirmedStage, nextStep, pendingFormsLabel, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
 import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
@@ -199,8 +199,8 @@ watch(
 function outsideHours(at: Date) {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const practitionerHours = (props.teamMembers.find((m) => m.id === form.practitionerId)?.business_hours ?? null) as BusinessHours | null
-  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
-  return !withinWindows(at.getHours() * 60 + at.getMinutes(), practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at)))
+  if (!hoursKnownOn(at, clinicHours, practitionerHours)) return false
+  return !withinWindows(at.getHours() * 60 + at.getMinutes(), practitionerWindowsOn(at, clinicHours, practitionerHours))
 }
 // What the new time, room or practitioner would land on, asked before saving
 // -- as a drag on the calendar asks (CalendarMoveClashDialog).

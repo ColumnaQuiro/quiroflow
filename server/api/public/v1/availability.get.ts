@@ -1,4 +1,4 @@
-import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
+import { practitionerHoursAt, practitionerWindowsForDay, withDayHours, type DayHoursRow } from '~/utils/businessHours'
 import { wallClockToUtc } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
@@ -98,6 +98,14 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
     : { data: [] }
   const locationHours = (locationRows ?? []) as unknown as { team_member_id: string; clinic_id: string; business_hours: BusinessHours | null }[]
 
+  // Their one-off days in the range (shift_days): that date's hours instead
+  // of the week's, as online booking's check (assert_booking_slot_open) reads
+  // them.
+  const { data: dayRows } = (practitioners ?? []).length
+    ? await supabase.from('shift_days').select('team_member_id, day, ranges').in('team_member_id', (practitioners ?? []).map((p) => p.id)).gte('day', from).lte('day', to)
+    : { data: [] }
+  const dayHours = (dayRows ?? []) as unknown as (DayHoursRow & { team_member_id: string })[]
+
   const rangeStart = new Date(`${from}T00:00:00Z`)
   // Wide enough to cover the whole last day in any timezone, so a slot late
   // on the final day isn't missed because the window closed at 00:00 UTC.
@@ -168,8 +176,11 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
 
     for (const practitioner of practitioners ?? []) {
       const duration = overrideDuration.get(practitioner.id) ?? (appointmentType.duration_minutes as number)
-      const hoursHere = practitionerHoursAt(clinicId, clinicHours, practitioner.business_hours as BusinessHours | null, locationHours.filter((l) => l.team_member_id === practitioner.id))
-      const windows = practitionerWindowsForDay(clinicWindows, hoursHere, dayKey)
+      const hoursHere = withDayHours(
+        practitionerHoursAt(clinicId, clinicHours, practitioner.business_hours as BusinessHours | null, locationHours.filter((l) => l.team_member_id === practitioner.id)),
+        dayHours.filter((d) => d.team_member_id === practitioner.id),
+      )
+      const windows = practitionerWindowsForDay(clinicWindows, hoursHere, dayKey, date)
       const busy = [...(busyByPractitioner.get(practitioner.id) ?? []), ...clinicWideBlocks]
 
       for (const [openAt, closeAt] of windows) {

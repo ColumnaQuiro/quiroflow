@@ -1603,7 +1603,11 @@
   "Synced · {0}": "Sincronizada · {0}",
   "Membership plan for {0}": "Plano de assinatura para {0}",
   "{0} payments are charges already recorded here by the Stripe or GoCardless sync, so they are matched to those instead of created again.": "{0} pagamentos são cobranças já registadas aqui pela sincronização do Stripe ou do GoCardless, por isso são emparelhados com elas em vez de serem criados novamente.",
-  "A Stripe or GoCardless charge was not matched to PracticeHub payment {0}: {1}": "Uma cobrança do Stripe ou do GoCardless não foi emparelhada com o pagamento do PracticeHub {0}: {1}"
+  "A Stripe or GoCardless charge was not matched to PracticeHub payment {0}: {1}": "Uma cobrança do Stripe ou do GoCardless não foi emparelhada com o pagamento do PracticeHub {0}: {1}",
+  "Could not save that day: {0}": "Não foi possível guardar esse dia: {0}",
+  "Could not remove it: {0}": "Não foi possível remover: {0}",
+  "{0} works {1}.": "{0} trabalha {1}.",
+  "{0} is off {1}.": "{0} não trabalha {1}."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -3015,7 +3019,6 @@
   "Clear signature": "Limpar assinatura",
   "Clear the reason": "Remover o motivo",
   "Clear these filters": "Limpar estes filtros",
-  "Click a day to change that day only; its usual hours come back with “Usual”.": "Clique num dia para alterar só esse dia; o horário habitual volta com “Habitual”.",
   "Click a part of the email, or a block on the left, to change it.": "Clique numa parte do e-mail, ou num bloco à esquerda, para o alterar.",
   "Click it to finish setting up your account.": "Clique na ligação para concluir a configuração da sua conta.",
   "Click or": "Clique ou",
@@ -10860,6 +10863,19 @@
   "Choose its membership plan": "Escolha o seu plano de assinatura",
   "Create its membership plan first": "Crie primeiro o seu plano de assinatura",
   "Sync": "Sincronizar",
-  "pair the mandate to sync it": "associe a autorização para a sincronizar"
+  "pair the mandate to sync it": "associe a autorização para a sincronizar",
+  "Pick a day.": "Escolha um dia.",
+  "That day has passed.": "Esse dia já passou.",
+  "Write the hours, e.g. 09:30-14:00.": "Escreva o horário, por exemplo 09:30-14:00.",
+  "Write it as 09:30-14:00, or 09:30-14:00, 16:00-20:00 for two stretches.": "Escreva como 09:30-14:00, ou 09:30-14:00, 16:00-20:00 se forem dois períodos.",
+  "Back to their usual hours that day.": "Nesse dia volta ao horário habitual.",
+  "Days with different hours": "Dias com horário especial",
+  "A day they work outside their usual hours, or one they do not work. Only that date changes: the calendar, online booking and the receptionist offer it as set here.": "Um dia em que trabalha fora do horário habitual, ou um em que não trabalha. Só muda essa data: a agenda, a marcação online e a rececionista oferecem-no tal como o definir aqui.",
+  "Add a day": "Adicionar um dia",
+  "That day": "Nesse dia",
+  "Works": "Trabalha",
+  "Two stretches: 09:30-14:00, 16:00-20:00": "Dois períodos: 09:30-14:00, 16:00-20:00",
+  "That day already has hours set: these replace them.": "Esse dia já tem um horário: este substitui-o.",
+  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Clique num dia para alterar só esse dia; o horário habitual volta com “Habitual”. Num profissional, a agenda e a marcação online também o seguem."
  }
 }

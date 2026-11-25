@@ -2,7 +2,7 @@
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
+import { practitionerHoursAt, practitionerWindowsForDay, withDayHours, type DayHoursRow } from '~/utils/businessHours'
 import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, spreadDaySlots, type OnlineBookingWindows } from '~/utils/bookingSlots'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { BOOKING_LANGUAGES, bookingLanguageFromAcceptLanguage, bookingLanguageFromList, bookingLanguageOfTag, type BookingLanguage } from '~/utils/bookingLanguage'
@@ -188,6 +188,11 @@ const summaryDescription = computed(() =>
 // The week each practitioner works at a location, for those who have one
 // per location (get_practitioner_location_hours). Empty for everybody else.
 const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+// Each practitioner's one-off days in the month on screen
+// (get_practitioner_day_hours): read live beside the busy times
+// (loadMonthAvailability) rather than with the page, whose HTML the CDN keeps
+// -- a Friday opened this morning is offered this morning.
+const monthDayHours = ref<(DayHoursRow & { team_member_id: string })[]>([])
 // The times each type can be booked online, for types that have them
 // (get_appointment_type_booking_windows). A type missing here is offered
 // whenever its practitioner is free.
@@ -205,10 +210,17 @@ const typeWindowsFor = (memberId: string | null | undefined) => ({ windows: type
 // (practitionerHoursAt). Somebody at the clinic all week and at a second
 // location two evenings was offered at that second location all week: their
 // one week was read wherever they were being booked.
+//
+// Plus their one-off days in the month on screen (monthDayHours): an extra
+// Friday is offered, a day off is not, as assert_booking_slot_open will judge
+// them.
 const membersHere = computed<BookingTeamMember[]>(() =>
   (info.value?.team_members ?? []).map((m) => ({
     ...m,
-    business_hours: practitionerHoursAt(clinicId.value, clinic.value?.business_hours, m.business_hours, locationHours.value.filter((l) => l.team_member_id === m.id)),
+    business_hours: withDayHours(
+      practitionerHoursAt(clinicId.value, clinic.value?.business_hours, m.business_hours, locationHours.value.filter((l) => l.team_member_id === m.id)),
+      monthDayHours.value.filter((d) => d.team_member_id === m.id),
+    ),
   })),
 )
 const teamMember = computed(() => membersHere.value.find((m) => m.id === teamMemberId.value) ?? null)
@@ -745,7 +757,7 @@ async function loadMonthAvailability() {
   const fromIso = new Date(gridStart.getTime() - 86400000).toISOString()
   const toIso = new Date(gridEnd.getTime() + 86400000).toISOString()
   const memberIds = anyPractitionerMode.value ? availablePractitioners.value.map((m) => m.id) : teamMemberId.value ? [teamMemberId.value] : []
-  const [busyEntries, blockedResult] = await Promise.all([
+  const [busyEntries, blockedResult, dayHoursResult] = await Promise.all([
     Promise.all(
       memberIds.map(async (id) => {
         const { data } = await supabase.rpc('get_booking_busy_times', {
@@ -758,9 +770,15 @@ async function loadMonthAvailability() {
       }),
     ),
     supabase.rpc('get_booking_blocked_times', { p_clinic_id: clinicId.value, p_from: fromIso, p_to: toIso }),
+    // Failing offers their usual week, as before one-off days existed, and
+    // assert_booking_slot_open still refuses a day they took off.
+    memberIds.length
+      ? supabase.rpc('get_practitioner_day_hours' as never, { p_team_member_ids: memberIds, p_from: fromIso.slice(0, 10), p_to: toIso.slice(0, 10) } as never)
+      : Promise.resolve({ data: [] }),
   ])
   monthBusyByMember.value = Object.fromEntries(busyEntries)
   monthBlocked.value = (blockedResult.data as { starts_at: string; ends_at: string; practitioner_id: string | null }[]) ?? []
+  monthDayHours.value = ((dayHoursResult as { data: unknown }).data as (DayHoursRow & { team_member_id: string })[] | null) ?? []
   monthAvailabilityLoading.value = false
   monthAvailabilityLoaded.value = true
 }

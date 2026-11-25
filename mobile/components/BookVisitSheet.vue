@@ -82,6 +82,7 @@ const types = ref<TypeRow[]>([])
 const allPractitioners = ref<PractitionerRow[]>([])
 // Every practitioner's links to a clinic, each with the week they work there when they have one.
 const clinicLinks = ref<{ team_member_id: string; clinic_id: string; business_hours: BusinessHours | null }[]>([])
+const dayHours = ref<{ team_member_id: string; day: string; ranges: [string, string][] }[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const clinic = ref<ClinicRow | null>(null)
 const plan = ref<PlanRow | null>(null)
@@ -121,7 +122,10 @@ const practitioner = computed(() => {
   if (!chosen) return null
   return {
     ...chosen,
-    business_hours: practitionerHoursAt(clinic.value?.id, clinic.value?.business_hours, chosen.business_hours, clinicLinks.value.filter((l) => l.team_member_id === chosen.id)),
+    business_hours: withDayHours(
+      practitionerHoursAt(clinic.value?.id, clinic.value?.business_hours, chosen.business_hours, clinicLinks.value.filter((l) => l.team_member_id === chosen.id)),
+      dayHours.value.filter((d) => d.team_member_id === chosen.id),
+    ),
   }
 })
 const type = computed(() => types.value.find((x) => x.id === typeId.value) ?? null)
@@ -337,7 +341,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   const nowIso = new Date().toISOString()
-  const [p, ty, pr, links, ov, cl, pl, last, next] = await Promise.all([
+  const [p, ty, pr, links, ov, cl, pl, last, next, dh] = await Promise.all([
     supabase.from('patients').select('first_name, default_practitioner_id, clinic_id, is_minor, do_not_contact').eq('id', props.patientId).maybeSingle(),
     // Not group classes: a class place is taken in its session, from the web calendar.
     supabase.from('appointment_types').select('id, name, duration_minutes, sort_order').is('archived_at', null).is('class_capacity', null).order('sort_order', { nullsFirst: false }).order('name'),
@@ -363,7 +367,11 @@ async function load() {
       .gt('starts_at', nowIso)
       .order('starts_at', { ascending: false })
       .limit(1),
+    // One-off days from today on (shift_days): an extra Friday is a working
+    // day here too, a day off is not. If it fails, their usual week.
+    supabase.from('shift_days').select('team_member_id, day, ranges').gte('day', nowIso.slice(0, 10)),
   ])
+  dayHours.value = (dh.data as typeof dayHours.value | null) ?? []
   const failed = [p, ty, pr, cl].find((r) => r.error)
   if (failed || !p.data) {
     loadError.value = failed?.error?.message ?? t('Patient not found.', 'Paciente no encontrado.')

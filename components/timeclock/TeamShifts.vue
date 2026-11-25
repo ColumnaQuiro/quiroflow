@@ -276,7 +276,7 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
         </tbody>
       </table>
     </section>
-    <p class="-mt-2 text-[12px] text-ink-muted">{{ t('Click a day to change that day only; its usual hours come back with “Usual”.', 'Pulsa un día para cambiar solo ese día; «Habitual» vuelve a su horario de siempre.') }}</p>
+    <p class="-mt-2 text-[12px] text-ink-muted">{{ t('Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.', 'Pulsa un día para cambiar solo ese día; «Habitual» vuelve a su horario de siempre. En un profesional, la agenda y la reserva online también lo siguen.') }}</p>
 
     <!-- Side by side only where the holiday table fits its half: at 1024 it
     ran out of the card and cut "Left" off. -->

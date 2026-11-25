@@ -266,7 +266,7 @@ async function load(quiet = false) {
   const clinicId = context.value.clinicId
   const needStatic = !quiet || staticFor !== clinicId
   const none = Promise.resolve({ data: null, error: null })
-  const [ap, bl, pr, links, cl, cs] = await Promise.all([
+  const [ap, bl, pr, links, cl, cs, dh] = await Promise.all([
     supabase
       .from('appointments')
       .select('id, patient_id, clinic_id, starts_at, ends_at, status, checked_in_at, confirmation_status, source, flow_with_practitioner_at, flow_checkout_at, practitioner_id, room_id, appointment_type_id, class_session_id, patients(first_name, last_name), appointment_types(name, color)')
@@ -285,6 +285,9 @@ async function load(quiet = false) {
     needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
     // Group classes on in the range, drawn as one tile each (shownAppointments).
     supabase.from('class_sessions').select('id, starts_at, ends_at, practitioner_id, room_id, appointment_type_id, capacity, appointment_types(name, color)').eq('clinic_id', clinicId).is('cancelled_at', null).lt('starts_at', to).gt('ends_at', from),
+    // One-off days around today (shift_days): an extra Friday is a working
+    // day, as on the web calendar. If it fails, their usual week.
+    needStatic ? supabase.from('shift_days').select('team_member_id, day, ranges').gte('day', new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10)) : none,
   ])
   if (run !== loadRun) return
   const failed = [ap, bl, pr, links, cl, cs].find((r) => r.error)
@@ -304,9 +307,13 @@ async function load(quiet = false) {
     const hours = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
     // Each with the hours they work at the clinic on screen (practitionerHoursAt),
     // as the web calendar: the day's reach reads business_hours off this list.
+    const days = (dh.data as { team_member_id: string; day: string; ranges: [string, string][] }[] | null) ?? []
     practitioners.value = (linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone).map((p) => ({
       ...p,
-      business_hours: practitionerHoursAt(clinicId, hours, p.business_hours, allLinks.filter((l) => l.team_member_id === p.id)),
+      business_hours: withDayHours(
+        practitionerHoursAt(clinicId, hours, p.business_hours, allLinks.filter((l) => l.team_member_id === p.id)),
+        days.filter((d) => d.team_member_id === p.id),
+      ),
     }))
     clinicHours.value = hours
     staticFor = clinicId
@@ -356,7 +363,8 @@ const toMinutes = (hhmm: string) => {
 const dateOfIso = (iso: string) => clinicDateOf(new Date(iso), tz.value)
 const windowsOn = (date: string) => {
   const key = weekdayKeyOf(date) as keyof BusinessHours
-  return [...(clinicHours.value?.[key] ?? []), ...practitioners.value.flatMap((p) => p.business_hours?.[key] ?? [])] as [string, string][]
+  // A one-off day (filed under the date by withDayHours) instead of the week's.
+  return [...(clinicHours.value?.[key] ?? []), ...practitioners.value.flatMap((p) => dayHoursOn(p.business_hours, date) ?? p.business_hours?.[key] ?? [])] as [string, string][]
 }
 // From the earliest anyone opens to the latest anyone closes that day -- or
 // any day of the week shown (8 to 20 when no hours are set), stretched to

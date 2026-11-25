@@ -1603,7 +1603,11 @@
   "Synced · {0}": "Synchronisiert · {0}",
   "Membership plan for {0}": "Mitgliedschaftsplan für {0}",
   "{0} payments are charges already recorded here by the Stripe or GoCardless sync, so they are matched to those instead of created again.": "{0} Zahlungen sind Abbuchungen, die die Stripe- oder GoCardless-Synchronisierung hier schon erfasst hat; sie werden diesen zugeordnet statt erneut angelegt.",
-  "A Stripe or GoCardless charge was not matched to PracticeHub payment {0}: {1}": "Eine Stripe- oder GoCardless-Abbuchung wurde der PracticeHub-Zahlung {0} nicht zugeordnet: {1}"
+  "A Stripe or GoCardless charge was not matched to PracticeHub payment {0}: {1}": "Eine Stripe- oder GoCardless-Abbuchung wurde der PracticeHub-Zahlung {0} nicht zugeordnet: {1}",
+  "Could not save that day: {0}": "Dieser Tag konnte nicht gespeichert werden: {0}",
+  "Could not remove it: {0}": "Konnte nicht entfernt werden: {0}",
+  "{0} works {1}.": "{0} arbeitet am {1}.",
+  "{0} is off {1}.": "{0} arbeitet am {1} nicht."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -3015,7 +3019,6 @@
   "Clear signature": "Unterschrift löschen",
   "Clear the reason": "Grund entfernen",
   "Clear these filters": "Diese Filter zurücksetzen",
-  "Click a day to change that day only; its usual hours come back with “Usual”.": "Klicken Sie auf einen Tag, um nur diesen zu ändern; mit „Üblich“ kehren die üblichen Zeiten zurück.",
   "Click a part of the email, or a block on the left, to change it.": "Klicken Sie auf einen Teil der E-Mail oder einen Block links, um ihn zu ändern.",
   "Click it to finish setting up your account.": "Klicken Sie darauf, um die Einrichtung Ihres Kontos abzuschließen.",
   "Click or": "Klicken oder",
@@ -10860,6 +10863,19 @@
   "Choose its membership plan": "Mitgliedschaftsplan wählen",
   "Create its membership plan first": "Legen Sie zuerst den Mitgliedschaftsplan an",
   "Sync": "Synchronisieren",
-  "pair the mandate to sync it": "ordnen Sie das Mandat zu, um es zu synchronisieren"
+  "pair the mandate to sync it": "ordnen Sie das Mandat zu, um es zu synchronisieren",
+  "Pick a day.": "Wähle einen Tag.",
+  "That day has passed.": "Dieser Tag ist schon vorbei.",
+  "Write the hours, e.g. 09:30-14:00.": "Gib die Zeiten ein, z. B. 09:30-14:00.",
+  "Write it as 09:30-14:00, or 09:30-14:00, 16:00-20:00 for two stretches.": "Schreib es als 09:30-14:00, oder 09:30-14:00, 16:00-20:00 bei zwei Zeitblöcken.",
+  "Back to their usual hours that day.": "An diesem Tag gelten wieder die üblichen Zeiten.",
+  "Days with different hours": "Tage mit besonderen Zeiten",
+  "A day they work outside their usual hours, or one they do not work. Only that date changes: the calendar, online booking and the receptionist offer it as set here.": "Ein Tag, an dem die Person außerhalb ihrer üblichen Zeiten arbeitet, oder einer, an dem sie nicht arbeitet. Nur dieses Datum ändert sich: Kalender, Online-Buchung und Rezeption bieten ihn so an, wie er hier eingetragen ist.",
+  "Add a day": "Tag hinzufügen",
+  "That day": "An diesem Tag",
+  "Works": "Arbeitet",
+  "Two stretches: 09:30-14:00, 16:00-20:00": "Zwei Zeitblöcke: 09:30-14:00, 16:00-20:00",
+  "That day already has hours set: these replace them.": "Für diesen Tag sind schon Zeiten eingetragen: diese ersetzen sie.",
+  "Click a day to change that day only; its usual hours come back with “Usual”. For a practitioner the calendar and online booking follow it too.": "Klicke auf einen Tag, um nur diesen Tag zu ändern; mit „Üblich“ gelten wieder die üblichen Zeiten. Bei Behandelnden folgen auch Kalender und Online-Buchung."
  }
 }

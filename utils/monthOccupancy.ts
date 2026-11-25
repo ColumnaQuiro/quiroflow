@@ -1,4 +1,4 @@
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, type BusinessHours } from './businessHours'
+import { hoursKnownOn, practitionerWindowsOn, type BusinessHours } from './businessHours'
 
 // The calendar's Month view (components/calendar/MonthOccupancy.vue): for
 // each day, how much of the practitioners' working time is booked and how
@@ -91,7 +91,6 @@ export function monthOccupancy(input: {
   appointments: OccupancyRange[]
   blocks: OccupancyRange[]
 }): DayOccupancy[] {
-  const clinicConfigured = hasBusinessHoursConfigured(input.clinicHours)
   const ids = new Set(input.practitioners.map((p) => p.id))
   return input.days.map((day) => {
     let capacity: number | null = 0
@@ -99,13 +98,13 @@ export function monthOccupancy(input: {
     const clinicWide = input.blocks.filter((b) => !b.practitioner_id && !b.room_id).map((b) => spanOn(day, b)).filter((s): s is Span => !!s)
     for (const p of input.practitioners) {
       const visits = input.appointments.filter((a) => a.practitioner_id === p.id).map((a) => spanOn(day, a)).filter((s): s is Span => !!s)
-      if (!clinicConfigured && !hasBusinessHoursConfigured(p.business_hours)) {
+      if (!hoursKnownOn(day, input.clinicHours, p.business_hours)) {
         // Nothing says when they work: their visits still count as booked.
         capacity = null
         booked += total(merge(visits))
         continue
       }
-      const windows = practitionerWindowsForDay(windowsForDay(day, input.clinicHours), p.business_hours, dayKeyFor(day)).map(([s, e]) => [toMin(s), toMin(e)] as Span)
+      const windows = practitionerWindowsOn(day, input.clinicHours, p.business_hours).map(([s, e]) => [toMin(s), toMin(e)] as Span)
       const away = input.blocks.filter((b) => b.practitioner_id === p.id).map((b) => spanOn(day, b)).filter((s): s is Span => !!s)
       const working = merge([...subtract(windows, [...clinicWide, ...away]), ...visits])
       if (capacity !== null) capacity += total(working)

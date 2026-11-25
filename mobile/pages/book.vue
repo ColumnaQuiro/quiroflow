@@ -105,6 +105,10 @@ const teamMemberId = ref('')
 // The week per location of whoever works at more than one clinic
 // (get_practitioner_location_hours). Empty for everybody else.
 const locationHours = ref<{ team_member_id: string; clinic_id: string; business_hours: Record<string, [string, string][]> | null }[]>([])
+// Practitioners' one-off days from today on (get_practitioner_day_hours): an
+// extra Friday is offered, a day off is not, as assert_booking_slot_open
+// judges them.
+const dayHours = ref<{ team_member_id: string; day: string; ranges: [string, string][] }[]>([])
 // The times each type can be booked online, for the types that have them
 // (get_appointment_type_booking_windows); a move reads its own type's. Either
 // way they narrow the practitioner's hours to the times the type is offered,
@@ -136,7 +140,10 @@ const slotPractitioner = computed(() => {
   if (!member) return null
   return {
     ...member,
-    business_hours: practitionerHoursAt(clinicId.value, clinic.value?.business_hours, member.business_hours, locationHours.value.filter((l) => l.team_member_id === member.id)),
+    business_hours: withDayHours(
+      practitionerHoursAt(clinicId.value, clinic.value?.business_hours, member.business_hours, locationHours.value.filter((l) => l.team_member_id === member.id)),
+      dayHours.value.filter((d) => d.team_member_id === member.id),
+    ),
   }
 })
 // Every time here is the clinic's, as on the web page. Slots used to be built
@@ -191,7 +198,7 @@ onMounted(async () => {
     return
   }
   info.value = parsed
-  await Promise.all([loadLocationHours(parsed), loadTypeWindows(parsed), loadMinNotice(parsed)])
+  await Promise.all([loadLocationHours(parsed), loadDayHours(parsed), loadTypeWindows(parsed), loadMinNotice(parsed)])
 
   if (rescheduleId.value) {
     await startReschedule(parsed)
@@ -214,6 +221,17 @@ async function loadLocationHours(parsed: BookingInfo) {
   if (!shared.length) return
   const { data } = await supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never)
   locationHours.value = (data as unknown as typeof locationHours.value | null) ?? []
+}
+
+// If this fails (or the database predates 20261125125008) the app offers their
+// usual week, and assert_booking_slot_open still refuses a day they took off.
+async function loadDayHours(parsed: BookingInfo) {
+  const ids = parsed.team_members.map((m) => m.id)
+  if (!ids.length) return
+  const from = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const to = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10)
+  const { data } = await supabase.rpc('get_practitioner_day_hours' as never, { p_team_member_ids: ids, p_from: from, p_to: to } as never)
+  dayHours.value = (data as unknown as typeof dayHours.value | null) ?? []
 }
 
 // If this fails (or the database predates 20261122184746) every free time is

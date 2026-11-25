@@ -68,6 +68,17 @@ export default defineEventHandler(async (event) => {
   const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
   const branding = await brandingAddonPrices(serviceRole, body.interval)
 
+  // An account on grandfathered terms has no practitioner or location limit
+  // on the plan it was granted them for -- the same rule as the two allowance
+  // functions (20261125062215) -- so neither check below applies to it there.
+  // Any other plan it moves to is checked as for everyone.
+  const { data: waiver } = await serviceRole
+    .from('subscriptions')
+    .select('limits_waived_on_plan')
+    .eq('account_id', teamMember.account_id)
+    .maybeSingle()
+  const limitsWaived = !!waiver?.limits_waived_on_plan && waiver.limits_waived_on_plan === plan.id
+
   // enforce_practitioner_seats (0150) only blocks a plan limit from being
   // breached going FORWARD -- it has nothing to say about an account that's
   // already over a plan it hasn't switched to yet. Without this check, an
@@ -78,7 +89,7 @@ export default defineEventHandler(async (event) => {
   // that the account is now over its own plan. Checked here, before any
   // Stripe call, using the same "seat" definition (is_practitioner, not
   // soft-deleted) the trigger and pages/subscription.vue both use.
-  if (plan.included_professionals !== null) {
+  if (!limitsWaived && plan.included_professionals !== null) {
     const { count: practitionerCount } = await serviceRole
       .from('team_members')
       .select('id', { count: 'exact', head: true })
@@ -114,7 +125,7 @@ export default defineEventHandler(async (event) => {
   // back, not when the plan under it changes. So a group with three
   // locations could move to Solo, or drop a bought location while it is
   // still open, and keep all of them.
-  if (plan.included_clinics !== null) {
+  if (!limitsWaived && plan.included_clinics !== null) {
     const { count: clinicCount } = await serviceRole
       .from('clinics')
       .select('id', { count: 'exact', head: true })

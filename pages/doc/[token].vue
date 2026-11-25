@@ -19,6 +19,13 @@ const saving = ref(false)
 const error = ref('')
 
 onMounted(async () => {
+  // Tokens are uuids. Anything else (a link built from a template's example
+  // suffix, `/doc/name=…&id=…`) cannot be a document, and asking the database
+  // only comes back as a 22P02 error.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+    phase.value = 'not_found'
+    return
+  }
   const { data, error: rpcError } = await supabase.rpc('get_public_patient_doc', { p_token: token })
   if (rpcError || !data) {
     phase.value = 'not_found'

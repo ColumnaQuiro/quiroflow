@@ -6,7 +6,7 @@ import { practiceHubClassicGet } from '~/server/utils/practicehubClassic'
 import { practicehubV3Get } from '~/server/utils/practicehubV3'
 import { dropPracticeHubPass, finishPracticeHubRead, loadPracticeHubPassList, loadPracticeHubSnapshot, savePracticeHubPage } from '~/server/utils/practicehubSnapshotStore'
 import { practiceHubFileServices } from '~/server/utils/practicehubFiles'
-import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_V3_API_PATHS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
+import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_STEP_LISTS, PRACTICEHUB_V3_API_PATHS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
 import type { ImportJob, ImportJobOptions } from '~/server/utils/importJobs'
 
@@ -200,7 +200,9 @@ export async function practiceHubApplySlice(
 ): Promise<Outcome> {
   const accountId = job.account_id
   const p: ImportJobProgress = { ...progress, phase: 'apply' }
-  const snapshot = await loadPracticeHubSnapshot(admin, accountId)
+  // Only the lists this step plans from: the whole copy of a large clinic is
+  // more than a slice can load and still plan (PRACTICEHUB_STEP_LISTS).
+  const snapshot = await loadPracticeHubSnapshot(admin, accountId, PRACTICEHUB_STEP_LISTS[kind])
   if (!snapshot) {
     return { progress: p, result: { step: kind, written: 0, errors: [t('Nothing has been read from PracticeHub yet.', 'Aún no se ha leído nada de PracticeHub.')], warnings: [] } }
   }

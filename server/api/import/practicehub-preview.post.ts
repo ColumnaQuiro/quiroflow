@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { importJobT } from '~/server/utils/importJobs'
 import { loadPracticeHubSnapshot } from '~/server/utils/practicehubSnapshotStore'
-import { planPracticeHubStep, PRACTICEHUB_STEPS, type PracticeHubStepKind } from '~/utils/practicehubImport'
+import { planPracticeHubStep, PRACTICEHUB_STEP_LISTS, PRACTICEHUB_STEPS, type PracticeHubStepKind } from '~/utils/practicehubImport'
 
 // What a PracticeHub import step would write from the copy the server read
 // (import_snapshots), against what is already here -- planned with the same
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     const { data } = await admin.from('clinics').select('id').eq('id', body.clinicId).eq('account_id', accountId).maybeSingle()
     clinicId = data?.id ?? null
   }
-  const snapshot = await loadPracticeHubSnapshot(admin, accountId)
+  const snapshot = await loadPracticeHubSnapshot(admin, accountId, PRACTICEHUB_STEP_LISTS[kind])
   if (!snapshot) throw createError({ statusCode: 409, statusMessage: 'Read PracticeHub first.' })
   const { data: account } = await admin.from('accounts').select('default_phone_country').eq('id', accountId).maybeSingle()
 

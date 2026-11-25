@@ -1,6 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import type Stripe from 'stripe'
 import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { resolveBillingPaymentMethod } from '~/server/utils/billingPaymentMethod'
 
 // Read-only view of the platform billing (QuiroFlow's own subscription of the
 // clinic, NOT the per-clinic Connect account used to bill patients) Stripe
@@ -38,24 +40,6 @@ export default defineEventHandler(async (event) => {
     return { hasCustomer: false as const }
   }
 
-  let card: { brand: string; last4: string; expMonth: number; expYear: number } | null = null
-  const defaultPm = customer.invoice_settings?.default_payment_method
-  if (defaultPm && typeof defaultPm !== 'string' && defaultPm.card) {
-    card = {
-      brand: defaultPm.card.brand,
-      last4: defaultPm.card.last4,
-      expMonth: defaultPm.card.exp_month,
-      expYear: defaultPm.card.exp_year,
-    }
-  } else {
-    // No default set explicitly -- fall back to whatever card is on file.
-    const methods = await stripe.paymentMethods.list({ customer: subscription.stripe_customer_id, type: 'card', limit: 1 })
-    const pm = methods.data[0]
-    if (pm?.card) {
-      card = { brand: pm.card.brand, last4: pm.card.last4, expMonth: pm.card.exp_month, expYear: pm.card.exp_year }
-    }
-  }
-
   // The NIF a Spanish clinic needs on its invoices. A customer can carry more
   // than one tax id; the first is the one Stripe prints.
   let taxId: string | null = null
@@ -68,8 +52,9 @@ export default defineEventHandler(async (event) => {
 
   let nextPaymentDate: string | null = null
   let cancelAt: string | null = null
+  let stripeSubscription: Stripe.Subscription | null = null
   if (subscription.stripe_subscription_id) {
-    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id)
+    stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id, { expand: ['default_payment_method'] })
     // Set only when Stripe's dunning is configured to cancel after the last
     // retry. Absent, there is no date to promise.
     cancelAt = stripeSubscription.cancel_at ? new Date(stripeSubscription.cancel_at * 1000).toISOString() : null
@@ -79,6 +64,13 @@ export default defineEventHandler(async (event) => {
     const periodEnd = stripeSubscription.items.data[0]?.current_period_end
     if (periodEnd) nextPaymentDate = new Date(periodEnd * 1000).toISOString()
   }
+
+  // What Stripe will charge. The subscription's own default comes first:
+  // Checkout saves the method there, and a Link payment is not a card.
+  const card = await resolveBillingPaymentMethod(stripe, subscription.stripe_customer_id, [
+    stripeSubscription?.default_payment_method,
+    customer.invoice_settings?.default_payment_method,
+  ])
 
   // What Stripe will actually take next, with its own tax figure. Wrapped
   // because a subscription that is trialing with no card, or one Stripe

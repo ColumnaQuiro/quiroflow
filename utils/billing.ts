@@ -508,3 +508,11 @@ export function meterPercent(used: number, allowance: number | null): number | n
   if (!allowance) return null
   return Math.min(100, Math.max(0, Math.round((used / allowance) * 100)))
 }
+
+/**
+ * "visa ·· 4242", "SEPA ·· 1234", or just "Link": how the method QuiroFlow
+ * charges reads on /subscription. Link has no card number to show.
+ */
+export function billingMethodLabel(method: { brand: string; last4: string | null }): string {
+  return method.last4 ? `${method.brand} ·· ${method.last4}` : method.brand
+}

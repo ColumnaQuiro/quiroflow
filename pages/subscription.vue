@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { receptionistOnTrialAllowance } from '~/utils/receptionistAllowance'
-import { clinicAllowance, limitsGrandfathered, planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
+import { clinicAllowance, limitsGrandfathered, planLimitsWaived, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState, billingMethodLabel } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
 
 // /subscription.
@@ -41,7 +41,6 @@ interface SubscriptionRow {
     annual_price_cents: number
     included_professionals: number | null
     included_clinics: number | null
-    included_storage_gb: number | null
     extra_professional_price_cents: number | null
     extra_clinic_price_cents: number | null
   } | null
@@ -54,7 +53,6 @@ interface PlanRow {
   annual_price_cents: number
   included_professionals: number | null
   included_clinics: number | null
-  included_storage_gb: number | null
   extra_professional_price_cents: number | null
   extra_clinic_price_cents: number | null
   sort_order: number
@@ -74,7 +72,7 @@ interface BillingInfo {
   country?: string | null
   taxId?: string | null
   address?: { line1: string | null; line2: string | null; postalCode: string | null; city: string | null } | null
-  card?: { brand: string; last4: string; expMonth: number; expYear: number } | null
+  card?: { brand: string; last4: string | null; expMonth: number | null; expYear: number | null } | null
   nextPaymentDate?: string | null
   upcoming?: { totalCents: number; subtotalCents: number; taxCents: number; currency: string } | null
   pastDue?: {
@@ -115,7 +113,6 @@ const verifactuFeePricing = computed(() =>
   verifactuFee.value ? { monthlyPriceCents: verifactuFee.value.monthly_price_cents, annualPriceCents: verifactuFee.value.annual_price_cents } : null,
 )
 const practitioners = ref<{ full_name: string | null }[]>([])
-const usage = ref<{ whatsapp_conversations_mtd: number; storage_bytes: number } | null>(null)
 const billingInfo = ref<BillingInfo | null>(null)
 const loading = ref(true)
 
@@ -128,19 +125,11 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents)',
+      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
   subscription.value = data as SubscriptionRow | null
-}
-
-// Read through account_usage() rather than counting here: it is SECURITY
-// DEFINER, so the figure is the same account-level truth for every team
-// member instead of being filtered to whatever the reader can see.
-async function loadUsage() {
-  const { data } = await supabase.rpc('account_usage', { target_account_id: store.accountId! })
-  usage.value = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
 }
 
 async function loadPractitioners() {
@@ -459,12 +448,11 @@ onMounted(async () => {
     supabase
       .from('plans')
       .select(
-        'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents, sort_order',
+        'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents, sort_order',
       )
       .order('sort_order'),
     supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
     loadPractitioners(),
-    loadUsage(),
     loadBillingInfo(),
     loadReceptionistReplies(),
   ])
@@ -729,8 +717,6 @@ async function addPaymentMethod() {
               :seat-allowance="seatCeiling"
               :practitioner-names="practitioners.map((p) => p.full_name ?? '').filter(Boolean).slice(0, 3)"
               :extra-seat-price-cents="subscription.plans?.extra_professional_price_cents ?? null"
-              :storage-gb="bytesToGb(usage?.storage_bytes ?? 0)"
-              :storage-allowance-gb="comped ? null : (subscription.plans?.included_storage_gb ?? null)"
               :clinic-count="store.clinics.length"
               :clinic-allowance="clinicCeiling"
               :extra-clinic-price-cents="subscription.plans?.extra_clinic_price_cents ?? null"
@@ -888,7 +874,7 @@ async function addPaymentMethod() {
               <span class="text-[13px] text-ink-500">
                 <template v-if="billingInfo?.nextPaymentDate">{{ t('on', 'el') }} {{ formatLongDate(billingInfo.nextPaymentDate) }}</template>
                 <template v-if="nextChargeSubtotal !== null && nextChargeTax"> · {{ formatEur(nextChargeSubtotal) }} + {{ formatEur(nextChargeTax) }} IVA</template>
-                <template v-if="billingInfo?.card"> · {{ billingInfo.card.brand }} ·· {{ billingInfo.card.last4 }}</template>
+                <template v-if="billingInfo?.card"> · {{ billingMethodLabel(billingInfo.card) }}</template>
               </span>
               <span class="flex-1" />
               <SubscriptionOutboundLink as="button" @click="openStripePortal">

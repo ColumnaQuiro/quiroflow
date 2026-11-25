@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatRelativeDays } from '~/utils/billing'
+import { billingMethodLabel, formatEur, formatRelativeDays } from '~/utils/billing'
 
 // The number this page exists for. It used to be a fragment of a string in
 // the page header, joined to the status with five literal spaces.
@@ -14,7 +14,7 @@ const props = withDefaults(
     subtotalCents?: number | null
     taxCents?: number | null
     date: string | null
-    card: { brand: string; last4: string } | null
+    card: { brand: string; last4: string | null } | null
     /** past_due only. */
     retryDate?: string | null
     declineReason?: string | null
@@ -79,7 +79,7 @@ const eyebrow = computed(() =>
         <rect x="2.4" y="4.4" width="13.2" height="9.2" rx="2" stroke="currentColor" stroke-width="1.4" />
         <path d="M2.4 7.6h13.2" stroke="currentColor" stroke-width="1.4" />
       </svg>
-      <span class="flex-1 font-mono text-[13px] capitalize text-ink-500">{{ card.brand }} ·· {{ card.last4 }}</span>
+      <span class="flex-1 font-mono text-[13px] capitalize text-ink-500">{{ billingMethodLabel(card) }}</span>
     </div>
 
     <!-- Trial: there is nothing to charge yet, and saying so is the point. -->

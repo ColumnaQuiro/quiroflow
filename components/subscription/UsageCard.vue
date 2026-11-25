@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { formatEur, formatGb, meterPercent } from '~/utils/billing'
+import { formatEur, meterPercent } from '~/utils/billing'
 
-// Seats, storage and clinics, in three columns.
+// Seats and clinics, in two columns. Storage is not shown: it is headroom
+// that never blocks an upload, so a meter only invited questions about it.
 //
 // "Practitioner" is load-bearing in every string here: front desk, practice
 // managers and bookkeepers cost nothing and are unlimited, and an owner who
@@ -11,8 +12,6 @@ const props = defineProps<{
   seatAllowance: number | null
   practitionerNames: string[]
   extraSeatPriceCents: number | null
-  storageGb: number
-  storageAllowanceGb: number | null
   clinicCount: number
   clinicAllowance: number | null
   /** What one more location costs on this plan; null when it does not sell them. */
@@ -33,7 +32,6 @@ const props = defineProps<{
 const t = useT()
 
 const seatPercent = computed(() => meterPercent(props.practitionerCount, props.seatAllowance))
-const storagePercent = computed(() => meterPercent(props.storageGb, props.storageAllowanceGb))
 const seatsFree = computed(() => (props.seatAllowance === null ? null : props.seatAllowance - props.practitionerCount))
 const clinicsFree = computed(() => (props.clinicAllowance === null ? null : props.clinicAllowance - props.clinicCount))
 </script>
@@ -78,22 +76,6 @@ const clinicsFree = computed(() => (props.clinicAllowance === null ? null : prop
           <template v-else-if="extraSeatPriceCents">
             {{ t('Every seat is in use — another is', 'Todas las plazas están ocupadas — otra cuesta') }} {{ formatEur(extraSeatPriceCents) }}{{ t('/mo + IVA.', '/mes + IVA.') }}
           </template>
-        </p>
-      </div>
-
-      <!-- Patient file storage -->
-      <div class="flex-1 basis-0 border-t border-line-divider pt-4 lg:border-l lg:border-t-0 lg:pl-[18px] lg:pt-0">
-        <p class="text-[12.5px] font-semibold text-ink-muted">{{ t('Patient file storage', 'Archivos de pacientes') }}</p>
-        <p class="mt-2 text-[16px] font-semibold text-ink-900">
-          {{ formatGb(storageGb) }}<template v-if="storageAllowanceGb">&nbsp;{{ t('of', 'de') }} {{ storageAllowanceGb }} GB</template>
-        </p>
-        <div class="mt-2.5">
-          <SubscriptionMeter :percent="storagePercent" tone="info" />
-        </div>
-        <!-- No warning tone at any level: nothing blocks an upload, and a red
-             meter would promise a gate that does not exist. -->
-        <p class="mt-2 text-[12px] leading-[1.5] text-ink-muted">
-          {{ t('Headroom, not a gate — uploads are never blocked.', 'Es margen, no un límite — nunca bloqueamos una subida.') }}
         </p>
       </div>
 

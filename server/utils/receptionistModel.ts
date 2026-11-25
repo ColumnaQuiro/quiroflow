@@ -15,6 +15,7 @@ import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, misstatedVisitNote, misstatedVisitTime, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 import { colleaguePromise, colleaguePromiseReason, handoverReasonSaysNothing, UNEXPLAINED_HANDOVER_REASON } from '~/utils/receptionistFollowThrough'
 import { contradictingTimes, fullClaimNote, noFreeTimeClaim, type FreeTimesSource } from '~/utils/receptionistFullClaims'
+import { languageNote, languageProblem, theirLanguage } from '~/utils/receptionistLanguageCheck'
 import { shiftDate } from '~/utils/automationTriggerMatch'
 
 // How the receptionist talks to the model, for all three of its callers --
@@ -267,6 +268,12 @@ function pushNote(messages: Anthropic.MessageParam[], content: Anthropic.Content
   }
 }
 
+/** The words of a message, its images and documents left out. */
+function messageText(content: Anthropic.MessageParam['content']): string {
+  if (typeof content === 'string') return content
+  return content.map((block) => (block.type === 'text' ? block.text : '')).filter(Boolean).join('\n')
+}
+
 export type ReceptionistRunOptions = Parameters<typeof runOnce>[1]
 
 /**
@@ -356,6 +363,12 @@ async function runOnce(
     offerTimes?: ((onOffered: (slots: OfferedSlot[], offer?: OfferDraft | null) => void) => (input: unknown, hints?: OfferHints) => Promise<{ content: string; isError: boolean }>) | null
     /** The language code-written words go out in: an offer or a confirmation the model left unsaid. Spanish when not given. */
     language?: SlotLanguage
+    /**
+     * The time they chose from the last offer, held for them while what the
+     * booking needs is asked for (acceptOfferedTime 'held'): offering other
+     * times instead is refused.
+     */
+    heldTime?: OfferedSlot | null
     /**
      * Tried once more on this model when the reply comes back with nothing
      * to send -- refused, withheld by a check, or empty -- and nothing was
@@ -471,6 +484,10 @@ async function runOnce(
   // free dates full has already been sent back once.
   const lookedUpTimes: FreeTimesSource[] = []
   let fullClaimRewritten = false
+  // The language they write in, from their own messages (utils/receptionistLanguageCheck.ts),
+  // and whether a reply in another one, or with English words in Spanish, has been sent back once.
+  const theirs = theirLanguage(opts.messages.filter((m) => m.role === 'user').map((m) => messageText(m.content)))
+  let languageRewritten = false
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -589,6 +606,18 @@ async function runOnce(
         messages.push({ role: 'user', content: fullClaimNote(fullClaim, contradicted) })
         continue
       }
+      // Their language, checked in code: "¿Also cancelo…?" in a Spanish
+      // reply (22 Nov 2026), or a reply in English to someone writing in
+      // Spanish. Back once, not after a booking; if it is still wrong it goes
+      // as it is rather than leave them without an answer.
+      const wrongLanguage = text && !booked && !languageRewritten && !isNoReply(text) ? languageProblem(text, theirs) : null
+      if (wrongLanguage) {
+        languageRewritten = true
+        checks.push(wrongLanguage.kind === 'wrong_language' ? 'language_rewritten' : 'english_words_rewritten')
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: languageNote(wrongLanguage) })
+        continue
+      }
       // The house style, checked in code (utils/receptionistStyle.ts): what
       // needs rewording goes back once -- not after a booking, which a second
       // round must not be tempted to repeat -- and the rest is mended here.
@@ -664,6 +693,10 @@ async function runOnce(
             return { content: 'The reasons cannot be sent. Ask them in one short sentence why they cannot come, without listing reasons.', isError: true }
           })
           if (!result.isError) choices = 'cancellation_reason'
+        } else if (use.name === 'offer_times' && offerTimes && opts.heldTime) {
+          // They already chose one (13 Nov 2026: asked for a daughter's name
+          // instead of booking, the time was lost): not offered away now.
+          result = { content: `Not offered: they already chose ${opts.heldTime.date} at ${opts.heldTime.time}, and it is held for them. Book that time, or ask only for what the booking still needs. Offer other times only if they say that one no longer suits them.`, isError: true }
         } else if (use.name === 'offer_times' && offerTimes) {
           result = await offerTimes(use.input, lookedUp).catch((err) => {
             console.error('[receptionist] offer_times failed:', (err as Error)?.message ?? err)

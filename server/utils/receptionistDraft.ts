@@ -405,12 +405,13 @@ export async function draftLeadReply(
     : null
   // Booked in code, with a confirmation that is the model's to word: told so
   // instead of which time they chose.
-  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : withChosenTime(prompt))
+  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : accepted?.kind === 'held' ? { ...prompt, conversation: `${prompt.conversation}\n\n${accepted.note}` } : withChosenTime(prompt))
 
   const run = accepted?.kind === 'reply' ? accepted.run : await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
     model: receptionistModelName(),
     fallbackModel: receptionistFallbackModel(),
     alreadyBooked: accepted?.kind === 'booked' ? { input: accepted.input, details: accepted.details } : null,
+    heldTime: accepted?.kind === 'held' ? accepted.slot : null,
     maxTokens: MAX_TOKENS,
     system: withFormHandOver(withAccepted(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, leadForm, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }))),
     // With the day each message was sent (withDayMarks): "mañana jueves" in

@@ -2,7 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
-import { recordBonoPayment, recordBonoSale } from '~/utils/bonoSale'
+import { recordBonoPayment, recordBonoSale, specialBonoPriceCents } from '~/utils/bonoSale'
 import { bonoDueCents, installmentBeingPaid, installmentPlanOf, installmentsDue, readInstallmentOptions } from '~/utils/bonoInstallments'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
@@ -716,6 +716,9 @@ const sellPackageId = ref('')
 // split options (Settings > Bonos), each priced on its own.
 const sellInstallments = ref(1)
 const sellAmountPaid = ref('')
+// The price, at once: the bono's own unless the clinic gives this patient a
+// discount (utils/bonoSale specialBonoPriceCents).
+const sellPrice = ref('')
 const sellMethod = ref<string>('cash')
 const sellingPackage = ref(false)
 
@@ -728,17 +731,29 @@ const activatingMembership = ref(false)
 
 const sellTemplate = computed(() => packageTemplates.value.find((p) => p.id === sellPackageId.value) ?? null)
 const sellOptions = computed(() => (sellTemplate.value ? readInstallmentOptions(sellTemplate.value.installment_options) : []))
+const sellSpecialPriceCents = computed(() =>
+  sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
+)
+const sellSpecialPriceInvalid = computed(() => sellSpecialPriceCents.value !== null && (sellSpecialPriceCents.value < 0 || sellSpecialPriceCents.value > (sellTemplate.value?.price_cents ?? 0)))
 // What the chosen way of paying costs in all, and what is taken now by default:
 // the whole price, or the first plazo.
 const sellTotalCents = computed(() => {
   const option = sellOptions.value.find((o) => o.installments === sellInstallments.value)
-  return option ? option.installments * option.installmentCents : (sellTemplate.value?.price_cents ?? 0)
+  return option ? option.installments * option.installmentCents : (sellSpecialPriceCents.value ?? sellTemplate.value?.price_cents ?? 0)
 })
 function prefillSaleAmount() {
   const tpl = sellTemplate.value
   const option = sellOptions.value.find((o) => o.installments === sellInstallments.value)
   sellAmountPaid.value = option ? (option.installmentCents / 100).toFixed(2) : tpl ? (tpl.price_cents / 100).toFixed(2) : ''
+  sellPrice.value = tpl ? (tpl.price_cents / 100).toFixed(2) : ''
 }
+// A discount is usually paid in full there and then: what is taken now
+// follows the price, so the bono is not left owing the discount. (A clinic
+// asked how to sell one cheaper without the patient showing as owing the
+// difference, 25 Nov 2026 -- there was no way to.)
+watch(sellPrice, (value) => {
+  if (sellTemplate.value && sellInstallments.value === 1) sellAmountPaid.value = value
+})
 watch(sellPackageId, () => {
   sellInstallments.value = 1
   prefillSaleAmount()
@@ -1890,6 +1905,7 @@ async function sellPackage() {
     packageId: sellPackageId.value,
     installments: sellInstallments.value,
     amountCents: Math.round((parseFloat(sellAmountPaid.value) || 0) * 100),
+    priceCents: sellSpecialPriceCents.value,
     method: sellMethod.value,
     spendableCreditCents: spendableCreditCents.value,
     creditLedgerCents: creditLedgerCents.value,
@@ -1914,6 +1930,7 @@ async function sellPackage() {
   sellPackageId.value = ''
   sellInstallments.value = 1
   sellAmountPaid.value = ''
+  sellPrice.value = ''
   sellMethod.value = 'cash'
   await Promise.all([loadAll(), loadFacturas()])
 }
@@ -3061,6 +3078,10 @@ const fieldId = useId()
               </option>
             </select>
           </div>
+          <div v-if="sellPackageId && sellInstallments === 1">
+            <label :for="`${fieldId}-sellPrice`" class="block text-[11px] text-ink-muted">{{ t('Price (€)', 'Precio (€)') }}</label>
+            <input :id="`${fieldId}-sellPrice`" v-model="sellPrice" data-cy="sell-package-price" type="number" min="0" :max="(sellTemplate?.price_cents ?? 0) / 100" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+          </div>
           <div v-if="sellPackageId">
             <label :for="`${fieldId}-sellAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
             <input :id="`${fieldId}-sellAmountPaid`" v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
@@ -3083,8 +3104,15 @@ const fieldId = useId()
               </option>
             </select>
           </div>
-          <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
+          <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage || sellSpecialPriceInvalid" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
         </form>
+        <p v-if="sellTemplate && sellSpecialPriceCents !== null" class="mt-1.5 text-[11px]" :class="sellSpecialPriceInvalid ? 'text-danger-text' : 'text-ink-faint'" data-cy="sell-package-discount-note">
+          {{
+            sellSpecialPriceInvalid
+              ? t(`The price can be lowered, not raised: at most ${money(sellTemplate.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${money(sellTemplate.price_cents)}.`)
+              : t(`Special price: ${money(sellTemplate.price_cents - sellSpecialPriceCents)} off the bono's ${money(sellTemplate.price_cents)}.`, `Precio especial: ${money(sellTemplate.price_cents - sellSpecialPriceCents)} de descuento sobre ${money(sellTemplate.price_cents)}.`)
+          }}
+        </p>
         <p v-if="sellPackageId && sellInstallments > 1" class="mt-1.5 text-[11px] text-ink-faint" data-cy="sell-package-installments-note">
           {{ t('Each further plazo falls due once the sessions already paid for are used. Collect it from the bono, or put it on Stripe autopay.', 'Cada plazo siguiente vence al gastar las sesiones ya pagadas. Cóbralo desde el bono o prográmalo con el pago automático de Stripe.') }}
         </p>

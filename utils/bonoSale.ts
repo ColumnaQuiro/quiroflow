@@ -134,6 +134,11 @@ export interface BonoSaleInput {
   installments: number
   /** Paid now. May be less than the price: the rest stays owed on the bono. */
   amountCents: number
+  /**
+   * A special price for this one sale -- a discount -- in place of the bono's
+   * own. Null or absent: the bono's price. See specialBonoPriceCents.
+   */
+  priceCents?: number | null
   method: string
   /** Credit the patient can spend now, checked before anything is written. */
   spendableCreditCents: number
@@ -190,7 +195,26 @@ export async function recordBonoSale(supabase: any, deps: BonoSaleDeps, input: B
       }
     }
   }
-  const priceCents = option ? option.installments * option.installmentCents : tpl.price_cents
+  // A special price is checked against the price read now, like the rest. At
+  // once only: a split option is its own price list (Settings > Bonos), and a
+  // discount spread over plazos would need plazos that no longer add up to
+  // the option -- and to what Stripe autopay charges for each of them.
+  const special = input.priceCents ?? null
+  if (special !== null) {
+    if (option) {
+      return { purchase: null, error: t('A special price is only for a bono paid at once.', 'El precio especial solo se puede poner a un bono pagado en un pago.') }
+    }
+    if (!Number.isInteger(special) || special < 0 || special > tpl.price_cents) {
+      return {
+        purchase: null,
+        error: t(
+          `The price must be between 0 and the bono's ${formatEur(tpl.price_cents)}.`,
+          `El precio tiene que estar entre 0 y los ${formatEur(tpl.price_cents)} del bono.`,
+        ),
+      }
+    }
+  }
+  const priceCents = option ? option.installments * option.installmentCents : (special ?? tpl.price_cents)
 
   const { data: purchase, error: purchaseError } = await supabase
     .from('package_purchases')
@@ -233,6 +257,20 @@ export async function recordBonoSale(supabase: any, deps: BonoSaleDeps, input: B
     creditLedgerCents: input.creditLedgerCents,
   })
   return { purchase: sold, error: paymentProblem }
+}
+
+/**
+ * The special price typed in a sale form, in cents, or null when there is
+ * none: left blank, unreadable, or the bono's own price. Null is what the
+ * sale is sent when nothing was changed, so a price another member edits in
+ * Settings in the meantime is still the one sold at.
+ */
+export function specialBonoPriceCents(listCents: number, typed: string): number | null {
+  if (!typed.trim()) return null
+  const value = Number(typed.replace(',', '.'))
+  if (!Number.isFinite(value)) return null
+  const cents = Math.round(value * 100)
+  return cents === listCents ? null : cents
 }
 
 /** What the sale form opens on for a bono: its price, or the first plazo. */

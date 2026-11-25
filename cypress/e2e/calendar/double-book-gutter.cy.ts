@@ -6,8 +6,9 @@ import { seedVisit, todayAt } from '../../support/calendar'
 // book a second one at that time was the "+ New appointment" button. Every
 // column now keeps a strip down its right side that no card is drawn over.
 // Clicking it books at that time, as clicking a free slot does; a visit
-// dragged onto another one lands on the slot underneath (after the usual
-// "that time is taken" question) and the two are drawn side by side; and in
+// dragged onto another one lands on the slot underneath -- with no question:
+// another patient at the same time is not a clash -- and the two are drawn
+// side by side; and in
 // "Move…" picking mode a click on another visit's card picks the slot under
 // it, where it used to do nothing.
 
@@ -86,8 +87,9 @@ describe('A taken time can still be booked or dropped on', () => {
         cy.get('[data-cy=create-patient-search]').type('Segunda')
         cy.contains('[data-cy=create-patient-result]', 'Segunda Visita').click()
         cy.contains('[data-cy=create-type]', 'Ajuste').click()
-        cy.get('[data-cy=create-clash]').should('contain.text', 'Primera Cita')
-        cy.get('[data-cy=create-double-book]').check()
+        // Another patient at 10:00 is not in the way: nothing to tick.
+        cy.get('[data-cy=create-free]').should('exist')
+        cy.get('[data-cy=create-clash]').should('not.exist')
         cy.get('[data-cy=create-submit]').should('not.be.disabled').click()
       })
       cy.get('[data-cy=create-sheet]').should('not.exist')
@@ -113,9 +115,8 @@ describe('A taken time can still be booked or dropped on', () => {
             cy.window().trigger('pointermove', { pointerId: 7, clientX: x, clientY: y - px })
             cy.window().trigger('pointerup', { pointerId: 7, clientX: x, clientY: y - px })
           })
-          cy.get('[data-cy=move-clash]').should('be.visible').and('contain.text', 'Quieta Cita')
-          cy.get('[data-cy=confirm-dialog-confirm]').click()
           cy.contains('h2', 'Reschedule appointment').should('be.visible')
+          cy.get('[data-cy=move-clash]').should('not.exist')
           cy.contains('button', 'Move appointment').click()
           cy.contains('h2', 'Reschedule appointment').should('not.exist')
           expectStart(appointmentId, 10)
@@ -139,9 +140,8 @@ describe('A taken time can still be booked or dropped on', () => {
         // A click on the visit already at 10:00 is a click on 10:00.
         block('Quieta Cita').click()
         cy.get('[data-cy=appt-sheet]').should('not.exist')
-        cy.get('[data-cy=move-clash]').should('be.visible').and('contain.text', 'Quieta Cita')
-        cy.get('[data-cy=confirm-dialog-confirm]').click()
         cy.contains('h2', 'Reschedule appointment').should('be.visible')
+        cy.get('[data-cy=move-clash]').should('not.exist')
         cy.contains('button', 'Move appointment').click()
         cy.contains('h2', 'Reschedule appointment').should('not.exist')
         expectStart(appointmentId, 10)

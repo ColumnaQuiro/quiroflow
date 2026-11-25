@@ -973,8 +973,16 @@ export const BUTTON_PARAM_SOURCES: { value: string; label: Pair }[] = [
   { value: 'text', label: ['Fixed text', 'Texto fijo'] },
 ]
 
-/** Merge fields an email can use, inserted as {{key}}. */
-export const EMAIL_MERGE_FIELDS = VARIABLE_SOURCES.filter((v) => v.value !== 'text')
+/**
+ * Merge fields an email can use, inserted as {{key}}. {{form_link}} is the
+ * email's own: the form chosen on the step (config.doc_template_id), minted
+ * per patient when it goes out. A WhatsApp step picks its forms per button
+ * instead (doc_template_ids), so it is not among the template variables.
+ */
+export const EMAIL_MERGE_FIELDS: { value: string; label: Pair; group?: VariableGroup }[] = [
+  ...VARIABLE_SOURCES.filter((v) => v.value !== 'text'),
+  { value: 'form_link', label: ['Link to the form chosen for this email', 'Enlace al formulario elegido para este email'], group: 'links' },
+]
 
 /** The headings the variable picker sorts merge fields under, in this order. */
 export const VARIABLE_GROUPS: { key: VariableGroup; label: Pair }[] = [

@@ -5,7 +5,7 @@
 // same checks before it writes anything, so the two cannot disagree about
 // what a valid automation is.
 
-import { asEmailDesign, emailDesignHasContent } from './emailDesign'
+import { asEmailDesign, emailDesignHasContent, emailStepSendsForm } from './emailDesign'
 import { asAudienceRef, asAudienceRefs, asPatientIds, type AudienceRef } from './automationAudience'
 import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, stepDef, waitEventDef, type Pair } from './automationCatalog'
 import { asTriggerAtom, atomFromLegacy, atomProblem, isGroupAtom, isLeadAtom, onlyIfFilters, ruleAtom, type TriggerAtom } from './automationTrigger'
@@ -302,6 +302,14 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
           const design = asEmailDesign(c.design)
           if (!design || !emailDesignHasContent(design)) add(step.id, `${en} has no body.`, `${es} no tiene texto.`)
         } else if (!String(c.body ?? '').replace(/<[^>]*>/g, '').trim() && !/<img/i.test(String(c.body ?? ''))) add(step.id, `${en} has no body.`, `${es} no tiene texto.`)
+        // Its form (runAutomationActions: emailFormLink): chosen, linked from
+        // the email, and for someone a form can be made for.
+        if (emailStepSendsForm(c)) {
+          if (!c.doc_template_id) add(step.id, `${en} links to a form, but no form is chosen.`, `${es} enlaza a un formulario, pero no hay ninguno elegido.`)
+          if (isLeadAtom(ruleAtom(rule))) add(step.id, `${en} carries a form, and leads have no patient record to attach it to, so it is not sent to them.`, `${es} lleva un formulario, y un lead no tiene ficha a la que adjuntarlo, así que no se le envía.`)
+        } else if (c.doc_template_id) {
+          add(step.id, `${en} has a form chosen but no link to it: add a button that opens it.`, `${es} tiene un formulario elegido pero ningún enlace a él: añade un botón que lo abra.`)
+        }
         break
       case 'webhook':
         if (!/^https?:\/\/\S+$/i.test(String(c.url ?? '').trim())) add(step.id, 'A webhook step has no valid URL.', 'Un webhook no tiene una URL válida.')

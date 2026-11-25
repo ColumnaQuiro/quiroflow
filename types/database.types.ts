@@ -9751,6 +9751,7 @@ export type Database = {
           comped: boolean
           created_at: string
           extra_clinics: number
+          limits_waived_on_plan: string | null
           extra_professionals: number
           growth_addon: boolean
           verifactu_locations: number
@@ -9772,6 +9773,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_clinics?: number
+          limits_waived_on_plan?: string | null
           extra_professionals?: number
           growth_addon?: boolean
           verifactu_locations?: number
@@ -9793,6 +9795,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_clinics?: number
+          limits_waived_on_plan?: string | null
           extra_professionals?: number
           growth_addon?: boolean
           verifactu_locations?: number

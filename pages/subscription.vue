@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { receptionistOnTrialAllowance } from '~/utils/receptionistAllowance'
-import { clinicAllowance, planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
+import { clinicAllowance, limitsGrandfathered, planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
 
 // /subscription.
@@ -33,6 +33,8 @@ interface SubscriptionRow {
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   plan_id: string
+  /** Plan on which this account has no practitioner or location limit (grandfathered terms). */
+  limits_waived_on_plan: string | null
   plans: {
     name: string
     monthly_price_cents: number
@@ -126,7 +128,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents)',
+      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, extra_clinic_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -652,6 +654,7 @@ async function addPaymentMethod() {
           class="mt-4"
           :plans="plans"
           :current-plan-id="subscription.plan_id"
+          :limits-waived-on-plan="subscription.limits_waived_on_plan"
           :current-interval="interval"
           :current-extra-seats="subscription.extra_professionals"
           :current-extra-clinics="extraClinicsBilled"
@@ -734,7 +737,7 @@ async function addPaymentMethod() {
               :plan-clinics="subscription.plans?.included_clinics ?? null"
               :clinic-names="store.clinics.map((c) => c.name)"
               :comped="comped"
-              :open-trial="limitsWaived && !comped"
+              :open-trial="limitsWaived && !comped && !limitsGrandfathered(subscription)"
               :plan-name="subscription.plans?.name ?? null"
               :plan-seats="subscription.plans?.included_professionals ?? null"
             />

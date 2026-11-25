@@ -727,8 +727,17 @@ export function quirocitasLedgerRows(s: QuirocitasSnapshot, bonoOfSale: Map<Quir
     const bonoRef = bonoOfSale.get(row) ?? null
     for (const method of ['cash', 'card', 'transfer', 'bizum'] as const) {
       const amount = cents(row[method])
-      if (amount <= 0) continue
-      payments.push({ ref: `QC-pay-${key}-${method}`, patientRef, method, amountCents: amount, paidAt: at, chargeRef, bonoRef })
+      if (!amount) continue
+      // Money given back -- a bono refunded, whole or in part -- is a row of
+      // its own with a negative amount, and the totals Quirocitas prints count
+      // it. It comes in as a negative payment, which is how QuiroFlow records
+      // a refund, on the patient alone: tied to a visit it would part-unpay
+      // the charge, tied to a bono it would reopen what the bono shows as
+      // paid. Dropped, it left one clinic's card payments 2,054 EUR above the
+      // pages they were read from (9 refunds over six years), each of those
+      // patients in credit by what they had been given back.
+      const back = amount < 0
+      payments.push({ ref: `QC-pay-${key}-${method}`, patientRef, method, amountCents: amount, paidAt: at, chargeRef: back ? null : chargeRef, bonoRef: back ? null : bonoRef })
     }
     if (row.bonoPaymentId && invoiceByBonoPayment.has(row.bonoPaymentId)) invoiceNotes.push(invoiceNote(`QC-factura-pb${row.bonoPaymentId}`, patientRef, invoiceByBonoPayment.get(row.bonoPaymentId)!))
   }
@@ -755,7 +764,7 @@ function fnv(s: string) {
 export interface QuirocitasFileRow { ref: string; patientRef: string; quirocitasId: string; testId: string; src: string; fileName: string; isXray: boolean; description: string }
 
 export function quirocitasFileRows(r: QuirocitasRecord): QuirocitasFileRow[] {
-  return r.history.tests.filter((t) => t.src && t.id).map((t) => ({
+  return r.history.tests.filter((t) => t.src && t.id && !t.absent).map((t) => ({
     ref: `QC-test-${t.id}`,
     patientRef: qcPatientRef(r.ficha.id),
     quirocitasId: r.ficha.id,

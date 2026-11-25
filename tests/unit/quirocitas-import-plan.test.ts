@@ -373,6 +373,54 @@ describe('the Payments step', () => {
   })
 })
 
+describe('the Files step', () => {
+  // Two records that each "have" a photo, as every record of one clinic did.
+  const withPhotos = (): QuirocitasSnapshot => {
+    const s = snapshot()
+    s.patients[101]!.ficha.hasPhoto = true
+    s.patients[102] = structuredClone(s.patients[101]!)
+    s.patients[102]!.list.id = '102'
+    s.patients[102]!.ficha.id = '102'
+    return s
+  }
+  const tables = (): Record<string, Row[]> => ({
+    patients: ['101', '102'].map((id) => ({ id: `p${id}`, account_id: ACCOUNT, external_reference: `QC-${id}`, photo_storage_path: null })),
+  })
+  const run = async (tbl: Record<string, Row[]>, s: QuirocitasSnapshot, fetchFile: (b: { src: string }) => Promise<object>) => {
+    const forgotten: unknown[] = []
+    const importer = quirocitasImporter({
+      supabase: fakeSupabase(tbl) as never, accountId: ACCOUNT, clinicId: 'clinic', t, fetchFile, compressFile: async () => {},
+      forgetFiles: async (absent) => { forgotten.push(...absent) },
+    })
+    const plan = await importer.plan('files', s)
+    return { plan, result: await plan.apply(() => {}, () => false), forgotten }
+  }
+
+  it('remembers a blank photo, and counts finding it as progress', async () => {
+    // Every slice used to ask for the same blank photos, write nothing, and
+    // be stopped as making no progress three slices in.
+    const s = withPhotos()
+    const { result, forgotten } = await run(tables(), s, async () => ({ blank: true }))
+    expect(result).toMatchObject({ written: 0, skipped: 2, errors: [] })
+    expect(forgotten).toEqual([{ recordId: '101', photo: true }, { recordId: '102', photo: true }])
+    // Once marked on the copy, the next run does not ask for them again.
+    for (const r of Object.values(s.patients)) r.ficha.photoAbsent = true
+    expect((await run(tables(), s, async () => ({ blank: true }))).plan.total).toBe(0)
+  })
+
+  it('asks for a .png when there is no .jpg', async () => {
+    const tbl = tables()
+    const asked: string[] = []
+    const { result } = await run(tbl, withPhotos(), async ({ src }) => {
+      asked.push(src)
+      return src.endsWith('.png') ? { storagePath: `x/${src}` } : { missing: true }
+    })
+    expect(result).toMatchObject({ written: 2, skipped: 0 })
+    expect(asked.sort()).toEqual(['101/photo.jpg', '101/photo.png', '102/photo.jpg', '102/photo.png'])
+    expect(tbl.patients!.map((p) => p.photo_storage_path)).toEqual(['x/101/photo.png', 'x/102/photo.png'])
+  })
+})
+
 describe('the Bonos step, run again', () => {
   // One bono on two records: bought by one, used by both.
   const bono = { id: '900', name: 'Bono 12', remaining: 4, expires: '01-10-2027', owed: 0, paid: 450, status: 'presente' }

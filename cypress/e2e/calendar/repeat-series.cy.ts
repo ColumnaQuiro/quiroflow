@@ -43,18 +43,25 @@ function fillBooking(patientSearch: string, patientName: string, start: Date, re
 }
 
 describe('Repeating a booking', () => {
-  it('checks every date in a weekly series, and skips the one that clashes only when asked', () => {
+  it('checks every date in a weekly series, and skips the blocked one only when asked', () => {
     cy.seedStaffAccount().then((account) => {
       const first = nextWeekday(1, 10)
       const third = new Date(first)
       third.setDate(third.getDate() + 14)
+      const fifth = new Date(first)
+      fifth.setDate(fifth.getDate() + 28)
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste', durationMinutes: 30 })
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Clara', lastName: 'Vidal' }).then((clara) => {
-        // Week three at 10:15 is Clara's; the series' first date is free.
-        const clash = new Date(third)
-        clash.setMinutes(15)
-        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: clara.id, practitionerId: account.teamMemberId, startsAt: clash.toISOString() })
+        // Week three at 10:15 is Clara's -- another patient, which is not a
+        // clash: most clinics see several an hour.
+        const shared = new Date(third)
+        shared.setMinutes(15)
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: clara.id, practitionerId: account.teamMemberId, startsAt: shared.toISOString() })
       })
+      // Week five at 10:15 is blocked; the series' first date is free.
+      const blockedFrom = new Date(fifth)
+      blockedFrom.setMinutes(15)
+      cy.task('db:createAvailabilityBlock', { accountId: account.accountId, clinicId: account.clinicId, practitionerId: account.teamMemberId, startsAt: blockedFrom.toISOString(), endsAt: new Date(blockedFrom.getTime() + 30 * 60000).toISOString() })
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Marina', lastName: 'Soto' }).as('marina')
 
       cy.login(account.email, account.password)
@@ -68,7 +75,7 @@ describe('Repeating a booking', () => {
         cy.get('[data-cy=create-submit]').click()
 
         cy.get('[data-cy=create-series-conflicts]').should('contain.text', '1 of 8 dates don’t fit')
-        cy.get('[data-cy=create-series-conflict]').should('have.length', 1).and('contain.text', 'Clara Vidal')
+        cy.get('[data-cy=create-series-conflict]').should('have.length', 1).and('contain.text', 'a block')
         // Going back writes nothing.
         cy.get('[data-cy=create-series-back]').click()
         cy.get('[data-cy=create-series-conflicts]').should('not.exist')
@@ -87,7 +94,8 @@ describe('Repeating a booking', () => {
         cy.task<Row[]>('db:selectRows', { table: 'appointments', columns: 'starts_at, ends_at', match: { patient_id: marina.id } }).then((rows) => {
           const starts = sorted(rows).map((r) => local(r.starts_at))
           expect(starts).to.have.length(7)
-          expect(starts.map(dateInputValue), 'week three skipped').not.to.include(dateInputValue(third))
+          expect(starts.map(dateInputValue), 'week five skipped').not.to.include(dateInputValue(fifth))
+          expect(starts.map(dateInputValue), 'week three booked beside Clara').to.include(dateInputValue(third))
           // Same weekday and the same 10:00 every week -- a series crossing
           // the October clock change used to move to 09:00 from then on.
           starts.forEach((s) => {

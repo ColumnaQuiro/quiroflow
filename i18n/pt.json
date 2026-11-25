@@ -10886,6 +10886,14 @@
   "Right foot": "Pé direito",
   "Fill in both feet, or leave both empty.": "Indique o peso dos dois pés ou deixe os dois vazios.",
   "Edit scale readings": "Editar pesos da balança",
-  "Add scale readings (one under each foot)": "Adicionar pesos da balança (uma sob cada pé)"
+  "Add scale readings (one under each foot)": "Adicionar pesos da balança (uma sob cada pé)",
+  "That time is blocked": "Esse horário está bloqueado",
+  "The new time falls in:": "A nova hora fica dentro de:",
+  "Moving it anyway keeps the visit inside the blocked time. The block is not changed.": "Se a mover mesmo assim, a consulta fica dentro do bloqueio. O bloqueio não é alterado.",
+  "Book it anyway": "Marcar mesmo assim",
+  "That time is blocked. Pick another.": "Essa hora está bloqueada. Escolha outra.",
+  "blocked": "bloqueada",
+  "Grey times are blocked or outside working hours. You can still choose one.": "As horas a cinzento estão bloqueadas ou fora do horário. Mesmo assim pode escolher uma.",
+  "This falls in blocked time. It will be saved anyway.": "Coincide com um bloqueio. Será guardada mesmo assim."
  }
 }

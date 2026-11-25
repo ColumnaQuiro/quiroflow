@@ -222,6 +222,45 @@ export const OFFER_OPEN_DAYS = 7
 /** How long a time accepted with no visit to show for it may wait before a person is told. */
 export const ACCEPTED_UNBOOKED_MINUTES = 10
 
+/**
+ * How long a time they chose stays held while the receptionist asks for what
+ * it still needs to book it (heldTimeNote). Busy for every other conversation
+ * meanwhile, so not a whole day: long enough to answer after work.
+ */
+export const ACCEPTED_HOLD_HOURS = 12
+
+/**
+ * How long after the receptionist asked for those details, with no answer, a
+ * person is told (handOverAcceptedUnbooked).
+ */
+export const ACCEPTED_DETAILS_WAIT_MINUTES = 120
+
+/**
+ * What the model is told when they chose one of its times and the code could
+ * not book it yet: for someone else (a child, a partner, someone new they
+ * bring) or for someone new whose details are not on record.
+ *
+ * On 13 Nov 2026 a mother chose the 26th at 16:00 for her daughter, the
+ * receptionist asked for the daughter's name instead of booking, nobody
+ * answered, and the time was gone. "Book the chosen time before asking for a
+ * companion's details" was a line in a card; now the time is held in code
+ * (receptionist_slot_holds) and offering others is refused (runReceptionistModel).
+ */
+export function heldTimeNote(slot: OfferedSlot, heldUntil: string): string {
+  return [
+    '# Their answer picks one of your times',
+    `They chose ${slot.date} at ${slotClock(slot)} from the times you offered. The clinic's system is holding that time for them until ${heldUntil}; nobody else can take it meanwhile.`,
+    'Book it now with book_appointment if you have everything the booking needs (for someone in their family on record, or a child, with their name; for themselves, as usual), and confirm it.',
+    'If something is missing -- the name and mobile of the person it is for, or their own details if they are new -- ask only for that, in one short message, and say the time is kept for them. Book it as soon as they answer.',
+    'Do not offer other times and do not ask them to choose again.',
+  ].join('\n')
+}
+
+/** What a person is told when a time was chosen and held, details were asked for, and nothing came back. */
+export function acceptedHeldReason(slot: OfferedSlot): string {
+  return `Eligió la hora que le ofrecí, el ${slotInWords(slot, 'es')}; le pedí los datos para reservarla y no ha contestado. La hora está retenida unas horas: resérvasela o escríbele.`
+}
+
 /** What a person is told when a time was accepted and the diary does not have it. */
 export function acceptedUnbookedReason(slot: OfferedSlot): string {
   return `Aceptó la hora que le ofrecí, el ${slotInWords(slot, 'es')}, y esa cita no está en la agenda. Resérvasela o contéstale.`

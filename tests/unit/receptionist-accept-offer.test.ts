@@ -20,6 +20,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     const rows = (tables[table] ??= [])
     const filters: ((row: Row) => boolean)[] = []
     let patch: Row | null = null
+    let removing = false
     let limit = Infinity
     let order: { column: string; ascending: boolean } | null = null
     const matching = () => {
@@ -30,6 +31,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     const run = () => {
       const found = matching()
       if (patch) for (const row of found) Object.assign(row, patch)
+      if (removing) for (const row of found) rows.splice(rows.indexOf(row), 1)
       return { data: found, error: null }
     }
     const q: any = {
@@ -42,6 +44,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       order: (column: string, opts?: { ascending?: boolean }) => ((order = { column, ascending: opts?.ascending !== false }), q),
       limit: (n: number) => ((limit = n), q),
       update: (values: Row) => ((patch = values), q),
+      delete: () => ((removing = true), q),
       insert: async (values: Row | Row[]) => {
         for (const value of Array.isArray(values) ? values : [values]) rows.push({ id: `row-${rows.length + 1}`, status: 'open', created_at: new Date().toISOString(), ...value })
         return { error: null }
@@ -120,17 +123,44 @@ describe('a time accepted from its offer', () => {
     ['a reminder went out last', { ours: { ...ours, automated: true } }],
     ['they asked for something else', { inbound: ['Me gustaría cita por la tarde'] }],
     ['they tapped "another day"', { inbound: ['Otro día'] }],
-    ['someone new has not given their name yet', { newPersonReady: false }],
   ])('books nothing when %s', async (_name, over) => {
     expect(await accept(fakeDb({ receptionist_offers: [offerRow()] }), over as any)).toBeNull()
     expect(book).not.toHaveBeenCalled()
   })
 
-  it('books nothing from an offer the code may not book from, or one already closed', async () => {
-    expect(await accept(fakeDb({ receptionist_offers: [offerRow({ auto: false })] }))).toBeNull()
+  it('books nothing from an offer already closed', async () => {
     expect(await accept(fakeDb({ receptionist_offers: [offerRow({ status: 'booked' })] }))).toBeNull()
     expect(await accept(fakeDb({ receptionist_offers: [offerRow({ created_at: '2026-11-10T09:30:20.000Z' })] }), { ours: { ...ours, createdAt: '2026-11-10T09:30:17.000Z' } })).toBeNull()
     expect(book).not.toHaveBeenCalled()
+  })
+})
+
+describe('a time chosen that the code cannot book alone', () => {
+  // 13 Nov 2026: a mother chose a time for her daughter, was asked the
+  // daughter's name, did not answer, and the time was gone.
+  const actions = { timeZone: 'Europe/Madrid', types: [{ name: 'Primera visita', durationMinutes: 45 }], booked: { appointments: [], types: [] } } as any
+  const held = { receptionist_offers: [offerRow({ auto: false, move_visit_on: null, type_name: 'Primera visita' })], receptionist_slot_holds: [{ account_id: ACCOUNT, conversation_key: PATIENT, starts_at: '2026-12-09T16:15:00.000Z' }] }
+
+  it.each([
+    ['it is for someone else', held, {}],
+    ['someone new has not given their details yet', { ...held, receptionist_offers: [offerRow({ type_name: 'Primera visita', move_visit_on: null })] }, { newPersonReady: false }],
+  ])('is held for them, and the model told to book it or ask only for what is missing, when %s', async (_name, tables, over) => {
+    const db = fakeDb(structuredClone(tables))
+    const result = await accept(db, { actions, ...over })
+    expect(result).toMatchObject({ kind: 'held', slot: { date: '2026-12-02', time: '16:30' } })
+    expect(result?.kind === 'held' && result.note).toContain('Do not offer other times')
+    expect(book).not.toHaveBeenCalled()
+    // Only the chosen time, 16:30 in Madrid (15:30 UTC), for the visit's length, for twelve hours.
+    expect(db.tables.receptionist_slot_holds).toEqual([
+      { id: expect.any(String), status: 'open', created_at: expect.any(String), account_id: ACCOUNT, conversation_key: PATIENT, starts_at: '2026-12-02T15:30:00.000Z', ends_at: '2026-12-02T16:15:00.000Z', expires_at: '2026-11-23T22:00:00.000Z' },
+    ])
+  })
+
+  it('is held no later than the time itself', async () => {
+    vi.setSystemTime(new Date('2026-12-02T09:00:00.000Z'))
+    const db = fakeDb(structuredClone({ ...held, receptionist_offers: [offerRow({ auto: false, move_visit_on: null, type_name: 'Primera visita', created_at: '2026-12-02T08:30:20.000Z' })] }))
+    await accept(db, { actions, ours: { ...ours, createdAt: '2026-12-02T08:30:17.000Z' } })
+    expect(db.tables.receptionist_slot_holds![0]!.expires_at).toBe('2026-12-02T15:30:00.000Z')
   })
 })
 
@@ -178,6 +208,29 @@ describe('a time accepted that the diary does not have', () => {
     const db = fakeDb(tables({ whatsapp_messages: [tap, { account_id: ACCOUNT, patient_id: PATIENT, direction: 'outbound', body_preview: 'Te lo miro', created_at: '2026-11-23T09:36:00.000Z' }] }))
     expect(await handOverAcceptedUnbooked(db)).toEqual([{ key: PATIENT, outcome: 'answered' }])
     expect(announce).not.toHaveBeenCalled()
+  })
+
+  describe('when the receptionist asked for what the booking needs', () => {
+    const asked = { account_id: ACCOUNT, patient_id: PATIENT, direction: 'outbound', sent_by_ai: true, body_preview: '¿Cómo se llama tu hija y cuál es su móvil?', created_at: '2026-11-23T09:36:00.000Z' }
+
+    it('waits for their answer for two hours', async () => {
+      expect(await handOverAcceptedUnbooked(fakeDb(tables({ whatsapp_messages: [tap, asked] })))).toEqual([])
+      expect(announce).not.toHaveBeenCalled()
+    })
+
+    it('is passed to a person when nothing came back, saying the details were asked for', async () => {
+      vi.setSystemTime(new Date('2026-11-23T11:40:00.000Z'))
+      const db = fakeDb(tables({ whatsapp_messages: [tap, asked] }))
+      expect(await handOverAcceptedUnbooked(db)).toEqual([{ key: PATIENT, outcome: 'handed_over' }])
+      expect(announce.mock.calls[0]![4]).toContain('le pedí los datos')
+    })
+
+    it('is left alone once they answer', async () => {
+      vi.setSystemTime(new Date('2026-11-23T11:40:00.000Z'))
+      const answer = { account_id: ACCOUNT, patient_id: PATIENT, direction: 'inbound', body_preview: 'Lucía Pérez, 600000000', created_at: '2026-11-23T09:50:00.000Z' }
+      expect(await handOverAcceptedUnbooked(fakeDb(tables({ whatsapp_messages: [tap, asked, answer] })))).toEqual([])
+      expect(announce).not.toHaveBeenCalled()
+    })
   })
 
   it('waits while the reply may still be on its way, and for an answer that accepts nothing', async () => {

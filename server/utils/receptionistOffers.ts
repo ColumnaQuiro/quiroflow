@@ -3,7 +3,8 @@ import type { ReceptionistRun } from '~/server/utils/receptionistModel'
 import { announceHandover, type ReceptionistTarget } from '~/server/utils/receptionistSend'
 import type { SlotLanguage } from '~/utils/receptionistConversion'
 import { wallClockToUtc } from '~/utils/clinicClock'
-import { ACCEPTED_UNBOOKED_MINUTES, OFFER_OPEN_DAYS, acceptedUnbookedReason, confirmationInWords, confirmationIsPlain, matchAcceptedSlot, type BookedDetails, type StoredOffer, type StoredOfferSlot } from '~/utils/receptionistOffers'
+import { ACCEPTED_DETAILS_WAIT_MINUTES, ACCEPTED_HOLD_HOURS, ACCEPTED_UNBOOKED_MINUTES, OFFER_OPEN_DAYS, acceptedHeldReason, acceptedUnbookedReason, confirmationInWords, confirmationIsPlain, heldTimeNote, matchAcceptedSlot, type BookedDetails, type StoredOffer, type StoredOfferSlot } from '~/utils/receptionistOffers'
+import { findTypeByName } from '~/utils/receptionistTypes'
 
 // The receptionist's offers as rows (receptionist_offers), and what code does
 // with them without asking the model: keep one when it is sent, book the
@@ -73,6 +74,12 @@ export type AcceptedOffer =
   | { kind: 'reply'; run: ReceptionistRun }
   /** Booked, but the confirmation needs the model's words (a repeated late change): the visit, to hand it. */
   | { kind: 'booked'; input: Record<string, unknown>; details: BookedDetails; note: string }
+  /**
+   * Chosen, but not something the code can book alone -- for someone else, or
+   * for someone new whose details are missing: held for them, and the model
+   * told to book it or ask only for what is missing (heldTimeNote).
+   */
+  | { kind: 'held'; slot: StoredOfferSlot; note: string }
 
 /**
  * Books the time they accepted from the receptionist's last offer, in code.
@@ -105,12 +112,15 @@ export async function acceptOfferedTime(opts: {
   language: SlotLanguage
   newPersonReady: boolean
 }): Promise<AcceptedOffer | null> {
-  if (!opts.ours || !opts.ours.sentByAi || opts.ours.automated || !opts.newPersonReady) return null
+  if (!opts.ours || !opts.ours.sentByAi || opts.ours.automated) return null
   const offer = await loadOpenOffer(opts.service, opts.accountId, opts.conversationKey)
   // Kept right after its message was sent: a message newer than the offer is something said since.
-  if (!offer || !offer.auto || new Date(offer.createdAt).getTime() < new Date(opts.ours.createdAt).getTime()) return null
+  if (!offer || new Date(offer.createdAt).getTime() < new Date(opts.ours.createdAt).getTime()) return null
   const slot = matchAcceptedSlot(offer.slots, opts.inbound)
   if (!slot) return null
+  // Theirs, but the booking needs something the code does not have: the
+  // time is held while the model gets it, never offered away meanwhile.
+  if (!offer.auto || !opts.newPersonReady) return holdChosenTime(opts.service, opts.accountId, opts.conversationKey, slot, offer, opts.actions)
 
   const input: Record<string, unknown> = {
     date: slot.date,
@@ -148,6 +158,28 @@ export async function acceptOfferedTime(opts: {
       inCode: true,
     },
   }
+}
+
+/**
+ * Holds the one time they chose (receptionist_slot_holds) for
+ * ACCEPTED_HOLD_HOURS, never past the time itself, in place of the
+ * twenty-minute holds of the whole offer. Best-effort: a hold that cannot be
+ * written still leaves the note, and the booking itself refuses a time gone.
+ */
+async function holdChosenTime(service: any, accountId: string, conversationKey: string, slot: StoredOfferSlot, offer: StoredOffer, actions: BookingContext): Promise<AcceptedOffer> {
+  const start = wallClockToUtc(slot.date, slot.time, actions.timeZone)
+  const until = Math.min(start, Date.now() + ACCEPTED_HOLD_HOURS * 3600_000)
+  const type = findTypeByName([...actions.types, ...actions.booked.types], offer.typeName)
+  const minutes = type?.durationMinutes || Math.max(30, ...[...actions.booked.types, ...actions.types].map((t) => t.durationMinutes || 0))
+  try {
+    await service.from('receptionist_slot_holds').delete().eq('account_id', accountId).eq('conversation_key', conversationKey)
+    const { error } = await service.from('receptionist_slot_holds').insert({ account_id: accountId, conversation_key: conversationKey, starts_at: new Date(start).toISOString(), ends_at: new Date(start + minutes * 60_000).toISOString(), expires_at: new Date(until).toISOString() })
+    if (error) console.error('[receptionist] could not hold the chosen time:', error.message)
+  } catch (err) {
+    console.error('[receptionist] could not hold the chosen time:', (err as Error)?.message ?? err)
+  }
+  const heldUntil = new Date(until).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: actions.timeZone })
+  return { kind: 'held', slot, note: heldTimeNote(slot, heldUntil) }
 }
 
 /** What the model is told when the code booked the visit and the words are its own (AcceptedOffer 'booked'). */
@@ -255,12 +287,30 @@ async function checkOne(supabase: any, row: OfferRow, now: Date): Promise<string
     }
   }
 
-  // Anybody has written to them since they accepted: the conversation is being had.
-  const wrote = (table: string, column: string, id: string) => supabase.from(table).select('created_at').eq('account_id', row.account_id).eq(column, id).eq('direction', 'outbound').gt('created_at', acceptedAt).limit(1)
+  // Somebody has written to them since they accepted. A person: the
+  // conversation is theirs. Only the receptionist -- asking for the name of
+  // the person the visit is for, or their own details -- and nothing back
+  // for ACCEPTED_DETAILS_WAIT_MINUTES: the time they chose is held and still
+  // not booked, which is the case this job exists for (13 Nov 2026: a
+  // daughter's name asked, no answer, no visit). A booking settles the offer
+  // ('booked'), so an open one here has none.
+  const wrote = (table: string, column: string, id: string) => supabase.from(table).select('created_at, sent_by_ai').eq('account_id', row.account_id).eq(column, id).eq('direction', 'outbound').gt('created_at', acceptedAt).order('created_at').limit(20)
   const answers = leadId
     ? [wrote('whatsapp_messages', 'lead_id', leadId)]
     : [wrote('whatsapp_messages', 'patient_id', patientId!), wrote('patient_app_messages', 'patient_id', patientId!)]
-  if ((await Promise.all(answers)).some(({ data: rows }: { data: unknown[] | null }) => (rows ?? []).length > 0)) return (await settle('superseded')) ? 'answered' : null
+  const written = (await Promise.all(answers)).flatMap(({ data: rows }: { data: { created_at: string; sent_by_ai: boolean | null }[] | null }) => rows ?? [])
+  let reason = acceptedUnbookedReason(slot)
+  if (written.length) {
+    if (written.some((m) => m.sent_by_ai !== true)) return (await settle('superseded')) ? 'answered' : null
+    // The inbound read above stops at the time they chose; anything after the receptionist's question is an answer being handled.
+    const lastAsked = written.map((m) => m.created_at).sort().at(-1)!
+    const answeredSince = await (leadId
+      ? since('whatsapp_messages', 'lead_id', leadId, 'body_preview').gt('created_at', lastAsked).then(({ data }: { data: unknown[] | null }) => (data ?? []).length > 0)
+      : Promise.all([since('whatsapp_messages', 'patient_id', patientId!, 'body_preview').gt('created_at', lastAsked), since('patient_app_messages', 'patient_id', patientId!, 'body').gt('created_at', lastAsked)]).then((res: { data: unknown[] | null }[]) => res.some(({ data }) => (data ?? []).length > 0)))
+    if (answeredSince) return null
+    if (new Date(lastAsked).getTime() > now.getTime() - ACCEPTED_DETAILS_WAIT_MINUTES * 60_000) return null
+    reason = acceptedHeldReason(slot)
+  }
 
   if (!(await settle('alerted'))) return null
   const at = new Date().toISOString()
@@ -273,6 +323,6 @@ async function checkOne(supabase: any, row: OfferRow, now: Date): Promise<string
     await supabase.from('inbox_reply_drafts').upsert({ account_id: row.account_id, conversation_key: patientId, body: '-', drafted_through_at: acceptedAt, dismissed_at: at, handed_over_at: at })
     target = { kind: 'patient', patientId: patientId!, channel: app ? 'app' : 'whatsapp' }
   }
-  await announceHandover(supabase, row.account_id, target, name, acceptedUnbookedReason(slot))
+  await announceHandover(supabase, row.account_id, target, name, reason)
   return 'handed_over'
 }

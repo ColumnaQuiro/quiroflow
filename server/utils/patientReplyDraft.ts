@@ -429,12 +429,13 @@ export async function draftPatientReply(
     : null
   // Booked in code, with a confirmation that is the model's to word: told so
   // instead of which time they chose.
-  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : withChosenTime(prompt))
+  const withAccepted = <P extends { conversation: string }>(prompt: P): P => (accepted?.kind === 'booked' ? { ...prompt, conversation: `${prompt.conversation}\n\n${alreadyBookedNote(accepted.note)}` } : accepted?.kind === 'held' ? { ...prompt, conversation: `${prompt.conversation}\n\n${accepted.note}` } : withChosenTime(prompt))
 
   const run = accepted?.kind === 'reply' ? accepted.run : await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: receptionistModelName(),
     fallbackModel: receptionistFallbackModel(),
     alreadyBooked: accepted?.kind === 'booked' ? { input: accepted.input, details: accepted.details } : null,
+    heldTime: accepted?.kind === 'held' ? accepted.slot : null,
     language,
     maxTokens: MAX_TOKENS,
     system: withAccepted(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, changesWithoutComing, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers, earlierVisit, canStopEarlier: Boolean(stopEarlier) })),

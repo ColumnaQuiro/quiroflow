@@ -2392,9 +2392,9 @@ interface PendingReschedule {
 }
 const pendingReschedule = ref<PendingReschedule | null>(null)
 
-// A move, resize or slot pick that lands on another patient or a block asks
-// first (CalendarMoveClashDialog), the way a new booking needs "allow double
-// booking" ticked. `proceed` carries on exactly as a clash-free move would;
+// A move, resize or slot pick that lands in blocked time asks first
+// (CalendarMoveClashDialog), the way a new booking needs "Book it anyway"
+// ticked. Another patient at the same time is not asked about (utils/moveClash). `proceed` carries on exactly as a clash-free move would;
 // `back` undoes the live preview.
 const { findMoveClashes } = useMoveClashCheck()
 const moveClash = ref<{ clashes: MoveClash[]; proceed: () => void; back: () => void } | null>(null)

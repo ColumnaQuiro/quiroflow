@@ -1,14 +1,13 @@
 // What a visit would land on if it were moved -- dragged, resized, "Mover…"
-// or "Cambiar". Booking a new visit onto a taken time already needs "allow
-// double booking" ticked (NewAppointmentPanel); moving one checked only
-// working hours, so a visit dropped onto another patient's slot, or into a
-// block, saved without a word. Pure, so the rules are pinned without a
+// or "Cambiar" -- before it is saved. Pure, so the rules are pinned without a
 // database: composables/useMoveClashCheck.ts fetches the candidates.
 //
-// The same rules as the create panel's busyFor(), plus the room: the
-// practitioner's other visits, any block for the whole clinic or for that
-// practitioner, and -- when the visit has a room -- that room's other visits
-// and its own blocks.
+// Only BLOCKED time counts: any block for the whole clinic or for that
+// practitioner, and -- when the visit has a room -- that room's own blocks.
+// Another patient at the same time does not. Most clinics see several
+// patients an hour with one practitioner, so asking "that time is taken" on
+// every move to a busy hour only taught the desk to click past it. The create
+// panel (NewAppointmentPanel) follows the same rule.
 //
 // The practitioner's own blocks count at EVERY clinic: somebody who works at
 // two is one person, and a morning blocked off at the other one keeps them
@@ -47,25 +46,21 @@ export interface MoveTarget {
   endsAt: Date | string
 }
 
-export type MoveClash =
-  | { kind: 'appointment'; via: 'practitioner' | 'room'; patientName: string; startsAt: string; endsAt: string }
-  | { kind: 'block'; note: string | null; startsAt: string; endsAt: string }
+export interface MoveClash {
+  kind: 'block'
+  note: string | null
+  startsAt: string
+  endsAt: string
+}
 
 const ms = (d: Date | string) => new Date(d).getTime()
 const overlaps = (s: number, e: number, row: { starts_at: string; ends_at: string }) => ms(row.starts_at) < e && ms(row.ends_at) > s
 
-/** Everything the moved visit would overlap, earliest first. */
-export function moveClashes(target: MoveTarget, appointments: ClashCandidateAppointment[], blocks: ClashCandidateBlock[]): MoveClash[] {
+/** Every block the moved visit would land in, earliest first. */
+export function moveClashes(target: MoveTarget, blocks: ClashCandidateBlock[]): MoveClash[] {
   const s = ms(target.startsAt)
   const e = ms(target.endsAt)
   const out: MoveClash[] = []
-  for (const a of appointments) {
-    if (a.id === target.appointmentId || a.status === 'cancelled' || a.deleted_at || !overlaps(s, e, a)) continue
-    const via = target.practitionerId && a.practitioner_id === target.practitionerId ? 'practitioner' : target.roomId && a.room_id === target.roomId ? 'room' : null
-    if (!via) continue
-    const patientName = `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
-    out.push({ kind: 'appointment', via, patientName, startsAt: a.starts_at, endsAt: a.ends_at })
-  }
   for (const b of blocks) {
     if (!overlaps(s, e, b)) continue
     const elsewhere = !!b.clinic_id && !!target.clinicId && b.clinic_id !== target.clinicId

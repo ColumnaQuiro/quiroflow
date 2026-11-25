@@ -202,8 +202,8 @@ function outsideHours(at: Date) {
   if (!hoursKnownOn(at, clinicHours, practitionerHours)) return false
   return !withinWindows(at.getHours() * 60 + at.getMinutes(), practitionerWindowsOn(at, clinicHours, practitionerHours))
 }
-// What the new time, room or practitioner would land on, asked before saving
-// -- as a drag on the calendar asks (CalendarMoveClashDialog).
+// The blocked time the new time, room or practitioner would land in, asked
+// before saving -- as a drag on the calendar asks (CalendarMoveClashDialog).
 const { findMoveClashes } = useMoveClashCheck()
 const editClashes = ref<MoveClash[] | null>(null)
 const outOfHoursAsk = ref(false)
@@ -231,7 +231,7 @@ async function placeEdit() {
     (form.roomId || null) !== props.appointment.room_id ||
     (form.practitionerId || null) !== props.appointment.practitioner_id
   // Only when the visit is put somewhere else: changing just its type must not
-  // re-ask about a double booking that was made on purpose.
+  // re-ask about blocked time it was put in on purpose.
   if (placed) {
     busy.value = true
     const clashes = await findMoveClashes({ appointmentId: props.appointment.id, practitionerId: form.practitionerId || null, roomId: form.roomId || null, startsAt, endsAt })

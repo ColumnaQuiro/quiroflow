@@ -8,21 +8,23 @@
 // header (the `header` slot) -- so it takes only the patient and optional
 // hints, and works out everything else itself.
 //
-// The free times are the same ones the online booking page and the patient
-// app offer (utils/bookingSlots.ts): the practitioner's own hours (the
-// clinic's when they have none), whole visits inside a window, clear of their
-// non-cancelled, non-deleted appointments and of the availability blocks for
-// them or the whole clinic -- read in the CLINIC's time zone, not the phone's.
+// The times are stepped the way the online booking page and the patient app
+// step them (utils/bookingSlots.ts): the practitioner's own hours (the
+// clinic's when they have none), whole visits inside a window, clear of the
+// availability blocks for them or the whole clinic -- read in the CLINIC's
+// time zone, not the phone's. Another patient already booked at that time
+// does NOT grey a time out: most clinics see several patients an hour with
+// one practitioner, as the web calendar now assumes too (utils/moveClash).
 //
 // The insert is the web's staff booking (NewAppointmentPanel): same columns,
-// source 'staff'. save_appointment_if_free is service-role only, so the clash
+// source 'staff'. save_appointment_if_free is service-role only, so the block
 // check is the client-side one the web's move check does (utils/moveClash),
 // asked again of the database right before the insert -- the slots on screen
 // can be minutes old.
 import type { BusinessHours } from '../../utils/businessHours'
 import type { BookingBusyRange, StaffTime, StaffTimeState } from '../../utils/bookingSlots'
 import type { AppointmentTypeOverride } from '../../utils/appointmentOverrides'
-import type { ClashCandidateAppointment, ClashCandidateBlock } from '../../utils/moveClash'
+import type { ClashCandidateBlock } from '../../utils/moveClash'
 import { planVisitsToBook } from '../../utils/planRenewal'
 
 const props = defineProps<{
@@ -220,33 +222,18 @@ const slotsLoading = ref(false)
 const slotsError = ref('')
 let busyRun = 0
 
-async function fetchBusy(fromIso: string, toIso: string, practId: string, roomId: string | null = null) {
-  if (!clinic.value) return { appts: [] as ClashCandidateAppointment[], blocks: [] as ClashCandidateBlock[], error: null as string | null }
-  // By practitioner across the account, not the clinic: someone who works at
-  // two clinics is still one person (useMoveClashCheck). Their own blocks
-  // too; another clinic's closure is that clinic's. A moved visit keeps its
-  // room, so whoever else is in that room counts as well.
-  const [appts, blocks] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('id, starts_at, ends_at, practitioner_id, room_id, status, deleted_at, patients(first_name, last_name)')
-      .or(roomId ? `practitioner_id.eq.${practId},room_id.eq.${roomId}` : `practitioner_id.eq.${practId}`)
-      .neq('status', 'cancelled')
-      .is('deleted_at', null)
-      .lt('starts_at', toIso)
-      .gt('ends_at', fromIso),
-    supabase
-      .from('availability_blocks')
-      .select('starts_at, ends_at, practitioner_id, room_id, note, clinic_id')
-      .or(`clinic_id.eq.${clinic.value.id},practitioner_id.eq.${practId}`)
-      .lt('starts_at', toIso)
-      .gt('ends_at', fromIso),
-  ])
-  return {
-    appts: (appts.data as unknown as ClashCandidateAppointment[] | null) ?? [],
-    blocks: (blocks.data as ClashCandidateBlock[] | null) ?? [],
-    error: appts.error?.message ?? blocks.error?.message ?? null,
-  }
+async function fetchBusy(fromIso: string, toIso: string, practId: string) {
+  if (!clinic.value) return { blocks: [] as ClashCandidateBlock[], error: null as string | null }
+  // This clinic's blocks, and the practitioner's own at any clinic: someone
+  // who works at two clinics is still one person (useMoveClashCheck);
+  // another clinic's closure is that clinic's.
+  const blocks = await supabase
+    .from('availability_blocks')
+    .select('starts_at, ends_at, practitioner_id, room_id, note, clinic_id')
+    .or(`clinic_id.eq.${clinic.value.id},practitioner_id.eq.${practId}`)
+    .lt('starts_at', toIso)
+    .gt('ends_at', fromIso)
+  return { blocks: (blocks.data as ClashCandidateBlock[] | null) ?? [], error: blocks.error?.message ?? null }
 }
 
 async function loadBusy() {
@@ -256,21 +243,17 @@ async function loadBusy() {
   slotsError.value = ''
   const from = startOfLocalDate(selectedDate.value, timeZone.value).toISOString()
   const to = startOfLocalDate(nextDate(selectedDate.value), timeZone.value).toISOString()
-  const { appts, blocks, error } = await fetchBusy(from, to, practitionerId.value, props.move?.roomId ?? null)
+  const { blocks, error } = await fetchBusy(from, to, practitionerId.value)
   if (run !== busyRun) return
   if (error) slotsError.value = t('Could not load the free times.', 'No se han podido cargar las horas libres.')
-  busy.value = [
-    // A visit being moved is never in its own way.
-    ...appts.filter((a) => a.id !== props.move?.appointmentId),
-    // A block for this practitioner, or one naming nobody (the whole clinic).
-    // A room's own block does not close the practitioner's diary.
-    ...blocks.filter((b) => b.practitioner_id === practitionerId.value || (b.practitioner_id === null && b.room_id === null)),
-  ]
+  // A block for this practitioner, or one naming nobody (the whole clinic).
+  // A room's own block does not close the practitioner's diary.
+  busy.value = blocks.filter((b) => b.practitioner_id === practitionerId.value || (b.practitioner_id === null && b.room_id === null))
   slotsLoading.value = false
 }
 
 const preferredMs = computed(() => (props.preferredStart ? Date.parse(props.preferredStart) : null))
-// Every time of the day: the free ones as before, and the taken and
+// Every time of the day: the free ones as before, and the blocked and
 // out-of-hours ones greyed but still choosable -- the desk puts a visit over
 // lunch or on top of another on purpose, as the web calendar lets it after
 // asking (utils/bookingSlots.ts staffDayTimes). The time held down on the
@@ -304,8 +287,8 @@ const usualTime = computed(() => {
   const visit = nextVisit.value ?? lastVisit.value
   return visit ? clinicTimeLabel(new Date(visit.starts_at), timeZone.value) : null
 })
-// A time already chosen stays chosen, free or not: one picked on purpose over
-// another visit must not be dropped when the diary is read again.
+// A time already chosen stays chosen, free or not: one picked on purpose in
+// blocked time must not be dropped when the diary is read again.
 watch(times, (list) => {
   if (selectedSlot.value !== null && list.some((s) => s.at.getTime() === selectedSlot.value)) return
   if (preferredMs.value !== null && list.some((s) => s.at.getTime() === preferredMs.value)) {
@@ -473,13 +456,7 @@ async function checkSeries(starts: Date[]) {
     const s = start.getTime()
     const e = s + duration.value * 60000
     const reasons: string[] = []
-    const appt = fresh.appts.find((a) => Date.parse(a.starts_at) < e && Date.parse(a.ends_at) > s)
-    if (appt) {
-      const who = `${appt.patients?.first_name ?? ''} ${appt.patients?.last_name ?? ''}`.trim()
-      reasons.push(who ? t(`With ${who} at ${clinicTimeLabel(new Date(appt.starts_at), timeZone.value)}`, `Con ${who} a las ${clinicTimeLabel(new Date(appt.starts_at), timeZone.value)}`) : t('Taken', 'Ocupada'))
-    } else if (blocks.some((b) => Date.parse(b.starts_at) < e && Date.parse(b.ends_at) > s)) {
-      reasons.push(t('Blocked', 'Bloqueada'))
-    }
+    if (blocks.some((b) => Date.parse(b.starts_at) < e && Date.parse(b.ends_at) > s)) reasons.push(t('Blocked', 'Bloqueada'))
     const date = clinicDateOf(start, timeZone.value)
     const inHours = staffDayTimes({ date, timeZone: timeZone.value, clinicHours: clinicHours.value, practitionerHours: practitioner.value?.business_hours, durationMinutes: duration.value, busy: [], notBefore: new Date(0), extra: [start] }).find((x) => x.at.getTime() === s)?.state === 'free'
     if (!inHours) reasons.push(t('Not working then', 'Fuera de horario'))
@@ -662,23 +639,19 @@ async function book() {
       else await insertVisit(start, end)
       return
     }
-    // Asked again now: someone at the desk may have taken the time since the
-    // slots were drawn. Refused, it turns grey and stays chosen, so booking
-    // over it after all is one more tap.
-    const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value, roomId)
+    // Asked again now: someone at the desk may have blocked the time since
+    // the slots were drawn. Refused, it turns grey and stays chosen, so
+    // booking into it after all is one more tap.
+    const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value)
     // A failed read is not an empty diary: nothing in the database refuses a
-    // double booking, so booking on would skip the only check there is.
+    // visit in blocked time, so booking on would skip the only check there is.
     if (fresh.error) {
       bookError.value = t("Couldn't check that the time is still free. Try again.", 'No se ha podido comprobar que la hora sigue libre. Inténtalo de nuevo.')
       return
     }
-    const clashes = moveClashes({ appointmentId: props.move?.appointmentId ?? '', practitionerId: practitionerId.value, roomId, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
+    const clashes = moveClashes({ appointmentId: props.move?.appointmentId ?? '', practitionerId: practitionerId.value, roomId, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.blocks)
     if (clashes.length > 0) {
-      const first = clashes[0]
-      bookError.value =
-        first.kind === 'appointment' && first.via === 'room'
-          ? t(`The room is taken then (${first.patientName}). Pick another time.`, `La sala está ocupada a esa hora (${first.patientName}). Elige otra.`)
-          : t('That time has just been taken. Pick another.', 'Esa hora se acaba de ocupar. Elige otra.')
+      bookError.value = t('That time is blocked. Pick another.', 'Esa hora está bloqueada. Elige otra.')
       await loadBusy()
       return
     }
@@ -767,7 +740,7 @@ async function book() {
                 class="h-[38px] rounded-ctl text-[14px] tabular-nums"
                 :class="slotClass(s)"
                 :aria-pressed="selectedSlot === s.at.getTime()"
-                :aria-label="`${clinicTimeLabel(s.at, timeZone)}${s.state === 'busy' ? ` (${t('taken', 'ocupada')})` : s.state === 'closed' ? ` (${t('outside hours', 'fuera de horario')})` : ''}`"
+                :aria-label="`${clinicTimeLabel(s.at, timeZone)}${s.state === 'busy' ? ` (${t('blocked', 'bloqueada')})` : s.state === 'closed' ? ` (${t('outside hours', 'fuera de horario')})` : ''}`"
                 :data-cy="`book-slot-${clinicTimeLabel(s.at, timeZone)}`"
                 :data-state="s.state"
                 @click="selectedSlot = s.at.getTime()"
@@ -776,12 +749,12 @@ async function book() {
               </button>
             </div>
             <p v-if="freeCount > 0 && freeCount < times.length" class="mt-2 text-[11.5px] text-ink-faint">
-              {{ t('Grey times are taken or outside working hours. You can still choose one.', 'Las horas en gris están ocupadas o fuera de horario. Aun así puedes elegir una.') }}
+              {{ t('Grey times are blocked or outside working hours. You can still choose one.', 'Las horas en gris están bloqueadas o fuera de horario. Aun así puedes elegir una.') }}
             </p>
             <p v-if="forcing" role="status" class="mt-2 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="book-slot-warning">
               {{
                 selectedState === 'busy'
-                  ? t('This overlaps another visit or a block. It will be saved anyway, overlapping.', 'Coincide con otra cita o un bloqueo. Se guardará igualmente, solapada.')
+                  ? t('This falls in blocked time. It will be saved anyway.', 'Coincide con un bloqueo. Se guardará igualmente.')
                   : t('This is outside working hours. It will be saved anyway.', 'Está fuera del horario de atención. Se guardará igualmente.')
               }}
             </p>

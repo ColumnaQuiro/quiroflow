@@ -143,72 +143,58 @@ const validTime = computed(() => !Number.isNaN(startsAt.value.getTime()))
 const roomLabel = computed(() => props.rooms.find((r) => r.id === roomId.value)?.name ?? null)
 const whenLabel = computed(() => (validTime.value ? `${formatWeekdayDate(startsAt.value)} · ${formatTime(startsAt.value)}–${formatTime(endsAt.value)}` : ''))
 
-// -- Who else is booked: the day asked for and two weeks after it -----------
-interface BookedRow { id: string; starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; patients: { first_name: string; last_name: string | null } | null }
+// -- What keeps a time closed: blocks, the day asked for and two weeks after -
+// Another patient at the same time is NOT in the way. Most clinics see
+// several patients an hour with one practitioner, so a visit already booked
+// then said nothing about whether this one fits, and warning about it on
+// every booking taught the desk to ignore the warning. Only blocked time --
+// lunch, holidays, a closed room -- still counts (utils/moveClash says the same
+// for a move).
 interface BlockRow { starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; clinic_id: string }
-const booked = ref<BookedRow[]>([])
 const blocks = ref<BlockRow[]>([])
 const SEARCH_DAYS = 14
-// This clinic's visits and blocks, and those of the practitioners on offer
-// wherever they are: somebody who works at two clinics is one person, so a
-// visit or their own blocked time at the other one keeps them away from this
-// one too (as useMoveClashCheck reads them).
+// This clinic's blocks, and those of the practitioners on offer wherever
+// they are: somebody who works at two clinics is one person, so their own
+// blocked time at the other one keeps them away from this one too (as
+// useMoveClashCheck reads them).
 function clinicOrPractitioners(clinicId: string, practIds: string[]) {
   return [`clinic_id.eq.${clinicId}`, ...(practIds.length ? [`practitioner_id.in.(${practIds.join(',')})`] : [])].join(',')
 }
 // Each load voids the ones before it: dates typed in quick succession can
 // answer out of order, and an older answer landing last would put another
-// date's bookings under this one -- hiding a clash that is really there.
-let bookedRun = 0
-async function loadBooked() {
-  const run = ++bookedRun
+// date's blocks under this one -- hiding a clash that is really there.
+let blocksRun = 0
+async function loadBlocks() {
+  const run = ++blocksRun
   if (!store.currentClinicId || !validTime.value) return
   const from = new Date(startsAt.value)
   from.setHours(0, 0, 0, 0)
   const to = new Date(from)
   to.setDate(to.getDate() + SEARCH_DAYS)
   const where = clinicOrPractitioners(store.currentClinicId, props.teamMembers.map((m) => m.id))
-  const [{ data: appts }, { data: blk }] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('id, starts_at, ends_at, practitioner_id, room_id, patients(first_name, last_name)')
-      .or(where)
-      .neq('status', 'cancelled')
-      .is('deleted_at', null)
-      .gte('starts_at', from.toISOString())
-      .lt('starts_at', to.toISOString()),
-    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id, clinic_id').or(where).lt('starts_at', to.toISOString()).gt('ends_at', from.toISOString()),
-  ])
-  if (run !== bookedRun) return
-  booked.value = (appts as unknown as BookedRow[]) ?? []
+  const { data: blk } = await supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id, clinic_id').or(where).lt('starts_at', to.toISOString()).gt('ends_at', from.toISOString())
+  if (run !== blocksRun) return
   blocks.value = blk ?? []
 }
-watch(date, loadBooked, { immediate: true })
+watch(date, loadBlocks, { immediate: true })
 
-const nameOf = (p: { first_name: string; last_name: string | null } | null) => `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim()
 // Over the rows given, so the whole-series check at save time can ask the
 // same question of a range the two-week load above does not cover.
 const blockBusy = (b: BlockRow): Busy => ({ start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime(), label: t('a block', 'un bloqueo') })
 // The rules of utils/moveClash: their own block at any clinic, a block for
 // this whole clinic -- not another clinic's.
-function practitionerBusyIn(practId: string, appts: BookedRow[], blks: BlockRow[]): Busy[] {
+function practitionerBusyIn(practId: string, blks: BlockRow[]): Busy[] {
   if (!practId) return []
-  return [
-    ...appts.filter((a) => a.practitioner_id === practId).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
-    ...blks.filter((b) => b.practitioner_id === practId || (b.practitioner_id === null && b.room_id === null && b.clinic_id === store.currentClinicId)).map(blockBusy),
-  ]
+  return blks.filter((b) => b.practitioner_id === practId || (b.practitioner_id === null && b.room_id === null && b.clinic_id === store.currentClinicId)).map(blockBusy)
 }
-// The room's visits and the room's own blocks -- a block on a room and no
-// practitioner, which a move into that room already counts.
-function roomBusyIn(room: string, appts: BookedRow[], blks: BlockRow[]): Busy[] {
+// The room's own blocks -- a block on a room and no practitioner, which a
+// move into that room already counts.
+function roomBusyIn(room: string, blks: BlockRow[]): Busy[] {
   if (!room) return []
-  return [
-    ...appts.filter((a) => a.room_id === room).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
-    ...blks.filter((b) => b.practitioner_id === null && b.room_id === room).map(blockBusy),
-  ]
+  return blks.filter((b) => b.practitioner_id === null && b.room_id === room).map(blockBusy)
 }
-const busyFor = (practId: string) => practitionerBusyIn(practId, booked.value, blocks.value)
-const roomBusy = (room: string) => roomBusyIn(room, booked.value, blocks.value)
+const busyFor = (practId: string) => practitionerBusyIn(practId, blocks.value)
+const roomBusy = (room: string) => roomBusyIn(room, blocks.value)
 function windowsFor(practId: string, day: Date): [string, string][] | null {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const hours = (props.teamMembers.find((m) => m.id === practId)?.business_hours ?? null) as BusinessHours | null
@@ -253,8 +239,8 @@ const clash = computed(() => {
   return null
 })
 const outOfHours = computed(() => validTime.value && !!practitionerId.value && outsideHours(practitionerId.value, startsAt.value, endsAt.value))
-// Booking over a clash on purpose -- two patients at once is how some
-// practitioners work -- is still possible, but has to be asked for.
+// Booking into blocked time on purpose -- a patient squeezed in over lunch --
+// is still possible, but has to be asked for.
 const allowDoubleBooking = ref(false)
 watch([startsAt, practitionerId, roomId], () => (allowDoubleBooking.value = false))
 
@@ -541,42 +527,24 @@ function repeatRule(): RepeatRule {
   return { unit: 'day', every: 1, count: 1 }
 }
 
-// What the practitioner and room already have over the whole series. The
-// panel's live clash answer only knows the first date and the two weeks after
-// it; a monthly or care-plan series runs well past that, so the rest is read
-// here, at save time, for exactly this practitioner and room.
+// The practitioner's and room's blocks over the whole series. The panel's
+// live clash answer only knows the first date and the two weeks after it; a
+// monthly or care-plan series runs well past that, so the rest is read here,
+// at save time, for exactly this practitioner and room.
 async function busyOverSeries(starts: Date[]): Promise<Busy[]> {
   const pid = practitionerId.value
   const rid = roomId.value
   if ((!pid && !rid) || !store.currentClinicId) return []
   const from = starts[0].toISOString()
   const to = new Date(starts[starts.length - 1].getTime() + duration.value * 60000).toISOString()
-  // By practitioner or room, at any clinic: a room belongs to one clinic
-  // anyway, and the practitioner is one person wherever they are.
-  const who = [pid ? `practitioner_id.eq.${pid}` : '', rid ? `room_id.eq.${rid}` : ''].filter(Boolean).join(',')
-  const [appts, { data: blk, error: blkError }] = await Promise.all([
-    fetchAllRows<BookedRow>((f, l) =>
-      supabase
-        .from('appointments')
-        .select('id, starts_at, ends_at, practitioner_id, room_id, patients(first_name, last_name)')
-        .neq('status', 'cancelled')
-        .is('deleted_at', null)
-        .or(who)
-        .lt('starts_at', to)
-        .gt('ends_at', from)
-        .order('starts_at')
-        .order('id')
-        .range(f, l) as unknown as PromiseLike<{ data: BookedRow[] | null; error: unknown }>,
-    ),
-    supabase
-      .from('availability_blocks')
-      .select('starts_at, ends_at, practitioner_id, room_id, clinic_id')
-      .or(clinicOrPractitioners(store.currentClinicId, pid ? [pid] : []))
-      .lt('starts_at', to)
-      .gt('ends_at', from),
-  ])
+  const { data: blk, error: blkError } = await supabase
+    .from('availability_blocks')
+    .select('starts_at, ends_at, practitioner_id, room_id, clinic_id')
+    .or(clinicOrPractitioners(store.currentClinicId, pid ? [pid] : []))
+    .lt('starts_at', to)
+    .gt('ends_at', from)
   if (blkError) throw blkError
-  return [...practitionerBusyIn(pid, appts, blk ?? []), ...roomBusyIn(rid, appts, blk ?? [])]
+  return [...practitionerBusyIn(pid, blk ?? []), ...roomBusyIn(rid, blk ?? [])]
 }
 
 // A series with dates that do not fit waits here for the desk's answer:
@@ -647,7 +615,7 @@ async function save() {
         return
       }
       const problems = seriesProblems(starts, duration.value, busy, (s, e) => !!practitionerId.value && outsideHours(practitionerId.value, s, e), {
-        // "Book it anyway, overlapping" was an answer about the first date,
+        // "Book it anyway" was an answer about the first date,
         // the only one it was shown for.
         overlapAllowedAt: allowDoubleBooking.value ? [0] : [],
       })
@@ -1073,11 +1041,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           <div v-else-if="clash" class="mt-3 flex flex-col gap-1.5 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px]" data-cy="create-clash">
             <span class="flex items-start gap-2">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" class="mt-0.5 shrink-0 text-warning-accent" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 16.5v.5" /></svg>
-              <span><strong class="text-warning-text">{{ t(`${formatTime(startsAt)}–${formatTime(endsAt)} doesn’t fit`, `${formatTime(startsAt)}–${formatTime(endsAt)} no cabe`) }}</strong><span class="text-ink-700">{{ t(`: ${clash.who} has ${clash.label} at ${clash.at}. Pick another time.`, `: ${clash.who} tiene a ${clash.label} a las ${clash.at}. Elige otro hueco.`) }}</span></span>
+              <span><strong class="text-warning-text">{{ t(`${formatTime(startsAt)}–${formatTime(endsAt)} doesn’t fit`, `${formatTime(startsAt)}–${formatTime(endsAt)} no cabe`) }}</strong><span class="text-ink-700">{{ t(`: ${clash.who} has ${clash.label} at ${clash.at}. Pick another time.`, `: ${clash.who} tiene ${clash.label} a las ${clash.at}. Elige otro hueco.`) }}</span></span>
             </span>
             <label class="flex min-h-9 touch:min-h-11 items-center gap-2 pl-6 text-[12.5px] text-ink-700">
               <input v-model="allowDoubleBooking" type="checkbox" class="h-4 w-4 accent-brand" data-cy="create-double-book" />
-              {{ t('Book it anyway, overlapping', 'Reservar igualmente, solapada') }}
+              {{ t('Book it anyway', 'Reservar igualmente') }}
             </label>
           </div>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, intersectWindows, staffDayTimes, typeWindowsOn, weekdayKeyOf } from '../../utils/bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, intersectWindows, spreadDaySlots, staffDayTimes, typeWindowsOn, weekdayKeyOf } from '../../utils/bookingSlots'
 import { clinicDateOf, wallClockToUtc } from '../../utils/clinicClock'
 
 // The slots the booking page and the patient app offer (utils/bookingSlots.ts).
@@ -173,5 +173,44 @@ describe("A type's online booking windows", () => {
       ['13:00', '14:00'],
       ['16:00', '17:00'],
     ])
+  })
+})
+
+// appointment_types.online_slots_per_day: the booking page shows only so many
+// of a day's free times, spread across it.
+describe('Times shown per day', () => {
+  const hours = ['09', '10', '11', '12', '13', '16', '17', '18', '19']
+
+  it('keeps every time with no limit, or a limit above what there is', () => {
+    expect(spreadDaySlots(hours, null)).toEqual(hours)
+    expect(spreadDaySlots(hours, undefined)).toEqual(hours)
+    expect(spreadDaySlots(hours, 0)).toEqual(hours)
+    expect(spreadDaySlots(hours, 9)).toEqual(hours)
+    expect(spreadDaySlots(hours, 20)).toEqual(hours)
+    expect(spreadDaySlots([], 3)).toEqual([])
+  })
+
+  it('spreads them across the day, first and last included', () => {
+    expect(spreadDaySlots(hours, 3)).toEqual(['09', '13', '19'])
+    expect(spreadDaySlots(hours, 2)).toEqual(['09', '19'])
+    expect(spreadDaySlots(hours, 5)).toEqual(['09', '11', '13', '17', '19'])
+  })
+
+  it('shows the earliest when only one is allowed', () => {
+    expect(spreadDaySlots(hours, 1)).toEqual(['09'])
+  })
+
+  it('never repeats a time and keeps them in order', () => {
+    for (let n = 1; n <= hours.length; n++) {
+      const picked = spreadDaySlots(hours, n)
+      expect(picked).toHaveLength(n)
+      expect(new Set(picked).size).toBe(n)
+      expect([...picked].sort()).toEqual(picked)
+    }
+  })
+
+  it('moves on to another time once one is booked', () => {
+    const booked = hours.filter((h) => h !== '13')
+    expect(spreadDaySlots(booked, 3)).toEqual(['09', '16', '19'])
   })
 })

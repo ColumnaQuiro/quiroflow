@@ -10808,6 +10808,9 @@
   "New in the library": "Novos na biblioteca",
   "Already in the library": "Já na biblioteca",
   "To give to patients": "Para atribuir a pacientes",
-  "Already given": "Já atribuídos"
+  "Already given": "Já atribuídos",
+  "Times shown per day": "Horários mostrados por dia",
+  "Between 1 and 24, or empty to show them all.": "Entre 1 e 24, ou vazio para mostrar todos.",
+  "On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.": "Na página de marcações, dos horários livres de cada dia só se mostram estes, distribuídos ao longo do dia, para que a agenda pareça com procura. Quando um é marcado, outro horário livre ocupa o seu lugar. Vazio: todos os horários livres. A equipa pode continuar a marcar a qualquer hora a partir da agenda."
  }
 }

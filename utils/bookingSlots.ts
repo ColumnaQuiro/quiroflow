@@ -139,6 +139,21 @@ export function bookingSlotsForDay(q: BookingSlotQuery): Date[] {
   return out
 }
 
+/**
+ * At most `perDay` of a day's times, spread across it: the first, the last and
+ * evenly between (appointment_types.online_slots_per_day, the booking page's
+ * "3 times a day" for first visits). Null, 0 or more than there are keeps them
+ * all. In order, and the same picks for the same list, so a reload shows the
+ * same times; when one is booked the list changes and another takes its place.
+ */
+export function spreadDaySlots<T>(slots: T[], perDay: number | null | undefined): T[] {
+  const n = Math.floor(Number(perDay))
+  if (!Number.isFinite(n) || n <= 0 || slots.length <= n) return slots
+  if (n === 1) return [slots[0]!]
+  const last = slots.length - 1
+  return Array.from({ length: n }, (_, i) => slots[Math.round((i * last) / (n - 1))]!)
+}
+
 export type StaffTimeState = 'free' | 'busy' | 'closed'
 export interface StaffTime {
   at: Date

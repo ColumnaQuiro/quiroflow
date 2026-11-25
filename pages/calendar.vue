@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
-import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerHoursAt, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
+import type { BusinessHours, DayHoursRow } from '~/utils/businessHours'
+import { dateKeyFor, dayHoursOn, dayKeyFor, hasBusinessHoursConfigured, hoursKnownOn, outsideWorkingHours, practitionerHoursAt, practitionerWindowsForDay, practitionerWindowsOn, unionWorkingWindows, windowsForDay, withDayHours, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { practitionerBadgeLabels, shortPatientName } from '~/utils/appointmentBlock'
@@ -312,6 +312,9 @@ function typesForPanel(currentTypeId: string | null | undefined) {
 }
 const loadedTeamMembers = ref<TeamMember[]>([])
 const teamMemberClinics = ref<TeamMemberClinic[]>([])
+// One-off days (shift_days): somebody's hours on one date instead of their
+// week's -- an extra Friday, a day off. Merged into business_hours below.
+const dayHours = ref<(DayHoursRow & { team_member_id: string })[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const classSessions = ref<ClassSessionRow[]>([])
@@ -576,11 +579,13 @@ async function loadReferenceData() {
     overrides: AppointmentTypeOverride[]
     team_member_clinics: TeamMemberClinic[]
     rooms: Room[]
+    day_hours?: (DayHoursRow & { team_member_id: string })[]
   }
   appointmentTypes.value = orderTypes(ref.appointment_types ?? [])
   loadedTeamMembers.value = ref.team_members ?? []
   overrides.value = ref.overrides ?? []
   teamMemberClinics.value = ref.team_member_clinics ?? []
+  dayHours.value = ref.day_hours ?? []
   if (token === roomsToken) rooms.value = ref.rooms ?? []
 }
 
@@ -588,12 +593,15 @@ async function loadReferenceData() {
 // (practitionerHoursAt): somebody at two locations can have a week for each,
 // and the time they are down to be at the other one is not theirs here. The
 // grid's hatching, the panels' out-of-hours warnings and the month's
-// occupancy all read business_hours off this list, so they follow.
+// occupancy all read business_hours off this list, so they follow. Their
+// one-off days ride along under their dates (withDayHours), which is how an
+// extra Friday stops being hatched and shows in the work week.
 const teamMembers = computed<TeamMember[]>(() => {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   return loadedTeamMembers.value.map((m) => {
     const locations = teamMemberClinics.value.filter((tc) => tc.team_member_id === m.id).map((tc) => ({ clinic_id: tc.clinic_id, business_hours: tc.business_hours ?? null }))
-    return { ...m, business_hours: practitionerHoursAt(store.currentClinicId, clinicHours, m.business_hours, locations) }
+    const days = dayHours.value.filter((d) => d.team_member_id === m.id)
+    return { ...m, business_hours: withDayHours(practitionerHoursAt(store.currentClinicId, clinicHours, m.business_hours, locations), days) }
   })
 })
 
@@ -1461,8 +1469,9 @@ function workingWindowsFor(date: Date): [string, string][] | null {
   const pid = singlePractitionerId.value
   if (pid) {
     const hours = clinicTeamMembers.value.find((m) => m.id === pid)?.business_hours ?? null
-    if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(hours)) return null
-    return practitionerWindowsForDay(windowsForDay(date, clinicHours), hours, dayKeyFor(date))
+    const dateKey = dateKeyFor(date)
+    if (!dayHoursOn(hours, dateKey) && !hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(hours)) return null
+    return practitionerWindowsForDay(windowsForDay(date, clinicHours), hours, dayKeyFor(date), dateKey)
   }
   return unionWorkingWindows(date, clinicHours, clinicTeamMembers.value.map((m) => m.business_hours))
 }
@@ -1529,12 +1538,11 @@ function closedRectsFor(day: Date) {
 // each with the hours they work, since a window is only offered inside them.
 function practitionerDaysFor(date: Date): PractitionerDay[] {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
-  const clinicDay = windowsForDay(date, clinicHours)
   const pid = singlePractitionerId.value
   const members = pid ? clinicTeamMembers.value.filter((m) => m.id === pid) : clinicTeamMembers.value
   return members.map((m) => ({
     id: m.id,
-    working: !hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(m.business_hours) ? null : practitionerWindowsForDay(clinicDay, m.business_hours, dayKeyFor(date)),
+    working: hoursKnownOn(date, clinicHours, m.business_hours) ? practitionerWindowsOn(date, clinicHours, m.business_hours) : null,
   }))
 }
 function hhmmMinutes(hhmm: string) {

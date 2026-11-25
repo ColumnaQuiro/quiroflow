@@ -14,12 +14,61 @@ export function windowsForDay(date: Date, hours: BusinessHours | null | undefine
   return hours[dayKeyFor(date)] ?? []
 }
 
+// --- One day's hours (shift_days, 20261125125008) ---------------------------
+//
+// A person's hours on ONE date, instead of their week's: "open a practitioner on
+// Friday the 11th", or [] for a day off. They ride on the same hours object as
+// the week, under the date itself ('2026-12-11'), which no weekday key can be
+// mistaken for -- so everything that already takes a practitioner's hours
+// carries them without a second parameter, and practitionerWindowsForDay
+// reads them first whenever it is told the date.
+//
+// Only ever merged into a COPY for reading (withDayHours). Never into what a
+// settings screen saves back to team_members.business_hours.
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+export function isDateKey(key: string): boolean {
+  return DATE_KEY.test(key)
+}
+
+/** A Date's local calendar day as 'YYYY-MM-DD', the key withDayHours files a day under. */
+export function dateKeyFor(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** A shift_days row as read: the day, and its hours ([] = not working). */
+export interface DayHoursRow {
+  day: string
+  ranges: [string, string][]
+}
+
+/**
+ * `hours` with these days filed under their dates. Null hours stay "no week of
+ * their own" (hasBusinessHoursConfigured ignores date keys), so the clinic's
+ * week still stands in on every other day.
+ */
+export function withDayHours(hours: BusinessHours | null | undefined, days: DayHoursRow[] | null | undefined): BusinessHours | null {
+  if (!days?.length) return hours ?? null
+  const out: BusinessHours = { ...(hours ?? {}) }
+  for (const d of days) out[d.day] = d.ranges ?? []
+  return out
+}
+
+/** The hours set for this one date, or undefined when the week applies. */
+export function dayHoursOn(hours: BusinessHours | null | undefined, dateKey: string | null | undefined): [string, string][] | undefined {
+  if (!hours || !dateKey) return undefined
+  const day = hours[dateKey]
+  return Array.isArray(day) ? day : undefined
+}
+
 // A clinic that has never touched business hours has every day empty --
 // treated as "not configured" rather than "closed every day", so the
 // working-hours check stays opt-in until a clinic actually sets hours.
+// One-off days (date keys) are not a week and do not count.
 export function hasBusinessHoursConfigured(hours: BusinessHours | null | undefined): boolean {
   if (!hours) return false
-  return Object.values(hours).some((windows) => windows.length > 0)
+  return Object.entries(hours).some(([key, windows]) => !isDateKey(key) && windows.length > 0)
 }
 
 function toMinutes(hhmm: string): number {
@@ -51,13 +100,41 @@ export function isWithinBusinessHours(date: Date, hours: BusinessHours | null | 
 // "any practitioner" booking option still has something to offer. Once a
 // practitioner has hours of their own, the clinic's stop applying to them,
 // and a day they left empty is a day off rather than "no restriction".
+//
+// With `dateKey`, a one-off day set for that date (withDayHours) wins over
+// both, the same order assert_booking_slot_open reads them in.
 export function practitionerWindowsForDay(
   clinicWindows: [string, string][],
   practitionerHours: BusinessHours | null | undefined,
   dayKey: string,
+  dateKey?: string | null,
 ): [string, string][] {
+  const day = dayHoursOn(practitionerHours, dateKey)
+  if (day) return day
   if (!hasBusinessHoursConfigured(practitionerHours)) return clinicWindows
   return practitionerHours?.[dayKey] ?? []
+}
+
+/** practitionerWindowsForDay for a calendar Date: its weekday and its one-off day, if any. */
+export function practitionerWindowsOn(
+  date: Date,
+  clinicHours: BusinessHours | null | undefined,
+  practitionerHours: BusinessHours | null | undefined,
+): [string, string][] {
+  return practitionerWindowsForDay(windowsForDay(date, clinicHours), practitionerHours, dayKeyFor(date), dateKeyFor(date))
+}
+
+/**
+ * Whether anything says when this person works on this date: a one-off day,
+ * their week, or the clinic's. False is "no restriction", the opt-in rule
+ * hasBusinessHoursConfigured keeps for a clinic that never set hours.
+ */
+export function hoursKnownOn(
+  date: Date,
+  clinicHours: BusinessHours | null | undefined,
+  practitionerHours: BusinessHours | null | undefined,
+): boolean {
+  return !!dayHoursOn(practitionerHours, dateKeyFor(date)) || hasBusinessHoursConfigured(clinicHours) || hasBusinessHoursConfigured(practitionerHours)
 }
 
 /** One row of team_member_clinics: the week somebody works at one location, when they have one. */
@@ -104,6 +181,9 @@ function subtractWindows(windows: [string, string][], taken: [string, string][])
 // With no per-location week anywhere -- every account before 20261119124321
 // -- this returns memberHours untouched. assert_booking_slot_open applies the
 // same rule in the database.
+//
+// One-off days are not carried through: merge them in (withDayHours) AFTER
+// this, onto what it returns.
 export function practitionerHoursAt(
   clinicId: string | null | undefined,
   clinicHours: BusinessHours | null | undefined,
@@ -183,10 +263,11 @@ export function unionWorkingWindows(
   const clinicConfigured = hasBusinessHoursConfigured(clinicHours)
   const clinicWindows = windowsForDay(date, clinicHours)
   if (practitionerHours.length === 0) return clinicConfigured ? clinicWindows : null
+  const dateKey = dateKeyFor(date)
   const all: [string, string][] = []
   for (const hours of practitionerHours) {
-    if (!hasBusinessHoursConfigured(hours) && !clinicConfigured) return null
-    all.push(...practitionerWindowsForDay(clinicWindows, hours, dayKeyFor(date)))
+    if (!dayHoursOn(hours, dateKey) && !hasBusinessHoursConfigured(hours) && !clinicConfigured) return null
+    all.push(...practitionerWindowsForDay(clinicWindows, hours, dayKeyFor(date), dateKey))
   }
   return mergeWindows(all)
 }
@@ -217,7 +298,8 @@ export function outsideWorkingHours(
   clinicHours: BusinessHours | null | undefined,
   practitionerHours: BusinessHours | null | undefined,
 ): boolean {
-  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
-  const windows = practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at))
+  const dateKey = dateKeyFor(at)
+  if (!dayHoursOn(practitionerHours, dateKey) && !hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
+  const windows = practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at), dateKey)
   return !withinWindows(at.getHours() * 60 + at.getMinutes(), windows)
 }

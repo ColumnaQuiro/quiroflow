@@ -586,6 +586,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                     />
                   </div>
                 </div>
+                <SettingsMemberDayHours v-if="!deletedAt" :member-id="memberId" :name="form.full_name" class="border-t border-line-row pt-4" />
                 <div class="flex flex-col gap-2 border-t border-line-row pt-4" data-cy="member-overrides">
                   <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Their own durations and prices', 'Sus duraciones y precios propios') }}</span>
                   <p v-if="overrides.length === 0" :class="hint">{{ t('None: they use every appointment type as it is.', 'Ninguno: usa cada tipo de cita tal cual.') }}</p>

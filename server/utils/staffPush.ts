@@ -1,6 +1,6 @@
 import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { wholeWeek, type BusinessHours } from '~/utils/businessHours'
+import { wholeWeek, withDayHours, type BusinessHours, type DayHoursRow } from '~/utils/businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, localDay, startOfLocalDate, nextDate } from '~/utils/clinicClock'
 import { outsideHoursInZone } from '~/utils/staffQuietHours'
 import { sendPushToUsers } from './pushNotifications'
@@ -71,17 +71,24 @@ export async function wantingPush(
   // say. Read only when somebody asked for quiet hours at all.
   const quiet = withUser.filter((m) => (byId.get(m.id) ?? DEFAULTS).quiet_hours).map((m) => m.id)
   const locationHours = new Map<string, { business_hours: BusinessHours | null }[]>()
+  // And today's one-off day (shift_days): an extra Friday is a day at work, a
+  // day off is not.
+  const todayHours = new Map<string, DayHoursRow[]>()
   if (kind !== 'morning_summary' && quiet.length) {
-    const { data: links } = await service.from('team_member_clinics').select('team_member_id, business_hours').in('team_member_id', quiet).not('business_hours', 'is', null)
+    const [{ data: links }, { data: days }] = await Promise.all([
+      service.from('team_member_clinics').select('team_member_id, business_hours').in('team_member_id', quiet).not('business_hours', 'is', null),
+      service.from('shift_days').select('team_member_id, day, ranges').in('team_member_id', quiet).eq('day', clinicDateOf(at, tz)),
+    ])
     for (const link of (links as unknown as { team_member_id: string; business_hours: BusinessHours | null }[] | null) ?? []) {
       locationHours.set(link.team_member_id, [...(locationHours.get(link.team_member_id) ?? []), { business_hours: link.business_hours }])
     }
+    for (const d of (days as unknown as (DayHoursRow & { team_member_id: string })[] | null) ?? []) todayHours.set(d.team_member_id, [d])
   }
   return withUser
     .filter((m) => {
       const p = byId.get(m.id) ?? DEFAULTS
       if (!p[kind]) return false
-      if (kind !== 'morning_summary' && p.quiet_hours && outsideHoursInZone(at, tz, clinic?.business_hours, wholeWeek(clinic?.business_hours, m.business_hours, locationHours.get(m.id)))) return false
+      if (kind !== 'morning_summary' && p.quiet_hours && outsideHoursInZone(at, tz, clinic?.business_hours, withDayHours(wholeWeek(clinic?.business_hours, m.business_hours, locationHours.get(m.id)), todayHours.get(m.id)))) return false
       return true
     })
     .map((m) => m.user_id!)

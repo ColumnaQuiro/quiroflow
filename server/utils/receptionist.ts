@@ -743,23 +743,28 @@ export async function loadReceptionistCalendar(
       ? offeredTypes.filter((type) => type.practitionerIds?.length && !type.practitionerIds.some((id) => practitionerIds.includes(id)))
       : []
     const staffIds = practitionerIds ? [...new Set([...practitionerIds, ...widenedFor.flatMap((type) => type.practitionerIds ?? [])])] : null
+    // One-off days (shift_days) from the day before today: a clinic ahead of
+    // UTC is already on tomorrow. Embedded with the practitioner it belongs to.
+    const fromDay = new Date(now.getTime() - 86400000).toISOString().slice(0, 10)
     const [practitioners, overrides, appointments, blocks] = await Promise.all([
       (staffIds
         ? supabase
             .from('team_members')
-            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours)')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours), shift_days(day, ranges)')
             .eq('account_id', accountId)
             .eq('is_practitioner', true)
             .eq('online_booking_enabled', true)
             .is('deleted_at', null)
+            .gte('shift_days.day', fromDay)
             .in('id', staffIds)
         : supabase
             .from('team_members')
-            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours)')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id, business_hours), shift_days(day, ranges)')
             .eq('account_id', accountId)
             .eq('is_practitioner', true)
             .eq('online_booking_enabled', true)
             .is('deleted_at', null)
+            .gte('shift_days.day', fromDay)
       ).then(must),
       supabase
         .from('appointment_type_overrides')
@@ -823,6 +828,8 @@ export async function loadReceptionistCalendar(
         businessHours: p.business_hours as BusinessHours | null,
         clinicIds: (p.team_member_clinics ?? []).map((tmc) => tmc.clinic_id),
         locationHours: (p.team_member_clinics ?? []).map((tmc) => ({ clinic_id: tmc.clinic_id, business_hours: tmc.business_hours as BusinessHours | null })),
+        // ranges is Json to the generated types; day_ranges_valid holds it to [["HH:MM","HH:MM"], …].
+        dayHours: ((p as unknown as { shift_days?: { day: string; ranges: [string, string][] }[] | null }).shift_days ?? []),
       })),
       types,
       appointments: [

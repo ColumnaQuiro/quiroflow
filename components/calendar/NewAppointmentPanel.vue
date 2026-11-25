@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
+import { hoursKnownOn, practitionerWindowsOn, withinWindows } from '~/utils/businessHours'
 import { effectivePriceCents, effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
@@ -212,8 +212,8 @@ const roomBusy = (room: string) => roomBusyIn(room, booked.value, blocks.value)
 function windowsFor(practId: string, day: Date): [string, string][] | null {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const hours = (props.teamMembers.find((m) => m.id === practId)?.business_hours ?? null) as BusinessHours | null
-  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(hours)) return null
-  return practitionerWindowsForDay(windowsForDay(day, clinicHours), hours, dayKeyFor(day))
+  if (!hoursKnownOn(day, clinicHours, hours)) return null
+  return practitionerWindowsOn(day, clinicHours, hours)
 }
 function outsideHours(practId: string, start: Date, end: Date) {
   const windows = windowsFor(practId, start)

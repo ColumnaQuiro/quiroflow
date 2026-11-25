@@ -10,7 +10,7 @@
 // Pure, with no `~` imports: the app auto-imports this directory too, and in
 // its build `~` resolves to mobile/.
 import { bookingSlotsForDay, bookingWindowsFor, clinicTimeLabel, type BookingBusyRange, type OnlineBookingWindows } from './bookingSlots'
-import { practitionerHoursAt, type BusinessHours, type LocationHours } from './businessHours'
+import { practitionerHoursAt, withDayHours, type BusinessHours, type DayHoursRow, type LocationHours } from './businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from './clinicClock'
 import type { PromptType } from './receptionistTypes'
 
@@ -28,6 +28,8 @@ export interface SlotPractitioner {
   clinicIds: string[]
   /** Their week at each location, where they have one per location (team_member_clinics.business_hours). */
   locationHours?: LocationHours[]
+  /** Their one-off days (shift_days): those dates' hours instead of the week's, [] = not working. */
+  dayHours?: DayHoursRow[]
 }
 
 export interface SlotType extends PromptType {
@@ -149,10 +151,12 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
   for (const clinic of q.clinics) {
     const timeZone = clinic.timeZone || DEFAULT_CLINIC_TIMEZONE
     // With the hours each works at THIS clinic (practitionerHoursAt): somebody
-    // here two evenings a week is offered those, not their whole week.
+    // here two evenings a week is offered those, not their whole week. Their
+    // one-off days on top (withDayHours): an extra Friday is offered, a day
+    // off is not, as assert_booking_slot_open judges them.
     const staff = q.practitioners
       .filter((p) => p.clinicIds.includes(clinic.id))
-      .map((p) => ({ ...p, businessHours: practitionerHoursAt(clinic.id, clinic.businessHours, p.businessHours, p.locationHours) }))
+      .map((p) => ({ ...p, businessHours: withDayHours(practitionerHoursAt(clinic.id, clinic.businessHours, p.businessHours, p.locationHours), p.dayHours) }))
     if (staff.length === 0) continue
     const busyFor = (practitionerId: string): BookingBusyRange[] => [
       ...q.appointments.filter((a) => a.practitionerId === practitionerId),

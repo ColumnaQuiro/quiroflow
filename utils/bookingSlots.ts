@@ -87,7 +87,9 @@ export function intersectWindows(a: [string, string][], b: [string, string][]): 
  */
 export function bookingWindowsFor(date: string, clinicHours: BusinessHours | null | undefined, practitionerHours: BusinessHours | null | undefined, type?: TypeWindowsFor | null): [string, string][] {
   const day = weekdayKeyOf(date)
-  const working = practitionerWindowsForDay(clinicHours?.[day] ?? [], practitionerHours, day)
+  // `date` is the clinic's calendar date, the key a one-off day is filed under
+  // (withDayHours), so a day set for that date wins over the week.
+  const working = practitionerWindowsForDay(clinicHours?.[day] ?? [], practitionerHours, day, date)
   const only = type ? typeWindowsOn(type.windows, day, type.practitionerId) : null
   return only ? intersectWindows(working, only) : working
 }

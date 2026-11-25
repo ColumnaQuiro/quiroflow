@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   practiceHubNoteVisit,
-  planCarePlans,
   planPatientLogs,
   planStickyNotes,
   planTreatmentNotes,
@@ -180,7 +179,6 @@ describe('the rules shared with the browser importers', () => {
 })
 
 describe.each<[string, PracticeHubStepPlanner, string, number]>([
-  ['Care plans', planCarePlans, 'PH-careplan-', 1],
   ['Patient logs', planPatientLogs, 'PH-log-', 2],
 ])('the %s step on the server', (_name, planner, prefix, expected) => {
   it('plans only from this account and writes every row with it', async () => {
@@ -312,14 +310,6 @@ describe('the Treatment notes step on the server', () => {
 })
 
 describe('what each contact-history step writes', () => {
-  it('care plans: dated from their start', async () => {
-    const tables = clinic()
-    await (await planCarePlans(ctxFor(tables), snapshot())).apply(noop, never)
-    expect(mine(tables, 'PH-careplan-').map((r) => [r.note, r.created_at])).toEqual([
-      ['[care_plan] 2 visit(s), every 1 week, for 6 occurrence(s) (weekly) starting 2026-09-01. Active.', '2026-09-01'],
-    ])
-  })
-
   it('patient logs: the type kept on the note', async () => {
     const tables = clinic()
     await (await planPatientLogs(ctxFor(tables), snapshot())).apply(noop, never)

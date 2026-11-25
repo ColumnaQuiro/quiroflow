@@ -3494,6 +3494,7 @@ export type Database = {
           account_id: string
           created_at: string
           created_by: string | null
+          external_reference: string | null
           frequency_unit: string
           frequency_value: number
           id: string
@@ -3512,6 +3513,7 @@ export type Database = {
           account_id: string
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           frequency_unit?: string
           frequency_value?: number
           id?: string
@@ -3530,6 +3532,7 @@ export type Database = {
           account_id?: string
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           frequency_unit?: string
           frequency_value?: number
           id?: string

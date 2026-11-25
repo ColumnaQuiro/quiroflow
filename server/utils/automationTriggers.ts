@@ -424,7 +424,8 @@ async function dateSourceRows(service: any, accountId: string, source: string, d
     return ((data ?? []) as { id: string; patient_id: string }[]).map((m) => ({ sourceId: m.id, patientId: m.patient_id }))
   }
   if (source === 'care_plan_start') {
-    const { data } = await service.from('care_plans').select('id, patient_id').eq('account_id', accountId).eq('started_at', day).limit(DOCS_PER_TICK)
+    // Imported plans start on PracticeHub's dates, and the clinic already started them there.
+    const { data } = await service.from('care_plans').select('id, patient_id').eq('account_id', accountId).eq('started_at', day).is('external_reference', null).limit(DOCS_PER_TICK)
     return ((data ?? []) as { id: string; patient_id: string }[]).map((c) => ({ sourceId: c.id, patientId: c.patient_id }))
   }
   if (source.startsWith('field:')) {

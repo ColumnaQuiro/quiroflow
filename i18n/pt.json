@@ -1587,7 +1587,12 @@
   "{0} exercises given to patients were skipped: their patient is not here yet. Run Patients, then this step again.": "{0} exercícios atribuídos foram ignorados: o paciente ainda não está aqui. Importe os pacientes e volte a executar este passo.",
   "Library exercises {0}-{1} were not saved: {2}": "Os exercícios da biblioteca {0}-{1} não foram guardados: {2}",
   "\"{0}\" could not be linked to PracticeHub: {1}": "«{0}» não pôde ser ligado ao PracticeHub: {1}",
-  "Patients' exercises {0}-{1} were not saved: {2}": "Os exercícios de pacientes {0}-{1} não foram guardados: {2}"
+  "Patients' exercises {0}-{1} were not saved: {2}": "Os exercícios de pacientes {0}-{1} não foram guardados: {2}",
+  "Care plan notes {0}-{1} were not saved: {2}": "As notas de planos {0}-{1} não foram guardadas: {2}",
+  "Note: {0}": "Nota: {0}",
+  "Saved {0} care plans.": "Foram guardados {0} planos de cuidados.",
+  "The history notes of plans {0}-{1} were not removed (the next sync removes them): {2}": "As notas do histórico dos planos {0}-{1} não foram removidas (a próxima sincronização remove-as): {2}",
+  "{0} plans stay as a note in the patient's history: they are switched off in PracticeHub, or have a cadence a care plan here cannot hold (more than 7 visits a period, or a period in days).": "{0} planos ficam como nota no histórico do paciente: estão desativados no PracticeHub, ou têm uma frequência que um plano daqui não admite (mais de 7 visitas por período, ou um período em dias)."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -10809,6 +10814,19 @@
   "Already in the library": "Já na biblioteca",
   "To give to patients": "Para atribuir a pacientes",
   "Already given": "Já atribuídos",
+  " (moved from the history)": " (movido do histórico)",
+  ", then ": ", depois ",
+  "As a note (switched off or unsupported)": "Como nota (desativados ou não suportados)",
+  "As care plans": "Como planos de cuidados",
+  "Brings each patient's care plan across from PracticeHub's API as a care plan here: its phases (\"2 a week for 3 weeks, then 1 a week for 9\") and its re-exam visits. Plans imported earlier as a note in the patient's history are moved.": "Traz o plano de cuidados de cada paciente da API do PracticeHub como um plano de cuidados aqui: as suas fases (\"2 por semana durante 3 semanas, depois 1 por semana durante 9\") e as suas visitas de reavaliação. Os planos importados antes como nota no histórico do paciente são movidos.",
+  "Each patient's care plan, with its phases and re-exam visits.": "O plano de cuidados de cada paciente, com as suas fases e visitas de reavaliação.",
+  "Each plan is matched to its patient by their PracticeHub reference, and a re-exam visit to the appointment type of the same name. A plan switched off in PracticeHub stays a note in the patient's history.": "Cada plano é associado ao seu paciente pela referência do PracticeHub, e cada visita de reavaliação ao tipo de consulta com o mesmo nome. Um plano desativado no PracticeHub fica como nota no histórico do paciente.",
+  "Moved from the history to care plans": "Movidos do histórico para planos de cuidados",
+  "Phases in them": "Fases neles",
+  "Plans already here are skipped, and kept as the clinic has them.": "Os planos que já estão aqui são ignorados e ficam como a clínica os tem.",
+  "Run Patients and Appointment types first.": "Execute primeiro Pacientes e Tipos de consulta.",
+  "Save the care plans": "Guardar os planos",
+  "The preview lists every plan and what it becomes, so you can check it first.": "A pré-visualização mostra cada plano e em que se converte, para que o verifique antes.",
   "Times shown per day": "Horários mostrados por dia",
   "Between 1 and 24, or empty to show them all.": "Entre 1 e 24, ou vazio para mostrar todos.",
   "On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.": "Na página de marcações, dos horários livres de cada dia só se mostram estes, distribuídos ao longo do dia, para que a agenda pareça com procura. Quando um é marcado, outro horário livre ocupa o seu lugar. Vazio: todos os horários livres. A equipa pode continuar a marcar a qualquer hora a partir da agenda."

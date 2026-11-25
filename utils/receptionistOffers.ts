@@ -1,5 +1,6 @@
 import { slotTitle, type OfferedSlot, type SlotLanguage } from './receptionistConversion'
 import { chosenOfferedTime } from './receptionistFollowThrough'
+import { clockTimes } from './receptionistHistory'
 
 // The times the receptionist offered, kept as data -- and what is done with
 // them in code rather than by asking the model again.
@@ -143,6 +144,34 @@ export function offerInWords(slots: StoredOfferSlot[], language: SlotLanguage): 
   if (language === 'en') return `I have ${list}${withWhom ? `, with ${withWhom}` : ''}. ${slots.length === 1 ? 'Does that suit you?' : 'Which suits you best?'}`
   if (language === 'fr') return `J'ai ${list}${withWhom ? `, avec ${withWhom}` : ''}. ${slots.length === 1 ? 'Cela vous convient ?' : 'Lequel vous convient le mieux ?'}`
   return `Tengo ${list}${withWhom ? `, con ${withWhom}` : ''}. ${slots.length === 1 ? '¿Te viene bien?' : '¿Cuál te viene mejor?'}`
+}
+
+const firstLine = (text: string) => fold(text.split('\n').find((line) => line.trim()) ?? '')
+
+/**
+ * The reply under an offer, with what the model wrote beside its offer_times
+ * call in front of it.
+ *
+ * Only the turn that ends a reply is sent, and offer_times is called in the
+ * turn before it. On 25 Nov 2026 a lead's first message -- the form of a
+ * click-to-WhatsApp ad, back pain in it -- was answered at 00:37 with "Las
+ * dos opciones son:" and the two times: no greeting, nothing about their
+ * back, nothing about the first visit, though the clinic's knowledge asks
+ * for all three. The turn after the call did what offer_times' result told
+ * it ("name the same times in words, and ask which they prefer"), and
+ * whatever it had written beside the call was dropped.
+ *
+ * So the words beside the call go first. Not when the reply already starts
+ * with them, nor when both name times: then the reply offered again, and
+ * two lists of the same times would go out.
+ */
+export function withOfferLead(lead: string, reply: string): string {
+  const before = lead.trim()
+  const after = reply.trim()
+  if (!before || !after) return after || before
+  if (fold(after).includes(fold(before)) || firstLine(after) === firstLine(before)) return after
+  if (clockTimes(before).size && clockTimes(after).size) return after
+  return `${before}\n\n${after}`
 }
 
 /**

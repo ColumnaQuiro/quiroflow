@@ -105,3 +105,50 @@ describe('a reply that comes back with no words', () => {
     expect(result.checks).toEqual(['model_refused'])
   })
 })
+
+// 25 Nov 2026: a lead's first message was answered at 00:37 with "Las dos
+// opciones son:" and the times, and nothing else. What it wrote beside
+// offer_times -- the greeting, the answer about their back -- was dropped,
+// because only the last turn was sent.
+describe('the words written beside offer_times', () => {
+  const GREETING = 'Hola, gracias por escribirnos. Vemos a muchos pacientes con dolor de espalda y en la primera visita hacemos una valoración completa.'
+  const TIMES = 'Las dos opciones son el martes 1 de diciembre a las 19:15 o el jueves 3 de diciembre a las 18:30. ¿Cuál prefieres?'
+  const said = (text: string): Turn => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] })
+
+  it('go in front of the reply that names the times', async () => {
+    const { promise } = run([offerTurn(GREETING), said(TIMES)])
+    const result = await promise
+    expect(result.text).toBe(`${GREETING}\n\n${TIMES}`)
+    expect(result.checks).toEqual(['offer_lead_kept'])
+    expect(result.choices).toBe('times')
+  })
+
+  it('are not doubled when the reply already starts with them', async () => {
+    const { promise } = run([offerTurn(GREETING), said(`${GREETING}\n\n${TIMES}`)])
+    const result = await promise
+    expect(result.text).toBe(`${GREETING}\n\n${TIMES}`)
+    expect(result.checks).toEqual([])
+  })
+
+  it('tell the model they are sent, so it writes only what follows', async () => {
+    const { promise, seen } = run([offerTurn(GREETING), said(TIMES)])
+    await promise
+    const results = seen[1]!.at(-1) as { role: string; content: { type: string; content?: string }[] }
+    expect(results.content[0]!.content).toMatch(/sent as it is, in front of your reply/)
+  })
+
+  it('tell the model nothing when there were none', async () => {
+    const { promise, seen } = run([offerTurn(''), said(TIMES)])
+    const result = await promise
+    expect(result.text).toBe(TIMES)
+    const results = seen[1]!.at(-1) as { role: string; content: { type: string; content?: string }[] }
+    expect(results.content[0]!.content).toBe('The buttons will go under your reply.')
+  })
+
+  it('go in front of the times written in code when the reply comes back empty', async () => {
+    const { promise } = run([offerTurn(GREETING), empty])
+    const result = await promise
+    expect(result.text).toBe(`${GREETING}\n\nTengo el martes 1 de diciembre a las 19:15 o el jueves 3 de diciembre a las 18:30. ¿Cuál te viene mejor?`)
+    expect(result.checks).toEqual(['empty_offer_in_code'])
+  })
+})

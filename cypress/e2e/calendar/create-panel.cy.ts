@@ -2,8 +2,8 @@ import { findFreeSlots, firstClash } from '../../../utils/freeSlots'
 import { dateInputValue, openNewAppointmentPanel } from '../../support/calendar'
 
 // The create panel answers four questions in order -- who, what for, with
-// whom, when -- and the last one live: whether the time clashes, and the
-// next times that do not.
+// whom, when -- and the last one live: whether the time falls in a block,
+// and the next times that do not. Other patients at that time do not count.
 
 describe('Free-slot rules', () => {
   const day = new Date('2026-09-24T00:00:00')
@@ -53,12 +53,13 @@ function tomorrow(h = 0, m = 0) {
 }
 
 describe('Booking from the create panel', () => {
-  it('searches, flags, catches a clash, offers another time and books it', () => {
+  it('searches, flags, books over another patient, catches a block, offers another time and books it', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste', durationMinutes: 30, defaultPriceCents: 4500 })
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Clara', lastName: 'Vidal' }).then((clara) => {
         cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: clara.id, practitionerId: account.teamMemberId, startsAt: tomorrow(11).toISOString() })
       })
+      cy.task('db:createAvailabilityBlock', { accountId: account.accountId, clinicId: account.clinicId, practitionerId: account.teamMemberId, startsAt: tomorrow(12).toISOString(), endsAt: tomorrow(13).toISOString() })
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Marina', lastName: 'Soto' }).then((marina) => {
         cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: marina.id, packageName: 'Bono 8', sessionsTotal: 8, sessionsUsed: 2 })
       })
@@ -88,11 +89,19 @@ describe('Booking from the create panel', () => {
         cy.contains('[data-cy=create-type]', 'Ajuste').click().should('have.attr', 'aria-checked', 'true')
         cy.contains('[data-cy=create-type]', '30 min · 45,00 €').should('exist')
 
-        // 11:00 tomorrow is Clara's.
+        // 11:00 tomorrow is Clara's. Another patient at the same time is not
+        // in the way: most clinics see several an hour.
         cy.get('input[type="date"]').clear().type(dateInputValue(tomorrow()))
         cy.get('input[type="time"]').clear().type('11:00')
-        cy.get('[data-cy=create-clash]').should('contain.text', 'doesn’t fit').and('contain.text', 'Clara Vidal at 11:00')
-        cy.contains('[data-cy=create-practitioner]', 'Test Owner').should('contain.text', 'With Clara Vidal')
+        cy.get('[data-cy=create-free]').should('contain.text', 'is free')
+        cy.get('[data-cy=create-clash]').should('not.exist')
+        cy.contains('[data-cy=create-practitioner]', 'Test Owner').should('contain.text', 'Free')
+        cy.get('[data-cy=create-submit]').should('not.be.disabled')
+
+        // 12:00 is blocked, and that still stops the booking.
+        cy.get('input[type="time"]').clear().type('12:00')
+        cy.get('[data-cy=create-clash]').should('contain.text', 'doesn’t fit').and('contain.text', 'a block at 12:00')
+        cy.contains('[data-cy=create-practitioner]', 'Test Owner').should('contain.text', 'With a block')
         cy.get('[data-cy=create-submit]').should('be.disabled').and('contain.text', 'Choose another time')
 
         // The next free times; the first is the start of that day.

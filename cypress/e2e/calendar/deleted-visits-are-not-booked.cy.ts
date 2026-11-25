@@ -66,21 +66,20 @@ describe('Deleted visits are not bookings', () => {
   it('keeps the clash of the date on screen when an older date answers late', () => {
     cy.seedStaffAccount().then((account) => {
       const later = daysFromNow(30, 11)
-      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Clara', lastName: 'Vidal' }).then((clara) => {
-        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: clara.id, practitionerId: account.teamMemberId, startsAt: later.toISOString() })
-      })
+      const laterEnd = daysFromNow(30, 12)
+      cy.task('db:createAvailabilityBlock', { accountId: account.accountId, clinicId: account.clinicId, practitionerId: account.teamMemberId, startsAt: later.toISOString(), endsAt: laterEnd.toISOString() })
       const laterFrom = new Date(later)
       laterFrom.setHours(0, 0, 0, 0)
-      // The panel's own read of who is booked: every one of them is held
-      // back, except the one for the date the test moves to.
-      cy.intercept({ method: 'GET', url: '**/rest/v1/appointments*' }, (req) => {
+      // The panel's own read of the blocks: every one of them is held back,
+      // except the one for the date the test moves to.
+      cy.intercept({ method: 'GET', url: '**/rest/v1/availability_blocks*' }, (req) => {
         const url = decodeURIComponent(req.url)
-        if (!url.includes('select=id,starts_at,ends_at,practitioner_id,room_id,patients(first_name,last_name)')) return
-        if (url.includes(`starts_at=gte.${laterFrom.toISOString()}`)) return
+        if (!url.includes('select=starts_at,ends_at,practitioner_id,room_id,clinic_id')) return
+        if (url.includes(`ends_at=gt.${laterFrom.toISOString()}`)) return
         req.on('response', (res) => {
           res.setDelay(4000)
         })
-      }).as('booked')
+      }).as('blocks')
 
       cy.login(account.email, account.password)
       cy.visit('/calendar')
@@ -89,12 +88,12 @@ describe('Deleted visits are not bookings', () => {
       cy.get('[data-cy=create-sheet]').within(() => {
         cy.get('input[type="time"]').clear().type('11:00')
         cy.get('input[type="date"]').clear().type(dateInputValue(later))
-        cy.get('[data-cy=create-clash]').should('contain.text', 'Clara Vidal at 11:00')
+        cy.get('[data-cy=create-clash]').should('contain.text', 'a block at 11:00')
       })
       // The held-back answer for the first date lands now; it must not wipe
       // out the clash on the date being booked.
       cy.wait(5000)
-      cy.get('[data-cy=create-clash]').should('contain.text', 'Clara Vidal at 11:00')
+      cy.get('[data-cy=create-clash]').should('contain.text', 'a block at 11:00')
     })
   })
 })

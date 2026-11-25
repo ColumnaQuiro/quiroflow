@@ -1609,7 +1609,8 @@
   "{0} works {1}.": "{0} arbeitet am {1}.",
   "{0} is off {1}.": "{0} arbeitet am {1} nicht.",
   "Scales: {0} kg right · {1} kg left ({2} kg)": "Waagen: {0} kg rechts · {1} kg links ({2} kg)",
-  "The photo estimated {0}% right": "Das Foto schätzte {0} % rechts"
+  "The photo estimated {0}% right": "Das Foto schätzte {0} % rechts",
+  "The patient has a booking today: {0}. If this session is for that visit, don't log it here: checking the visit out on the calendar uses the session. Logging it here records a second visit and uses another session.": "Der Patient hat heute einen Termin: {0}. Wenn diese Sitzung zu dieser Behandlung gehört, erfassen Sie sie nicht hier: Beim Abrechnen des Termins im Kalender wird die Sitzung verbraucht. Wenn Sie sie hier erfassen, entsteht eine zweite Behandlung, die eine weitere Sitzung verbraucht."
  },
  "s": {
   " (half day)": " (halber Tag)",

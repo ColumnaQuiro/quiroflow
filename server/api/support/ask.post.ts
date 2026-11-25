@@ -8,7 +8,10 @@ import { HELP_ASSISTANT_GUARDRAILS, helpQuestionLimit, isHelpCentreUrl, onlyHelp
 // help centre's own articles, and says so plainly when they don't cover it
 // (which is the cue for the widget to offer a real person instead).
 
-const MODEL = 'claude-sonnet-5'
+// Haiku: this is a lookup in text it is handed, not reasoning, and every
+// question sends the whole help centre (~134k tokens). On Sonnet 5 that cost
+// $0.34 a question; on Haiku 5.5 it is under a tenth of that.
+const MODEL = 'claude-haiku-5-5'
 // Answers are a short paragraph or a few steps, never an essay -- this is a
 // widget in the corner of the screen, not a document.
 const MAX_TOKENS = 700
@@ -137,6 +140,10 @@ export default defineEventHandler(async (event) => {
     const message = await client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
+      // Haiku 5.5 thinks by default, and thinking counts against the 700
+      // tokens above: a long think would cut the answer off mid-sentence.
+      // Finding the article that answers a question needs none.
+      thinking: { type: 'disabled' },
       system: systemPrompt(renderCorpus(articles), lang),
       messages: [{ role: 'user', content: question }],
     })

@@ -439,6 +439,20 @@ export function postureBalance(views: StoredViews, heightCm: number): { rightSha
   return { rightShare, forwardCm }
 }
 
+/**
+ * The left-right split read off two scales, one under each foot: % of the
+ * weight over the right foot, rounded like postureBalance's estimate so the
+ * two can stand side by side. Null without both readings or with nothing on
+ * either -- one foot alone says nothing about the split.
+ */
+export function scaleRightShare(leftKg: number | null | undefined, rightKg: number | null | undefined): number | null {
+  const l = Number(leftKg)
+  const r = Number(rightKg)
+  if (leftKg === null || leftKg === undefined || rightKg === null || rightKg === undefined) return null
+  if (!Number.isFinite(l) || !Number.isFinite(r) || l < 0 || r < 0 || l + r <= 0) return null
+  return Math.round((r / (l + r)) * 100)
+}
+
 // How far from aligned each number has to be to count fully against the
 // alignment index, and how much it counts. Together they make 100; a number
 // counts in proportion up to its `full`. Sized so that the deviations a

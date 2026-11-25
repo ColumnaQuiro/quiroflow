@@ -8889,6 +8889,8 @@ export type Database = {
           metrics: Json
           notes: string | null
           patient_id: string
+          scale_left_kg: number | null
+          scale_right_kg: number | null
           shared_with_patient: boolean
           taken_at: string
           taken_by: string | null
@@ -8904,6 +8906,8 @@ export type Database = {
           metrics?: Json
           notes?: string | null
           patient_id: string
+          scale_left_kg?: number | null
+          scale_right_kg?: number | null
           shared_with_patient?: boolean
           taken_at?: string
           taken_by?: string | null
@@ -8919,6 +8923,8 @@ export type Database = {
           metrics?: Json
           notes?: string | null
           patient_id?: string
+          scale_left_kg?: number | null
+          scale_right_kg?: number | null
           shared_with_patient?: boolean
           taken_at?: string
           taken_by?: string | null

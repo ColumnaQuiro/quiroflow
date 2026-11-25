@@ -4,6 +4,9 @@
 // from above, the patient's right on the right, and a dot -- across from the
 // front photo, along from the side one. Either may be missing; the dot then
 // sits in the middle of that direction and the words say which is unknown.
+// When the clinic weighed the patient on two scales, `scale` carries the
+// readings and `rightShare` is the split they give (scaleRightShare); the
+// points' own estimate, if there was one, is shown beside it as `estimate`.
 // Shared with mobile/.
 const props = defineProps<{
   /** % of the weight over the right foot. */
@@ -12,6 +15,10 @@ const props = defineProps<{
   forwardCm: number | null
   /** What forwardCm is measured from, for the sentence under the drawing. */
   from?: 'ankle' | 'midfoot'
+  /** kg on the scale under each foot, when weighed. */
+  scale?: { leftKg: number; rightKg: number } | null
+  /** % over the right foot estimated from the points, shown beside a scale reading. */
+  estimate?: number | null
 }>()
 
 const t = useT()
@@ -34,6 +41,19 @@ const dot = computed(() => {
 })
 const num = (n: number) => n.toLocaleString(t('en-GB', 'es-ES'), { maximumFractionDigits: 1 })
 const across = computed(() => (props.rightShare === null ? null : t(`${props.rightShare}% right · ${100 - props.rightShare}% left`, `${props.rightShare} % derecha · ${100 - props.rightShare} % izquierda`)))
+const kg = computed(() => {
+  const s = props.scale
+  if (!s) return null
+  const [r, l, total] = [num(s.rightKg), num(s.leftKg), num(s.leftKg + s.rightKg)]
+  return t(`Scales: ${r} kg right · ${l} kg left (${total} kg)`, `Básculas: ${r} kg derecha · ${l} kg izquierda (${total} kg)`)
+})
+const estimated = computed(() => (props.scale && props.estimate !== null && props.estimate !== undefined ? t(`The photo estimated ${props.estimate}% right`, `La foto estimaba un ${props.estimate} % a la derecha`) : null))
+const source = computed(() => {
+  if (!props.scale) return t('Estimated from the points with average body proportions, not measured on a scale.', 'Estimado a partir de los puntos con las proporciones corporales medias; no es una medida con báscula.')
+  return props.forwardCm === null
+    ? t('Left–right measured on two scales.', 'Derecha–izquierda medido con dos básculas.')
+    : t('Left–right measured on two scales; forward–back estimated from the points.', 'Derecha–izquierda medido con dos básculas; delante–detrás, estimado a partir de los puntos.')
+})
 // Whole sentences rather than "ahead of" + a place: "de" + "el tobillo" is
 // "del tobillo" in Spanish, and Portuguese contracts the same way.
 const along = computed(() => {
@@ -64,9 +84,12 @@ const foot = (x: number) => `M${x - 14} ${HEEL - 8} C${x - 22} ${HEEL - 60} ${x 
     <div class="flex min-w-[180px] flex-1 flex-col gap-1 text-[13px] text-ink-700">
       <p v-if="across" class="font-semibold text-ink-900">{{ across }}</p>
       <p v-else class="text-ink-muted">{{ t('Left–right: needs the front or back photo.', 'Derecha–izquierda: hace falta la foto de frente o de espalda.') }}</p>
+      <p v-if="kg" data-cy="posture-balance-kg">{{ kg }}</p>
       <p v-if="along">{{ along }}</p>
       <p v-else class="text-ink-muted">{{ t('Forward–back: needs the side photo.', 'Delante–detrás: hace falta la foto de lado.') }}</p>
-      <p class="text-[12px] text-ink-muted">{{ t('Estimated from the points with average body proportions, not measured on a scale.', 'Estimado a partir de los puntos con las proporciones corporales medias; no es una medida con báscula.') }}</p>
+      <p v-if="estimated" class="text-[12px] text-ink-muted" data-cy="posture-balance-estimate">{{ estimated }}</p>
+      <p class="text-[12px] text-ink-muted">{{ source }}</p>
+      <slot />
     </div>
   </div>
 </template>

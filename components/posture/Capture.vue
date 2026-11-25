@@ -275,6 +275,13 @@ function noCutoutText(reason: NoCutout): string {
 
 const current = computed(() => (step.value === 'result' ? null : shots[step.value] ?? null))
 const heightOk = computed(() => typeof height.value === 'number' && height.value >= 50 && height.value <= 250)
+// Optional: two scales, one under each foot, measure the left-right split that
+// the photo can only estimate (posture_assessments.scale_*_kg). Both or neither.
+const scaleLeft = ref<number | ''>('')
+const scaleRight = ref<number | ''>('')
+const kgOk = (v: number | '') => typeof v === 'number' && v >= 0 && v <= 300
+const scaleEmpty = computed(() => scaleLeft.value === '' && scaleRight.value === '')
+const scaleOk = computed(() => isSquat || scaleEmpty.value || (kgOk(scaleLeft.value) && kgOk(scaleRight.value) && Number(scaleLeft.value) + Number(scaleRight.value) > 0))
 const stored = (s: Shot): StoredView => ({ photo: '', width: s.width, height: s.height, points: s.points, facing: s.facing, tilt: s.tilt || null })
 const squatViews = computed<SquatViews>(() => Object.fromEntries(Object.entries(shots).filter(([v]) => isSquatView(v)).map(([v, s]) => [v, stored(s!)])))
 const squatLive = computed(() => (isSquat && heightOk.value ? measureSquat(squatViews.value, Number(height.value)) : null))
@@ -292,7 +299,7 @@ const next = computed<PhotoView | 'result'>(() => {
 const taken = computed(() => steps.value.filter((v) => shots[v]))
 // Planes with no photo (postureMissing), each said on the result with what it takes away.
 const missing = computed(() => (isSquat ? [] : postureMissing(shots)))
-const canFinish = computed(() => heightOk.value && (isSquat ? steps.value.every((v) => shots[v]) : postureCanSave(shots)))
+const canFinish = computed(() => heightOk.value && scaleOk.value && (isSquat ? steps.value.every((v) => shots[v]) : postureCanSave(shots)))
 // Any view can be left out: skipping moves on to the next one.
 const canSkipView = computed(() => !isSquat && step.value !== 'result' && !shots[step.value] && next.value !== 'result')
 const planeLabel = (p: 'frontal' | 'side') => (p === 'frontal' ? t('Front or back', 'Frente o espalda') : t('Side', 'Lado'))
@@ -350,6 +357,7 @@ async function save() {
       views: views as never,
       metrics: metrics as never,
       notes: notes.value.trim() || null,
+      ...(!isSquat && !scaleEmpty.value ? { scale_left_kg: Number(scaleLeft.value), scale_right_kg: Number(scaleRight.value) } : {}),
     })
     if (insertError) throw new Error(insertError.message)
     emit('saved')
@@ -396,6 +404,20 @@ const row = 'flex justify-between gap-3 border-b border-line-row py-2 text-[13.5
       </div>
       <p v-if="!isSquat" class="text-[12.5px] text-ink-muted" data-cy="posture-views-hint">{{ t('Any one photo is enough. The side gives the head and the vertical; the front or the back gives tilts, shifts and knees (the Q-angle only from the front). The alignment index needs both.', 'Basta con una foto. La de lado da la cabeza y la vertical; la de frente o espalda, inclinaciones, desplazamientos y rodillas (el ángulo Q, solo la de frente). El índice de alineación necesita las dos.') }}</p>
       <p v-if="!heightOk" class="text-[12.5px] text-warning-text">{{ t("The patient's height turns pixels into centimetres.", 'La altura del paciente es lo que pasa los píxeles a centímetros.') }}</p>
+      <div v-if="!isSquat" class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-ink-700" data-cy="posture-scale">
+        <span class="font-semibold">{{ t('Scales (optional)', 'Básculas (opcional)') }}</span>
+        <label class="flex items-center gap-1.5">
+          {{ t('Left foot', 'Pie izq.') }}
+          <input v-model.number="scaleLeft" type="number" inputmode="decimal" min="0" max="300" step="0.1" class="h-9 w-[84px] rounded-ctl border border-line-control bg-surface px-2.5 font-mono text-[14px] touch:h-11" :class="scaleOk ? '' : 'border-warning-border'" data-cy="posture-scale-left" />
+          kg
+        </label>
+        <label class="flex items-center gap-1.5">
+          {{ t('Right foot', 'Pie der.') }}
+          <input v-model.number="scaleRight" type="number" inputmode="decimal" min="0" max="300" step="0.1" class="h-9 w-[84px] rounded-ctl border border-line-control bg-surface px-2.5 font-mono text-[14px] touch:h-11" :class="scaleOk ? '' : 'border-warning-border'" data-cy="posture-scale-right" />
+          kg
+        </label>
+      </div>
+      <p v-if="!scaleOk" class="text-[12.5px] text-warning-text" data-cy="posture-scale-warning">{{ t('Fill in both feet, or leave both empty.', 'Pon el peso de los dos pies, o deja los dos vacíos.') }}</p>
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
       <input ref="input" type="file" accept="image/*" class="hidden" data-cy="posture-file" @change="onPhoto" />
       <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" data-cy="posture-camera-file" @change="onPhoto" />

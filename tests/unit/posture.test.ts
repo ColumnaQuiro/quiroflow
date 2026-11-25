@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alignmentIndex, cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureBalance, postureGrid, postureHeadline, postureCanSave, postureMissing, pxPerCm, type Points, type StoredView } from '../../utils/posture'
+import { alignmentIndex, cutoutVerdict, defaultPoints, EAR_HEIGHT_RATIO, hansrajHeadWeight, measureAll, measureView, pointsFromLandmarks, postureBalance, postureGrid, scaleRightShare, postureHeadline, postureCanSave, postureMissing, pxPerCm, type Points, type StoredView } from '../../utils/posture'
 import { postureConclusion, postureReportSections } from '../../utils/postureReport'
 
 // A 170 cm patient photographed so that ear-to-ankle is 1591.2 px: exactly
@@ -196,5 +196,19 @@ describe('any one photo', () => {
     expect(text).not.toMatch(/NaN|undefined|null °/)
     // The Q-angle is the front's alone.
     expect(sections.find((s) => s.view === 'back')!.findings.map((f) => f.label)).not.toContain('Ángulo Q')
+  })
+})
+
+describe('scaleRightShare', () => {
+  it('reads the left-right split off two scales, rounded like the estimate', () => {
+    expect(scaleRightShare(32.5, 38.2)).toBe(54)
+    expect(scaleRightShare(35, 35)).toBe(50)
+    expect(scaleRightShare(0, 70)).toBe(100)
+  })
+  it('says nothing without both readings or with nothing on either', () => {
+    expect(scaleRightShare(null, 38)).toBeNull()
+    expect(scaleRightShare(32, undefined)).toBeNull()
+    expect(scaleRightShare(0, 0)).toBeNull()
+    expect(scaleRightShare(-1, 40)).toBeNull()
   })
 })

@@ -164,11 +164,13 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       'id, external_reference, appointment_id, patient_id, created_at',
     )
     const haveInvoiceRefs = new Set(ourInvoices.map((i) => i.external_reference).filter(Boolean) as string[])
-    const ourPayments = await loadAllOurRows<StripeBookedCharge & { external_reference: string | null; stripe_invoice_id: string | null }>(
+    const ourPayments = await loadAllOurRows<StripeBookedCharge & { external_reference: string | null; stripe_invoice_id: string | null; gocardless_payment_id: string | null }>(
       'payments',
-      'id, external_reference, stripe_invoice_id, patient_id, amount_cents, paid_at, method',
+      'id, external_reference, stripe_invoice_id, gocardless_payment_id, patient_id, amount_cents, paid_at, method',
     )
-    const stripeBooked = ourPayments.filter((p) => p.stripe_invoice_id && !p.external_reference)
+    // Charges a webhook booked (a Stripe invoice or a GoCardless collection)
+    // that no PracticeHub payment has claimed yet.
+    const stripeBooked = ourPayments.filter((p) => (p.stripe_invoice_id || p.gocardless_payment_id) && !p.external_reference)
     const havePaymentRefs = new Set(ourPayments.map((p) => p.external_reference).filter(Boolean) as string[])
 
     phase.value = t('Loading PracticeHub invoices…', 'Cargando facturas de PracticeHub…')
@@ -432,7 +434,7 @@ const money = (cents: number) => `${formatEur(cents)}`
           {{ t(`Already imported, so skipped: ${skipped.invoicesAlready} invoices, ${skipped.paymentsAlready} payments.`, `Ya importados, se omiten: ${skipped.invoicesAlready} facturas, ${skipped.paymentsAlready} pagos.`) }}
         </p>
         <p v-if="paymentsToAdopt.length" class="mt-1">
-          {{ t(`${paymentsToAdopt.length} payments are Stripe charges already recorded here by the Stripe sync, so they are matched to those instead of created again.`, `${paymentsToAdopt.length} pagos son cobros de Stripe ya registrados aquí por la sincronización de Stripe, así que se emparejan con ellos en vez de crearse otra vez.`) }}
+          {{ t(`${paymentsToAdopt.length} payments are charges already recorded here by the Stripe or GoCardless sync, so they are matched to those instead of created again.`, `${paymentsToAdopt.length} pagos son cobros ya registrados aquí por la sincronización de Stripe o GoCardless, así que se emparejan con ellos en vez de crearse otra vez.`) }}
         </p>
         <p v-if="invoicesToLink.length" class="mt-1" data-cy="ledger-invoices-to-link">
           {{ t(`${invoicesToLink.length} invoices already imported without their visit will be linked to it now.`, `${invoicesToLink.length} facturas ya importadas sin su visita se vincularán ahora a ella.`) }}

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-defineProps<{ card: { brand: string; last4: string; expMonth: number; expYear: number } | null; holder: string | null }>()
+import { billingMethodLabel } from '~/utils/billing'
+
+defineProps<{ card: { brand: string; last4: string | null; expMonth: number | null; expYear: number | null } | null; holder: string | null }>()
 defineEmits<{ portal: [] }>()
 const t = useT()
 </script>
@@ -15,11 +17,11 @@ const t = useT()
       </span>
       <div class="min-w-0 flex-1">
         <div class="font-mono text-[13.5px] font-medium capitalize text-ink-900">
-          <template v-if="card">{{ card.brand }} ·· {{ card.last4 }}</template>
+          <template v-if="card">{{ billingMethodLabel(card) }}</template>
           <template v-else>{{ t('No card on file', 'Sin tarjeta guardada') }}</template>
         </div>
-        <div v-if="card" class="mt-0.5 text-[11.5px] text-ink-muted">
-          {{ t('Expires', 'Caduca') }} {{ String(card.expMonth).padStart(2, '0') }}/{{ card.expYear }}<template v-if="holder"> · {{ holder }}</template>
+        <div v-if="card && (card.expMonth || holder)" class="mt-0.5 text-[11.5px] text-ink-muted">
+          <template v-if="card.expMonth && card.expYear">{{ t('Expires', 'Caduca') }} {{ String(card.expMonth).padStart(2, '0') }}/{{ card.expYear }}<template v-if="holder"> · </template></template><template v-if="holder">{{ holder }}</template>
         </div>
       </div>
     </div>

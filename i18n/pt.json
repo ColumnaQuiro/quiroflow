@@ -4746,6 +4746,7 @@
   "Income paid": "Receita cobrada",
   "Income paid by month": "Receita cobrada por mês",
   "Income paid by practitioner": "Receita cobrada por profissional",
+  "Paused for a moment: QuiroFlow's database is busy, and the import waits so the clinics are not slowed down. It carries on by itself.": "Em pausa por um momento: a base de dados do QuiroFlow está ocupada e a importação espera para não tornar as clínicas mais lentas. Continua sozinha.",
   "Refer your friends!": "Recomende aos seus amigos!",
   "The discount applies once the new clinic starts a paid subscription, on the regular plan price.": "O desconto aplica-se quando a nova clínica inicia uma subscrição paga, sobre o preço normal do plano.",
   "What each completed visit was worth: the bono session it used, or else its invoice. Visits with neither (membership, not charged) are left out": "Quanto valeu cada consulta concluída: a sessão de bono que usou ou, se não, a sua fatura. As que não têm nenhuma (quota, por cobrar) ficam de fora",

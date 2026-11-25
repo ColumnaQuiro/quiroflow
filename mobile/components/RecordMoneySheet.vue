@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
 import { invoiceDueCents } from '../../utils/settleInvoice'
+import { specialBonoPriceCents } from '../../utils/bonoSale'
 // "Cobrar" and "Vender bono" from a patient's record (useRecordMoney: the web
 // Billing tab's own steps). Cobrar lists their unpaid charges, oldest first,
 // with what is still due on each; Vender bono offers the clinic's bonos at
-// their price, paid in full or in part (the rest stays owed on the bono).
+// their price -- or a lower one for this patient, a discount -- paid in full
+// or in part (the rest stays owed on the bono).
 const props = defineProps<{ patientId: string; mode: 'pay' | 'sell'; canPay?: boolean; canSell?: boolean }>()
 const emit = defineEmits<{ done: [message: string]; close: [] }>()
 
@@ -32,6 +34,9 @@ const bonos = ref<BonoTemplate[]>([])
 const invoiceId = ref('')
 const packageId = ref('')
 const amount = ref('')
+// The price a bono is sold at: its own to begin with, lower for a discount
+// (the web's Billing tab, utils/bonoSale specialBonoPriceCents).
+const price = ref('')
 const method = ref('cash')
 const saving = ref(false)
 const error = ref('')
@@ -68,19 +73,30 @@ function pickInvoice(id: string) {
   const i = invoices.value.find((x) => x.id === id)
   if (tab.value === 'pay') amount.value = i ? (i.dueCents / 100).toFixed(2) : ''
 }
-watch(packageId, (id) => {
+function prefillBono(id: string) {
   const b = bonos.value.find((x) => x.id === id)
-  amount.value = b ? (b.price_cents / 100).toFixed(2) : ''
-})
+  price.value = b ? (b.price_cents / 100).toFixed(2) : ''
+  amount.value = price.value
+}
+watch(packageId, prefillBono)
 watch(tab, (v) => {
   error.value = ''
   if (v === 'pay') pickInvoice(invoiceId.value || invoices.value[0]?.id || '')
-  else amount.value = packageId.value ? (bonos.value.find((x) => x.id === packageId.value)!.price_cents / 100).toFixed(2) : ''
+  else prefillBono(packageId.value)
+})
+// A discount is usually paid there and then: what is taken now follows the
+// price, so the bono is not left owing the discount.
+watch(price, (value) => {
+  if (tab.value === 'sell') amount.value = value
 })
 
 const cents = computed(() => Math.round((parseFloat(String(amount.value).replace(',', '.')) || 0) * 100))
 const selectedInvoice = computed(() => invoices.value.find((i) => i.id === invoiceId.value) ?? null)
 const selectedBono = computed(() => bonos.value.find((b) => b.id === packageId.value) ?? null)
+const specialCents = computed(() => (selectedBono.value ? specialBonoPriceCents(selectedBono.value.price_cents, price.value) : null))
+const specialInvalid = computed(() => specialCents.value !== null && (specialCents.value < 0 || specialCents.value > (selectedBono.value?.price_cents ?? 0)))
+/** What this sale costs: the special price, or the bono's own. */
+const salePriceCents = computed(() => specialCents.value ?? selectedBono.value?.price_cents ?? 0)
 const dateOf = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric', timeZone: context.value?.timeZone })
 
 async function save() {
@@ -102,13 +118,13 @@ async function save() {
     emit('done', t(`${formatEur(cents.value)} recorded.`, `${formatEur(cents.value)} registrados.`))
     return
   }
-  if (!selectedBono.value) return
-  if (cents.value > selectedBono.value.price_cents) {
+  if (!selectedBono.value || specialInvalid.value) return
+  if (cents.value > salePriceCents.value) {
     error.value = t('That is more than the bono costs.', 'Es más de lo que cuesta el bono.')
     return
   }
   saving.value = true
-  const { error: problem, sold } = await sellBono(selectedBono.value.id, cents.value, method.value)
+  const { error: problem, sold } = await sellBono(selectedBono.value.id, cents.value, method.value, specialCents.value)
   saving.value = false
   if (!sold) {
     error.value = problem ?? ''
@@ -183,9 +199,22 @@ async function save() {
       </template>
 
       <template v-if="!loading && !loadError && (tab === 'pay' ? !!selectedInvoice : !!selectedBono)">
+        <template v-if="tab === 'sell' && selectedBono">
+          <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+            {{ t('Price (€)', 'Precio (€)') }}
+            <input v-model="price" type="text" inputmode="decimal" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[16px] text-ink-900 focus:border-brand focus:outline-none" data-cy="money-price" />
+          </label>
+          <p v-if="specialCents !== null" class="-mt-1 text-[12px]" :class="specialInvalid ? 'text-danger-text' : 'text-ink-muted'" data-cy="money-discount-note">
+            {{
+              specialInvalid
+                ? t(`The price can be lowered, not raised: at most ${formatEur(selectedBono.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${formatEur(selectedBono.price_cents)}.`)
+                : t(`Special price: ${formatEur(selectedBono.price_cents - specialCents)} off the bono's ${formatEur(selectedBono.price_cents)}.`, `Precio especial: ${formatEur(selectedBono.price_cents - specialCents)} de descuento sobre ${formatEur(selectedBono.price_cents)}.`)
+            }}
+          </p>
+        </template>
         <div class="grid grid-cols-2 gap-2">
           <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
-            {{ t('Amount (€)', 'Importe (€)') }}
+            {{ tab === 'sell' ? t('Paid now (€)', 'Pagado ahora (€)') : t('Amount (€)', 'Importe (€)') }}
             <input v-model="amount" type="text" inputmode="decimal" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[16px] text-ink-900 focus:border-brand focus:outline-none" data-cy="money-amount" />
           </label>
           <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
@@ -195,15 +224,15 @@ async function save() {
             </select>
           </label>
         </div>
-        <p v-if="tab === 'sell' && selectedBono && cents < selectedBono.price_cents" class="-mt-1 text-[12px] text-ink-muted">
-          {{ t(`${formatEur(selectedBono.price_cents - cents)} stays owed on the bono.`, `Quedan ${formatEur(selectedBono.price_cents - cents)} pendientes en el bono.`) }}
+        <p v-if="tab === 'sell' && selectedBono && !specialInvalid && cents < salePriceCents" class="-mt-1 text-[12px] text-ink-muted">
+          {{ t(`${formatEur(salePriceCents - cents)} stays owed on the bono.`, `Quedan ${formatEur(salePriceCents - cents)} pendientes en el bono.`) }}
         </p>
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
       <AppButton
         variant="primary"
-        :disabled="saving || (tab === 'pay' ? !selectedInvoice || cents <= 0 : !selectedBono)"
+        :disabled="saving || (tab === 'pay' ? !selectedInvoice || cents <= 0 : !selectedBono || specialInvalid)"
         data-cy="money-save"
         @click="save"
       >

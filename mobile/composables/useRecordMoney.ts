@@ -45,10 +45,12 @@ export function useRecordMoney(opts: { patientId: () => string; accountId: () =>
   /**
    * Sells a bono and records what was paid now (may be less than its price;
    * the rest stays owed on the purchase). Returns why the payment failed, or
-   * null -- the bono is sold either way, as on the web. The same steps as the
+   * null -- the bono is sold either way, as on the web. `priceCents` is a
+   * special price for this sale (utils/bonoSale specialBonoPriceCents), null
+   * for the bono's own. The same steps as the
    * web's Billing tab and the visit checkout: utils/bonoSale.
    */
-  async function sellBono(packageId: string, amountCents: number, method: string): Promise<{ error: string | null; sold: boolean }> {
+  async function sellBono(packageId: string, amountCents: number, method: string, priceCents: number | null = null): Promise<{ error: string | null; sold: boolean }> {
     const accountId = opts.accountId()
     if (!accountId) return { error: refused(null), sold: false }
     const { purchase, error } = await recordBonoSale(supabase, { issueFactura, t }, {
@@ -58,6 +60,9 @@ export function useRecordMoney(opts: { patientId: () => string; accountId: () =>
       packageId,
       installments: 1,
       amountCents,
+      // A special price (a discount) for this sale, or null for the bono's
+      // own. At once only, which is all the app sells.
+      priceCents,
       method,
       // Never 'credit' here (see the header), so nothing to check or draw.
       spendableCreditCents: 0,

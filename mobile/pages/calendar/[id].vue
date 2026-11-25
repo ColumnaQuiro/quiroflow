@@ -16,6 +16,7 @@
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
 import { checkoutDefaultChoice } from '../../../utils/bonoOrder'
+import { specialBonoPriceCents } from '../../../utils/bonoSale'
 import { openEndedPlanLabel } from '../../../utils/planRenewal'
 import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
 import { appointmentStage, hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '../../../utils/appointmentStage'
@@ -483,12 +484,23 @@ function pickCheckout(value: string) {
 // web's.
 const sellId = ref('')
 const sellAmount = ref('')
+// The price it is sold at: the bono's own, or lower for a discount (the web
+// checkout's, utils/bonoSale specialBonoPriceCents).
+const sellPrice = ref('')
 const sellMethod = ref('cash')
 const sellTemplate = computed(() => bonoTemplates.value.find((b) => b.id === sellId.value) ?? null)
 const sellAmountCents = computed(() => Math.round((parseFloat(sellAmount.value.replace(',', '.')) || 0) * 100))
+const sellSpecialCents = computed(() => (sellTemplate.value ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null))
+const sellSpecialInvalid = computed(() => sellSpecialCents.value !== null && (sellSpecialCents.value < 0 || sellSpecialCents.value > (sellTemplate.value?.price_cents ?? 0)))
+const sellPriceCents = computed(() => sellSpecialCents.value ?? sellTemplate.value?.price_cents ?? 0)
 watch(sellId, () => {
-  sellAmount.value = sellTemplate.value ? (sellTemplate.value.price_cents / 100).toFixed(2) : ''
+  sellPrice.value = sellTemplate.value ? (sellTemplate.value.price_cents / 100).toFixed(2) : ''
+  sellAmount.value = sellPrice.value
   sellMethod.value = checkoutMethod.value !== 'credit' ? checkoutMethod.value : (paymentMethods.value[0]?.key ?? 'cash')
+})
+// What is taken now follows the price, so a discount is not left owed.
+watch(sellPrice, (value) => {
+  if (sellTemplate.value) sellAmount.value = value
 })
 const checkoutPackage = computed(() => activePackages.value.find((p) => p.id === checkoutChoice.value) ?? null)
 const checkoutLabel = computed(() => {
@@ -506,7 +518,7 @@ async function processCheckout() {
   if (saving.value || processing.value) return
   // Nothing picked: without this the press fell through to charging in money.
   if (checkoutChoice.value === '') return
-  if (checkoutChoice.value === 'sell' && !sellTemplate.value) return
+  if (checkoutChoice.value === 'sell' && (!sellTemplate.value || sellSpecialInvalid.value)) return
   if (checkoutChoice.value !== 'sell' && !checkoutPackage.value && !canTakeMoney.value) return
   // Held on screen until both writes are in: charging in money raises the
   // receipt and then pays it, with a reload between that is not "done".
@@ -514,7 +526,7 @@ async function processCheckout() {
   try {
     if (checkoutChoice.value === 'sell') {
       if (!sellTemplate.value) return
-      const sold = await sellBonoForVisit({ packageId: sellTemplate.value.id, installments: 1, amountCents: sellAmountCents.value, method: sellMethod.value })
+      const sold = await sellBonoForVisit({ packageId: sellTemplate.value.id, installments: 1, amountCents: sellAmountCents.value, priceCents: sellSpecialCents.value, method: sellMethod.value })
       // Sold but its session not taken (the payment failed): the next press
       // takes the new bono's session, not a second sale.
       if (sold && activePackages.value.some((p) => p.id === sold)) checkoutChoice.value = sold
@@ -1114,6 +1126,19 @@ watch(
                   <option value="" disabled>{{ bonoTemplates.length ? t('Choose a bono…', 'Elige un bono…') : t('No bonos set up', 'No hay bonos configurados') }}</option>
                   <option v-for="b in bonoTemplates" :key="b.id" :value="b.id">{{ b.name }} ({{ b.session_count }}, {{ euros(b.price_cents) }})</option>
                 </select>
+                <template v-if="sellTemplate">
+                  <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+                    {{ t('Price (€)', 'Precio (€)') }}
+                    <input v-model="sellPrice" type="text" inputmode="decimal" :disabled="saving || processing" data-cy="checkout-sell-price" class="h-11 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" />
+                  </label>
+                  <p v-if="sellSpecialCents !== null" class="text-[12px]" :class="sellSpecialInvalid ? 'text-danger-text' : 'text-ink-muted'" data-cy="checkout-sell-discount-note">
+                    {{
+                      sellSpecialInvalid
+                        ? t(`The price can be lowered, not raised: at most ${euros(sellTemplate.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${euros(sellTemplate.price_cents)}.`)
+                        : t(`Special price: ${euros(sellTemplate.price_cents - sellSpecialCents)} off the bono's ${euros(sellTemplate.price_cents)}.`, `Precio especial: ${euros(sellTemplate.price_cents - sellSpecialCents)} de descuento sobre ${euros(sellTemplate.price_cents)}.`)
+                    }}
+                  </p>
+                </template>
                 <div v-if="sellTemplate" class="flex gap-2">
                   <input v-model="sellAmount" type="text" inputmode="decimal" :aria-label="t('Paid now (€)', 'Pagado ahora (€)')" :disabled="saving || processing" data-cy="checkout-sell-amount" class="h-11 w-28 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" />
                   <select v-if="sellAmountCents > 0" v-model="sellMethod" :aria-label="t('Method', 'Método')" :disabled="saving || processing" data-cy="checkout-sell-method" class="h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700">
@@ -1121,13 +1146,13 @@ watch(
                     <option v-if="spendableCreditCents > 0" value="credit">{{ t(`Credit on account (${euros(spendableCreditCents)} available)`, `Saldo a favor (${euros(spendableCreditCents)} disponible)`) }}</option>
                   </select>
                 </div>
-                <p v-if="sellTemplate && sellAmountCents < sellTemplate.price_cents" class="text-[12px] text-ink-muted">
+                <p v-if="sellTemplate && !sellSpecialInvalid && sellAmountCents < sellPriceCents" class="text-[12px] text-ink-muted">
                   {{ t('The rest stays owed on the bono.', 'El resto queda pendiente en el bono.') }}
                 </p>
               </div>
             </div>
           </div>
-          <AppButton variant="primary" class="mt-2.5 w-full" :disabled="saving || processing || checkoutChoice === '' || (checkoutChoice === 'sell' && !sellTemplate)" data-cy="checkout-process" @click="processCheckout">{{ checkoutLabel }}</AppButton>
+          <AppButton variant="primary" class="mt-2.5 w-full" :disabled="saving || processing || checkoutChoice === '' || (checkoutChoice === 'sell' && (!sellTemplate || sellSpecialInvalid))" data-cy="checkout-process" @click="processCheckout">{{ checkoutLabel }}</AppButton>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </section>
 

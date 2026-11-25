@@ -983,6 +983,21 @@ async function runWhatsAppAction(
       const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
       const configured = buttonParams[i]
       if (!token && !configured && keptValues?.buttons?.[dynamicUrlButtonIndexes[i]]?.suffix) continue
+      // A form button (`<app>/doc/{{1}}`) opens nothing but a document token:
+      // the `name=&id=` guess below lands on /doc/name=…&id=…, which is never
+      // a form. One patient opened such a link eight times in three days
+      // (Sentry JAVASCRIPT-NUXT-1E). For a patient a form could have been
+      // made, so the step is misconfigured (no form chosen for the button, or
+      // the chosen one is gone): fail it where the journey shows it, rather
+      // than send a link that quietly does nothing. A lead has no patient to
+      // hang a form on and keeps the older fallback (see generateDocLink).
+      if (!token && !configured && recipient.patient && isFormButton(button)) {
+        throw new Error(
+          docTemplateId
+            ? `The form for the "${templateName}" button could not be prepared for this patient, so the message was not sent.`
+            : `The "${templateName}" template has a form button, but no form is chosen for it in this step, so the message was not sent.`,
+        )
+      }
       const paramText = token
         ? token
         : configured

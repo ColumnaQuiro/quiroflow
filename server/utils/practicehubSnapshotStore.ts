@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '~/types/database.types'
+import { withConcurrency } from '~/utils/practicehubImport/appointments'
 import type { PracticeHubListPath, PracticeHubSnapshot } from '~/utils/practicehubImport/types'
 
 // The copy of a clinic read out of PracticeHub's Classic API, kept in
@@ -61,43 +62,107 @@ export async function finishPracticeHubRead(admin: Admin, accountId: string, met
   if (dropError) throw new Error(`import_snapshots: ${dropError.message}`)
 }
 
-/** The finished copy, or null when PracticeHub has never been read in full. */
-export async function loadPracticeHubSnapshot(admin: Admin, accountId: string): Promise<PracticeHubSnapshot | null> {
+// How a list's pages come back. A request carries a run of pages by page
+// number -- never by offset, which made the database walk every earlier page
+// again for each request -- and a few requests run at once. A page holds up
+// to 100 records but not a fixed size: 100 form responses came to a megabyte,
+// so ten pages is a request of ten megabytes at the most.
+const PAGES_PER_REQUEST = 10
+const REQUESTS_AT_ONCE = 6
+
+/** Pages of one list, from page `from` (inclusive) to `to` (exclusive); null is open. */
+interface PageRange { path: string; prefix: string; from: string | null; to: string | null }
+
+/**
+ * Ranges that together hold every page of `path` in `pass`: runs of
+ * PAGES_PER_REQUEST by page number when the count is known, then whatever
+ * lies past them -- normally nothing, there so that a page numbered beyond
+ * the count is still read, never dropped.
+ *
+ * Every request keeps to its list with `like 'page:<pass>:<path>:%'`, and
+ * compares keys only against keys of the same list. The database collates
+ * text as en_US, which all but ignores punctuation: a bound like
+ * `< 'page:…:/appointments:~'` matched none of the list's 334 pages. Within
+ * one list the keys differ only in their five digits, which every collation
+ * orders alike.
+ */
+function pageRanges(pass: string, path: string, pageCount: number | undefined): PageRange[] {
+  const prefix = `page:${pass}:${path}:`
+  const ranges: PageRange[] = []
+  let from: string | null = null
+  for (let page = 0; pageCount !== undefined && page <= pageCount; page += PAGES_PER_REQUEST) {
+    const to = pageKey(pass, path, page + PAGES_PER_REQUEST)
+    ranges.push({ path, prefix, from, to })
+    from = to
+  }
+  ranges.push({ path, prefix, from, to: null })
+  return ranges
+}
+
+/** Every page in the ranges, each range's pages in key order, ranges in the order given. */
+async function loadPageRanges(admin: Admin, accountId: string, ranges: PageRange[]): Promise<unknown[][][]> {
+  const out: unknown[][][] = ranges.map(() => [])
+  await withConcurrency(ranges.map((_, i) => i), REQUESTS_AT_ONCE, async (i) => {
+    const range = ranges[i]!
+    let after: string | null = null
+    for (;;) {
+      let q = admin.from('import_snapshots').select('key, data').eq('account_id', accountId).eq('source', SOURCE).like('key', `${range.prefix}%`)
+      if (after !== null) q = q.gt('key', after)
+      else if (range.from !== null) q = q.gte('key', range.from)
+      if (range.to !== null) q = q.lt('key', range.to)
+      const { data, error } = await q.order('key').limit(PAGES_PER_REQUEST)
+      if (error) throw new Error(`import_snapshots: ${error.message}`)
+      for (const row of data ?? []) out[i]!.push((row.data as unknown[]) ?? [])
+      if (!data || data.length < PAGES_PER_REQUEST) break
+      after = data[data.length - 1]!.key
+    }
+  })
+  return out
+}
+
+/**
+ * One list's records out of its pages, de-duplicated by id: a record on a
+ * later page replaces the same id on an earlier one, as fetchAll does.
+ */
+function recordsOf(pages: unknown[][]): unknown[] {
+  const byId = new Map<unknown, unknown>()
+  const withoutId: unknown[] = []
+  for (const page of pages) {
+    for (const record of page) {
+      const id = (record as { id?: unknown })?.id
+      if (id === undefined || id === null) withoutId.push(record)
+      else byId.set(id, record)
+    }
+  }
+  return [...byId.values(), ...withoutId]
+}
+
+/**
+ * The finished copy, or null when PracticeHub has never been read in full.
+ *
+ * `only` names the lists to load -- a step's PRACTICEHUB_STEP_LISTS. The rest
+ * are left out of `lists` altogether, so practiceHubList refuses one instead
+ * of handing back an empty list. Without it, the whole copy.
+ */
+export async function loadPracticeHubSnapshot(admin: Admin, accountId: string, only?: readonly PracticeHubListPath[]): Promise<PracticeHubSnapshot | null> {
   const meta = await loadPracticeHubMeta(admin, accountId)
   if (!meta) return null
-  const byPath = new Map<string, { byId: Map<unknown, unknown>; withoutId: unknown[] }>()
-  const prefix = `page:${meta.pass}:`
-  // Pages are small (100 records), so a few at a time keeps each response
-  // well under a megabyte however large the clinic.
-  for (let from = 0; ; from += 20) {
-    const { data, error } = await admin
-      .from('import_snapshots')
-      .select('key, data')
-      .eq('account_id', accountId)
-      .eq('source', SOURCE)
-      .like('key', `${prefix}%`)
-      .order('key')
-      .range(from, from + 19)
-    if (error) throw new Error(`import_snapshots: ${error.message}`)
-    for (const row of data ?? []) {
-      const path = row.key.slice(prefix.length, row.key.lastIndexOf(':'))
-      let held = byPath.get(path)
-      if (!held) byPath.set(path, (held = { byId: new Map(), withoutId: [] }))
-      for (const record of (row.data as unknown[]) ?? []) {
-        const id = (record as { id?: unknown })?.id
-        if (id === undefined || id === null) held.withoutId.push(record)
-        else held.byId.set(id, record)
-      }
-    }
-    if (!data || data.length < 20) break
-  }
+  const paths = (Object.keys(meta.pages) as PracticeHubListPath[]).filter((path) => !only || only.includes(path))
+  const ranges = paths.flatMap((path) => (meta.pages[path] ?? 0) > 0 ? pageRanges(meta.pass, path, meta.pages[path]) : [])
+  const loaded = await loadPageRanges(admin, accountId, ranges)
+  const pagesOf = new Map<string, unknown[][]>()
+  ranges.forEach((range, i) => {
+    const pages = pagesOf.get(range.path) ?? []
+    pages.push(...loaded[i]!)
+    pagesOf.set(range.path, pages)
+  })
   const lists: PracticeHubSnapshot['lists'] = {}
-  for (const path of Object.keys(meta.pages) as PracticeHubListPath[]) {
-    const held = byPath.get(path)
+  for (const path of paths) {
+    const pages = pagesOf.get(path)
     // A list PracticeHub answered with no records at all has no pages; one
     // that had pages and lost them is a broken copy, not an empty list.
-    if (!held && (meta.pages[path] ?? 0) > 0) throw new Error(`import_snapshots: the pages of ${path} are missing`)
-    lists[path] = held ? [...held.byId.values(), ...held.withoutId] : []
+    if (!pages?.length && (meta.pages[path] ?? 0) > 0) throw new Error(`import_snapshots: the pages of ${path} are missing`)
+    lists[path] = recordsOf(pages ?? [])
   }
   return { readAt: meta.readAt, baseUrl: meta.baseUrl, lists }
 }
@@ -108,29 +173,8 @@ export async function loadPracticeHubSnapshot(admin: Admin, accountId: string): 
  * plans from that instead of the copy.
  */
 export async function loadPracticeHubPassList(admin: Admin, accountId: string, pass: string, path: string): Promise<unknown[]> {
-  const byId = new Map<unknown, unknown>()
-  const withoutId: unknown[] = []
-  const prefix = `page:${pass}:${path}:`
-  for (let from = 0; ; from += 20) {
-    const { data, error } = await admin
-      .from('import_snapshots')
-      .select('data')
-      .eq('account_id', accountId)
-      .eq('source', SOURCE)
-      .like('key', `${prefix}%`)
-      .order('key')
-      .range(from, from + 19)
-    if (error) throw new Error(`import_snapshots: ${error.message}`)
-    for (const row of data ?? []) {
-      for (const record of (row.data as unknown[]) ?? []) {
-        const id = (record as { id?: unknown })?.id
-        if (id === undefined || id === null) withoutId.push(record)
-        else byId.set(id, record)
-      }
-    }
-    if (!data || data.length < 20) break
-  }
-  return [...byId.values(), ...withoutId]
+  const [pages] = await loadPageRanges(admin, accountId, pageRanges(pass, path, undefined))
+  return recordsOf(pages ?? [])
 }
 
 /** Removes every page a pass saved (a step's fresh link list, once it is stale). */

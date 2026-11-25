@@ -65,6 +65,36 @@ export const PRACTICEHUB_LISTS = [
 ] as const
 export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
 
+// The lists each step's planner reads from the copy, and the only ones a
+// slice of that step loads. The copy is the whole clinic, and a slice used to
+// load all of it to plan one step: a clinic of 33,342 appointments had 77 MB
+// of pages (18 MB of them form responses, 11 MB patient logs), loaded and
+// parsed again on every slice of the Appointments step, which needs 23 MB of
+// it. No slice got through that and its plan inside a function's 60 seconds
+// and memory, so the step was cut off four times running and the import
+// failed having written 300 of the appointments (24 Nov 2026).
+//
+// A list missing here is not loaded, and practiceHubList then throws rather
+// than planning against nothing; a list read with `snapshot.lists[...]`
+// because it may be absent (2.0's) would instead go quietly missing, which is
+// what tests/unit/practicehub-step-lists.test.ts guards against by reading
+// each planner's source.
+export const PRACTICEHUB_STEP_LISTS: Record<PracticeHubStepKind, readonly PracticeHubListPath[]> = {
+  patients: ['/patients', '/practitioners', '/referral_sources', '/v3/patients'],
+  appointments: ['/appointments', '/patients', '/practitioners', '/appointment_types'],
+  appointment_types: ['/appointment_types', '/appointments', '/billable_items'],
+  ledger: ['/patients', '/invoices', '/payments', '/payment_methods'],
+  bonos: ['/patients', '/patient_packages'],
+  treatment_notes: ['/patients', '/clinical_notes'],
+  care_plans: ['/patients', '/care_plans', '/appointment_types'],
+  patient_logs: ['/patients', '/patient_logs'],
+  sticky_notes: ['/patients'],
+  custom_form_responses: ['/patients', '/custom_form_responses'],
+  exercises: ['/patients', '/exercises'],
+  profile_photos: ['/patients'],
+  file_attachments: ['/patients', '/files'],
+}
+
 // Steps whose list carries pre-signed S3 download links, which expire well
 // within the hour: a copy read at the start of a long job is useless by the
 // time the step reaches it. So the job reads THIS list again, fresh, right

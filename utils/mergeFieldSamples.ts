@@ -18,6 +18,7 @@ export const MERGE_FIELD_SAMPLES: Record<string, string> = {
   appointment_time: '10:00',
   google_review_link: 'https://g.page/r/ejemplo/review',
   satisfaction_link: 'https://app.quiroflow.com/valorar/ejemplo',
+  form_link: 'https://app.quiroflow.com/doc/ejemplo',
   waitlist_claim_link: 'https://app.quiroflow.com/w/ejemplo',
   waitlist_slot_datetime: 'viernes 17, 18:30',
   earlier_slot_datetime: 'viernes 17, 18:30',

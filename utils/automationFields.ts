@@ -36,6 +36,11 @@ export interface MergeContext {
   invoiceNumber?: string
   invoiceAmountOwed?: string
   invoicePayLink?: string
+  /**
+   * An email step's form, /doc/<token>: the patient's own copy of the form the
+   * step chose (config.doc_template_id), made when that email goes out.
+   */
+  formUrl?: string
   clinicName?: string
   clinicPhone?: string
   clinicAddress?: string
@@ -198,6 +203,7 @@ function fieldValue(recipient: MergeRecipient, source: string, context?: MergeCo
   if (source === 'invoice_number') return context?.invoiceNumber ?? ''
   if (source === 'invoice_amount_owed') return context?.invoiceAmountOwed ?? ''
   if (source === 'invoice_pay_link') return context?.invoicePayLink ?? ''
+  if (source === 'form_link') return context?.formUrl ?? ''
   // The clinic's online booking page -- what a "come back" message asks them to use.
   if (source === 'booking_link') return context?.bookingUrl ?? ''
   if (source === 'clinic_name') return context?.clinicName ?? ''

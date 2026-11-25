@@ -10,7 +10,7 @@ import { isFormButton } from '~/utils/whatsappTemplateDraft'
 import { templateForm } from '~/server/utils/whatsappTemplateForms'
 import { fillTemplateComponents, templateSendValues } from '~/server/utils/whatsappTemplateFill'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
-import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignTokens, type EmailTheme } from '~/utils/emailDesign'
+import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignTokens, emailStepSendsForm, type EmailTheme } from '~/utils/emailDesign'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
 import { contactableTutor, tutorEmailNote } from '~/server/utils/minorTutor'
@@ -515,7 +515,13 @@ async function runForRecipient(
           // A marketing email carries a way out: the footer link and the
           // List-Unsubscribe headers, signed for this one recipient.
           const unsubscribe = isMarketing && ruleId ? unsubscribeLinks(origin, recipient.kind, recipient.id) : null
-          const result = await runEmailAction(recipient, action.config, context, record, dryRun, unsubscribe)
+          // {{form_link}}: this step's own form, so resolved per step rather
+          // than once per firing like the links above -- and by the email
+          // itself, once it knows it can go out (see emailFormLink).
+          const formLink = emailStepSendsForm(action.config)
+            ? () => emailFormLink(supabase, accountId, recipient, action.config, origin, { rehearsal: dryRun || Boolean(extraContext?.samples) })
+            : undefined
+          const result = await runEmailAction(recipient, action.config, context, record, dryRun, unsubscribe, formLink)
           outcome(result, null)
         } else {
           problems.push(skipped('Email'))
@@ -802,6 +808,56 @@ export async function generateDocLink(supabase: any, accountId: string, patient:
     .select('public_token')
     .single()
   return doc?.public_token ?? null
+}
+
+/**
+ * The link an email step's form goes out as: the patient's own copy of the
+ * form the step chose (config.doc_template_id), at /doc/<token>.
+ *
+ * Throws rather than send an email whose whole point is a form with a dead
+ * button in it: a step with no form chosen fails (fixable, and the builder
+ * says so too), and a lead is skipped -- a form hangs off a patient record
+ * and a lead has none (generateDocLink), and no retry will give them one.
+ *
+ * Minted only for a real send. A dry run reaches nobody, and "Send test to
+ * me" runs against the staff member, who is not a patient -- a copy made for
+ * either would sit on nobody's record or on the wrong one. Both still run the
+ * checks above, and a test send shows the example link (MergeContext.samples).
+ *
+ * An unfilled copy of the same form made for the same patient in the last day
+ * is sent again rather than a second one made: a campaign email parked for
+ * the day's quota (EmailDeferred) comes back through here tomorrow, and a
+ * confirmation and a reminder that both carry the form are one form to fill.
+ */
+async function emailFormLink(
+  supabase: any,
+  accountId: string,
+  recipient: Recipient,
+  config: Record<string, any>,
+  origin: string,
+  opts: { rehearsal: boolean },
+): Promise<string | undefined> {
+  const docTemplateId: string | undefined = config.doc_template_id || undefined
+  if (!docTemplateId) throw new Error('This email links to a form, but no form is chosen for the step, so it was not sent.')
+  if (recipient.kind !== 'patient' || !recipient.patient) {
+    throw new ActionSkipped('This email carries a form, and a lead has no patient record to attach one to, so it was not sent.')
+  }
+  if (opts.rehearsal) return undefined
+  const since = new Date(Date.now() - 86_400_000).toISOString()
+  const { data: open } = await supabase
+    .from('patient_docs')
+    .select('public_token')
+    .eq('account_id', accountId)
+    .eq('patient_id', recipient.patient.id)
+    .eq('template_id', docTemplateId)
+    .is('completed_at', null)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const token = open?.public_token ?? (await generateDocLink(supabase, accountId, recipient.patient, docTemplateId))
+  if (!token) throw new Error('The form chosen for this email could not be prepared for this patient (it may have been deleted), so the email was not sent.')
+  return `${origin}/doc/${token}`
 }
 
 async function runWhatsAppAction(
@@ -1219,6 +1275,11 @@ async function runEmailAction(
   record?: { supabase: any; accountId: string; ruleId?: string; actionId?: string },
   dryRun = false,
   unsubscribe?: UnsubscribeLinks | null,
+  // The step's form link (emailFormLink), asked for only once nothing else
+  // stands in the email's way: a copy of the form is made on the patient's
+  // record by asking, and one for an email that was never going to leave is
+  // a form nobody was sent.
+  formLink?: () => Promise<string | undefined>,
 ): Promise<'sent' | 'dry_run'> {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
@@ -1251,6 +1312,11 @@ async function runEmailAction(
   // channel is set up is the order a clinic actually does things in.
   if (!dryRun && !runtimeConfig.resendApiKey && !runtimeConfig.brevoApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
+  if (formLink) {
+    const formUrl = await formLink()
+    if (formUrl) context = { ...context, formUrl }
+  }
+
   // A tutor is told whose message this is: the body was written for the
   // patient and need not name them.
   const tutorNote = recipient.viaTutor ? tutorEmailNote(recipient.firstName, recipient.preferredLanguage) : ''
@@ -1272,6 +1338,9 @@ async function runEmailAction(
         clinicName: context?.clinicName,
         logoUrl: config.include_logo ? context?.clinicLogoUrl : null,
         button: config.booking_button && context?.bookingUrl ? { text: config.booking_button_text ?? '', url: context.bookingUrl } : null,
+        // The step's form. Its link is the example in a test send, and none
+        // in a dry run, which sends nothing to click.
+        formButton: config.form_button ? { text: config.form_button_text ?? '', url: recipientFieldValue(recipient, 'form_link', context) } : null,
       })
 
   // Deliberately NOT `.catch(() => null)` any more. Resend refuses sends for

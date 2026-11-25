@@ -7,7 +7,8 @@ import type { PickerVariable } from '../VariablePicker.vue'
 // right. Every change goes straight into the step's draft, so the canvas and
 // the page's one Save both see it.
 
-const props = defineProps<{ block: EmailBlock; variables: PickerVariable[]; hasLogo: boolean; marketing: boolean }>()
+// formTitle: the form the step chose, for a link that opens it (empty: none chosen yet).
+const props = defineProps<{ block: EmailBlock; variables: PickerVariable[]; hasLogo: boolean; marketing: boolean; formTitle?: string }>()
 const emit = defineEmits<{ update: [patch: Partial<EmailBlock>] }>()
 const t = useT()
 const set = (patch: Record<string, unknown>) => emit('update', patch as Partial<EmailBlock>)
@@ -130,6 +131,7 @@ const title = computed(() => t(...TITLES[props.block.type]))
         </select>
       </label>
       <input v-if="block.link.kind === 'url'" :class="FIELD" :value="block.link.url" placeholder="https://" data-test="block-button-url" @input="set({ link: { kind: 'url', url: ($event.target as HTMLInputElement).value } })" />
+      <p v-else-if="block.link.kind === 'form'" :class="HINT" data-test="block-button-form-hint">{{ formTitle ? t(`Opens each patient's own copy of "${formTitle}". The form is chosen in the step, beside the email.`, `Abre la copia de cada paciente de «${formTitle}». El formulario se elige en el paso, junto al email.`) : t('Choose the form in the step, beside the email: until then this button is not sent.', 'Elige el formulario en el paso, junto al email: hasta entonces este botón no se envía.') }}</p>
       <p v-else :class="HINT">{{ t("Each patient's own link, filled in when the email goes out.", 'El enlace de cada paciente, que se rellena al enviar.') }}</p>
       <div :class="LABEL">
         {{ t('Width', 'Ancho') }}

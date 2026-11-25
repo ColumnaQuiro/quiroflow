@@ -14,7 +14,7 @@
 // with the values escaped, exactly as it does for an email written in the
 // plain editor. Pure, and shared by the pages and the server.
 
-import { DEFAULT_BOOKING_BUTTON_TEXT, unsubscribeFooterHtml, type UnsubscribeLinks } from './automationEmail'
+import { DEFAULT_BOOKING_BUTTON_TEXT, DEFAULT_FORM_BUTTON_TEXT, unsubscribeFooterHtml, type UnsubscribeLinks } from './automationEmail'
 
 // ------------------------------------------------------------------ the model
 
@@ -39,6 +39,7 @@ export type EmailLink =
   | { kind: 'review' }
   | { kind: 'satisfaction' }
   | { kind: 'pay' }
+  | { kind: 'form' }
   | { kind: 'url'; url: string }
 
 export type Align = 'left' | 'center'
@@ -149,13 +150,14 @@ export function starterEmailDesign(lang: 'es' | 'en' = 'es'): EmailDesign {
 
 /**
  * An email written in the plain editor, as blocks: its logo switch becomes a
- * header, its body a text block, its booking button a button. The body is
+ * header, its body a text block, its form and booking buttons buttons. The body is
  * carried over untouched.
  */
-export function legacyEmailDesign(config: { body?: string; include_logo?: boolean; booking_button?: boolean; booking_button_text?: string | null }): EmailDesign {
+export function legacyEmailDesign(config: { body?: string; include_logo?: boolean; booking_button?: boolean; booking_button_text?: string | null; form_button?: boolean; form_button_text?: string | null }): EmailDesign {
   const blocks: EmailBlock[] = []
   if (config.include_logo) blocks.push({ id: blockId(), type: 'header', align: 'center' })
   blocks.push({ id: blockId(), type: 'text', html: config.body ?? '' })
+  if (config.form_button) blocks.push({ id: blockId(), type: 'button', text: config.form_button_text?.trim() || DEFAULT_FORM_BUTTON_TEXT, link: { kind: 'form' }, align: 'center' })
   if (config.booking_button) blocks.push({ id: blockId(), type: 'button', text: config.booking_button_text?.trim() || DEFAULT_BOOKING_BUTTON_TEXT, link: { kind: 'booking' }, align: 'center' })
   return { version: 1, blocks }
 }
@@ -177,6 +179,7 @@ const LINK_TOKENS: Record<Exclude<EmailLink['kind'], 'url'>, string> = {
   review: '{{google_review_link}}',
   satisfaction: '{{satisfaction_link}}',
   pay: '{{invoice_pay_link}}',
+  form: '{{form_link}}',
 }
 
 export const EMAIL_LINK_KINDS: { value: EmailLink['kind']; label: readonly [string, string] }[] = [
@@ -184,6 +187,7 @@ export const EMAIL_LINK_KINDS: { value: EmailLink['kind']; label: readonly [stri
   { value: 'review', label: ['Google review', 'Reseña de Google'] },
   { value: 'satisfaction', label: ['Rate the visit', 'Valorar la visita'] },
   { value: 'pay', label: ['Pay the invoice', 'Pagar la factura'] },
+  { value: 'form', label: ['Fill in or sign a form', 'Rellenar o firmar un formulario'] },
   { value: 'url', label: ['A web address', 'Una dirección web'] },
 ]
 
@@ -222,6 +226,32 @@ export function emailDesignTokens(design: EmailDesign): Set<string> {
     else if (b.type === 'columns') b.columns.forEach((c) => scan(c.html))
   }
   return keys
+}
+
+/**
+ * Whether an email step puts its form in front of the patient: a
+ * {{form_link}} in the body or anywhere in its blocks, or -- in the plain
+ * editor -- the "Button to fill the form" switch. Read by the send, which
+ * mints the link only then, and by the builder's checks.
+ */
+export function emailStepSendsForm(config: { design?: unknown; body?: unknown; form_button?: unknown } | null | undefined): boolean {
+  if (!config) return false
+  const design = asEmailDesign(config.design)
+  if (design) return emailDesignTokens(design).has('form_link')
+  return Boolean(config.form_button) || (typeof config.body === 'string' && config.body.includes('{{form_link}}'))
+}
+
+/**
+ * The design with a button to its form, when nothing in it links to the
+ * form yet: placed after the content and before any footer, where a
+ * booking button would go. Unchanged when the form is already linked.
+ */
+export function withFormButton(design: EmailDesign, lang: 'es' | 'en' = 'es'): EmailDesign {
+  if (emailDesignTokens(design).has('form_link')) return design
+  const button: EmailBlock = { id: blockId(), type: 'button', text: lang === 'en' ? 'Fill in the form' : DEFAULT_FORM_BUTTON_TEXT, link: { kind: 'form' }, align: 'center' }
+  let at = design.blocks.length
+  while (at > 0 && design.blocks[at - 1]!.type === 'footer') at--
+  return { ...design, blocks: [...design.blocks.slice(0, at), button, ...design.blocks.slice(at)] }
 }
 
 /** Whether the email says anything at all: a text, a heading, an image or a button. */

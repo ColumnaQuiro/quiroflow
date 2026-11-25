@@ -32,6 +32,7 @@ const store = useAccountStore()
 const { fields, fillHtml, fillText, clinicName, logoUrl } = useMergeSamples()
 
 const config = computed(() => b.stepsById.value.get(props.stepId)?.config ?? {})
+const formTitle = computed(() => b.docTemplates.value.find((d) => d.id === config.value.doc_template_id)?.title ?? '')
 const design = computed<EmailDesign>(() => config.value.design ?? { version: 1, blocks: [] })
 const marketing = computed(() => !!b.draft.value.rule.is_marketing)
 
@@ -405,6 +406,7 @@ async function openSave() {
               :variables="fields"
               :has-logo="!!logoUrl"
               :marketing="marketing"
+              :form-title="formTitle"
               @update="updateBlock(selected.id, $event)"
             />
             <p v-else class="text-[13px] text-ink-muted">{{ t('Click a part of the email, or a block on the left, to change it.', 'Pulsa una parte del email, o un bloque a la izquierda, para cambiarlo.') }}</p>

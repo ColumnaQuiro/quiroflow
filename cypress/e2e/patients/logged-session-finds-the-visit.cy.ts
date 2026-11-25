@@ -182,6 +182,50 @@ describe('Logging a bono session', () => {
     })
   })
 
+  it('warns that a booking today is the visit, instead of inventing another', () => {
+    // A session logged three minutes before the patient's 17:00 booking: the
+    // booking had not started and nobody had checked them in, so the dialog
+    // could not see it and offered only "not on the calendar", already picked.
+    // That invented a typeless visit at 16:57, and checking the real visit out
+    // 28 seconds later took a second session for the one visit.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Cita', lastName: 'Luego' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 10',
+          sessionsTotal: 10,
+          sessionsUsed: 2,
+          priceCents: 46000,
+        }).then((purchase: any) => {
+          // Later today, or a minute ago if later would be tomorrow: either is
+          // a booking today that nobody has been checked in for.
+          const soon = new Date(Date.now() + 5 * 60_000)
+          const startsAt = soon.getDate() === new Date().getDate() ? soon : new Date(Date.now() - 60_000)
+          cy.task('db:createAppointment', {
+            accountId: account.accountId,
+            clinicId: account.clinicId,
+            patientId: patient.id,
+            practitionerId: account.teamMemberId,
+            startsAt: startsAt.toISOString(),
+          })
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${patient.id}?tab=billing`)
+
+          cy.get('[data-cy="log-session-open"]').click()
+          cy.get('[data-cy="log-session-booked-today"]').should('be.visible').and('contain', 'checking the visit out on the calendar uses the session')
+          cy.get('[data-cy="log-session-visit"]').should('not.exist')
+          cy.get('[data-cy="log-session-new"] input[type="radio"]').should('not.be.checked')
+          cy.get('[data-cy="confirm-dialog-confirm"]').should('be.disabled')
+          cy.task<any>('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects) => {
+            expect(effects.sessions.length, 'nothing drawn from the bono').to.eq(0)
+            expect(effects.purchase.sessions_used).to.eq(2)
+          })
+        })
+      })
+    })
+  })
+
   it('uses no session when the visit it needs cannot be recorded', () => {
     // The visit insert's error used to be discarded: the session was then
     // recorded against no visit and the bono was one session down, with

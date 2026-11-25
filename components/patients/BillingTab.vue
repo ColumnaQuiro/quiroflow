@@ -11,7 +11,7 @@ import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefu
 import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
 import { backdatedPaidAt, isFuturePaymentDate, todayPaymentDate } from '~/utils/paymentDate'
 import { bonoVisitChargeCents } from '~/utils/visitCharging'
-import { loadUnloggedVisits, localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
+import { loadUnloggedVisits, localDateStr, type BookedVisit, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null; contactBlocked?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
@@ -2205,6 +2205,9 @@ const unloggedVisits = ref<UnloggedVisit[]>([])
 // And the ones something already paid for, so the dialog can say so before
 // "not on the calendar" invents a second visit on the same day.
 const coveredVisits = ref<CoveredVisit[]>([])
+// And today's bookings nobody has been checked in for: checking one out takes
+// the session itself, so logging it here as well would take two.
+const bookedToday = ref<BookedVisit[]>([])
 // The ones nothing has paid for at all -- what the bono card warns about. A
 // visit paid at the walk-in price is offered by Log session too, but is not
 // missing anything.
@@ -2216,6 +2219,7 @@ async function loadUnlogged() {
     const found = await loadUnloggedVisits(supabase, props.patientId)
     unloggedVisits.value = found.unlogged
     coveredVisits.value = found.covered
+    bookedToday.value = found.bookedToday
   } finally {
     loadingUnlogged.value = false
   }
@@ -3815,6 +3819,7 @@ const fieldId = useId()
       :charged-at-purchase="!!logDialogFor.charged_at_purchase"
       :visits="unloggedVisits"
       :covered-visits="coveredVisits"
+      :booked-today="bookedToday"
       :loading="loadingUnlogged"
       :busy="loggingSessionFor !== null"
       @confirm="onLogSessionConfirm"

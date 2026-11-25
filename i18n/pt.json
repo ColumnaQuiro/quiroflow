@@ -4717,7 +4717,7 @@
   "Income paid": "Receita cobrada",
   "Income paid by month": "Receita cobrada por mês",
   "Income paid by practitioner": "Receita cobrada por profissional",
-  "Income paid ÷ completed visits (the dashboard called this PVA)": "Receita cobrada ÷ consultas concluídas (o painel chamava-lhe PVA)",
+  "What each completed visit was worth: the bono session it used, or else its invoice. Visits with neither (membership, not charged) are left out": "Quanto valeu cada consulta concluída: a sessão de bono que usou ou, se não, a sua fatura. As que não têm nenhuma (quota, por cobrar) ficam de fora",
   "Income per new patient": "Receita por paciente novo",
   "Income, visits and retention at a glance": "Receitas, consultas e retenção num relance",
   "Income, visits, new patients and conversion": "Receita, consultas, pacientes novos e conversão",

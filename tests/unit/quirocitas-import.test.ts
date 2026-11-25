@@ -22,6 +22,7 @@ import {
   quirocitasPractitionerMatcher,
   quirocitasReadQueue,
   quirocitasReadState,
+  quirocitasTypeColour,
   quirocitasVisitNotes,
   splitQuirocitasName,
   QUIROCITAS_COPY_VERSION,
@@ -836,6 +837,34 @@ describe('a cash page whose ◄ goes back a day', () => {
         : new Response('<form action="diario.php"><input type="submit" name="franja" value="Mes entero"></form>', { status: 200 }))
       await expect(client().ledger(null, 1)).rejects.toThrow(QuirocitasLedgerError)
       await expect(client().ledger(null, 1)).rejects.toThrow('on opening it, after "Mes entero"')
+    })
+  })
+
+  describe('appointment type colours', () => {
+    // Quirocitas' eight fixed types, by the exact label an appointment row carries.
+    it('gives each of the eight Quirocitas types its calendar colour', () => {
+      expect(quirocitasTypeColour('1a. Visita')).toBe('#f5d0fe')
+      expect(quirocitasTypeColour('Re-examen')).toBe('#fde68a')
+      expect(quirocitasTypeColour('Informe 1a.V')).toBe('#22c55e')
+      expect(quirocitasTypeColour('Ajuste')).toBe('#bfdbfe')
+      expect(quirocitasTypeColour('Charla')).toBe('#bbf7d0')
+      expect(quirocitasTypeColour('Reex. + Ajuste')).toBe('#f97316')
+      expect(quirocitasTypeColour('Informe Rev.')).toBe('#84cc16')
+      expect(quirocitasTypeColour('Reserva PV')).toBe('#3b82f6')
+    })
+
+    it('tells apart the pairs that overlap on a keyword', () => {
+      // "Reex. + Ajuste" carries both "reex" and "ajuste"; it must not read as either.
+      expect(quirocitasTypeColour('Reex. + Ajuste')).not.toBe(quirocitasTypeColour('Ajuste'))
+      expect(quirocitasTypeColour('Reex. + Ajuste')).not.toBe(quirocitasTypeColour('Re-examen'))
+      // The two "Informe" types are different colours.
+      expect(quirocitasTypeColour('Informe 1a.V')).not.toBe(quirocitasTypeColour('Informe Rev.'))
+    })
+
+    it('ignores case and accents, and leaves an unknown type uncoloured', () => {
+      expect(quirocitasTypeColour('  AJUSTE ')).toBe('#bfdbfe')
+      expect(quirocitasTypeColour('Reexamen')).toBe('#fde68a')
+      expect(quirocitasTypeColour('Masaje')).toBeNull()
     })
   })
 })

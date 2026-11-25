@@ -321,6 +321,33 @@ export function quirocitasNamesChiropractors(s: Pick<QuirocitasSnapshot, 'patien
 /** "Charla" is how Quirocitas books a phone call to a patient: a reminder, not a visit. */
 export const QUIROCITAS_CALL_TYPE = 'Charla'
 
+// Quirocitas' eight appointment types are hard-coded in its own page, the same
+// in every clinic, and each is drawn on the calendar in a fixed colour (a CSS
+// class per type). The clinic cannot change them, and there is no per-type
+// price or length to read -- only the colour. So a type imported from
+// Quirocitas lands on QuiroFlow's calendar in the colour it had there, snapped
+// to the nearest palette swatch (utils/calendarPalette.ts) so it looks native,
+// instead of the grey a colourless type shows as. Matched on the name alone,
+// normalised, because that is all an appointment row carries; the order
+// matters -- "Reex. + Ajuste" must be caught before plain "Ajuste", and
+// "Informe 1a.V" before "Informe Rev.".
+const QUIROCITAS_TYPE_COLOURS: { match: RegExp; colour: string }[] = [
+  { match: /reex.*ajuste/, colour: '#f97316' }, // Reex. + Ajuste → Orange
+  { match: /informe.*1/, colour: '#22c55e' }, //   Informe 1a.V  → Green
+  { match: /informe/, colour: '#84cc16' }, //       Informe Rev. → Lime
+  { match: /re-?exam/, colour: '#fde68a' }, //      Re-examen     → Soft amber
+  { match: /^1a|visita/, colour: '#f5d0fe' }, //    1a. Visita    → Soft fuchsia
+  { match: /charla/, colour: '#bbf7d0' }, //        Charla        → Soft green
+  { match: /reserva/, colour: '#3b82f6' }, //       Reserva PV    → Blue
+  { match: /ajuste/, colour: '#bfdbfe' }, //        Ajuste        → Soft blue
+]
+
+/** The calendar colour a Quirocitas appointment type had there, or null for an unknown one (keeps the column default). */
+export function quirocitasTypeColour(name: string): string | null {
+  const n = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+  return QUIROCITAS_TYPE_COLOURS.find((c) => c.match.test(n))?.colour ?? null
+}
+
 export interface QuirocitasAppointmentRow {
   ref: string
   patientRef: string

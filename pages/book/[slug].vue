@@ -3,7 +3,7 @@ import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { practitionerHoursAt, practitionerWindowsForDay } from '~/utils/businessHours'
-import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, type OnlineBookingWindows } from '~/utils/bookingSlots'
+import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel, spreadDaySlots, type OnlineBookingWindows } from '~/utils/bookingSlots'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { BOOKING_LANGUAGES, bookingLanguageFromAcceptLanguage, bookingLanguageFromList, bookingLanguageOfTag, type BookingLanguage } from '~/utils/bookingLanguage'
 
@@ -192,6 +192,10 @@ const locationHours = ref<{ team_member_id: string; clinic_id: string; business_
 // (get_appointment_type_booking_windows). A type missing here is offered
 // whenever its practitioner is free.
 const typeWindows = ref<Record<string, OnlineBookingWindows>>({})
+// How many of a day's free times each type shows, for types that limit it
+// (appointment_types.online_slots_per_day, get_appointment_type_slots_per_day).
+// A type missing here shows them all, as it does when the read fails.
+const slotsPerDay = ref<Record<string, number>>({})
 // accounts.online_booking_min_notice_hours (get_online_booking_min_notice):
 // nothing is offered sooner than this many hours from now, and the database
 // refuses it too. 0 when the read fails, as before the setting existed.
@@ -807,6 +811,9 @@ function dayHasAvailability(date: Date): boolean {
 const daySlots = computed<DaySlot[]>(() => {
   if (!selectedDate.value || !appointmentType.value) return []
   const date = selectedDate.value
+  // Only so many of the day's times when the type says so, spread across it:
+  // of all the free ones when any practitioner will do, of theirs otherwise.
+  const perDay = slotsPerDay.value[appointmentTypeId.value]
 
   if (anyPractitionerMode.value) {
     // Union across every practitioner -- a slot is offered if at least one of
@@ -820,12 +827,15 @@ const daySlots = computed<DaySlot[]>(() => {
         if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
       }
     }
-    return [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([ms, memberId]) => ({ time: new Date(ms), memberId }))
+    return spreadDaySlots(
+      [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([ms, memberId]) => ({ time: new Date(ms), memberId })),
+      perDay,
+    )
   }
 
   const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
   const times = slotsForMember(date, teamMemberId.value, teamMember.value?.business_hours, busy)
-  return times.map((time) => ({ time, memberId: teamMemberId.value }))
+  return spreadDaySlots(times, perDay).map((time) => ({ time, memberId: teamMemberId.value }))
 })
 
 const morningSlots = computed(() => daySlots.value.filter((s) => clinicHourOf(s.time, clinicTimeZone.value) < 14))
@@ -1163,7 +1173,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value; minNoticeHours?: number }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value; minNoticeHours?: number; slotsPerDay?: typeof slotsPerDay.value }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1206,7 +1216,7 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
   // a window -- a wasted form, never a booking at the wrong time.
   const shared = parsed.team_members.filter((m) => m.clinic_ids.length > 1).map((m) => m.id)
   const typeIds = parsed.appointment_types.map((t) => t.id)
-  const [perLocation, windows, noticeHours] = await Promise.all([
+  const [perLocation, windows, noticeHours, perDay] = await Promise.all([
     shared.length
       ? supabase.rpc('get_practitioner_location_hours' as never, { p_team_member_ids: shared } as never).then(({ data }) => (data as unknown as typeof locationHours.value | null) ?? [])
       : Promise.resolve([] as typeof locationHours.value),
@@ -1215,8 +1225,12 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
       : Promise.resolve({} as typeof typeWindows.value),
     // Every location is the same account, so any of them answers.
     supabase.rpc('get_online_booking_min_notice', { p_clinic_id: parsed.clinics[0].id }).then(({ data }) => data ?? 0),
+    // Failing shows every free time, as before the setting existed.
+    typeIds.length
+      ? supabase.rpc('get_appointment_type_slots_per_day', { p_type_ids: typeIds }).then(({ data }) => Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_slots_per_day])))
+      : Promise.resolve({} as typeof slotsPerDay.value),
   ])
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows, minNoticeHours: noticeHours }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows, minNoticeHours: noticeHours, slotsPerDay: perDay }
 })
 
 if (import.meta.server) {
@@ -1242,6 +1256,7 @@ function applyBooking(payload: BookingPayload | null) {
   locationHours.value = payload.locationHours ?? []
   typeWindows.value = payload.typeWindows ?? {}
   minNoticeHours.value = payload.minNoticeHours ?? 0
+  slotsPerDay.value = payload.slotsPerDay ?? {}
   // The embedding site's language, now that the clinic's settings say
   // whether to follow it. Here so that the server's HTML is in it already.
   if (!queryLang && siteLang && parsed.account.online_booking_hide_language_picker) lang.value = siteLang

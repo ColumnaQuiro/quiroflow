@@ -55,6 +55,8 @@ interface Form {
   windowsAll: BusinessHours
   /** A practitioner's own times, in place of everyone's. */
   windowsOwn: Record<string, BusinessHours>
+  /** appointment_types.online_slots_per_day: how many free times a day the booking page shows; '' for all. */
+  slotsPerDay: string | number
   /** Places, when the type is a class; '' for an individual visit. */
   places: string | number
   payment: boolean
@@ -115,6 +117,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
         .filter(([id]) => people.some((p) => p.id === id))
         .map(([id, week]) => [id, fullWeek(week)]),
     ),
+    slotsPerDay: row.online_slots_per_day != null ? String(row.online_slots_per_day) : '',
     places: row.class_capacity != null ? String(row.class_capacity) : '',
     payment: !!row.online_payment_required,
     deposit: centsToInput(row.online_deposit_cents),
@@ -209,6 +212,7 @@ const changes = computed(() => {
   if (!same(f.maxDays, before.maxDays)) out.online_max_days_ahead = parseMinutes(f.maxDays)
   const windows = windowsValue(f)
   if (!same(windows, windowsValue(before))) out.online_booking_windows = windows as unknown as Json
+  if (!same(f.slotsPerDay, before.slotsPerDay)) out.online_slots_per_day = String(f.slotsPerDay).trim() === '' ? null : Number(f.slotsPerDay)
   if (!same(f.places, before.places)) out.class_capacity = String(f.places).trim() === '' ? null : Number(f.places)
   if (f.payment !== before.payment) out.online_payment_required = f.payment
   // A deposit only means something while payment is taken at booking, and
@@ -285,6 +289,13 @@ const placesProblem = computed(() => {
   const n = Number(v)
   return !Number.isInteger(n) || n < 2 || n > 200
 })
+// Between 1 and 24 a day (the column's own check); empty shows every free time.
+const slotsPerDayProblem = computed(() => {
+  const v = String(form.value?.slotsPerDay ?? '').trim()
+  if (v === '') return false
+  const n = Number(v)
+  return !Number.isInteger(n) || n < 1 || n > 24
+})
 // Each week of times as the hours editor checks it; nothing while they are off.
 const windowProblems = computed(() => {
   const f = form.value
@@ -292,7 +303,7 @@ const windowProblems = computed(() => {
   return { all: hoursProblems(f.windowsAll), own: Object.fromEntries(Object.entries(f.windowsOwn).map(([id, week]) => [id, hoursProblems(week)])) }
 })
 const windowsInvalid = computed(() => Object.keys(windowProblems.value.all).length > 0 || Object.values(windowProblems.value.own).some((p) => Object.keys(p).length > 0))
-const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0 && !placesProblem.value && !windowsInvalid.value)
+const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0 && !placesProblem.value && !slotsPerDayProblem.value && !windowsInvalid.value)
 const priceCents = computed(() => {
   const p = parseEurosToCents(form.value?.price ?? '')
   return p === null || Number.isNaN(p) ? 0 : p
@@ -711,6 +722,15 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                     <UiBtn data-cy="type-windows-set" @click="form.windowsOn = true">{{ t('Only at set times', 'Solo a unas horas') }}</UiBtn>
                   </div>
                 </div>
+                <label v-if="String(form.places).trim() === ''" class="flex flex-col gap-1.5 border-t border-line-row pb-1 pt-3 text-[13px] font-semibold text-ink-700">
+                  {{ t('Times shown per day', 'Huecos que se muestran por día') }}
+                  <span class="flex items-center gap-2">
+                    <input v-model="form.slotsPerDay" data-cy="type-slots-per-day" type="number" min="1" max="24" inputmode="numeric" :placeholder="t('All', 'Todos')" :class="[inputClass, 'w-[120px]', slotsPerDayProblem ? 'border-danger-text' : 'border-line-control']" />
+                    <span class="text-[14px] font-normal text-ink-500">{{ t('at most', 'como máximo') }}</span>
+                  </span>
+                  <span v-if="slotsPerDayProblem" :class="errorText" data-cy="type-error-slots-per-day">{{ t('Between 1 and 24, or empty to show them all.', 'Entre 1 y 24, o vacío para mostrarlos todos.') }}</span>
+                  <span v-else :class="hint">{{ t('On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.', 'En la página de reservas, de los huecos libres de cada día solo se muestran estos, repartidos a lo largo del día, para que la agenda se vea con demanda. Cuando se reserva uno, otro hueco libre ocupa su lugar. Vacío: todos los huecos libres. Desde la agenda podéis seguir dando cualquier hora.') }}</span>
+                </label>
                 <SettingsSwitchRow
                   v-model="form.payment"
                   data-cy="type-payment"

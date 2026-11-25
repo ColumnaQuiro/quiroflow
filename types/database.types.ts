@@ -2466,6 +2466,7 @@ export type Database = {
           online_deposit_cents: number | null
           online_description: string | null
           online_max_days_ahead: number | null
+          online_slots_per_day: number | null
           practitioner_ids: string[]
           online_payment_required: boolean
           sort_order: number | null
@@ -2490,6 +2491,7 @@ export type Database = {
           online_deposit_cents?: number | null
           online_description?: string | null
           online_max_days_ahead?: number | null
+          online_slots_per_day?: number | null
           practitioner_ids?: string[]
           online_payment_required?: boolean
           sort_order?: number | null
@@ -2514,6 +2516,7 @@ export type Database = {
           online_deposit_cents?: number | null
           online_description?: string | null
           online_max_days_ahead?: number | null
+          online_slots_per_day?: number | null
           practitioner_ids?: string[]
           online_payment_required?: boolean
           sort_order?: number | null
@@ -11675,6 +11678,13 @@ export type Database = {
         Returns: {
           appointment_type_id: string
           online_booking_windows: Json
+        }[]
+      }
+      get_appointment_type_slots_per_day: {
+        Args: { p_type_ids: string[] }
+        Returns: {
+          appointment_type_id: string
+          online_slots_per_day: number
         }[]
       }
       get_booking_blocked_times: {

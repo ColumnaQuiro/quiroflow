@@ -10826,6 +10826,9 @@
   "Plans already here are skipped, and kept as the clinic has them.": "Bereits vorhandene Pläne werden übersprungen und bleiben so, wie die Praxis sie hat.",
   "Run Patients and Appointment types first.": "Führen Sie zuerst Patienten und Terminarten aus.",
   "Save the care plans": "Pläne speichern",
-  "The preview lists every plan and what it becomes, so you can check it first.": "Die Vorschau zeigt jeden Plan und was daraus wird, damit Sie ihn vorher prüfen können."
+  "The preview lists every plan and what it becomes, so you can check it first.": "Die Vorschau zeigt jeden Plan und was daraus wird, damit Sie ihn vorher prüfen können.",
+  "Times shown per day": "Angezeigte Termine pro Tag",
+  "Between 1 and 24, or empty to show them all.": "Zwischen 1 und 24, oder leer, um alle anzuzeigen.",
+  "On the booking page, of the free times each day only this many are shown, spread across the day, so the diary looks in demand. When one is booked, another free time takes its place. Empty: every free time. The team can still book any time from the calendar.": "Auf der Buchungsseite werden von den freien Zeiten jedes Tages nur so viele angezeigt, über den Tag verteilt, damit der Kalender gefragt wirkt. Wird eine gebucht, tritt eine andere freie Zeit an ihre Stelle. Leer: alle freien Zeiten. Das Team kann im Kalender weiterhin jederzeit buchen."
  }
 }

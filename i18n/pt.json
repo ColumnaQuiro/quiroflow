@@ -1131,6 +1131,8 @@
   "{0} failed": "{0} falharam",
   "{0} fee (€)": "Taxa: {0} (€)",
   "{0} files are listed in Quirocitas but missing on its server (they do not open there either).": "{0} ficheiros estão listados no Quirocitas mas faltam no seu servidor (também não abrem lá).",
+  "{0} refunds in the cash ledger ({1} given back) come in as negative payments on the patient, as QuiroFlow records a refund.": "{0} devoluções da caixa ({1} devolvidos) entram como pagamentos negativos no paciente, como o QuiroFlow regista uma devolução.",
+  "Could not note which files Quirocitas does not have: {0}": "Não foi possível anotar que ficheiros o Quirocitas não tem: {0}",
   "{0} files belong to patients deleted in PracticeHub, so there is no patient to attach them to. They are left alone.": "{0} ficheiros pertencem a pacientes eliminados no PracticeHub, por isso não há paciente a quem os associar. Ficam como estão.",
   "{0} files belong to patients not imported yet: run Patients first.": "{0} ficheiros pertencem a pacientes ainda não importados: execute primeiro Pacientes.",
   "{0} files came across without their content": "{0} ficheiros chegaram sem o seu conteúdo",

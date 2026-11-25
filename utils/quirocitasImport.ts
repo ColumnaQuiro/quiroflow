@@ -16,6 +16,7 @@ import {
   quirocitasPhone,
   quirocitasPractitionerMatcher,
   quirocitasRecordsReadThisPass,
+  quirocitasTypeColour,
   quirocitasVisitNotes,
   type QuirocitasAppointmentRow,
   type QuirocitasPaymentRow,
@@ -410,7 +411,8 @@ export function quirocitasImporter(ctx: QuirocitasImportContext) {
         if (noClinic) return { written: 0, errors: [t('Nothing was written: no clinic is chosen (see above).', 'No se escribió nada: no hay clínica elegida (ver arriba).')] }
         const errors: string[] = []
         for (const name of newTypes) {
-          const { data, error } = await supabase.from('appointment_types').insert({ account_id: accountId, name, duration_minutes: 15 }).select('id, name, duration_minutes').single()
+          const colour = quirocitasTypeColour(name)
+          const { data, error } = await supabase.from('appointment_types').insert({ account_id: accountId, name, duration_minutes: 15, ...(colour ? { color: colour } : {}) }).select('id, name, duration_minutes').single()
           if (error) errors.push(`${name}: ${error.message}`)
           else types.set(name.toLowerCase(), data)
         }

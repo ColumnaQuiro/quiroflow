@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadLedgerPartial, loadQuirocitasMeta, saveLedgerPartial, saveQuirocitasMeta, type QuirocitasMeta } from '../../server/utils/quirocitasSnapshotStore'
+import { loadLedgerPartial, loadQuirocitasMeta, markQuirocitasFilesAbsent, saveLedgerPartial, saveQuirocitasMeta, type QuirocitasMeta } from '../../server/utils/quirocitasSnapshotStore'
 import type { QuirocitasLedgerRow } from '../../utils/quirocitasPages'
 
 // How the copy read from Quirocitas is laid out in import_snapshots, against
@@ -96,5 +96,18 @@ describe('the Quirocitas copy in import_snapshots', () => {
     await saveLedgerPartial(t.admin, ACCOUNT, null)
     expect(t.keys()).toEqual(['meta'])
     expect(await loadLedgerPartial(t.admin, ACCOUNT)).toBeNull()
+  })
+
+  it('marks the photos and files Quirocitas does not have on their records, and nothing else', async () => {
+    const t = fakeTable()
+    const record = (id: string) => ({ list: { id }, ficha: { id, hasPhoto: true }, history: { tests: [{ id: '8', src: `${id}/pruebas/a.png` }, { id: '9', src: `${id}/pruebas/b.png` }] } })
+    for (const id of ['101', '102', '103']) t.rows.push({ account_id: ACCOUNT, source: 'quirocitas', key: `patient:${id}`, data: record(id) })
+    await markQuirocitasFilesAbsent(t.admin, ACCOUNT, [{ recordId: '101', photo: true }, { recordId: '101', testId: '9' }, { recordId: '102', testId: '8' }])
+    const data = (key: string) => t.rows.find((r) => r.key === key)!.data as { ficha: Record<string, unknown>; history: { tests: { absent?: boolean }[] } }
+    expect(data('patient:101').ficha).toEqual({ id: '101', hasPhoto: true, photoAbsent: true })
+    expect(data('patient:101').history.tests.map((x) => x.absent ?? false)).toEqual([false, true])
+    expect(data('patient:102').ficha).not.toHaveProperty('photoAbsent')
+    expect(data('patient:102').history.tests.map((x) => x.absent ?? false)).toEqual([true, false])
+    expect(data('patient:103')).toEqual(record('103'))
   })
 })

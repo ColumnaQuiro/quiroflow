@@ -9,6 +9,7 @@ import {
   loadQuirocitasList,
   loadQuirocitasMeta,
   loadQuirocitasSnapshot,
+  markQuirocitasFilesAbsent,
   quirocitasRecordStamps,
   saveLedgerPartial,
   saveQuirocitasList,
@@ -495,6 +496,7 @@ async function applySlice(
     t,
     fetchFile: (body) => storeQuirocitasFile(admin, accountId, client, body),
     compressFile: (fileId) => compressStoredFile(admin, accountId, fileId),
+    forgetFiles: (absent) => markQuirocitasFilesAbsent(admin, accountId, absent),
   })
   const plan = await importer.plan(kind, snapshot, { quietUpcoming: options.quietUpcoming ?? true })
   return writePlan(plan, kind, p, deadline, beat, t)
@@ -504,7 +506,7 @@ async function applySlice(
 interface WritablePlan {
   total: number
   warnings: string[]
-  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[] }>
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; skipped?: number }>
 }
 
 /** Writes as much of a step's plan as this slice has time for, carrying its counts on from earlier slices. Shared by both sources. */
@@ -540,7 +542,11 @@ async function writePlan(
   p.errors = [...(p.errors ?? []), ...res.errors].slice(0, 200)
 
   if (outOfTime) {
-    p.stalls = res.written ? 0 : (p.stalls ?? 0) + 1
+    // Finding that something has nothing to write moves the step on as much
+    // as writing does, once it is remembered: one clinic's 12,238 photos were
+    // all blank placeholders, so every slice wrote nothing and the step was
+    // stopped three slices in, each having asked for the same ones.
+    p.stalls = res.written || res.skipped ? 0 : (p.stalls ?? 0) + 1
     if (p.stalls < MAX_STALLS) return { progress: p }
     p.errors.unshift(t('Stopped: this step made no progress in three tries.', 'Parado: este paso no avanzó en tres intentos.'))
   }

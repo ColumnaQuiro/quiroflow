@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '~/types/database.types'
 import type { QuirocitasLedgerRow, QuirocitasListPatient } from '~/utils/quirocitasPages'
 import type { QuirocitasLedgerMonth, QuirocitasRecord, QuirocitasSnapshot } from '~/utils/quirocitasRows'
+import type { QuirocitasAbsentFile } from '~/utils/quirocitasImport'
 
 // The copy of a clinic read out of Quirocitas, kept in import_snapshots.
 //
@@ -95,6 +96,47 @@ export async function saveLedgerPartial(admin: Admin, accountId: string, partial
 export async function saveQuirocitasRecords(admin: Admin, accountId: string, records: QuirocitasRecord[]) {
   if (!records.length) return
   await putRows(admin, accountId, records.map((r) => ({ key: `${PATIENT}${r.list.id}`, data: r })))
+  forgetCached(accountId)
+}
+
+/**
+ * Marks, on the records they belong to, the photos and test files Quirocitas
+ * turned out not to have (QuirocitasFicha.photoAbsent, a test's `absent`), so
+ * the Files step stops asking for them. A new read of a record replaces it
+ * whole, which asks once more.
+ */
+export async function markQuirocitasFilesAbsent(admin: Admin, accountId: string, absent: QuirocitasAbsentFile[]) {
+  const byRecord = new Map<string, { photo: boolean; tests: Set<string> }>()
+  for (const a of absent) {
+    const mark = byRecord.get(a.recordId) ?? { photo: false, tests: new Set<string>() }
+    if (a.photo) mark.photo = true
+    if (a.testId) mark.tests.add(a.testId)
+    byRecord.set(a.recordId, mark)
+  }
+  // A few dozen at a time: a record with years of history is tens of kilobytes.
+  const ids = [...byRecord.keys()]
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error } = await admin
+      .from('import_snapshots')
+      .select('key, data')
+      .eq('account_id', accountId)
+      .eq('source', SOURCE)
+      .in('key', ids.slice(i, i + 50).map((id) => `${PATIENT}${id}`))
+    if (error) throw new Error(`import_snapshots: ${error.message}`)
+    const rows = (data ?? []).map((row) => {
+      const r = row.data as unknown as QuirocitasRecord
+      const mark = byRecord.get(row.key.slice(PATIENT.length))!
+      return {
+        key: row.key,
+        data: {
+          ...r,
+          ficha: mark.photo ? { ...r.ficha, photoAbsent: true } : r.ficha,
+          history: mark.tests.size ? { ...r.history, tests: r.history.tests.map((t) => (mark.tests.has(t.id) ? { ...t, absent: true } : t)) } : r.history,
+        },
+      }
+    })
+    if (rows.length) await putRows(admin, accountId, rows)
+  }
   forgetCached(accountId)
 }
 

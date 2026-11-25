@@ -183,6 +183,12 @@ describe('specialBonoPriceCents', () => {
     expect(specialBonoPriceCents(52800, '449,99')).toBe(44999)
     expect(specialBonoPriceCents(52800, '0')).toBe(0)
   })
+  it('reads the number v-model hands back from a number input', () => {
+    expect(specialBonoPriceCents(52800, 450)).toBe(45000)
+    expect(specialBonoPriceCents(52800, 528)).toBeNull()
+    expect(specialBonoPriceCents(52800, 0)).toBe(0)
+    expect(specialBonoPriceCents(52800, null)).toBeNull()
+  })
   it('passes a higher price through, for the sale to refuse', () => {
     expect(specialBonoPriceCents(52800, '600')).toBe(60000)
   })

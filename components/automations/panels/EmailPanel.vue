@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { FIELD, HINT, LABEL, NOTE, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
-import { automationEmailHtml, emptyBodyPlaceholderHtml, DEFAULT_BOOKING_BUTTON_TEXT } from '~/utils/automationEmail'
-import { asEmailDesign, emailDesignHtml, legacyEmailDesign, type EmailTheme } from '~/utils/emailDesign'
+import { automationEmailHtml, emptyBodyPlaceholderHtml, DEFAULT_BOOKING_BUTTON_TEXT, DEFAULT_FORM_BUTTON_TEXT } from '~/utils/automationEmail'
+import { asEmailDesign, emailDesignHtml, emailStepSendsForm, legacyEmailDesign, withFormButton, type EmailTheme } from '~/utils/emailDesign'
 
 // An email step, in the drawer beside the canvas.
 //
@@ -21,7 +21,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const config = computed(() => b.stepsById.value.get(props.stepId)!.config)
 const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, patch)
-const { fields, fillHtml, fillText, clinicName, logoUrl, bookingUrl } = useMergeSamples()
+const { fields, fillHtml, fillText, sample, clinicName, logoUrl, bookingUrl } = useMergeSamples()
 
 const design = computed(() => asEmailDesign(config.value.design))
 const editing = ref(false)
@@ -36,6 +36,19 @@ onMounted(() => {
 function switchToBlocks() {
   set({ design: legacyEmailDesign(config.value) })
   editing.value = true
+}
+
+// The form the email carries: each patient gets their own copy of it, filed
+// on their record, behind a button or a {{form_link}} in the email. Choosing
+// one puts a button to it in the email when nothing links to it yet; taking
+// it away leaves the email alone, and the step's checks say what is left.
+const formId = computed<string>(() => config.value.doc_template_id ?? '')
+const formTitle = computed(() => b.docTemplates.value.find((d) => d.id === formId.value)?.title ?? '')
+const formLinked = computed(() => emailStepSendsForm(config.value))
+function setForm(id: string) {
+  if (!id) return set({ doc_template_id: undefined })
+  if (design.value) set({ doc_template_id: id, design: withFormButton(design.value) })
+  else set({ doc_template_id: id, ...(formLinked.value ? {} : { form_button: true }) })
 }
 
 const clinicBranding = ref<Partial<EmailTheme> | null>(null)
@@ -56,6 +69,7 @@ const previewHtml = computed(() => {
     unsubscribe: unsubscribe.value,
     logoUrl: config.value.include_logo ? logoUrl.value : null,
     button: config.value.booking_button && bookingUrl.value ? { text: config.value.booking_button_text ?? '', url: bookingUrl.value } : null,
+    formButton: config.value.form_button ? { text: config.value.form_button_text ?? '', url: sample('form_link') } : null,
   })
   return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"></head><body style="margin:0">${html}</body></html>`
 })
@@ -121,6 +135,13 @@ const openedOnce = new Set<string>()
           <span>{{ t("Clinic logo on top", 'Logo de la clínica arriba') }}<span v-if="!logoUrl" class="block text-[12px] text-ink-muted">{{ t('Upload one in Settings > Clinics.', 'Súbelo en Ajustes > Clínicas.') }}</span></span>
           <input type="checkbox" class="mt-0.5" :checked="!!config.include_logo" :disabled="!logoUrl" data-test="email-include-logo" @change="set({ include_logo: ($event.target as HTMLInputElement).checked })" />
         </label>
+        <div v-if="formId || config.form_button" class="flex flex-col gap-2 rounded-ctl border border-line px-3 py-2.5">
+          <label class="flex items-center justify-between gap-3 text-[13px] text-ink-700">
+            <span>{{ t('Button to fill in the form', 'Botón para rellenar el formulario') }}</span>
+            <input type="checkbox" :checked="!!config.form_button" data-test="email-form-button" @change="set({ form_button: ($event.target as HTMLInputElement).checked })" />
+          </label>
+          <input v-if="config.form_button" :class="FIELD" :value="config.form_button_text ?? ''" :placeholder="DEFAULT_FORM_BUTTON_TEXT" :aria-label="t('Button text', 'Texto del botón')" data-test="email-form-button-text" @input="set({ form_button_text: ($event.target as HTMLInputElement).value })" />
+        </div>
         <div class="flex flex-col gap-2 rounded-ctl border border-line px-3 py-2.5">
           <label class="flex items-center justify-between gap-3 text-[13px] text-ink-700">
             <span>{{ t('Button to book online', 'Botón para reservar online') }}</span>
@@ -135,6 +156,20 @@ const openedOnce = new Set<string>()
         <UiBtn size="sm" data-test="email-switch-blocks" @click="switchToBlocks">{{ t('Switch to blocks', 'Pasar a bloques') }}</UiBtn>
       </div>
     </template>
+
+    <div class="flex flex-col gap-1.5" data-test="email-form">
+      <label :class="LABEL">
+        {{ t('Form to fill in or sign', 'Formulario para rellenar o firmar') }}
+        <select :class="FIELD" :value="formId" data-test="email-form-select" @change="setForm(($event.target as HTMLSelectElement).value)">
+          <option value="">{{ t('None', 'Ninguno') }}</option>
+          <option v-for="d in b.docTemplates.value" :key="d.id" :value="d.id">{{ d.title }}</option>
+        </select>
+      </label>
+      <p v-if="!formId" :class="HINT">{{ t('A health questionnaire or a consent, for instance: each patient gets a link to their own copy, which is filed on their record.', 'Un cuestionario de salud o un consentimiento, por ejemplo: cada paciente recibe un enlace a su propia copia, que se guarda en su ficha.') }}</p>
+      <p v-else-if="formLinked" :class="HINT" data-test="email-form-linked">{{ t(`Each patient gets a link to their own copy of "${formTitle}", filed on their record. It is made when the email really goes out: a test shows an example link.`, `Cada paciente recibe un enlace a su propia copia de «${formTitle}», que se guarda en su ficha. Se crea cuando el email se envía de verdad: una prueba muestra un enlace de ejemplo.`) }}</p>
+      <p v-else :class="NOTE" data-test="email-form-unlinked">{{ design ? t('Nothing in the email links to the form yet: add a button that opens "Fill in or sign a form".', 'Nada en el email enlaza al formulario todavía: añade un botón que abra «Rellenar o firmar un formulario».') : t('Nothing in the email links to the form yet: switch on its button above, or insert the form link field in the message.', 'Nada en el email enlaza al formulario todavía: activa su botón arriba o inserta el campo del enlace al formulario en el mensaje.') }}</p>
+      <p v-if="(formId || formLinked) && b.isLead.value" :class="NOTE" data-test="email-form-lead">{{ t('Leads have no patient record to attach a form to, so this email is not sent to them while it carries one.', 'Un lead no tiene ficha a la que adjuntar un formulario, así que este email no se le envía mientras lleve uno.') }}</p>
+    </div>
 
     <div :class="LABEL">
       <span class="flex items-center justify-between gap-3">

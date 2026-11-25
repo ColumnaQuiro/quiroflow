@@ -64,6 +64,8 @@ export interface VisitBonoSale {
   installments: number
   /** Paid now; the rest stays owed on the bono. */
   amountCents: number
+  /** A special price for this sale, at once only (utils/bonoSale). Null: the bono's own. */
+  priceCents?: number | null
   method: string
 }
 export interface VisitBonoOption { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }
@@ -733,6 +735,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         packageId: sale.packageId,
         installments: sale.installments,
         amountCents: sale.amountCents,
+        priceCents: sale.priceCents ?? null,
         method: sale.method,
         spendableCreditCents: spendableCreditCents.value,
         creditLedgerCents: creditLedgerCents.value,

@@ -8,7 +8,7 @@ import type { VisitBonoTemplate } from '~/composables/useVisitCharging'
 // nuevo" once the visit has finished the last one -- so the fields live here
 // once. The state stays with VisitCheckout, which is what sells.
 
-defineProps<{
+const props = defineProps<{
   templates: VisitBonoTemplate[]
   template: VisitBonoTemplate | null
   options: { installments: number; installmentCents: number }[]
@@ -17,10 +17,15 @@ defineProps<{
   paymentMethods: { key: string; name: string }[]
   spendableCreditCents: number
   disabled: boolean
+  /** The special price in cents, or null when it is the bono's own. */
+  specialPriceCents: number | null
 }>()
 const id = defineModel<string>('id', { required: true })
 const installments = defineModel<number>('installments', { required: true })
 const amount = defineModel<string>('amount', { required: true })
+// The price this sale is made at, when it is paid at once: the bono's own to
+// begin with, lower for a discount (utils/bonoSale specialBonoPriceCents).
+const price = defineModel<string>('price', { required: true })
 const method = defineModel<string>('method', { required: true })
 
 const t = useT()
@@ -45,6 +50,10 @@ const t = useT()
       </select>
     </label>
     <div v-if="template" class="flex flex-wrap items-center gap-2">
+      <label v-if="installments === 1" class="flex items-center gap-2">
+        {{ t('Price (€)', 'Precio (€)') }}
+        <input v-model="price" data-cy="checkout-sell-price" type="number" min="0" :max="template.price_cents / 100" step="0.01" inputmode="decimal" :disabled="disabled" class="h-9 touch:h-11 w-24 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+      </label>
       <label class="flex items-center gap-2">
         {{ t('Paid now (€)', 'Pagado ahora (€)') }}
         <input v-model="amount" data-cy="checkout-sell-amount" type="number" min="0" step="0.01" inputmode="decimal" :disabled="disabled" class="h-9 touch:h-11 w-24 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
@@ -57,6 +66,13 @@ const t = useT()
         </select>
       </label>
     </div>
+    <p v-if="template && installments === 1 && props.specialPriceCents !== null" class="text-[11.5px] font-normal" :class="props.specialPriceCents > template.price_cents || props.specialPriceCents < 0 ? 'text-danger-text' : 'text-ink-faint'" data-cy="checkout-sell-discount-note">
+      {{
+        props.specialPriceCents > template.price_cents || props.specialPriceCents < 0
+          ? t(`The price can be lowered, not raised: at most ${formatEur(template.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${formatEur(template.price_cents)}.`)
+          : t(`Special price: ${formatEur(template.price_cents - props.specialPriceCents)} off the bono's ${formatEur(template.price_cents)}.`, `Precio especial: ${formatEur(template.price_cents - props.specialPriceCents)} de descuento sobre ${formatEur(template.price_cents)}.`)
+      }}
+    </p>
     <p v-if="template && amountCents < totalCents" class="text-[11.5px] font-normal text-ink-faint" data-cy="checkout-sell-owed-note">
       {{ t('The rest stays owed on the bono; collect it later from the patient record.', 'El resto queda pendiente en el bono; cóbralo después desde la ficha del paciente.') }}
     </p>

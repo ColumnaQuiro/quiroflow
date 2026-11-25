@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { recordBonoSale, bonoSaleDefaultCents } from '../../utils/bonoSale'
+import { recordBonoSale, bonoSaleDefaultCents, specialBonoPriceCents } from '../../utils/bonoSale'
 
 // utils/bonoSale is what the patient record (web and app) and the visit
 // checkout all sell a bono through. These pin the rules it carries, against a
@@ -113,6 +113,84 @@ describe('recordBonoSale', () => {
     const result = await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, amountCents: 0 })
     expect(result.purchase).not.toBeNull()
     expect(writes.map((w) => w.table)).toEqual(['package_purchases'])
+  })
+})
+
+describe('a special price (discount) on the sale', () => {
+  it('sells at the special price, owing only that, and the factura measures against it', async () => {
+    const { client, writes } = fakeSupabase()
+    const issueFactura = vi.fn(async () => null)
+    const result = await recordBonoSale(client, { issueFactura, t }, { ...base, priceCents: 45000, amountCents: 45000 })
+
+    expect(result.error).toBeNull()
+    // Paid in full at 450: owed_cents 450 less the 450 paid is nothing owed,
+    // which is what the clinic asked for -- not 78 EUR of phantom debt.
+    expect(writes.find((w) => w.table === 'package_purchases')!.row).toMatchObject({ price_cents: 45000, owed_cents: 45000, installments: null })
+    expect(writes.find((w) => w.table === 'payments')!.row).toMatchObject({ amount_cents: 45000 })
+    expect(issueFactura).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 45000, bono: expect.objectContaining({ priceCents: 45000 }) }))
+  })
+
+  it('may be nothing at all', async () => {
+    const { client, writes } = fakeSupabase()
+    const result = await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, priceCents: 0, amountCents: 0 })
+    expect(result.error).toBeNull()
+    expect(writes.find((w) => w.table === 'package_purchases')!.row).toMatchObject({ price_cents: 0, owed_cents: 0 })
+    expect(writes.some((w) => w.table === 'payments')).toBe(false)
+  })
+
+  it('refuses a price above the bono\'s own, read now, and writes nothing', async () => {
+    const { client, writes } = fakeSupabase()
+    const result = await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, priceCents: 52801 })
+    expect(result.purchase).toBeNull()
+    expect(result.error).toMatch(/between 0 and/)
+    expect(writes).toHaveLength(0)
+  })
+
+  it('refuses a negative or fractional-cent price', async () => {
+    for (const priceCents of [-1, 100.5]) {
+      const { client, writes } = fakeSupabase()
+      const result = await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, priceCents })
+      expect(result.purchase).toBeNull()
+      expect(writes).toHaveLength(0)
+    }
+  })
+
+  it('is for a bono paid at once only, not in plazos', async () => {
+    const { client, writes } = fakeSupabase()
+    const result = await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, installments: 2, amountCents: 27000, priceCents: 40000 })
+    expect(result.purchase).toBeNull()
+    expect(result.error).toMatch(/at once/)
+    expect(writes).toHaveLength(0)
+  })
+
+  it('null or absent sells at the bono\'s price', async () => {
+    const { client, writes } = fakeSupabase()
+    await recordBonoSale(client, { issueFactura: async () => null, t }, { ...base, priceCents: null })
+    expect(writes.find((w) => w.table === 'package_purchases')!.row).toMatchObject({ price_cents: 52800 })
+  })
+})
+
+describe('specialBonoPriceCents', () => {
+  it('is null when the field is blank, unreadable, or the bono\'s own price', () => {
+    expect(specialBonoPriceCents(52800, '')).toBeNull()
+    expect(specialBonoPriceCents(52800, '  ')).toBeNull()
+    expect(specialBonoPriceCents(52800, 'abc')).toBeNull()
+    expect(specialBonoPriceCents(52800, '528.00')).toBeNull()
+    expect(specialBonoPriceCents(52800, '528')).toBeNull()
+  })
+  it('reads a lower price in cents, with a dot or a comma', () => {
+    expect(specialBonoPriceCents(52800, '450')).toBe(45000)
+    expect(specialBonoPriceCents(52800, '449,99')).toBe(44999)
+    expect(specialBonoPriceCents(52800, '0')).toBe(0)
+  })
+  it('reads the number v-model hands back from a number input', () => {
+    expect(specialBonoPriceCents(52800, 450)).toBe(45000)
+    expect(specialBonoPriceCents(52800, 528)).toBeNull()
+    expect(specialBonoPriceCents(52800, 0)).toBe(0)
+    expect(specialBonoPriceCents(52800, null)).toBeNull()
+  })
+  it('passes a higher price through, for the sale to refuse', () => {
+    expect(specialBonoPriceCents(52800, '600')).toBe(60000)
   })
 })
 

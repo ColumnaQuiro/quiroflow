@@ -2,7 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import { bonoVisitChargeCents } from '../../utils/visitCharging'
 import { readInstallmentOptions } from '../../utils/bonoInstallments'
-import { bonoSaleDefaultCents } from '../../utils/bonoSale'
+import { bonoSaleDefaultCents, specialBonoPriceCents } from '../../utils/bonoSale'
 
 // The visit's checkout, on the panel's first screen: how it is paid, already
 // chosen, and one button.
@@ -168,20 +168,31 @@ function pick(value: string) {
 const sellId = ref('')
 const sellInstallments = ref(1)
 const sellAmount = ref('')
+// The price, at once: the bono's own unless reception gives a discount.
+const sellPrice = ref('')
 const sellMethod = ref('cash')
 const sellTemplate = computed(() => bonoTemplates.value.find((b) => b.id === sellId.value) ?? null)
 const sellOptions = computed(() => (sellTemplate.value ? readInstallmentOptions(sellTemplate.value.installment_options) : []))
 const sellAmountCents = computed(() => Math.round((parseFloat(sellAmount.value) || 0) * 100))
+const sellSpecialPriceCents = computed(() =>
+  sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
+)
 // What the bono costs in all, the way it is being paid: the rest of it stays
 // owed on the bono, and the form says so.
 const sellTotalCents = computed(() => {
   const option = sellOptions.value.find((o) => o.installments === sellInstallments.value)
-  return option ? option.installments * option.installmentCents : (sellTemplate.value?.price_cents ?? 0)
+  return option ? option.installments * option.installmentCents : (sellSpecialPriceCents.value ?? sellTemplate.value?.price_cents ?? 0)
 })
 function prefillSale() {
   const cents = bonoSaleDefaultCents(sellTemplate.value, sellInstallments.value)
   sellAmount.value = sellTemplate.value ? (cents / 100).toFixed(2) : ''
+  sellPrice.value = sellTemplate.value ? (sellTemplate.value.price_cents / 100).toFixed(2) : ''
 }
+// A discount is usually paid in full there and then: what is taken now
+// follows the price, so the bono is not left owing the discount.
+watch(sellPrice, (value) => {
+  if (sellTemplate.value && sellInstallments.value === 1) sellAmount.value = value
+})
 watch(sellId, () => {
   sellInstallments.value = 1
   sellMethod.value = method.value !== 'credit' ? method.value : (paymentMethods.value[0]?.key ?? 'cash')
@@ -205,7 +216,7 @@ function openNextBono() {
 }
 async function sellNext() {
   if (!sellTemplate.value || saving.value) return
-  const sold = await sellNextBono({ packageId: sellTemplate.value.id, installments: sellInstallments.value, amountCents: sellAmountCents.value, method: sellMethod.value })
+  const sold = await sellNextBono({ packageId: sellTemplate.value.id, installments: sellInstallments.value, amountCents: sellAmountCents.value, priceCents: sellSpecialPriceCents.value, method: sellMethod.value })
   if (!sold) return
   nextBonoSold.value = sold.package_name
   nextBonoOpen.value = false
@@ -245,7 +256,7 @@ async function process() {
 async function charge() {
   if (choice.value === 'sell') {
     if (!sellTemplate.value) return
-    const sold = await sellBonoForVisit({ packageId: sellTemplate.value.id, installments: sellInstallments.value, amountCents: sellAmountCents.value, method: sellMethod.value })
+    const sold = await sellBonoForVisit({ packageId: sellTemplate.value.id, installments: sellInstallments.value, amountCents: sellAmountCents.value, priceCents: sellSpecialPriceCents.value, method: sellMethod.value })
     // Sold but its session not taken (the payment failed): the bono is on the
     // list now, so the next press takes its session -- not a second sale.
     if (sold && activePackages.value.some((p) => p.id === sold)) choice.value = sold
@@ -338,6 +349,7 @@ async function charge() {
           v-model:id="sellId"
           v-model:installments="sellInstallments"
           v-model:amount="sellAmount"
+          v-model:price="sellPrice"
           v-model:method="sellMethod"
           class="px-3.5 pb-3 pl-[2.85rem]"
           :templates="bonoTemplates"
@@ -345,6 +357,7 @@ async function charge() {
           :options="sellOptions"
           :amount-cents="sellAmountCents"
           :total-cents="sellTotalCents"
+          :special-price-cents="sellSpecialPriceCents"
           :payment-methods="paymentMethods"
           :spendable-credit-cents="spendableCreditCents"
           :disabled="saving || processing"
@@ -379,6 +392,7 @@ async function charge() {
           v-model:id="sellId"
           v-model:installments="sellInstallments"
           v-model:amount="sellAmount"
+          v-model:price="sellPrice"
           v-model:method="sellMethod"
           class="mt-3"
           :templates="bonoTemplates"
@@ -386,6 +400,7 @@ async function charge() {
           :options="sellOptions"
           :amount-cents="sellAmountCents"
           :total-cents="sellTotalCents"
+          :special-price-cents="sellSpecialPriceCents"
           :payment-methods="paymentMethods"
           :spendable-credit-cents="spendableCreditCents"
           :disabled="saving"

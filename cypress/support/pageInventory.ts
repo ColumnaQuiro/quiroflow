@@ -157,6 +157,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/campaigns': 'redirects to /automations; asserted in growth/growth-automations.cy.ts',
   '/growth/automations': 'redirects to /automations (keeping ?run links); asserted in growth/growth-automations.cy.ts',
   '/subscription': 'covered by cypress/e2e/subscription/billing.cy.ts',
+  '/blind-spot': 'the home of an account that bought only Blind Spot; a clinic owner is sent away from it by design. Covered by cypress/e2e/patients/blind-spot.cy.ts',
   '/onboarding': 'covered by cypress/e2e/auth/signup-and-onboarding.cy.ts',
   '/confirm': 'reached only from an emailed appointment-confirmation link',
   '/card-saved': 'Stripe redirect landing page, reached only after a real card setup',

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
+import { BLIND_SPOT_PLAN_ID } from '~/utils/blindSpotPlan'
 import { receptionistOnTrialAllowance } from '~/utils/receptionistAllowance'
 import { clinicAllowance, limitsGrandfathered, planLimitsWaived, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState, billingMethodLabel } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
@@ -26,6 +27,7 @@ interface SubscriptionRow {
   growth_addon: boolean
   receptionist_addon: boolean
   branding_addon: boolean
+  blind_spot_addon: boolean
   verifactu_locations: number
   trial_ends_at: string | null
   comped: boolean
@@ -63,6 +65,7 @@ interface AddonRow {
   name: string
   monthly_price_cents: number
   annual_price_cents: number
+  stripe_monthly_price_id?: string | null
 }
 
 interface BillingInfo {
@@ -103,6 +106,14 @@ const brandingAddon = ref<AddonRow | null>(null)
 const brandingPricing = computed(() =>
   brandingAddon.value ? { monthlyPriceCents: brandingAddon.value.monthly_price_cents, annualPriceCents: brandingAddon.value.annual_price_cents } : null,
 )
+// Blind Spot as an add-on (20261126082211_blind_spot.sql). Offered only once
+// Stripe has a price for it, and never on the Blind Spot plan, which is the
+// same product sold on its own.
+const blindSpotAddon = ref<AddonRow | null>(null)
+const blindSpotPricing = computed(() =>
+  blindSpotAddon.value ? { monthlyPriceCents: blindSpotAddon.value.monthly_price_cents, annualPriceCents: blindSpotAddon.value.annual_price_cents } : null,
+)
+const blindSpotOffered = computed(() => (subscription.value?.plan_id !== BLIND_SPOT_PLAN_ID && blindSpotAddon.value?.stripe_monthly_price_id ? blindSpotAddon.value : null))
 const receptionistPricing = computed(() =>
   receptionistAddon.value ? { monthlyPriceCents: receptionistAddon.value.monthly_price_cents, annualPriceCents: receptionistAddon.value.annual_price_cents } : null,
 )
@@ -125,7 +136,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents)',
+      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, blind_spot_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -223,6 +234,7 @@ const shape = computed(() => ({
   growthBilled: growthBilled.value,
   receptionistBilled: receptionistBilled.value,
   brandingBilled: !!subscription.value?.branding_addon,
+  blindSpotBilled: !!subscription.value?.blind_spot_addon,
   verifactuLocations: subscription.value?.verifactu_locations ?? 0,
 }))
 
@@ -244,7 +256,7 @@ const addonPricing = computed(() =>
 )
 
 const perMonthCents = computed(() =>
-  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value) : 0,
+  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value, blindSpotPricing.value) : 0,
 )
 
 // Stripe's own figure wherever it exists. The local computation is the
@@ -253,7 +265,7 @@ const perMonthCents = computed(() =>
 const usingStripeAmount = computed(() => !!billingInfo.value?.upcoming)
 const nextChargeCents = computed(() => {
   if (billingInfo.value?.upcoming) return billingInfo.value.upcoming.totalCents
-  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value) : null
+  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value, brandingPricing.value, blindSpotPricing.value) : null
 })
 const nextChargeSubtotal = computed(() => billingInfo.value?.upcoming?.subtotalCents ?? null)
 const nextChargeTax = computed(() => billingInfo.value?.upcoming?.taxCents ?? null)
@@ -309,6 +321,13 @@ const planLineItems = computed(() => {
       key: 'branding',
       label: t('Your brand in the patient app', 'Tu marca en la app de pacientes'),
       amountCents: annual ? brandingAddon.value.annual_price_cents : brandingAddon.value.monthly_price_cents,
+    })
+  }
+  if (sub.blind_spot_addon && blindSpotAddon.value) {
+    items.push({
+      key: 'blind_spot',
+      label: t('Blind Spot', 'Blind Spot'),
+      amountCents: annual ? blindSpotAddon.value.annual_price_cents : blindSpotAddon.value.monthly_price_cents,
     })
   }
   const locations = sub.verifactu_locations ?? 0
@@ -451,15 +470,18 @@ onMounted(async () => {
         'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents, sort_order',
       )
       .order('sort_order'),
-    supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
+    supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents, stripe_monthly_price_id'),
     loadPractitioners(),
     loadBillingInfo(),
     loadReceptionistReplies(),
   ])
-  plans.value = planRows ?? []
+  // The Blind Spot plan is the standalone product's, and the only one it is
+  // offered; a clinic on the whole of QuiroFlow is offered the others.
+  plans.value = (planRows ?? []).filter((p) => (store.isBlindSpotOnly ? p.id === BLIND_SPOT_PLAN_ID : p.id !== BLIND_SPOT_PLAN_ID))
   growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
   receptionistAddon.value = (addonRows ?? []).find((a) => a.id === 'receptionist') ?? null
   brandingAddon.value = (addonRows ?? []).find((a) => a.id === 'branding') ?? null
+  blindSpotAddon.value = (addonRows ?? []).find((a) => a.id === 'blind_spot') ?? null
   verifactuFee.value = (addonRows ?? []).find((a) => a.id === 'verifactu') ?? null
   loading.value = false
 
@@ -477,6 +499,12 @@ onMounted(async () => {
     addonsCard.value?.start('branding', true)
     addonsCard.value?.$el?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
   }
+  // The Blind Spot tab and test say "add it under Subscription" and link here.
+  if (route.query.addon === 'blind_spot' && store.isOwner && blindSpotOffered.value && !comped.value && !subscription.value?.blind_spot_addon) {
+    await nextTick()
+    addonsCard.value?.start('blind_spot', true)
+    addonsCard.value?.$el?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
+  }
 })
 
 // The change is applied by Stripe in place (subscribe.post.ts updates the
@@ -485,12 +513,12 @@ onMounted(async () => {
 // The Add-ons card. Its change lands through the Stripe webhook, a moment
 // after subscribe answers, so the row is re-read until it says what was asked
 // for -- a single reload right away would still show the add-on off.
-const addonsCard = ref<{ start: (key: 'growth' | 'receptionist' | 'branding', on: boolean) => void; $el?: HTMLElement } | null>(null)
-async function onAddonChanged(expect: { growth: boolean; receptionist: boolean; branding: boolean }) {
+const addonsCard = ref<{ start: (key: 'growth' | 'receptionist' | 'branding' | 'blind_spot', on: boolean) => void; $el?: HTMLElement } | null>(null)
+async function onAddonChanged(expect: { growth: boolean; receptionist: boolean; branding: boolean; blindSpot: boolean }) {
   for (let i = 0; i < 8; i++) {
     await loadSubscription()
     const sub = subscription.value
-    if (sub && !!sub.growth_addon === expect.growth && !!sub.receptionist_addon === expect.receptionist && !!sub.branding_addon === expect.branding) break
+    if (sub && !!sub.growth_addon === expect.growth && !!sub.receptionist_addon === expect.receptionist && !!sub.branding_addon === expect.branding && !!sub.blind_spot_addon === expect.blindSpot) break
     await new Promise((r) => setTimeout(r, 1500))
   }
   await loadBillingInfo()
@@ -728,7 +756,9 @@ async function addPaymentMethod() {
               :plan-seats="subscription.plans?.included_professionals ?? null"
             />
 
+            <!-- An account that bought only Blind Spot buys none of these. -->
             <SubscriptionAddonsCard
+              v-if="!store.isBlindSpotOnly"
               ref="addonsCard"
               :plan-id="subscription.plan_id"
               :interval="interval"
@@ -742,11 +772,14 @@ async function addPaymentMethod() {
               :receptionist-prices="receptionistAddon"
               :branding-on="!!subscription.branding_addon"
               :branding-prices="brandingAddon"
+              :blind-spot-on="!!subscription.blind_spot_addon"
+              :blind-spot-prices="store.isBlindSpotOnly ? null : blindSpotOffered"
               :can-manage="store.isOwner"
               @changed="onAddonChanged"
             />
 
             <SubscriptionReceptionistCard
+              v-if="!store.isBlindSpotOnly"
               :included-by="receptionistIncludedBy"
               :replies="receptionistReplies"
               :trial-replies="onTrialAllowance ? receptionistTrialReplies : undefined"

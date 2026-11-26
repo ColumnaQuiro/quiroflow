@@ -165,12 +165,21 @@ const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do
 // not someone at the clinic talking to them; a minor, still nobody.
 const canMessage = computed(() => !!patient.value && !patient.value.is_minor)
 
-const tabs = computed(() => [
+// An account that bought only Blind Spot has the record and its tests,
+// nothing of the clinic-management product it did not buy.
+const tabs = computed(() => store.isBlindSpotOnly ? [
+  { key: 'overview', label: t('Overview', 'Resumen') },
+  { key: 'blind-spot', label: t('Blind spot', 'Punto ciego') },
+] : [
   { key: 'overview', label: t('Overview', 'Resumen') },
   { key: 'clinical', label: t('Clinical', 'Clínico') },
   // Pain visit by visit, what was adjusted, posture: "See progress"
   // (progress_access), which "See visit notes" includes.
   ...(can('progress_access') || can('visit_notes_access') ? [{ key: 'progress', label: t('Progress', 'Progreso') }] : []),
+  // Blind Spot (punto ciego): with the add-on or the Blind Spot plan, under
+  // the same permission as Progress. An account that bought only Blind Spot
+  // sees just this and the overview (utils/blindSpotPlan.ts).
+  ...((can('progress_access') || can('visit_notes_access')) && (store.hasBlindSpot || store.isBlindSpotOnly) ? [{ key: 'blind-spot', label: t('Blind spot', 'Punto ciego') }] : []),
   { key: 'appointments', label: t('Appointments', 'Citas') },
   // billing_history_view ("See billing history"): the whole ledger -- every
   // receipt, payment, bono and the statement -- lives on this tab. Stored and
@@ -516,6 +525,7 @@ function onTabKeydown(event: KeyboardEvent) {
           />
 
           <LazyPatientsAttachmentsTab v-else-if="activeTab === 'attachments'" :patient-id="patientId" />
+          <LazyBlindspotTab v-else-if="activeTab === 'blind-spot'" :patient-id="patientId" />
         </div>
       </div>
     </div>

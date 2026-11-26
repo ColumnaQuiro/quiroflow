@@ -227,7 +227,10 @@ onUnmounted(() => navObserver?.disconnect())
       <div class="flex h-6 w-6 items-center justify-center rounded-ctlSm bg-brand">
         <img src="/logo/quiroflow-mark-white.svg" alt="" class="h-3.5 w-3.5" />
       </div>
-      <NuxtLink v-if="!collapsed" to="/dashboard" class="flex-1 text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
+      <NuxtLink v-if="!collapsed" :to="store.isBlindSpotOnly ? '/blind-spot' : '/dashboard'" class="flex flex-1 items-center gap-1.5 text-[14.5px] font-[640] tracking-tightTitle text-ink-900">
+        QuiroFlow
+        <span v-if="store.isBlindSpotOnly" class="rounded-pill bg-brand-tint px-1.5 text-[11px] font-[640] tracking-normal text-brand-text">Blind Spot</span>
+      </NuxtLink>
       <button
         type="button"
         class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-sidebarHover touch:h-11 touch:w-11 lg:hidden"
@@ -391,7 +394,7 @@ onUnmounted(() => navObserver?.disconnect())
     <div class="flex flex-col gap-0.5 border-t border-line px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5" :class="{ 'items-center px-1.5': collapsed }">
       <NuxtLink
         v-if="can('settings_access')"
-        to="/settings"
+        :to="store.isBlindSpotOnly ? '/settings/team' : '/settings'"
         data-cy="nav-settings"
         class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px]"
         :class="[

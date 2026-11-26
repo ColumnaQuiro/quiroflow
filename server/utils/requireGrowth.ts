@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { requireAnyPermission, requirePermission } from '~/server/utils/requirePermission'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { receptionistPurchased } from '~/utils/receptionistAllowance'
+import { blindSpotIncluded } from '~/utils/blindSpotPlan'
 
 // Growth is a paid add-on, and this is where that is true.
 //
@@ -153,4 +154,23 @@ export function hasClinicBranding(subscription: { branding_addon?: boolean | nul
   if (subscription.comped) return true
   if (subscription.status === 'locked' || subscription.status === 'canceled') return false
   return !!subscription.branding_addon
+}
+
+// Blind Spot (punto ciego), sold as an add-on and as a plan of its own
+// (20261126082211_blind_spot.sql). The rule lives in utils/blindSpotPlan.ts
+// so the account store and account_has_blind_spot() read it the same way.
+export function hasBlindSpot(subscription: Parameters<typeof blindSpotIncluded>[0]): boolean {
+  return blindSpotIncluded(subscription)
+}
+
+/** Seeing a patient's progress first, then whether the account has Blind Spot. */
+export async function requireBlindSpot(event: H3Event): Promise<GrowthAccess> {
+  const access = await requireAnyPermission(event, ['progress_access', 'visit_notes_access'])
+  if (!hasBlindSpot(access.subscription)) {
+    throw createError({
+      statusCode: 402,
+      statusMessage: 'Blind Spot is not on this subscription. Add it under Subscription.',
+    })
+  }
+  return access
 }

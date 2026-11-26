@@ -163,6 +163,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
     return navigateTo(isPatient ? '/portal' : '/onboarding')
   }
+  // An account that bought only Blind Spot has no dashboard: its home is the
+  // list of tests, and anything outside that product sends it there rather
+  // than to /dashboard?denied=1, which it could not open either.
+  if (hasAccount && store.isBlindSpotOnly) {
+    if (['/onboarding', '/login', '/signup', '/', '/dashboard'].includes(to.path) || !isRouteAllowed(store, to.path)) {
+      return to.path === '/blind-spot' ? undefined : navigateTo('/blind-spot')
+    }
+    return
+  }
   if (hasAccount && ['/onboarding', '/login', '/signup', '/'].includes(to.path)) {
     return navigateTo('/dashboard')
   }

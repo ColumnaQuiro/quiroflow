@@ -43,7 +43,7 @@ export function useSidebarNavItems() {
   const store = useAccountStore()
   const t = useT()
 
-  const groups = computed<SidebarNavGroup[]>(() => [
+  const groups = computed<SidebarNavGroup[]>(() => store.isBlindSpotOnly ? blindSpotOnlyGroups() : [
     {
       id: 'today',
       label: t('Today', 'Hoy'),
@@ -125,6 +125,22 @@ export function useSidebarNavItems() {
       ],
     },
   ])
+
+  // An account that bought only Blind Spot (utils/blindSpotPlan.ts): its
+  // tests and its patients. The rest of the app is a product it has not
+  // bought, and the route guard turns it away anyway.
+  function blindSpotOnlyGroups(): SidebarNavGroup[] {
+    return [
+      {
+        id: 'blind-spot',
+        label: 'Blind Spot',
+        items: [
+          { label: t('Tests', 'Pruebas'), to: '/blind-spot', perm: () => scope('patients_scope') !== 'none', icon: 'M1.8 8s2.3-4.5 6.2-4.5S14.2 8 14.2 8s-2.3 4.5-6.2 4.5S1.8 8 1.8 8zM8 9.8a1.8 1.8 0 100-3.6 1.8 1.8 0 000 3.6z', keywords: t('Blind spot', 'Punto ciego') },
+          { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
+        ],
+      },
+    ]
+  }
 
   /** What this person's sidebar shows: each item's own permission, empty groups dropped. */
   const visibleGroups = computed(() =>

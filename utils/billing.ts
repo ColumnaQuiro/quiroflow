@@ -145,6 +145,8 @@ export interface SubscriptionShape {
   receptionistBilled?: boolean
   /** The clinic's own brand in the patient app, bought as its own line. */
   brandingBilled?: boolean
+  /** Blind Spot bought as an add-on (never on the Blind Spot plan, which includes it). */
+  blindSpotBilled?: boolean
 }
 
 /**
@@ -161,6 +163,7 @@ export function pricePerMonth(
   verifactuFee: AddonPricing | null = null,
   receptionist: AddonPricing | null = null,
   branding: AddonPricing | null = null,
+  blindSpot: AddonPricing | null = null,
 ): number {
   const annual = subscription.interval === 'annual'
   const base = annual ? plan.annualPriceCents : plan.monthlyPriceCents
@@ -170,7 +173,8 @@ export function pricePerMonth(
   const verifactu = verifactuFee ? (subscription.verifactuLocations ?? 0) * (annual ? verifactuFee.annualPriceCents : verifactuFee.monthlyPriceCents) : 0
   const receptionistLine = subscription.receptionistBilled && receptionist ? (annual ? receptionist.annualPriceCents : receptionist.monthlyPriceCents) : 0
   const brandingLine = subscription.brandingBilled && branding ? (annual ? branding.annualPriceCents : branding.monthlyPriceCents) : 0
-  return base + seats + locations + growth + verifactu + receptionistLine + brandingLine
+  const blindSpotLine = subscription.blindSpotBilled && blindSpot ? (annual ? blindSpot.annualPriceCents : blindSpot.monthlyPriceCents) : 0
+  return base + seats + locations + growth + verifactu + receptionistLine + brandingLine + blindSpotLine
 }
 
 /**
@@ -190,8 +194,9 @@ export function nextChargeTotal(
   verifactuFee: AddonPricing | null = null,
   receptionist: AddonPricing | null = null,
   branding: AddonPricing | null = null,
+  blindSpot: AddonPricing | null = null,
 ): number {
-  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee, receptionist, branding)
+  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee, receptionist, branding, blindSpot)
   return subscription.interval === 'annual' ? perMonth * MONTHS_PER_YEAR : perMonth
 }
 

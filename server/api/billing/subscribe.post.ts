@@ -5,6 +5,7 @@ import { checkoutTrialEnd, graceBackdate, graceCatchUpCents } from '~/utils/bill
 import { billingLanguage, retrieveChangeableSubscription, stripeForPlatformBilling, stripeLocale } from '~/server/utils/platformBillingStripe'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 import { checkoutReferralCoupon } from '~/server/utils/clinicReferralRewards'
+import { BLIND_SPOT_PLAN_ID } from '~/utils/blindSpotPlan'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean; blindSpot?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -68,6 +69,9 @@ export default defineEventHandler(async (event) => {
   const growth = await growthAddonPrices(serviceRole, body.interval)
   const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
   const branding = await brandingAddonPrices(serviceRole, body.interval)
+  const blindSpot = await blindSpotAddonPrices(serviceRole, body.interval)
+  // The Blind Spot plan is Blind Spot: never the add-on on top of it.
+  const blindSpotAllowed = plan.id !== BLIND_SPOT_PLAN_ID
 
   // An account on grandfathered terms has no practitioner or location limit
   // on the plan it was granted them for -- the same rule as the two allowance
@@ -156,6 +160,9 @@ export default defineEventHandler(async (event) => {
   }
   if (body.branding === true && !branding.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
+  }
+  if (body.blindSpot === true && blindSpotAllowed && !blindSpot.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Blind Spot has no Stripe price configured for this billing interval' })
   }
 
   const stripe = await stripeForPlatformBilling()
@@ -247,6 +254,17 @@ export default defineEventHandler(async (event) => {
     } else if (brandingItem) {
       items.push({ id: brandingItem.id, deleted: true })
     }
+    // Blind Spot as an add-on: kept as it is unless the request says, as the
+    // brand add-on is -- and dropped on moving to the Blind Spot plan, which
+    // includes it.
+    const blindSpotItem = current.items.data.find((item) => blindSpot.allPriceIds.has(item.price.id))
+    const wantsBlindSpot = blindSpotAllowed && (body.blindSpot ?? !!blindSpotItem)
+    if (wantsBlindSpot) {
+      if (!blindSpot.priceId) throw createError({ statusCode: 500, statusMessage: 'Blind Spot has no Stripe price configured for this billing interval' })
+      items.push(blindSpotItem ? { id: blindSpotItem.id, price: blindSpot.priceId, quantity: 1 } : { price: blindSpot.priceId, quantity: 1 })
+    } else if (blindSpotItem) {
+      items.push({ id: blindSpotItem.id, deleted: true })
+    }
     // The VeriFactu fee is not the owner's to choose here, but it has to
     // follow the new interval: Stripe refuses items on mixed intervals.
     const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)
@@ -287,6 +305,7 @@ export default defineEventHandler(async (event) => {
     ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
     ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
     ...(body.branding === true && branding.priceId ? [{ price: branding.priceId, quantity: 1 }] : []),
+    ...(body.blindSpot === true && blindSpotAllowed && blindSpot.priceId ? [{ price: blindSpot.priceId, quantity: 1 }] : []),
     ...verifactuFeeLine,
   ]
 

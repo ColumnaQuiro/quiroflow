@@ -22,7 +22,9 @@ import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES } from '~
 // either. It is named in the request only when it is the thing being changed
 // -- the server leaves it as it is otherwise -- so adding the receptionist
 // cannot touch it.
-type AddonKey = 'growth' | 'receptionist' | 'branding'
+// Blind Spot (punto ciego) is the fourth, and behaves as the brand does: named
+// only when it is what changes. The trial includes it, as it includes Growth.
+type AddonKey = 'growth' | 'receptionist' | 'branding' | 'blind_spot'
 /** free: complimentary; plan: in the plan's price; growth: inside Growth. */
 type RowState = 'free' | 'plan' | 'growth' | 'on' | 'off'
 interface Prices { monthly_price_cents: number; annual_price_cents: number }
@@ -44,9 +46,13 @@ const props = defineProps<{
   brandingOn?: boolean
   /** Null while the catalogue has no such add-on: the row is then not shown. */
   brandingPrices?: Prices | null
+  /** Bought as its own line (subscriptions.blind_spot_addon). */
+  blindSpotOn?: boolean
+  /** Null while the catalogue has no price for it, or on the Blind Spot plan: the row is then not shown. */
+  blindSpotPrices?: Prices | null
   canManage: boolean
 }>()
-const emit = defineEmits<{ changed: [expect: { growth: boolean; receptionist: boolean; branding: boolean }] }>()
+const emit = defineEmits<{ changed: [expect: { growth: boolean; receptionist: boolean; branding: boolean; blindSpot: boolean }] }>()
 const t = useT()
 
 const growthIncluded = computed(() => props.comped || props.planIncludesGrowth)
@@ -97,6 +103,20 @@ const rows = computed(() => [
         },
       ]
     : []),
+  ...(props.blindSpotPrices
+    ? [
+        {
+          key: 'blind_spot' as const,
+          name: t('Blind Spot', 'Blind Spot'),
+          description: t(
+            'The blind spot test on any screen: both eyes mapped before and after the adjustment, their history, and a report for the patient.',
+            'La prueba de punto ciego en cualquier pantalla: los dos ojos, antes y después del ajuste, su evolución y un informe para el paciente.',
+          ),
+          price: priceOf(props.blindSpotPrices),
+          state: (props.comped ? 'free' : props.blindSpotOn ? 'on' : 'off') as RowState,
+        },
+      ]
+    : []),
 ])
 
 // The trial includes Growth, and the receptionist on an allowance
@@ -131,7 +151,8 @@ const target = computed(() => {
   // behind the owner's back.
   const receptionist = p?.key === 'receptionist' ? p.on : props.receptionistOn && !growth
   const branding = p?.key === 'branding' ? p.on : !!props.brandingOn
-  return { growth, receptionist, branding }
+  const blindSpot = p?.key === 'blind_spot' ? p.on : !!props.blindSpotOn
+  return { growth, receptionist, branding, blindSpot }
 })
 
 function body() {
@@ -143,6 +164,7 @@ function body() {
     receptionist: target.value.receptionist,
     // Only when it is what is changing; see the note at the top.
     ...(pending.value?.key === 'branding' ? { branding: pending.value.on } : {}),
+    ...(pending.value?.key === 'blind_spot' ? { blindSpot: pending.value.on } : {}),
   }
 }
 

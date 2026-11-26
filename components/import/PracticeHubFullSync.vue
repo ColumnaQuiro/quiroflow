@@ -12,8 +12,9 @@ import { PRACTICEHUB_STEPS } from '~/utils/practicehubImport/types'
 // "Preview" runs the same job with dryRun: every step plans against what is
 // here and writes nothing, and the result says what each would have written.
 //
-// The one thing it does not bring is the signed original of each form: that
-// needs the clinic's own PracticeHub sign-in, and runs from Signed forms.
+// What it does not bring is the signed original of each form and the PDF of
+// each invoice: those need the clinic's own PracticeHub sign-in, and run
+// from Signed forms and Invoice originals.
 const t = useT()
 const store = useAccountStore()
 const connection = usePracticeHubConnection()
@@ -49,7 +50,7 @@ async function go(dryRun: boolean) {
       :notes="[
         { title: t('Safe to run again.', 'Se puede repetir.'), body: t('Running it again brings across only what changed in PracticeHub since: nothing is duplicated, and what QuiroFlow has already changed (a visit moved or checked in here, a bono session taken here) is kept.', 'Al repetirla solo trae lo que haya cambiado en PracticeHub desde entonces: no se duplica nada, y se respeta lo que ya se haya cambiado en QuiroFlow (una visita movida o registrada aquí, una sesión de bono gastada aquí).') },
         { title: t('Want to check first?', '¿Prefieres revisar antes?'), body: t('Preview does the same work and writes nothing: each step then says what it would change.', 'La vista previa hace lo mismo sin escribir nada: cada paso dice qué cambiaría.') },
-        { title: t('Signed forms are separate.', 'Los formularios firmados van aparte.'), body: t('The signed original of each form needs your own PracticeHub sign-in: bring those from Signed forms in the list.', 'El original firmado de cada formulario necesita tu acceso a PracticeHub: tráelos desde Formularios firmados en la lista.') },
+        { title: t('Signed forms and invoice originals are separate.', 'Los formularios firmados y los originales de facturas van aparte.'), body: t('The signed original of each form, and the PDF of each invoice, need your own PracticeHub sign-in: bring those from Signed forms and Invoice originals in the list.', 'El original firmado de cada formulario y el PDF de cada factura necesitan tu acceso a PracticeHub: tráelos desde Formularios firmados y Originales de facturas en la lista.') },
       ]"
     />
 

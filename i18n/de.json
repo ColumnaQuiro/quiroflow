@@ -1611,7 +1611,12 @@
   "{0} is off {1}.": "{0} arbeitet am {1} nicht.",
   "Scales: {0} kg right · {1} kg left ({2} kg)": "Waagen: {0} kg rechts · {1} kg links ({2} kg)",
   "The photo estimated {0}% right": "Das Foto schätzte {0} % rechts",
-  "The patient has a booking today: {0}. If this session is for that visit, don't log it here: checking the visit out on the calendar uses the session. Logging it here records a second visit and uses another session.": "Der Patient hat heute einen Termin: {0}. Wenn diese Sitzung zu dieser Behandlung gehört, erfassen Sie sie nicht hier: Beim Abrechnen des Termins im Kalender wird die Sitzung verbraucht. Wenn Sie sie hier erfassen, entsteht eine zweite Behandlung, die eine weitere Sitzung verbraucht."
+  "The patient has a booking today: {0}. If this session is for that visit, don't log it here: checking the visit out on the calendar uses the session. Logging it here records a second visit and uses another session.": "Der Patient hat heute einen Termin: {0}. Wenn diese Sitzung zu dieser Behandlung gehört, erfassen Sie sie nicht hier: Beim Abrechnen des Termins im Kalender wird die Sitzung verbraucht. Wenn Sie sie hier erfassen, entsteht eine zweite Behandlung, die eine weitere Sitzung verbraucht.",
+  "PracticeHub invoices checked: {0} / {1}": "Geprüfte PracticeHub-Rechnungen: {0} / {1}",
+  "Invoices whose day, amount or patient here differ from PracticeHub’s, so their original was not filed: {0}.": "Rechnungen, deren Tag, Betrag oder Patient hier von PracticeHub abweichen, weshalb ihr Original nicht abgelegt wurde: {0}.",
+  "For example: {0}.": "Zum Beispiel: {0}.",
+  "Invoices whose original could not be fetched: {0}. Start again to retry them.": "Rechnungen, deren Original nicht geholt werden konnte: {0}. Starten Sie erneut, um es noch einmal zu versuchen.",
+  "Invoices in PracticeHub that are not imported here, so there was nothing to file them with: {0}. Run Ledger and start again.": "Rechnungen in PracticeHub, die hier nicht importiert sind, weshalb es nichts gab, wo sie abgelegt werden konnten: {0}. Führen Sie Hauptbuch aus und starten Sie erneut."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -7041,7 +7046,6 @@
   "Readings from Education, sent in this order. Anything the patient already has is not sent again.": "Lektüren aus Aufklärung, in dieser Reihenfolge gesendet. Was der Patient schon hat, wird nicht erneut gesendet.",
   "Reading…": "Wird gelesen…",
   "Reads as red: on the calendar, red means money owed.": "Wirkt rot: Im Kalender bedeutet Rot offene Beträge.",
-  "Reads PracticeHub and runs every step below on the server, except Signed forms. You can close the page.": "Liest PracticeHub und führt alle Schritte unten auf dem Server aus, außer Unterschriebene Formulare. Du kannst die Seite schließen.",
   "Reads Quirocitas and imports everything in one go: patients, appointments, clinical history, bonos, payments and files, in that order. It runs on QuiroFlow's server, so you can close this page; you get an email when it is done.": "Liest Quirocitas und importiert alles in einem Durchgang: Patienten, Termine, Krankengeschichte, Pakete, Zahlungen und Dateien, in dieser Reihenfolge. Es läuft auf dem Server von QuiroFlow, Sie können diese Seite also schließen; Sie erhalten eine E-Mail, wenn es fertig ist.",
   "Reads Quirocitas and runs every step below, on the server. You can close the page.": "Liest Quirocitas und führt alle Schritte darunter auf dem Server aus. Sie können die Seite schließen.",
   "Reads every appointment through the saved connection. Takes a few minutes.": "Liest alle Termine über die gespeicherte Verbindung. Dauert einige Minuten.",
@@ -7904,7 +7908,6 @@
   "Signed copies about to expire are listed in Settings › Privacy.": "Unterschriebene Kopien, die bald ablaufen, werden unter Einstellungen › Datenschutz aufgeführt.",
   "Signed document": "Unterschriebenes Dokument",
   "Signed forms": "Unterschriebene Formulare",
-  "Signed forms are separate.": "Unterschriebene Formulare laufen separat.",
   "Signed in": "Angemeldet",
   "Signed original (PDF)": "Unterschriebenes Original (PDF)",
   "Signed out": "Abgemeldet",
@@ -8566,7 +8569,6 @@
   "The segment could not be deleted.": "Das Segment konnte nicht gelöscht werden.",
   "The segment could not be saved.": "Das Segment konnte nicht gespeichert werden.",
   "The segments could not be loaded": "Die Segmente konnten nicht geladen werden",
-  "The signed original of each form needs your own PracticeHub sign-in: bring those from Signed forms in the list.": "Für das unterschriebene Original jedes Formulars brauchst du deinen eigenen PracticeHub-Zugang: Hole sie in der Liste unter Unterschriebene Formulare.",
   "The step they were on was removed": "Sein aktueller Schritt wurde entfernt",
   "The stored password does not open it. Upload it again with its password.": "Das gespeicherte Passwort öffnet es nicht. Laden Sie es erneut mit seinem Passwort hoch.",
   "The stored password opens it.": "Das gespeicherte Passwort öffnet es.",
@@ -10898,6 +10900,22 @@
   "That time is blocked. Pick another.": "Diese Uhrzeit ist blockiert. Wählen Sie eine andere.",
   "blocked": "blockiert",
   "Grey times are blocked or outside working hours. You can still choose one.": "Graue Uhrzeiten sind blockiert oder außerhalb der Arbeitszeit. Sie können trotzdem eine wählen.",
-  "This falls in blocked time. It will be saved anyway.": "Das fällt in eine blockierte Zeit. Der Termin wird trotzdem gespeichert."
+  "This falls in blocked time. It will be saved anyway.": "Das fällt in eine blockierte Zeit. Der Termin wird trotzdem gespeichert.",
+  "Signed forms and invoice originals are separate.": "Unterschriebene Formulare und Rechnungsoriginale laufen separat.",
+  "The signed original of each form, and the PDF of each invoice, need your own PracticeHub sign-in: bring those from Signed forms and Invoice originals in the list.": "Das unterschriebene Original jedes Formulars und das PDF jeder Rechnung brauchen Ihre eigene PracticeHub-Anmeldung: holen Sie sie über Unterschriebene Formulare und Rechnungsoriginale in der Liste.",
+  "Brings the original of every invoice imported from PracticeHub across, as the PDF PracticeHub printed, and files it with the patient. Run Ledger first: an original is filed with the invoice it belongs to.": "Holt das Original jeder aus PracticeHub importierten Rechnung, als das PDF, das PracticeHub gedruckt hat, und legt es in der Patientenakte ab. Führen Sie zuerst Hauptbuch aus: Jedes Original wird bei der Rechnung abgelegt, zu der es gehört.",
+  "Why bring them.": "Warum sie holen.",
+  "QuiroFlow can print an imported invoice from its figures, but that is not the document the patient was given. A copy of every invoice issued has to be kept for years, and once you leave PracticeHub its originals are gone.": "QuiroFlow kann eine importierte Rechnung aus ihren Daten drucken, aber das ist nicht das Dokument, das der Patient erhalten hat. Eine Kopie jeder ausgestellten Rechnung muss jahrelang aufbewahrt werden, und sobald Sie PracticeHub verlassen, sind die Originale weg.",
+  "Checked before it is filed.": "Vor dem Ablegen geprüft.",
+  "Each PDF is filed only if PracticeHub’s invoice and the one here agree on the number, the day, the amount and the patient. One that does not is counted below and left alone.": "Jedes PDF wird nur abgelegt, wenn die Rechnung in PracticeHub und die hier in Nummer, Tag, Betrag und Patient übereinstimmen. Eine, die nicht übereinstimmt, wird unten gezählt und nicht angerührt.",
+  "Same sign-in as Signed forms.": "Dieselbe Anmeldung wie bei Unterschriebene Formulare.",
+  "It is saved once for both. You can close this page: it runs on the server and is safe to run again, an original already here is never downloaded twice. A clinic with many thousands of invoices takes a while: start it outside opening hours.": "Sie wird einmal für beide gespeichert. Sie können diese Seite schließen: Es läuft auf dem Server und kann wiederholt werden, ein Original, das schon hier ist, wird nie zweimal heruntergeladen. Eine Praxis mit vielen tausend Rechnungen braucht eine Weile: Starten Sie es außerhalb der Öffnungszeiten.",
+  "Invoices imported": "Importierte Rechnungen",
+  "Waiting for the verification code above. It carries on by itself once it is entered.": "Wartet auf den Bestätigungscode oben. Es läuft von selbst weiter, sobald er eingegeben ist.",
+  "Bring the invoice originals": "Rechnungsoriginale holen",
+  "PracticeHub original (PDF)": "PracticeHub-Original (PDF)",
+  "Reads PracticeHub and runs every step below on the server, except Invoice originals and Signed forms. You can close the page.": "Liest PracticeHub und führt alle Schritte unten auf dem Server aus, außer Rechnungsoriginale und Unterschriebene Formulare. Sie können die Seite schließen.",
+  "Invoice originals": "Rechnungsoriginale",
+  "Each invoice as the PDF PracticeHub printed, filed with the patient. Runs on the server; needs Ledger first.": "Jede Rechnung als das PDF, das PracticeHub gedruckt hat, in der Patientenakte. Läuft auf dem Server; braucht zuerst Hauptbuch."
  }
 }

@@ -3788,6 +3788,12 @@ interface PracticeHubWebStub {
   patients: { webId: string; responseIds: number[] }[]
   /** Forms as Settings > Forms lists them, each with the builder data its editor page carries. */
   forms?: { id: string; name: string; active?: boolean; sections: unknown[][]; titles?: string[] }[]
+  /**
+   * Finances > Invoices, oldest first here; the stub serves it newest first
+   * as PracticeHub does. `number` null is a voided invoice, which prints "-".
+   * `date` as the list prints it ("5th March, 2026").
+   */
+  invoices?: { number: number | null; webId: string; date: string; amount: string; patient: string }[]
 }
 
 async function answerPracticeHubWeb(web: PracticeHubWebStub, req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, url: URL) {
@@ -3840,6 +3846,36 @@ async function answerPracticeHubWeb(web: PracticeHubWebStub, req: import('node:h
   if (url.pathname === '/config/scripts/pdf_downloads/custom_form.php') {
     res.setHeader('content-type', 'application/pdf')
     return res.end(Buffer.from(`%PDF-1.4\n% signed original of ${url.searchParams.get('form_id')}\n%%EOF\n`))
+  }
+  if (url.pathname === '/config/scripts/invoices/invoicesListings.php') {
+    // Newest first whatever is asked, as PracticeHub's is.
+    const all = [...(web.invoices ?? [])].reverse()
+    const start = Number(url.searchParams.get('start') ?? 0)
+    const length = Number(url.searchParams.get('length') ?? 10)
+    return json({
+      iTotalRecords: String(all.length),
+      iTotalDisplayRecords: String(all.length),
+      aaData: all.slice(start, start + length).map((i) => ({
+        date: i.date,
+        status: `<span class="label">${i.number === null ? 'Void' : 'Paid'}</span>`,
+        type: 0,
+        invNumber: `<strong>${i.number ?? '-'}</strong> <div class="invoice-id hidden">${i.webId}</div>`,
+        patient: i.patient,
+        amount: i.amount,
+        bal: '0.00',
+      })),
+    })
+  }
+  if (url.pathname === '/config/scripts/invoices/invoiceActions.php') {
+    // The same script voids and re-dates invoices. Anything but a download is
+    // a bug in the import, and fails loudly here rather than passing.
+    const invoice = (web.invoices ?? []).find((i) => i.webId === url.searchParams.get('id'))
+    if (req.method !== 'GET' || url.searchParams.get('action') !== 'download' || !invoice) {
+      res.statusCode = 500
+      return res.end('Unexpected invoice action')
+    }
+    res.setHeader('content-type', 'application/pdf')
+    return res.end(Buffer.from(`%PDF-1.4\n% invoice INV-${invoice.number}\n%%EOF\n`))
   }
   if (url.pathname === '/settings/forms') {
     const rows = (web.forms ?? [])

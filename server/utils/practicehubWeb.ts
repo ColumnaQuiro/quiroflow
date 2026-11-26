@@ -28,9 +28,12 @@ import { getAccountSecret, setAccountSecret } from '~/server/utils/accountSecret
 import {
   looksLikePdf,
   parsePracticeHubFormSubmissions,
+  parsePracticeHubInvoiceList,
   parsePracticeHubPatientIds,
+  practiceHubInvoicePdfPath,
   practiceHubLoginOutcome,
   type PracticeHubFormSubmission,
+  type PracticeHubInvoiceListing,
   type PracticeHubLoginOutcome,
 } from '~/utils/practicehubWebPages'
 import { parsePracticeHubFormDefinition, parsePracticeHubFormList, type PracticeHubFormDefinition, type PracticeHubFormListing } from '~/utils/practicehubFormDefinition'
@@ -210,6 +213,39 @@ export class PracticeHubWebClient {
   /** One form's signed original. */
   async formPdf(submission: PracticeHubFormSubmission): Promise<Buffer> {
     return this.get(submission.pdfPath, looksLikePdf)
+  }
+
+  /**
+   * A window of Finances > Invoices, counted from the OLDEST invoice: `fromOldest`
+   * 0 is the first invoice the clinic ever raised.
+   *
+   * The list comes newest first whatever order is asked for (an `order`
+   * parameter is ignored), so a position from the top moves every time an
+   * invoice is raised. Counted from the bottom it does not, which is what lets
+   * a job that takes hours stop and carry on without skipping or repeating.
+   * The total is read first, and the window read again if an invoice was
+   * raised between the two requests. Rows come back oldest first.
+   */
+  async invoiceWindow(fromOldest: number, size: number): Promise<{ rows: PracticeHubInvoiceListing[]; total: number }> {
+    const list = (start: number, length: number) => this.json(`/config/scripts/invoices/invoicesListings.php?draw=1&start=${start}&length=${length}`).then(parsePracticeHubInvoiceList)
+    let total = (await list(0, 1)).total
+    for (let attempt = 0; ; attempt++) {
+      const end = total - fromOldest
+      if (end <= 0) return { rows: [], total }
+      const start = Math.max(0, end - size)
+      const page = await list(start, end - start)
+      if (page.total === total || attempt >= 2) return { rows: page.rows.reverse(), total: page.total }
+      total = page.total
+    }
+  }
+
+  /**
+   * One invoice as the PDF its Print button gives. invoiceActions.php also
+   * voids and re-dates invoices, on other `action`s; only `download` is ever
+   * sent, and the path is built here rather than taken from a page.
+   */
+  async invoicePdf(webId: string): Promise<Buffer> {
+    return this.get(practiceHubInvoicePdfPath(webId), looksLikePdf)
   }
 }
 

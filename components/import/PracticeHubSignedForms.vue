@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { PracticeHubWebStatus } from '~/composables/usePracticeHubWeb'
+
 // Brings each submitted form's signed original across from PracticeHub.
 //
 // The Form responses step imports what the patient answered, but PracticeHub's
@@ -13,65 +15,9 @@
 // along the verification code PracticeHub may ask for, and show where it is.
 const t = useT()
 
-interface Status {
-  hasAddress: boolean
-  email: string | null
-  connected: boolean
-  code: { method: 'app' | 'email'; phone: string | null } | null
-  job: { status: 'idle' | 'running' | 'needs_code' | 'stopped' | 'failed' | 'done'; cursor: number; patients: number; stored: number; unmatched: number; failed: number; error: string | null; updatedAt: string | null }
-  forms: number
-  originals: number
-}
-
-const status = ref<Status | null>(null)
-const busy = ref(false)
-const error = ref('')
-const email = ref('')
-const password = ref('')
-const code = ref('')
-const changing = ref(false)
-const resent = ref(false)
-
-async function call(body: Record<string, unknown>): Promise<boolean> {
-  error.value = ''
-  try {
-    status.value = await useStaffFetch<Status>('/api/import/practicehub-web', { method: 'POST', body })
-    return true
-  } catch (e: any) {
-    error.value = e?.data?.statusMessage ?? e?.statusMessage ?? e?.message ?? String(e)
-    return false
-  }
-}
-
-async function act(body: Record<string, unknown>) {
-  busy.value = true
-  const ok = await call(body)
-  busy.value = false
-  return ok
-}
-
-async function connect() {
-  if (!email.value.trim() || !password.value) return
-  if (await act({ op: 'connect', email: email.value.trim(), password: password.value })) {
-    password.value = ''
-    changing.value = false
-  }
-}
-
-async function sendCode() {
-  if (await act({ op: 'code', code: code.value })) code.value = ''
-}
-
-async function resend(via: 'email' | 'sms') {
-  resent.value = await act({ op: 'resend', via })
-}
-
-async function forget() {
-  if (await act({ op: 'forget' })) {
-    email.value = ''
-    changing.value = false
-  }
-}
+// While a job runs on the server, this page asks how far it got. Either job:
+// both use the sign-in this step can change or remove.
+const { status, busy, error, act } = usePracticeHubWeb((s) => s.job.status === 'running' || s.invoiceOriginals.job.status === 'running')
 
 // The templates the Form responses step left behind were guessed from one
 // patient's answers. PracticeHub's form editor has each form exactly, so with
@@ -95,7 +41,7 @@ async function rebuildTemplates() {
   const sum = { updated: 0, created: 0, failed: [] as string[] }
   try {
     for (let after: number | null = 0; after !== null; ) {
-      const answer: Status & { templates: TemplateSync | null } = await useStaffFetch<Status & { templates: TemplateSync | null }>('/api/import/practicehub-web', { method: 'POST', body: { op: 'templates', after } })
+      const answer: PracticeHubWebStatus & { templates: TemplateSync | null } = await useStaffFetch<PracticeHubWebStatus & { templates: TemplateSync | null }>('/api/import/practicehub-web', { method: 'POST', body: { op: 'templates', after } })
       status.value = answer
       // PracticeHub asked for a code instead: the prompt above takes over.
       if (!answer.templates) return
@@ -118,25 +64,7 @@ const pct = computed(() => {
   return !job || job.patients === 0 ? 0 : Math.min(100, Math.round((job.cursor / job.patients) * 100))
 })
 const missing = computed(() => Math.max(0, (status.value?.forms ?? 0) - (status.value?.originals ?? 0)))
-
-// The job reports to the server, not to this page, so the page asks. Only
-// while something can change without a click here.
-let timer: ReturnType<typeof setInterval> | null = null
-watch(
-  () => running.value || Boolean(status.value?.code),
-  (live) => {
-    if (timer) clearInterval(timer)
-    timer = live ? setInterval(() => call({ op: 'status' }), 4000) : null
-  },
-)
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
-
-onMounted(() => call({ op: 'status' }))
-
-const fieldId = useId()
-const inputClass = 'mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const anyRunning = computed(() => running.value || status.value?.invoiceOriginals.job.status === 'running')
 
 const introLead = computed(() => t('Brings the signed original of every imported form across from PracticeHub, as a PDF with the signature, the drawings, the date and the IP address it was submitted from. Run Form responses first: an original is filed with the form it belongs to.', 'Trae de PracticeHub el original firmado de cada formulario importado, como PDF con la firma, los dibujos, la fecha y la dirección IP desde la que se envió. Ejecuta antes Respuestas de formularios: cada original se guarda con el formulario al que pertenece.'))
 const introNotes = computed(() => [
@@ -159,51 +87,7 @@ const introNotes = computed(() => [
     </div>
 
     <template v-else>
-      <!-- A code PracticeHub is waiting for. Above everything else: nothing moves until it is typed. -->
-      <form v-if="status.code" class="mt-4 max-w-md space-y-3 rounded-card border border-warning-border bg-warning-bg p-4" data-cy="ph-web-code" @submit.prevent="sendCode">
-        <p class="text-[13px] font-medium text-ink-900">{{ t('PracticeHub is asking for a verification code', 'PracticeHub pide un código de verificación') }}</p>
-        <p class="text-[12.5px] text-ink-700">
-          {{ status.code.method === 'app'
-            ? t('Enter the code from the authenticator app you use for PracticeHub.', 'Escribe el código de la aplicación de autenticación que usas con PracticeHub.')
-            : t(`PracticeHub has just sent a code to ${status.email}. Enter it here.`, `PracticeHub acaba de enviar un código a ${status.email}. Escríbelo aquí.`) }}
-        </p>
-        <div>
-          <label :for="`${fieldId}-code`" class="block text-sm font-medium text-ink-700">{{ t('Verification code', 'Código de verificación') }}</label>
-          <input :id="`${fieldId}-code`" v-model="code" type="text" inputmode="numeric" autocomplete="one-time-code" required :class="inputClass" data-cy="ph-web-code-input" />
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <UiBtn variant="primary" type="submit" :disabled="busy">{{ t('Confirm code', 'Confirmar código') }}</UiBtn>
-          <template v-if="status.code.method === 'email'">
-            <button type="button" class="text-sm font-medium text-ink-600 hover:underline" :disabled="busy" @click="resend('email')">{{ t('Send it again by email', 'Enviar de nuevo por correo') }}</button>
-            <button v-if="status.code.phone" type="button" class="text-sm font-medium text-ink-600 hover:underline" :disabled="busy" @click="resend('sms')">{{ t(`Send by SMS to ${status.code.phone}`, `Enviar por SMS al ${status.code.phone}`) }}</button>
-          </template>
-        </div>
-        <p v-if="resent" class="text-[12.5px] text-ink-muted2">{{ t('PracticeHub was asked to send a new code.', 'Se ha pedido a PracticeHub un código nuevo.') }}</p>
-      </form>
-
-      <form v-if="!status.email || changing" class="mt-4 max-w-md space-y-4" data-cy="ph-web-connect" @submit.prevent="connect">
-        <div>
-          <label :for="`${fieldId}-email`" class="block text-sm font-medium text-ink-700">{{ t('Email you sign in to PracticeHub with', 'Correo con el que entras en PracticeHub') }}</label>
-          <input :id="`${fieldId}-email`" v-model="email" type="email" autocomplete="off" required :class="inputClass" data-cy="ph-web-email" />
-        </div>
-        <div>
-          <label :for="`${fieldId}-password`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub password', 'Contraseña de PracticeHub') }}</label>
-          <input :id="`${fieldId}-password`" v-model="password" type="password" autocomplete="new-password" required :class="inputClass" data-cy="ph-web-password" />
-          <p class="mt-1 text-[12px] text-ink-faint">{{ t('An account that only signs in with Google has no password: set one in PracticeHub first.', 'Una cuenta que solo entra con Google no tiene contraseña: ponle una antes en PracticeHub.') }}</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <UiBtn variant="primary" type="submit" :disabled="busy" data-cy="ph-web-connect-submit">{{ busy ? t('Signing in…', 'Entrando…') : t('Sign in to PracticeHub', 'Entrar en PracticeHub') }}</UiBtn>
-          <button v-if="changing" type="button" class="text-sm font-medium text-ink-600 hover:underline" @click="changing = false">{{ t('Cancel', 'Cancelar') }}</button>
-        </div>
-      </form>
-
-      <div v-else class="mt-4 space-y-4">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-700">
-          <span data-cy="ph-web-connected">{{ status.connected ? t(`Signed in to PracticeHub as ${status.email}`, `Sesión iniciada en PracticeHub como ${status.email}`) : t(`Saved sign-in: ${status.email}`, `Acceso guardado: ${status.email}`) }}</span>
-          <button type="button" class="text-sm font-medium text-ink-600 hover:underline" :disabled="busy || running" @click="changing = true">{{ t('Change', 'Cambiar') }}</button>
-          <button type="button" class="text-sm font-medium text-ink-600 hover:underline" :disabled="busy || running" @click="forget">{{ t('Remove', 'Quitar') }}</button>
-        </div>
-
+      <ImportPracticeHubWebSignIn :status="status" :busy="busy" :locked="anyRunning" :act="act">
         <div class="rounded-card border border-line bg-surface p-4">
           <dl class="grid grid-cols-3 gap-3 text-[12.5px]">
             <div>
@@ -273,7 +157,7 @@ const introNotes = computed(() => [
             {{ t(`Could not be rebuilt: ${templatesDone.failed.join(', ')}. Try again.`, `No se pudieron rehacer: ${templatesDone.failed.join(', ')}. Inténtalo de nuevo.`) }}
           </p>
         </div>
-      </div>
+      </ImportPracticeHubWebSignIn>
 
       <p v-if="error" class="mt-3 text-[12.5px] text-danger-text" data-cy="ph-web-error">{{ error }}</p>
     </template>

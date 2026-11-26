@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 import { receptionistLineWanted } from '~/utils/growthPlans'
+import { BLIND_SPOT_PLAN_ID } from '~/utils/blindSpotPlan'
 import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 
 export interface PreviewResult {
@@ -28,7 +29,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; extraClinics?: number; growth?: boolean; receptionist?: boolean; branding?: boolean; blindSpot?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -64,6 +65,12 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   const branding = await brandingAddonPrices(serviceRole, body.interval)
   if (body.branding === true && !branding.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'The brand add-on has no Stripe price configured for this billing interval' })
+  }
+  // As subscribe.post.ts: never the add-on on the Blind Spot plan.
+  const blindSpot = await blindSpotAddonPrices(serviceRole, body.interval)
+  const blindSpotAllowed = plan.id !== BLIND_SPOT_PLAN_ID
+  if (body.blindSpot === true && blindSpotAllowed && !blindSpot.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Blind Spot has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -140,6 +147,14 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     items.push(brandingItem ? { id: brandingItem.id, price: branding.priceId, quantity: 1 } : { price: branding.priceId, quantity: 1 })
   } else if (brandingItem) {
     items.push({ id: brandingItem.id, deleted: true })
+  }
+  const blindSpotItem = current.items.data.find((item) => blindSpot.allPriceIds.has(item.price.id))
+  const wantsBlindSpot = blindSpotAllowed && (body.blindSpot ?? !!blindSpotItem)
+  if (wantsBlindSpot) {
+    if (!blindSpot.priceId) throw createError({ statusCode: 500, statusMessage: 'Blind Spot has no Stripe price configured for this billing interval' })
+    items.push(blindSpotItem ? { id: blindSpotItem.id, price: blindSpot.priceId, quantity: 1 } : { price: blindSpot.priceId, quantity: 1 })
+  } else if (blindSpotItem) {
+    items.push({ id: blindSpotItem.id, deleted: true })
   }
   // Same as subscribe.post.ts: the fee follows the interval.
   const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)

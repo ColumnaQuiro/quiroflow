@@ -36,6 +36,9 @@ const emailErrorText = computed(() =>
 onMounted(() => {
   const ref = route.query.ref
   if (typeof ref === 'string' && ref) localStorage.setItem('signup_referred_by', ref)
+  // A link from the Blind Spot page (?product=blind-spot) signs up for that
+  // product alone; onboarding.vue reads it and ticks its box.
+  if (route.query.product === 'blind-spot') localStorage.setItem('signup_product', 'blind_spot')
 
   // Same trick, same reason, for where the visitor came from: the account
   // does not exist until onboarding.vue, and by then the query string that

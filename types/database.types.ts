@@ -1784,6 +1784,7 @@ export type Database = {
           referral_program_enabled: boolean
           referral_reward_text: string | null
           referred_by_account_id: string | null
+          product: string
           require_two_factor: boolean
           scheduling_policy_fee_cents: number | null
           send_invoices_automatically_default: boolean
@@ -1917,6 +1918,7 @@ export type Database = {
           referral_program_enabled?: boolean
           referral_reward_text?: string | null
           referred_by_account_id?: string | null
+          product?: string
           require_two_factor?: boolean
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
@@ -2051,6 +2053,7 @@ export type Database = {
           referral_program_enabled?: boolean
           referral_reward_text?: string | null
           referred_by_account_id?: string | null
+          product?: string
           require_two_factor?: boolean
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
@@ -8961,6 +8964,88 @@ export type Database = {
           },
         ]
       }
+      blind_spot_tests: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          distance_cm: number
+          id: string
+          left_area: number | null
+          left_eye: Json
+          note: string | null
+          patient_id: string
+          phase: string
+          points_per_eye: number
+          px_per_mm: number
+          right_area: number | null
+          right_eye: Json
+          session_id: string
+          tested_at: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          distance_cm: number
+          id?: string
+          left_area?: number | null
+          left_eye: Json
+          note?: string | null
+          patient_id: string
+          phase?: string
+          points_per_eye: number
+          px_per_mm: number
+          right_area?: number | null
+          right_eye: Json
+          session_id?: string
+          tested_at?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          distance_cm?: number
+          id?: string
+          left_area?: number | null
+          left_eye?: Json
+          note?: string | null
+          patient_id?: string
+          phase?: string
+          points_per_eye?: number
+          px_per_mm?: number
+          right_area?: number | null
+          right_eye?: Json
+          session_id?: string
+          tested_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blind_spot_tests_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blind_spot_tests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blind_spot_tests_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       posture_comparisons: {
         Row: {
           account_id: string
@@ -9771,6 +9856,7 @@ export type Database = {
           id: string
           plan_id: string
           receptionist_addon: boolean
+          blind_spot_addon: boolean
           branding_addon: boolean
           status: string
           stripe_customer_id: string | null
@@ -9793,6 +9879,7 @@ export type Database = {
           id?: string
           plan_id: string
           receptionist_addon?: boolean
+          blind_spot_addon?: boolean
           branding_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
@@ -9815,6 +9902,7 @@ export type Database = {
           id?: string
           plan_id?: string
           receptionist_addon?: boolean
+          blind_spot_addon?: boolean
           branding_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
@@ -11352,6 +11440,10 @@ export type Database = {
       acknowledge_team_alert: {
         Args: { p_message_id: string }
         Returns: undefined
+      }
+      account_has_blind_spot: {
+        Args: { p_account_id: string }
+        Returns: boolean
       }
       anonymize_patient: {
         Args: { p_patient_id: string }

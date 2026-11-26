@@ -1,4 +1,5 @@
 import type { useAccountStore } from '~/stores/account'
+import { blindSpotOnlyAllows } from './blindSpotPlan'
 
 type Store = ReturnType<typeof useAccountStore>
 
@@ -122,6 +123,12 @@ const rules: Rule[] = [
 ]
 
 export function isRouteAllowed(store: Store, path: string): boolean {
+  // An account that bought only Blind Spot sees only Blind Spot, whatever
+  // its roles allow: the rest is a product it is not paying for.
+  if (store.isBlindSpotOnly && !blindSpotOnlyAllows(path)) return false
+  // The Blind Spot home is the standalone product's; a clinic opens tests
+  // from the patient record.
+  if (path === '/blind-spot' || path.startsWith('/blind-spot/')) return store.isBlindSpotOnly && scopeNotNone(store, 'patients_scope')
   const rule = rules.find((r) => r.test(path))
   return rule ? rule.check(store) : true
 }

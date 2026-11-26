@@ -52,6 +52,17 @@ export async function brandingAddonPrices(
   return addonPrices(serviceRole, 'branding', interval)
 }
 
+/**
+ * Blind Spot as an add-on (20261126082211_blind_spot.sql). Never on the
+ * Blind Spot plan, which is the same product sold on its own.
+ */
+export async function blindSpotAddonPrices(
+  serviceRole: SupabaseClient<Database>,
+  interval: 'monthly' | 'annual',
+): Promise<GrowthAddonPrices> {
+  return addonPrices(serviceRole, 'blind_spot', interval)
+}
+
 async function addonPrices(
   serviceRole: SupabaseClient<Database>,
   id: string,

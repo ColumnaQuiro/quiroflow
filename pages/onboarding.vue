@@ -160,6 +160,31 @@ async function declineInvite() {
   headingEl.value?.focus()
 }
 
+// Blind Spot on its own (accounts.product = 'blind_spot'): asked for by a
+// sign-up link with ?product=blind-spot (pages/signup.vue), and offered here
+// as a box to tick. The account is created as any other and then switched,
+// so create_account_with_owner needs no second shape.
+const blindSpotOnly = ref(false)
+onMounted(() => {
+  try {
+    blindSpotOnly.value = localStorage.getItem('signup_product') === 'blind_spot'
+  } catch {
+    // private mode: the box starts unticked
+  }
+})
+
+async function startBlindSpotOnly() {
+  await useStaffFetch('/api/blind-spot/product', { method: 'POST', body: { product: 'blind_spot' } })
+  try {
+    localStorage.removeItem('signup_product')
+  } catch {
+    // nothing to clear
+  }
+  store.reset()
+  await store.load()
+  await navigateTo('/blind-spot')
+}
+
 async function createPractice() {
   const { error: rpcError } = await supabase.rpc('create_account_with_owner', {
     p_account_name: accountName.value,
@@ -274,6 +299,7 @@ async function onSubmit() {
     return
   }
   loading.value = true
+  const creating = !alreadyCreated.value
   const message = alreadyCreated.value ? await updatePractice() : await createPractice()
   loading.value = false
   if (message) {
@@ -282,6 +308,15 @@ async function onSubmit() {
       : t('The practice wasn’t created. Try again.', 'No se ha creado la consulta. Inténtalo de nuevo.')
     errorDetail.value = message
     return
+  }
+  if (creating && blindSpotOnly.value) {
+    try {
+      await startBlindSpotOnly()
+      return
+    } catch {
+      // The practice exists; it simply carries on as the whole product, which
+      // the owner can still narrow later. Better than a sign-up that stops.
+    }
   }
   step.value = 'preferences'
 }
@@ -563,6 +598,14 @@ const LAUNCH_CARDS = computed(() => [
             <strong class="font-semibold">{{ previewSlug(accountName) || t('your-practice', 'tu-consulta') }}</strong>.app.quiroflow.com
           </p>
         </div>
+
+        <label v-if="!alreadyCreated" class="flex cursor-pointer items-start gap-2.5 rounded-ctl border border-line-control px-3 py-2.5" data-cy="onboarding-blind-spot-only">
+          <input v-model="blindSpotOnly" type="checkbox" class="mt-0.5 accent-brand" />
+          <span class="text-[13px] leading-[1.45] text-ink-700">
+            <strong class="font-semibold">{{ t('I only want Blind Spot', 'Solo quiero Blind Spot') }}</strong>
+            <span class="block text-ink-muted">{{ t('The blind spot test, its maps and reports, without the diary or invoicing. You can move to the whole of QuiroFlow later.', 'La prueba de punto ciego, sus mapas e informes, sin agenda ni facturación. Puedes pasar a QuiroFlow completo cuando quieras.') }}</span>
+          </span>
+        </label>
 
         <div v-if="error" role="alert" class="text-[12.5px] leading-[1.45] text-danger-text">
           <p>

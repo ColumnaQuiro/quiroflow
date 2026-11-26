@@ -128,6 +128,7 @@ export default defineEventHandler(async (event) => {
   let growthAddon = false
   let receptionistAddon = false
   let brandingAddon = false
+  let blindSpotAddon = false
   let verifactuLocations = 0
   const unmatchedPriceIds: string[] = []
 
@@ -162,6 +163,11 @@ export default defineEventHandler(async (event) => {
     const brandingLine = (addons ?? []).find((a) => a.id === 'branding' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
     if (brandingLine) {
       brandingAddon = true
+      continue
+    }
+    const blindSpotLine = (addons ?? []).find((a) => a.id === 'blind_spot' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
+    if (blindSpotLine) {
+      blindSpotAddon = true
       continue
     }
     const verifactuFee = (addons ?? []).find((a) => a.id === 'verifactu' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
@@ -215,6 +221,7 @@ export default defineEventHandler(async (event) => {
             growth_addon: growthAddon,
             receptionist_addon: receptionistAddon,
             branding_addon: brandingAddon,
+            blind_spot_addon: blindSpotAddon,
             // The VeriFactu fee's quantity as Stripe bills it; the cron
             // compares it with what is due (verifactu_fee_out_of_sync).
             verifactu_locations: verifactuLocations,

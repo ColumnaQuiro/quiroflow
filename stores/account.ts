@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { UiLanguage } from '../utils/uiLanguage'
+import type { AccountProduct } from '../utils/blindSpotPlan'
 
 export interface TeamMember {
   id: string
@@ -79,6 +80,10 @@ export const useAccountStore = defineStore('account', {
     trialEndsAt: null as string | null,
     growthAddon: false,
     receptionistAddon: false,
+    blindSpotAddon: false,
+    // 'blind_spot': the account bought only Blind Spot and sees only that
+    // (utils/blindSpotPlan.ts). 'clinic' is the whole of QuiroFlow.
+    product: 'clinic' as AccountProduct,
     planId: null as string | null,
     comped: false,
     hasStripeSubscription: false,
@@ -111,6 +116,11 @@ export const useAccountStore = defineStore('account', {
     // Personal (staff files, documents, the gestoría pack, profitability):
     // Practice and Clinic, a trial, or comped -- staffSectionIncluded, which
     // the server routes for the pack apply too.
+    // Blind Spot (punto ciego): the same reading as blindSpotIncluded(), which
+    // requireBlindSpot() and account_has_blind_spot() share.
+    hasBlindSpot: (state) =>
+      blindSpotIncluded({ plan_id: state.planId, blind_spot_addon: state.blindSpotAddon, status: state.subscriptionStatus, comped: state.comped }),
+    isBlindSpotOnly: (state) => state.product === 'blind_spot',
     hasStaffSection: (state) => staffSectionIncluded({ plan_id: state.planId, status: state.subscriptionStatus, comped: state.comped }),
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or once it has ended (the grace week is trialEnded), so
@@ -189,10 +199,10 @@ export const useAccountStore = defineStore('account', {
       const bootstrap = (boot ?? {}) as unknown as {
         two_factor?: 'ok' | 'verify' | 'enroll'
         team_member: TeamMember | null
-        account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null; require_two_factor?: boolean } | null
+        account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null; require_two_factor?: boolean; product?: AccountProduct } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
-        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; receptionist_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
+        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; receptionist_addon?: boolean; blind_spot_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
       }
       // Before the team member: under a pending second factor the database
       // hides it, and "no team member" would otherwise read as "send them to
@@ -241,6 +251,8 @@ export const useAccountStore = defineStore('account', {
       this.trialEndsAt = subscription?.trial_ends_at ?? null
       this.growthAddon = subscription?.growth_addon ?? false
       this.receptionistAddon = subscription?.receptionist_addon ?? false
+      this.blindSpotAddon = subscription?.blind_spot_addon ?? false
+      this.product = account?.product === 'blind_spot' ? 'blind_spot' : 'clinic'
       this.planId = subscription?.plan_id ?? null
       this.comped = subscription?.comped ?? false
       this.hasStripeSubscription = subscription?.has_stripe_subscription ?? false
@@ -277,6 +289,8 @@ export const useAccountStore = defineStore('account', {
       this.trialEndsAt = null
       this.growthAddon = false
       this.receptionistAddon = false
+      this.blindSpotAddon = false
+      this.product = 'clinic'
       this.planId = null
       this.comped = false
       this.hasStripeSubscription = false

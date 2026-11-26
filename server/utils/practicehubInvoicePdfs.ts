@@ -28,6 +28,7 @@
 // fixed per invoice, and patient_files is unique on (account,
 // external_reference).
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { practiceHubWebJobStalled } from '~/server/utils/practicehubWebChain'
 import type { Database } from '~/types/database.types'
 import { getAccountSecret, setAccountSecret } from '~/server/utils/accountSecrets'
 import { loadFormsJob, saveFormsJob } from '~/server/utils/practicehubFormPdfs'
@@ -233,14 +234,13 @@ export async function kickInvoicesJob(origin: string, accountId: string, cronSec
   }).catch(() => {})
 }
 
-/** Accounts whose job says running but has had no run for a while: a chain that broke. */
+/** Accounts whose job says running but has stopped being called: a chain Netlify cut (server/utils/practicehubWebChain.ts). */
 export async function stalledInvoicesJobs(admin: Admin, now = Date.now()): Promise<string[]> {
   const { data } = await admin.from('account_secrets').select('account_id, value').eq('name', 'practicehub_invoices_job').like('value', '%"status":"running"%')
   const stalled: string[] = []
   for (const row of data ?? []) {
     try {
-      const job = JSON.parse(row.value) as PracticeHubInvoicesJob
-      if (job.leaseUntil < now && now - Date.parse(job.updatedAt ?? '') > 90_000) stalled.push(row.account_id)
+      if (practiceHubWebJobStalled(JSON.parse(row.value) as PracticeHubInvoicesJob, now)) stalled.push(row.account_id)
     } catch {
       // Unreadable state is not a running job.
     }

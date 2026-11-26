@@ -5,8 +5,8 @@ import { kickInvoicesJob, runInvoicesJobSlice } from '~/server/utils/practicehub
 // One run of the invoice-originals job for one account, then the call that
 // starts the next (server/utils/practicehubInvoicePdfs.ts). The same shape as
 // practicehub-forms-run.post.ts, for the same reasons: called by itself, by
-// Settings > Import when a clinic presses start, and by lead-sequence-cron for
-// a chain that broke, so it needs no pg_cron job of its own.
+// Settings > Import when a clinic presses start, and by practicehub-web-cron
+// every minute for a chain Netlify cut off (server/utils/practicehubWebChain.ts).
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
   const secret = getHeader(event, 'x-cron-secret')

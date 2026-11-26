@@ -613,6 +613,18 @@ their dates, times and types, which checks in code rewrote or withheld it,
 and its tokens. Count from there, not from impressions, when asking whether
 a change made it better.
 
+## A function calling its own site stops after about nine hops
+
+Netlify treats a function's HTTP call to its own site as a loop after about
+nine hops and drops the next one silently: it never reaches the function, no
+log line, no status. A job that "calls the next run itself" therefore stops
+every ~45 seconds however healthy it is. The PracticeHub website jobs (signed
+forms, invoice originals) were built that way and crawled for weeks before it
+was noticed -- the first invoice-originals run stopped at exactly nine runs,
+twice. A call from pg_cron starts a fresh count, so a self-chaining job needs
+a cron that restarts it every minute (`practicehub-web-cron`,
+`server/utils/practicehubWebChain.ts`), not a fifteen-minute safety net.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

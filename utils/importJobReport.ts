@@ -54,8 +54,9 @@ export interface ImportJobProgress {
   earliest?: string
   /**
    * A downloading step's fresh read of its link list (PRACTICEHUB_LINK_LISTS),
-   * kept apart from the step's own counts. `readAt` is unset while it reads,
-   * and again once a link has lapsed, which sends the step to read it anew.
+   * kept apart from the step's own counts. `readAt` is unset while it reads;
+   * `lapsed` says a link was refused as expired, which sends the step to read
+   * it anew (utils/practicehubImport/linkRefresh.ts).
    */
   links?: {
     pass?: string
@@ -67,6 +68,8 @@ export interface ImportJobProgress {
     records?: number
     done?: number
     readAt?: string
+    /** A link from this read was refused as expired: read the list again. */
+    lapsed?: boolean
     /** Refreshes in a row since a file was last stored (practicehubImportJob caps them). */
     refreshes?: number
   }

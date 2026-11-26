@@ -32,8 +32,8 @@ const swatch = (stage: AppointmentStage) =>
           ? 'border border-line-control bg-chip-bg'
           : 'border border-line-control bg-brand-tint'
 const modes = computed(() => [
-  { key: 'columns' as const, label: t('Side by side', 'En columnas') },
-  { key: 'rows' as const, label: t('One under the other', 'En filas') },
+  { key: 'columns' as const, label: t('Columns', 'En columnas') },
+  { key: 'rows' as const, label: t('Rows', 'En filas') },
 ])
 </script>
 
@@ -41,20 +41,20 @@ const modes = computed(() => [
   <div class="text-[12.5px]">
     <template v-if="stackMode">
       <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Visits at the same time', 'Citas a la misma hora') }}</p>
-      <div role="group" :aria-label="t('Visits at the same time', 'Citas a la misma hora')" class="mt-2 flex h-8 items-center gap-0.5 rounded-ctl border border-line-control bg-surface p-0.5 touch:h-11" data-cy="stack-mode">
+      <div role="group" :aria-label="t('Visits at the same time', 'Citas a la misma hora')" class="mt-2 grid h-8 grid-cols-2 gap-0.5 rounded-ctl border border-line-control bg-surface p-0.5 touch:h-11" data-cy="stack-mode">
         <button
           v-for="m in modes"
           :key="m.key"
           type="button"
-          class="flex h-full flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 font-medium"
+          class="flex h-full min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[5px] px-2 font-medium"
           :class="stackMode === m.key ? 'bg-chip-bg text-ink-900' : 'text-ink-muted hover:bg-surface-subtle'"
           :aria-pressed="stackMode === m.key"
           :data-cy="`stack-mode-${m.key}`"
           @click="emit('update:stackMode', m.key)"
         >
-          <svg v-if="m.key === 'columns'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="3.6" height="11" rx="1" /><rect x="6.2" y="2.5" width="3.6" height="11" rx="1" /><rect x="10.9" y="2.5" width="3.6" height="11" rx="1" /></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
-          {{ m.label }}
+          <svg v-if="m.key === 'columns'" class="shrink-0" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="3.6" height="11" rx="1" /><rect x="6.2" y="2.5" width="3.6" height="11" rx="1" /><rect x="10.9" y="2.5" width="3.6" height="11" rx="1" /></svg>
+          <svg v-else class="shrink-0" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="3.6" rx="1" /><rect x="1.5" y="6.2" width="13" height="3.6" rx="1" /><rect x="1.5" y="10.9" width="13" height="3.6" rx="1" /></svg>
+          <span class="truncate">{{ m.label }}</span>
         </button>
       </div>
       <div class="-mx-3.5 my-3 h-px bg-line-divider" />

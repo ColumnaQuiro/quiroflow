@@ -11632,6 +11632,10 @@ export type Database = {
         Args: { p_clinic_id: string }
         Returns: number
       }
+      get_booking_widget_credit: {
+        Args: { p_slug: string }
+        Returns: boolean
+      }
       get_patient_access_log: {
         Args: {
           p_account_id: string

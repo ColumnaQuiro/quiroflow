@@ -44,6 +44,11 @@
  * with a thank-you page configured, that page opens on the clinic's site
  * rather than inside the box.
  *
+ * Under the box it puts one small line, "Reservas online con QuiroFlow"
+ * (credit, below), unless the clinic has bought its own look. A link inside
+ * the iframe belongs to the framed page, so until this the clinics' sites
+ * never linked to QuiroFlow however many of them embedded the widget.
+ *
  * Deliberately ES5 and dependency-free: it runs on whatever a clinic's site
  * is built with, which in practice means WordPress themes of unknown vintage.
  */
@@ -312,6 +317,85 @@
     }
   }
 
+  /**
+   * The credit line under a booking box, on the clinic's own page.
+   *
+   * Built here rather than inside the frame because that is the whole point:
+   * an <a> in the parent document is the clinic's site linking to us, an <a>
+   * in the frame is our page linking to itself.
+   *
+   * The widget decides whether it shows (pages/book/[slug].vue sends
+   * `credit: 'es' | 'en' | 'fr'`, or false when the clinic bought its own
+   * look, get_booking_widget_credit) and in which language, since it knows
+   * both and this script knows neither. The destination and the words are
+   * fixed here, not taken from the message: a frame can only say "show it,
+   * in this language", never where it points.
+   *
+   * Only "QuiroFlow" is the link -- the brand, not a keyword. Google treats
+   * keyword-rich links spread across sites through a widget as a link scheme;
+   * a visible, branded one is the ordinary "made with" credit. Small, centred
+   * and in the page's own font and colour (inherited, at reduced opacity), so
+   * it reads as a caption on light and dark themes alike.
+   */
+  var CREDIT = 'data-quiroflow-credit'
+  var CREDIT_TEXT = {
+    es: 'Reservas online con ',
+    en: 'Online booking by ',
+    fr: 'Réservation en ligne avec ',
+  }
+  var CREDIT_URL = 'https://quiroflow.com/'
+
+  /** The clinic's slug from its booking iframe, for utm_content. */
+  function slugOf(iframe) {
+    try {
+      var path = new URL(iframe.getAttribute('src') || '', ORIGIN).pathname
+      return decodeURIComponent(path.replace(/^\/book\//, '').split('/')[0] || '')
+    } catch (e) {
+      return ''
+    }
+  }
+
+  function creditFor(iframe) {
+    var next = iframe.nextSibling
+    return next && next.nodeType === 1 && next.hasAttribute(CREDIT) ? next : null
+  }
+
+  function credit(iframe, lang) {
+    var existing = creditFor(iframe)
+    var text = typeof lang === 'string' && Object.prototype.hasOwnProperty.call(CREDIT_TEXT, lang) ? CREDIT_TEXT[lang] : null
+    if (!text) {
+      // false, or anything this script does not know: no line. Also how one
+      // already shown goes away, should the clinic's answer change.
+      if (existing) existing.parentNode.removeChild(existing)
+      return
+    }
+    if (existing && existing.getAttribute(CREDIT) === lang) return
+
+    var line = document.createElement('p')
+    line.setAttribute(CREDIT, lang)
+    line.style.margin = '6px 0 0'
+    line.style.fontSize = '12px'
+    line.style.lineHeight = '1.4'
+    line.style.textAlign = 'center'
+    line.style.opacity = '0.7'
+    line.appendChild(document.createTextNode(text))
+
+    var url = CREDIT_URL + '?utm_source=booking_widget&utm_medium=referral'
+    var slug = slugOf(iframe)
+    if (slug) url += '&utm_content=' + encodeURIComponent(slug)
+    var link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('target', '_blank')
+    link.setAttribute('rel', 'noopener')
+    link.style.color = 'inherit'
+    link.style.textDecoration = 'underline'
+    link.appendChild(document.createTextNode('QuiroFlow'))
+    line.appendChild(link)
+
+    if (existing) existing.parentNode.replaceChild(line, existing)
+    else iframe.parentNode.insertBefore(line, iframe.nextSibling)
+  }
+
   var redirected = false
 
   /**
@@ -352,8 +436,11 @@
 
   /**
    * What the widget (pages/book/[slug].vue) sends to its parent:
-   *   { source: 'quiroflow-booking', height }            on mount and resize
+   *   { source: 'quiroflow-booking', height, credit }    on mount, resize and
+   *                                                      a language change
    *   { source: 'quiroflow-booking', event: 'booking_completed', url }
+   *
+   * `credit` is absent from an older widget, and then nothing changes.
    *
    * Accepted only from our own origin, and only from a booking iframe on this
    * page: any other frame here (an ad, a chat widget, a second embed from
@@ -366,7 +453,10 @@
     var iframe = bookingFrameFor(event.source)
     if (!iframe) return
     if (data.event === 'booking_completed') redirect(event.source, data.url)
-    else if (data.height !== undefined) resize(iframe, data.height)
+    else {
+      if (data.height !== undefined) resize(iframe, data.height)
+      if (data.credit !== undefined) credit(iframe, data.credit)
+    }
   }
 
   function run() {

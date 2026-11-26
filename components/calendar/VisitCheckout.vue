@@ -168,14 +168,16 @@ function pick(value: string) {
 const sellId = ref('')
 const sellInstallments = ref(1)
 const sellAmount = ref('')
-// The price, at once: the bono's own unless reception gives a discount.
+// The price, at once: the bono's own unless reception gives a discount --
+// and the field only shows once they ask for one (BonoSaleFields).
 const sellPrice = ref('')
+const sellDiscounting = ref(false)
 const sellMethod = ref('cash')
 const sellTemplate = computed(() => bonoTemplates.value.find((b) => b.id === sellId.value) ?? null)
 const sellOptions = computed(() => (sellTemplate.value ? readInstallmentOptions(sellTemplate.value.installment_options) : []))
 const sellAmountCents = computed(() => Math.round((parseFloat(sellAmount.value) || 0) * 100))
 const sellSpecialPriceCents = computed(() =>
-  sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
+  sellDiscounting.value && sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
 )
 // What the bono costs in all, the way it is being paid: the rest of it stays
 // owed on the bono, and the form says so.
@@ -191,10 +193,15 @@ function prefillSale() {
 // A discount is usually paid in full there and then: what is taken now
 // follows the price, so the bono is not left owing the discount.
 watch(sellPrice, (value) => {
-  if (sellTemplate.value && sellInstallments.value === 1) sellAmount.value = value
+  if (sellDiscounting.value && sellTemplate.value && sellInstallments.value === 1) sellAmount.value = value
+})
+// Taking the discount away puts the bono's own price back, in both boxes.
+watch(sellDiscounting, (on) => {
+  if (!on) prefillSale()
 })
 watch(sellId, () => {
   sellInstallments.value = 1
+  sellDiscounting.value = false
   sellMethod.value = method.value !== 'credit' ? method.value : (paymentMethods.value[0]?.key ?? 'cash')
   prefillSale()
 })
@@ -350,6 +357,7 @@ async function charge() {
           v-model:installments="sellInstallments"
           v-model:amount="sellAmount"
           v-model:price="sellPrice"
+          v-model:discounting="sellDiscounting"
           v-model:method="sellMethod"
           class="px-3.5 pb-3 pl-[2.85rem]"
           :templates="bonoTemplates"
@@ -393,6 +401,7 @@ async function charge() {
           v-model:installments="sellInstallments"
           v-model:amount="sellAmount"
           v-model:price="sellPrice"
+          v-model:discounting="sellDiscounting"
           v-model:method="sellMethod"
           class="mt-3"
           :templates="bonoTemplates"

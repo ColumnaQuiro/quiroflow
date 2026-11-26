@@ -719,6 +719,16 @@ const sellAmountPaid = ref('')
 // The price, at once: the bono's own unless the clinic gives this patient a
 // discount (utils/bonoSale specialBonoPriceCents).
 const sellPrice = ref('')
+// The price field is shown only once reception asks for a discount. Shown by
+// default, as the first box after the bono, it was where a receptionist typed
+// what the patient was paying TODAY -- half now, half later -- and "Pagado
+// ahora" copied it, so two bonos were sold at half price with nothing owed
+// (26 Nov 2026). A discount is something you choose, not a box you fill in.
+const sellDiscounting = ref(false)
+function toggleSellDiscount() {
+  sellDiscounting.value = !sellDiscounting.value
+  if (!sellDiscounting.value) prefillSaleAmount()
+}
 const sellMethod = ref<string>('cash')
 const sellingPackage = ref(false)
 
@@ -732,7 +742,7 @@ const activatingMembership = ref(false)
 const sellTemplate = computed(() => packageTemplates.value.find((p) => p.id === sellPackageId.value) ?? null)
 const sellOptions = computed(() => (sellTemplate.value ? readInstallmentOptions(sellTemplate.value.installment_options) : []))
 const sellSpecialPriceCents = computed(() =>
-  sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
+  sellDiscounting.value && sellTemplate.value && sellInstallments.value === 1 ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null,
 )
 const sellSpecialPriceInvalid = computed(() => sellSpecialPriceCents.value !== null && (sellSpecialPriceCents.value < 0 || sellSpecialPriceCents.value > (sellTemplate.value?.price_cents ?? 0)))
 // What the chosen way of paying costs in all, and what is taken now by default:
@@ -752,10 +762,11 @@ function prefillSaleAmount() {
 // asked how to sell one cheaper without the patient showing as owing the
 // difference, 25 Nov 2026 -- there was no way to.)
 watch(sellPrice, (value) => {
-  if (sellTemplate.value && sellInstallments.value === 1) sellAmountPaid.value = value
+  if (sellDiscounting.value && sellTemplate.value && sellInstallments.value === 1) sellAmountPaid.value = value
 })
 watch(sellPackageId, () => {
   sellInstallments.value = 1
+  sellDiscounting.value = false
   prefillSaleAmount()
 })
 watch(sellInstallments, prefillSaleAmount)
@@ -1931,6 +1942,7 @@ async function sellPackage() {
   sellInstallments.value = 1
   sellAmountPaid.value = ''
   sellPrice.value = ''
+  sellDiscounting.value = false
   sellMethod.value = 'cash'
   await Promise.all([loadAll(), loadFacturas()])
 }
@@ -3082,8 +3094,8 @@ const fieldId = useId()
               </option>
             </select>
           </div>
-          <div v-if="sellPackageId && sellInstallments === 1">
-            <label :for="`${fieldId}-sellPrice`" class="block text-[11px] text-ink-muted">{{ t('Price (€)', 'Precio (€)') }}</label>
+          <div v-if="sellPackageId && sellInstallments === 1 && sellDiscounting">
+            <label :for="`${fieldId}-sellPrice`" class="block text-[11px] text-ink-muted">{{ t('Discounted price (€)', 'Precio con descuento (€)') }}</label>
             <input :id="`${fieldId}-sellPrice`" v-model="sellPrice" data-cy="sell-package-price" type="number" min="0" :max="(sellTemplate?.price_cents ?? 0) / 100" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
           </div>
           <div v-if="sellPackageId">
@@ -3110,11 +3122,14 @@ const fieldId = useId()
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage || sellSpecialPriceInvalid" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
         </form>
-        <p v-if="sellTemplate && sellSpecialPriceCents !== null" class="mt-1.5 text-[11px]" :class="sellSpecialPriceInvalid ? 'text-danger-text' : 'text-ink-faint'" data-cy="sell-package-discount-note">
+        <button v-if="sellTemplate && sellInstallments === 1" type="button" class="mt-1.5 text-[11px] font-medium text-brand hover:underline" data-cy="sell-package-discount-toggle" @click="toggleSellDiscount">
+          {{ sellDiscounting ? t('Remove discount', 'Quitar descuento') : t('Apply a discount', 'Aplicar descuento') }}
+        </button>
+        <p v-if="sellTemplate && sellSpecialPriceCents !== null" class="mt-1.5 text-[11.5px] font-medium" :class="sellSpecialPriceInvalid ? 'text-danger-text' : 'text-warning-text'" data-cy="sell-package-discount-note">
           {{
             sellSpecialPriceInvalid
               ? t(`The price can be lowered, not raised: at most ${money(sellTemplate.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${money(sellTemplate.price_cents)}.`)
-              : t(`Special price: ${money(sellTemplate.price_cents - sellSpecialPriceCents)} off the bono's ${money(sellTemplate.price_cents)}.`, `Precio especial: ${money(sellTemplate.price_cents - sellSpecialPriceCents)} de descuento sobre ${money(sellTemplate.price_cents)}.`)
+              : t(`The bono will be sold for ${money(sellSpecialPriceCents)}, ${money(sellTemplate.price_cents - sellSpecialPriceCents)} off its ${money(sellTemplate.price_cents)}. To leave part of it owed, keep its price and lower "Paid now" instead.`, `El bono se venderá por ${money(sellSpecialPriceCents)}, con ${money(sellTemplate.price_cents - sellSpecialPriceCents)} de descuento sobre ${money(sellTemplate.price_cents)}. Para dejar parte pendiente, no pongas descuento: baja «Pagado ahora».`)
           }}
         </p>
         <p v-if="sellPackageId && sellInstallments > 1" class="mt-1.5 text-[11px] text-ink-faint" data-cy="sell-package-installments-note">

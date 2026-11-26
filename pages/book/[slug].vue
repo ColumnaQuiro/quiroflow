@@ -1155,8 +1155,16 @@ if (import.meta.client) {
       const padding = parseFloat(getComputedStyle(root).paddingBottom) || 0
       height = Math.ceil(content.getBoundingClientRect().bottom - root.getBoundingClientRect().top + padding)
     }
-    window.parent.postMessage({ source: 'quiroflow-booking', height }, '*')
+    // credit: the language of the "Reservas online con QuiroFlow" line
+    // embed.js puts under the box on the clinic's site, or false for none.
+    // On every report rather than once, so it follows the language picker;
+    // a host page without embed.js ignores it, as it does the height.
+    const payload = booking.value
+    const credit = payload?.status === 'ok' && payload.credit ? lang.value : false
+    window.parent.postMessage({ source: 'quiroflow-booking', height, credit }, '*')
   }
+  // Switching language may not change the height, so it reports by itself.
+  watch(lang, () => reportHeight())
   let observer: ResizeObserver | null = null
   onMounted(() => {
     window.addEventListener('message', onHostMessage)
@@ -1191,7 +1199,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value; minNoticeHours?: number; slotsPerDay?: typeof slotsPerDay.value }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean; credit?: boolean; locationHours?: typeof locationHours.value; typeWindows?: typeof typeWindows.value; minNoticeHours?: number; slotsPerDay?: typeof slotsPerDay.value }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1206,9 +1214,14 @@ const cdnCacheControl = useResponseHeader('Netlify-CDN-Cache-Control')
 const previewedByStaff = import.meta.server && !!useSupabaseUser().value
 
 const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPayload>(`public-booking:${slug}`, async () => {
-  const [infoResult, policyResult, giftsSold] = await Promise.all([
+  const [infoResult, policyResult, giftsSold, credit] = await Promise.all([
     supabase.rpc('get_public_booking_info', { p_slug: slug }),
     supabase.rpc('get_public_booking_policy', { p_slug: slug }),
+    // Whether public/embed.js puts "Reservas online con QuiroFlow" under the
+    // box (20261126111806_booking_widget_credit.sql). A failed read shows no
+    // line: a missing credit costs nothing, one on a clinic that paid to have
+    // our name off its site is a complaint.
+    supabase.rpc('get_booking_widget_credit', { p_slug: slug }).then(({ data }) => data === true),
     // Whether to offer "Tengo un bono regalo". Asked here, with the rest, so
     // the answer is in the HTML the CDN keeps: from the browser it was a
     // function run and up to four queries on every visit, for one flag.
@@ -1248,7 +1261,7 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
       ? supabase.rpc('get_appointment_type_slots_per_day', { p_type_ids: typeIds }).then(({ data }) => Object.fromEntries((data ?? []).map((r) => [r.appointment_type_id, r.online_slots_per_day])))
       : Promise.resolve({} as typeof slotsPerDay.value),
   ])
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, locationHours: perLocation, typeWindows: windows, minNoticeHours: noticeHours, slotsPerDay: perDay }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold, credit, locationHours: perLocation, typeWindows: windows, minNoticeHours: noticeHours, slotsPerDay: perDay }
 })
 
 if (import.meta.server) {

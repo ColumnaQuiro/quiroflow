@@ -152,7 +152,19 @@ export interface PracticeHubPlan {
    * `shouldStop` between chunks: when it says stop, return what was written
    * so far -- the next slice plans again and finds only what is left.
    */
-  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; linksExpired?: boolean }>
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{
+    written: number
+    errors: string[]
+    linksExpired?: boolean
+    /**
+     * Work done that finished nothing yet: chunks of a large file copied
+     * (ctx.files.copyLarge). Counts as progress, so a step spending several
+     * slices on one big file is not stopped as "made no progress".
+     */
+    progressed?: number
+    /** Something was left part-way for the next slice even though this one did not run out of time. */
+    more?: boolean
+  }>
 }
 
 /** Thrown by ctx.files.fetch when PracticeHub's S3 refuses a link because it has expired (it answers 403). */
@@ -174,6 +186,33 @@ export interface PracticeHubFileServices {
   compressFile(fileId: string): Promise<unknown>
   /** A profile photo made the size and format the browser importer stores (it shrinks on a canvas); null when the bytes are not an image. */
   shrinkPhoto(bytes: Uint8Array): Promise<{ bytes: Uint8Array; contentType: string } | null>
+  /**
+   * Copies one file too big to hold in a function's memory straight from
+   * PracticeHub's S3 into Storage, a few MB at a time, picking up where an
+   * earlier call left it. Copies until `shouldStop` says so; `done: false`
+   * means call again (next slice) with the same file. Throws
+   * PracticeHubLinkExpired like `fetch`, and PracticeHubFileTooLarge when
+   * Storage will not take a file that size at all.
+   */
+  copyLarge?(file: PracticeHubLargeCopy, shouldStop: () => boolean): Promise<{ done: true } | { done: false; moved: number }>
+}
+
+/** One file for PracticeHubFileServices.copyLarge. */
+export interface PracticeHubLargeCopy {
+  /** PracticeHub's file id: what the copy so far is remembered under. */
+  phId: number | string
+  url: string
+  storagePath: string
+  contentType: string
+}
+
+/** Storage refused a file for its size: the project's upload limit is below it. */
+export class PracticeHubFileTooLarge extends Error {
+  readonly bytes: number
+  constructor(bytes: number) {
+    super(`File of ${Math.round(bytes / 1048576)} MB is above Storage's upload limit`)
+    this.bytes = bytes
+  }
 }
 
 export interface PracticeHubImportContext {

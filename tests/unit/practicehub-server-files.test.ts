@@ -8,7 +8,7 @@ import {
   type PracticeHubFile,
 } from '../../utils/practicehubImport/files'
 import { planPracticeHubProfilePhotos } from '../../utils/practicehubImport/photos'
-import { PracticeHubLinkExpired, type PracticeHubFileServices, type PracticeHubSnapshot } from '../../utils/practicehubImport/types'
+import { PracticeHubFileTooLarge, PracticeHubLinkExpired, type PracticeHubFileServices, type PracticeHubSnapshot } from '../../utils/practicehubImport/types'
 import {
   fetchPracticeHubFile,
   PracticeHubFileDownloadFailed,
@@ -245,6 +245,51 @@ describe('the File attachments step on the server', () => {
     const { services } = fakeFiles((url) => (url.includes('file-501') ? new Error('PracticeHub file download failed (HTTP 500)') : JPEG))
     const result = await (await planFileAttachments(ctxFor(client, services), snapshot(files()))).apply(() => {}, () => false)
     expect(result).toEqual({ written: 2, errors: ['scan-501.pdf: PracticeHub file download failed (HTTP 500)'] })
+  })
+
+  it('copies a large file in pieces over several slices, never whole, and does not compress it', async () => {
+    const tables = clinic()
+    const { client, uploads } = fakeSupabase(tables)
+    const { services, fetched, compressed } = fakeFiles()
+    // Two slices' worth for the zip: unfinished after the first call.
+    const calls: string[] = []
+    services.copyLarge = async (file) => {
+      calls.push(`${file.phId}:${file.storagePath}:${file.contentType}`)
+      return calls.length === 1 ? { done: false, moved: 12 * 1024 * 1024 } : { done: true }
+    }
+    const big = phFile(510, 11, { size: 342 * 1024 * 1024, file_name: 'export.zip', mime_type: 'application/x-zip-compressed' })
+    const all = [big, phFile(501, 11)]
+
+    const plan = await planFileAttachments(ctxFor(client, services), snapshot(all))
+    const done: number[] = []
+    const first = await plan.apply((n) => done.push(n), () => false)
+    // The small file is stored; the zip is neither done nor an error, and the
+    // step asks for another slice although this one had time left.
+    expect(first).toEqual({ written: 1, errors: [], progressed: 12 * 1024 * 1024, more: true })
+    expect(done).toEqual([1])
+    expect(fetched.some((u) => u.includes('file-510'))).toBe(false)
+    expect(tables.patient_files!.some((f) => f.external_reference === '510')).toBe(false)
+
+    const next = await planFileAttachments(ctxFor(client, services), snapshot(all))
+    expect(next.total).toBe(1)
+    expect(await next.apply(() => {}, () => false)).toEqual({ written: 1, errors: [] })
+    expect(calls).toEqual(['510:acc/p1/510-export.zip:application/x-zip-compressed', '510:acc/p1/510-export.zip:application/x-zip-compressed'])
+    const row = tables.patient_files!.find((f) => f.external_reference === '510')!
+    expect(row).toMatchObject({ storage_path: 'acc/p1/510-export.zip', size_bytes: 342 * 1024 * 1024 })
+    // Not through the in-memory upload, and not read back to compress.
+    expect(uploads.some((u) => u.path.includes('510'))).toBe(false)
+    expect(compressed).not.toContain(row.id)
+  })
+
+  it('a file too big for Storage is an error that says so, and the others carry on', async () => {
+    const tables = clinic()
+    const { client } = fakeSupabase(tables)
+    const { services } = fakeFiles()
+    services.copyLarge = async () => { throw new PracticeHubFileTooLarge(342 * 1024 * 1024) }
+    const big = phFile(510, 11, { size: 342 * 1024 * 1024, file_name: 'export.zip' })
+    const result = await (await planFileAttachments(ctxFor(client, services), snapshot([big, phFile(501, 11)]))).apply(() => {}, () => false)
+    expect(result.written).toBe(1)
+    expect(result.errors).toEqual(["export.zip: 342 MB is more than QuiroFlow's file storage accepts. Contact QuiroFlow to raise the limit, then sync again."])
   })
 
   it('in a preview, plans and writes nothing', async () => {

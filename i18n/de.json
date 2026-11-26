@@ -1141,6 +1141,7 @@
   "{0} files belong to patients not imported yet: run Patients first.": "{0} Dateien gehören zu noch nicht importierten Patienten: Führen Sie zuerst „Patienten“ aus.",
   "{0} files came across without their content": "{0} Dateien kamen ohne Inhalt an",
   "{0} files have a patient here but no download link from PracticeHub, so there is nothing to fetch.": "{0} Dateien haben hier einen Patienten, aber PracticeHub hat keinen Download-Link geliefert, daher gibt es nichts abzurufen.",
+  "{0} MB is more than QuiroFlow's file storage accepts. Contact QuiroFlow to raise the limit, then sync again.": "{0} MB ist mehr, als der Dateispeicher von QuiroFlow annimmt. Bitte QuiroFlow, das Limit zu erhöhen, und synchronisiere dann erneut.",
   "{0} files in PracticeHub belong to something other than a patient (reports and data exports) and are left alone.": "{0} Dateien in PracticeHub gehören nicht zu einem Patienten (Berichte und Datenexporte) und bleiben unberührt.",
   "{0} files name a PracticeHub patient who is not in QuiroFlow: usually one added to PracticeHub since Patients last ran, or one deleted here.": "{0} Dateien nennen einen PracticeHub-Patienten, der nicht in QuiroFlow ist: meist einen, der seit dem letzten Lauf von Patienten in PracticeHub hinzugefügt wurde, oder einen, der hier gelöscht wurde.",
   "{0} finished visits with nothing charged": "{0} abgeschlossene Behandlungen ohne Abrechnung",

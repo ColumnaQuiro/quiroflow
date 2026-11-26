@@ -627,11 +627,11 @@ async function applySlice(
 interface WritablePlan {
   total: number
   warnings: string[]
-  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; skipped?: number }>
+  apply(progress: (done: number) => void, shouldStop: () => boolean): Promise<{ written: number; errors: string[]; skipped?: number; progressed?: number; more?: boolean }>
 }
 
 /** Writes as much of a step's plan as this slice has time for, carrying its counts on from earlier slices. Shared by both sources. */
-async function writePlan(
+export async function writePlan(
   plan: WritablePlan,
   kind: string,
   progress: ImportJobProgress,
@@ -662,12 +662,16 @@ async function writePlan(
   p.written = writtenBefore + res.written
   p.errors = [...(p.errors ?? []), ...res.errors].slice(0, 200)
 
-  if (outOfTime) {
+  // `more`: a large file left part-copied for the next slice, which this
+  // step is not finished without, though the slice had time to spare.
+  if (outOfTime || res.more) {
     // Finding that something has nothing to write moves the step on as much
     // as writing does, once it is remembered: one clinic's 12,238 photos were
     // all blank placeholders, so every slice wrote nothing and the step was
     // stopped three slices in, each having asked for the same ones.
-    p.stalls = res.written || res.skipped ? 0 : (p.stalls ?? 0) + 1
+    // Chunks of a large file count: one 342 MB zip takes several slices that
+    // each store no file at all.
+    p.stalls = res.written || res.skipped || res.progressed ? 0 : (p.stalls ?? 0) + 1
     if (p.stalls < MAX_STALLS) return { progress: p }
     p.errors.unshift(t('Stopped: this step made no progress in three tries.', 'Parado: este paso no avanzó en tres intentos.'))
   }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../../types/database.types'
 import { planImageShrink } from '../../utils/imageShrink'
-import { PracticeHubLinkExpired, type PracticeHubFileServices } from '../../utils/practicehubImport/types'
+import { PracticeHubFileTooLarge, PracticeHubLinkExpired, type PracticeHubFileServices, type PracticeHubLargeCopy } from '../../utils/practicehubImport/types'
 import { sniffImageType } from '../../utils/practicehubProfilePhotos'
 import { compressStoredFile } from './patientFileProcessing'
 
@@ -51,6 +51,16 @@ export const PRACTICEHUB_FILE_TIMEOUT_MS = 15_000
  * expiry (see below).
  */
 export async function fetchPracticeHubFile(url: string, options: { timeoutMs?: number } = {}): Promise<{ bytes: Uint8Array; contentType: string | null }> {
+  const res = await fetch(practiceHubS3Target(url), {
+    redirect: 'error',
+    ...(options.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
+  })
+  await refusePracticeHubS3(res)
+  return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: res.headers.get('content-type') }
+}
+
+/** The URL, if it is one of PracticeHub's S3 links (https, *.amazonaws.com); PracticeHubFileUrlRefused otherwise. */
+export function practiceHubS3Target(url: string): string {
   let target: URL
   try {
     target = new URL(url)
@@ -61,11 +71,11 @@ export async function fetchPracticeHubFile(url: string, options: { timeoutMs?: n
   if (target.protocol !== 'https:' || !(host === 'amazonaws.com' || host.endsWith('.amazonaws.com'))) {
     throw new PracticeHubFileUrlRefused('Only PracticeHub S3 file URLs can be fetched')
   }
+  return target.toString()
+}
 
-  const res = await fetch(target.toString(), {
-    redirect: 'error',
-    ...(options.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
-  })
+/** Throws what S3's answer means when it is not the file: PracticeHubLinkExpired or PracticeHubFileDownloadFailed. */
+export async function refusePracticeHubS3(res: Response): Promise<void> {
   if (res.status === 403) {
     // S3 answers 403 both for a signed link past its time ("Request has
     // expired") and for an object that is not there, when the signer may not
@@ -79,7 +89,6 @@ export async function fetchPracticeHubFile(url: string, options: { timeoutMs?: n
     throw new PracticeHubLinkExpired()
   }
   if (!res.ok) throw new PracticeHubFileDownloadFailed(res.status)
-  return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: res.headers.get('content-type') }
 }
 
 /** The JPEG quality the browser's canvas shrink uses (utils/imageShrink.ts). */

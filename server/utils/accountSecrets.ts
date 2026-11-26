@@ -45,6 +45,8 @@ export type AccountSecretName =
   | 'practicehub_web_session'
   /** Where the signed-forms job got to (server/utils/practicehubFormPdfs.ts). Not a secret; kept here because only the server reads it. */
   | 'practicehub_forms_job'
+  /** Where the invoice-originals job got to (server/utils/practicehubInvoicePdfs.ts). Not a secret, for the same reason. */
+  | 'practicehub_invoices_job'
   /**
    * GoCardless partner OAuth (server/utils/gocardless.ts): the clinic's own
    * GoCardless account. Permanent -- GoCardless issues no refresh token -- and

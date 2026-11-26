@@ -68,7 +68,7 @@ const sources = computed<Source[]>(() => [
         label: t('Set up', 'Configurar'),
         steps: [
           { key: 'general', label: t('Connection', 'Conexión'), hint: t('API key and clinic URL, saved once for every step.', 'Clave API y URL de la clínica, guardadas una vez para todos los pasos.') },
-          { key: 'full', label: t('Sync everything', 'Sincronizar todo'), hint: t('Reads PracticeHub and runs every step below on the server, except Signed forms. You can close the page.', 'Lee PracticeHub y hace en el servidor todos los pasos de abajo, salvo Formularios firmados. Puedes cerrar la página.') },
+          { key: 'full', label: t('Sync everything', 'Sincronizar todo'), hint: t('Reads PracticeHub and runs every step below on the server, except Invoice originals and Signed forms. You can close the page.', 'Lee PracticeHub y hace en el servidor todos los pasos de abajo, salvo Originales de facturas y Formularios firmados. Puedes cerrar la página.') },
         ],
       },
       {
@@ -97,6 +97,7 @@ const sources = computed<Source[]>(() => [
         note: t('A visit paid from a family member’s shared bono is only marked paid once that bono is here: run Bonos before the Ledger, or the Ledger again after Bonos.', 'Una visita pagada con el bono compartido de un familiar solo queda pagada cuando ese bono ya está aquí: ejecuta Bonos antes del Libro mayor, o el Libro mayor otra vez después de Bonos.'),
         steps: [
           { key: 'ledger', label: t('Ledger', 'Libro mayor'), hint: t('PracticeHub’s own invoices and payments, as it holds them. Needs Patients and Appointments first.', 'Las facturas y pagos propios de PracticeHub, tal y como los tiene. Requiere Pacientes y Citas antes.'), count: counted('payments', 'phpay-') },
+          { key: 'invoice_pdfs', label: t('Invoice originals', 'Originales de facturas'), hint: t('Each invoice as the PDF PracticeHub printed, filed with the patient. Runs on the server; needs Ledger first.', 'Cada factura como el PDF que imprimía PracticeHub, en la ficha del paciente. Funciona en el servidor; requiere antes Libro mayor.'), count: counted('patient_files', 'PH-invoice-pdf-') },
           { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, family sharing and autopay.', 'Sesiones, precio, bonos compartidos y cobro automático.'), count: counted('package_purchases', 'PH-package-') },
           { key: 'care_plans_v3', label: t('2.0 care plans', 'Planes 2.0'), hint: t('For a clinic already on PracticeHub 2.0: its bonos and memberships, read through the PracticeHub API. Read-only for now.', 'Para una clínica ya en PracticeHub 2.0: sus bonos y membresías, leídos con la PracticeHub API. Solo lectura por ahora.') },
           { key: 'gocardless', label: t('Direct debits (GoCardless)', 'Domiciliaciones (GoCardless)'), hint: t('Pairs the mandates in your GoCardless account with their patients, so memberships are collected without anyone signing again. Needs GoCardless connected in Settings › Payments.', 'Empareja las domiciliaciones de tu cuenta de GoCardless con sus pacientes, para cobrar las membresías sin que nadie vuelva a firmar. Requiere GoCardless conectado en Ajustes › Pagos.') },
@@ -511,6 +512,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
                 <ImportPracticeHubCarePlansImporter v-else-if="activeStep.key === 'care_plans'" />
                 <ImportPracticeHubCustomFormResponsesImporter v-else-if="activeStep.key === 'custom_form_responses'" />
                 <ImportPracticeHubSignedForms v-else-if="activeStep.key === 'signed_forms'" />
+                <ImportPracticeHubInvoicePdfs v-else-if="activeStep.key === 'invoice_pdfs'" />
                 <ImportPracticeHubExercisesImporter v-else-if="activeStep.key === 'exercises'" />
                 <ImportPracticeHubFilesImporter v-else-if="activeStep.key === 'file_attachments'" />
               </template>

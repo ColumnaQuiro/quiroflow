@@ -2,6 +2,8 @@
 import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { invoiceDueCents, settleInvoiceIfCovered } from '~/utils/settleInvoice'
+import { openWhenReady } from '~/utils/openWhenReady'
+import { practiceHubInvoicePdfReferenceForInvoice } from '~/utils/practicehubWebPages'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
@@ -68,6 +70,30 @@ async function load() {
   payments.value = pays ?? []
   paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
   loading.value = false
+  findOriginal()
+}
+
+// An invoice imported from PracticeHub: the receipt QuiroFlow prints from its
+// figures is not the document that was issued. Settings > Import > Invoice
+// originals files PracticeHub's own PDF with the patient, and this is the way
+// to it from the invoice. Absent until that step has run, and for anyone
+// whose role cannot see the patient's files.
+const logAccess = useAccessLog()
+const original = ref<{ storage_path: string; file_name: string } | null>(null)
+async function findOriginal() {
+  const reference = practiceHubInvoicePdfReferenceForInvoice(invoice.value?.invoice_number)
+  if (!reference) return
+  const { data } = await supabase.from('patient_files').select('storage_path, file_name').eq('external_reference', reference).not('storage_path', 'is', null).maybeSingle()
+  original.value = data?.storage_path ? { storage_path: data.storage_path, file_name: data.file_name } : null
+}
+function openOriginal() {
+  const file = original.value
+  if (!file || !invoice.value) return
+  logAccess('file_viewed', invoice.value.patient_id, { file: file.file_name })
+  openWhenReady(async () => {
+    const { data } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 60 * 5)
+    return data?.signedUrl
+  })
 }
 onMounted(async () => {
   load()
@@ -445,6 +471,7 @@ const fieldId = useId()
                 </UiBtn>
               </span>
               <UiBtn variant="secondary" @click="downloadPdf">{{ t('Download PDF', 'Descargar PDF') }}</UiBtn>
+              <UiBtn v-if="original" variant="secondary" data-cy="invoice-practicehub-original" @click="openOriginal">{{ t('PracticeHub original (PDF)', 'Original de PracticeHub (PDF)') }}</UiBtn>
               <span v-if="sendMessage" class="text-[12.5px] text-ink-muted2">{{ sendMessage }}</span>
               <span v-if="whatsapp.results.value[invoiceId]" class="text-[12.5px]" :class="whatsapp.results.value[invoiceId]!.ok ? 'text-ink-muted2' : 'font-semibold text-danger-text'" data-cy="invoice-whatsapp-result">{{ whatsapp.results.value[invoiceId]!.message }}</span>
             </div>

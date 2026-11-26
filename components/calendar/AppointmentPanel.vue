@@ -165,7 +165,9 @@ const headerSub = computed(() => {
   if (!f) return '\u00A0'
   const parts = [
     t(`${f.visits} ${f.visits === 1 ? 'visit' : 'visits'}`, `${f.visits} ${f.visits === 1 ? 'visita' : 'visitas'}`),
-    f.nextVisitAt ? t(`next ${formatShortDate(f.nextVisitAt)}`, `próxima ${formatShortDate(f.nextVisitAt)}`) : t('no next visit', 'sin próxima cita'),
+    f.nextVisitAt
+      ? t(`next ${formatShortDate(f.nextVisitAt)} ${formatTime(f.nextVisitAt)}`, `próxima ${formatShortDate(f.nextVisitAt)} ${formatTime(f.nextVisitAt)}`)
+      : t('no next visit', 'sin próxima cita'),
   ]
   if (f.phone) parts.push(f.phone)
   return parts.join(' · ')

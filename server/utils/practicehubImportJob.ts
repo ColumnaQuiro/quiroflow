@@ -8,6 +8,7 @@ import { dropPracticeHubPass, finishPracticeHubRead, loadPracticeHubPassList, lo
 import { practiceHubFileServices } from '~/server/utils/practicehubFiles'
 import { practiceHubLargeCopier } from '~/server/utils/practicehubLargeFile'
 import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_STEP_LISTS, PRACTICEHUB_V3_API_PATHS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
+import { practiceHubLinksAfterLapse, practiceHubLinksAfterSlice, practiceHubLinksFresh, practiceHubLinksNewRead, practiceHubLinksStartNewRead } from '~/utils/practicehubImport/linkRefresh'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
 import type { ImportJob, ImportJobOptions } from '~/server/utils/importJobs'
 
@@ -181,13 +182,6 @@ export async function practiceHubReadSlice(
   return { progress: p, result: { step: 'read', written: p.records ?? 0, errors: [], warnings: [] } }
 }
 
-/**
- * A fresh link list read this long ago is read again before more is
- * downloaded from it. PracticeHub's S3 links last about an hour; this keeps a
- * slice from starting on links that will lapse part way through.
- */
-const LINKS_MAX_AGE_MS = 30 * 60 * 1000
-
 export async function practiceHubApplySlice(
   admin: Admin,
   job: ImportJob,
@@ -214,12 +208,12 @@ export async function practiceHubApplySlice(
   const linkPath = PRACTICEHUB_LINK_LISTS[kind]
   if (linkPath && !(options.dryRun && snapshot.lists[linkPath])) {
     const links = p.links
-    const fresh = links?.readAt && Date.now() - Date.parse(links.readAt) < LINKS_MAX_AGE_MS
-    if (!fresh) {
-      if (!links || links.readAt) {
-        // Starting a read of the list, the first or after the links lapsed.
+    if (!practiceHubLinksFresh(links, Date.now())) {
+      if (practiceHubLinksStartNewRead(links)) {
+        // Starting a read of the list: the first, or after the links grew
+        // old or lapsed (linkRefresh.ts).
         if (links?.pass) await dropPracticeHubPass(admin, accountId, links.pass)
-        p.links = { pass: `links-${randomUUID()}`, listIndex: 0, page: 1, pagesRead: {}, records: 0, done: 0 }
+        p.links = practiceHubLinksNewRead(links, `links-${randomUUID()}`)
       }
       const conn = await practiceHubSavedConnection(admin, accountId)
       if (!conn) throw noConnection(t)
@@ -268,15 +262,18 @@ export async function practiceHubApplySlice(
       return res
     },
   }, p)
-  if (!linksExpired) return outcome
+  const wroteSomething = (outcome.progress.written ?? 0) > (progress.written ?? 0)
+  if (!linksExpired) {
+    if (!outcome.result) outcome.progress.links = practiceHubLinksAfterSlice(outcome.progress.links, wroteSomething)
+    return outcome
+  }
   // Fresh links that lapse again before a single file is stored are not
   // going to come right by reading the list once more (S3 answers 403 for
   // more than expiry, and a slow clinic could lap its own links): after a few
   // refreshes in a row with nothing written, the step stops and says so, and
   // the next sync carries on from what is stored.
-  const wroteSomething = (outcome.progress.written ?? 0) > (progress.written ?? 0)
-  const refreshes = wroteSomething ? 0 : (progress.links?.refreshes ?? 0) + 1
-  if (refreshes >= MAX_EMPTY_LINK_REFRESHES) {
+  const lapse = practiceHubLinksAfterLapse(outcome.progress.links, wroteSomething)
+  if (lapse.giveUp) {
     const p2 = outcome.progress
     const errors = [t(
       'Stopped: PracticeHub\'s download links kept expiring before anything could be stored. Run the sync again later; what is stored stays.',
@@ -284,9 +281,7 @@ export async function practiceHubApplySlice(
     ), ...(p2.errors ?? [])]
     return { progress: p2, result: { step: kind, written: p2.written ?? 0, errors, warnings: p2.warnings ?? [] } }
   }
-  const again = { ...outcome.progress, stalls: 0 }
-  again.links = { ...again.links, readAt: undefined, refreshes }
-  return { progress: again }
+  return { progress: { ...outcome.progress, stalls: 0, links: lapse.links } }
 }
 
 /**
@@ -301,6 +296,3 @@ function jobFileServices(admin: SupabaseClient<Database>, accountId: string) {
   const key = String(config.supabase?.secretKey || config.supabase?.serviceKey || '')
   return url && key ? { ...services, copyLarge: practiceHubLargeCopier(admin, accountId, { url, key }) } : services
 }
-
-/** Link refreshes in a row that may store nothing before a downloading step gives up. */
-const MAX_EMPTY_LINK_REFRESHES = 3

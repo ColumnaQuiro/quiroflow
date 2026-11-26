@@ -1,6 +1,6 @@
 import type { TablesInsert } from '~/types/database.types'
 import { readAllForAccount } from '~/utils/practicehubImport/appointments'
-import { eachPracticeHubDownload, practiceHubDownloadErrorText } from '~/utils/practicehubImport/downloads'
+import { eachPracticeHubDownload, practiceHubDownloadErrorText, PRACTICEHUB_DOWNLOAD_UNFINISHED, PRACTICEHUB_LARGE_FILE_BYTES } from '~/utils/practicehubImport/downloads'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { withDeadline } from '~/utils/withDeadline'
@@ -225,15 +225,31 @@ export const planFileAttachments: PracticeHubStepPlanner = async (ctx, snapshot)
         return { written: 0, errors: [t('Files are not downloaded in a preview.', 'En una vista previa no se descargan archivos.')] }
       }
       let written = 0
+      let progressed = 0
+      let more = false
       const errors: string[] = []
+      // A file this big is copied a few MB at a time, over as many slices as
+      // it takes, and never held whole: see PRACTICEHUB_LARGE_FILE_BYTES.
+      const copyLarge = services.copyLarge
+      const isLarge = (item: PracticeHubFileQueueItem) => !!copyLarge && (item.ph.size ?? 0) >= PRACTICEHUB_LARGE_FILE_BYTES
 
-      const linksExpired = await eachPracticeHubDownload(queue, { concurrency: CONCURRENCY, shouldStop, progress }, async (item) => {
-        const fetched = await services.fetch(item.ph.url!)
+      const linksExpired = await eachPracticeHubDownload(queue, { concurrency: CONCURRENCY, shouldStop, progress, unbounded: isLarge }, async (item) => {
         const storagePath = practiceHubFileStoragePath(accountId, item.patientId, item.ph)
-        const { error: uploadError } = await supabase.storage
-          .from('patient-files')
-          .upload(storagePath, fetched.bytes, { contentType: item.ph.mime_type ?? fetched.contentType ?? 'application/octet-stream', upsert: true })
-        if (uploadError) throw new Error(uploadError.message)
+        const large = isLarge(item)
+        if (large) {
+          const copied = await copyLarge!({ phId: item.ph.id, url: item.ph.url!, storagePath, contentType: item.ph.mime_type ?? 'application/octet-stream' }, shouldStop)
+          if (!copied.done) {
+            progressed += copied.moved
+            more = true
+            return PRACTICEHUB_DOWNLOAD_UNFINISHED
+          }
+        } else {
+          const fetched = await services.fetch(item.ph.url!)
+          const { error: uploadError } = await supabase.storage
+            .from('patient-files')
+            .upload(storagePath, fetched.bytes, { contentType: item.ph.mime_type ?? fetched.contentType ?? 'application/octet-stream', upsert: true })
+          if (uploadError) throw new Error(uploadError.message)
+        }
 
         // The CSV importer may already have made a placeholder row for this
         // file (name and size known, no content). Fill that one in rather
@@ -268,6 +284,11 @@ export const planFileAttachments: PracticeHubStepPlanner = async (ctx, snapshot)
         }
         written++
 
+        // Compressing reads the whole file back into memory, which is what
+        // copying it in pieces was for avoiding -- and nothing this size is
+        // an image it would shrink.
+        if (large) return undefined
+
         // The same step an upload takes, so imported files do not pile up
         // for Settings › Files to compress. After the file's deadline, not
         // under it -- the file is stored by now, whatever compression does --
@@ -278,7 +299,7 @@ export const planFileAttachments: PracticeHubStepPlanner = async (ctx, snapshot)
         }
       }, (item, e) => errors.push(`${practiceHubFileName(item.ph)}: ${practiceHubDownloadErrorText(e, t)}`))
 
-      return linksExpired ? { written, errors, linksExpired: true } : { written, errors }
+      return { written, errors, ...(progressed ? { progressed } : {}), ...(more ? { more: true } : {}), ...(linksExpired ? { linksExpired: true } : {}) }
     },
   }
 }

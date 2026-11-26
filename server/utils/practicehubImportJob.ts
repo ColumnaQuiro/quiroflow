@@ -6,6 +6,7 @@ import { practiceHubClassicGet } from '~/server/utils/practicehubClassic'
 import { practicehubV3Get } from '~/server/utils/practicehubV3'
 import { dropPracticeHubPass, finishPracticeHubRead, loadPracticeHubPassList, loadPracticeHubSnapshot, savePracticeHubPage } from '~/server/utils/practicehubSnapshotStore'
 import { practiceHubFileServices } from '~/server/utils/practicehubFiles'
+import { practiceHubLargeCopier } from '~/server/utils/practicehubLargeFile'
 import { planPracticeHubStep, PRACTICEHUB_LINK_LISTS, PRACTICEHUB_LISTS, PRACTICEHUB_STEP_LISTS, PRACTICEHUB_V3_API_PATHS, PRACTICEHUB_V3_LISTS, type PracticeHubListPath, type PracticeHubPlan, type PracticeHubStepKind } from '~/utils/practicehubImport'
 import type { ImportJobProgress, ImportJobStepResult } from '~/utils/importJobReport'
 import type { ImportJob, ImportJobOptions } from '~/server/utils/importJobs'
@@ -237,7 +238,7 @@ export async function practiceHubApplySlice(
     clinicId: job.clinic_id,
     defaultPhoneCountry: account?.default_phone_country || 'ES',
     t,
-    files: options.dryRun ? null : practiceHubFileServices(admin, accountId),
+    files: options.dryRun ? null : jobFileServices(admin, accountId),
   }, snapshot)
 
   if (options.dryRun) {
@@ -286,6 +287,19 @@ export async function practiceHubApplySlice(
   const again = { ...outcome.progress, stalls: 0 }
   again.links = { ...again.links, readAt: undefined, refreshes }
   return { progress: again }
+}
+
+/**
+ * The file services, with the piece-by-piece copy for large files when the
+ * Storage URL and service key are to hand (they always are on the server; a
+ * missing one leaves large files to the ordinary copy, as before).
+ */
+function jobFileServices(admin: SupabaseClient<Database>, accountId: string) {
+  const services = practiceHubFileServices(admin, accountId)
+  const config = useRuntimeConfig()
+  const url = String(config.public?.supabase?.url ?? '')
+  const key = String(config.supabase?.secretKey || config.supabase?.serviceKey || '')
+  return url && key ? { ...services, copyLarge: practiceHubLargeCopier(admin, accountId, { url, key }) } : services
 }
 
 /** Link refreshes in a row that may store nothing before a downloading step gives up. */

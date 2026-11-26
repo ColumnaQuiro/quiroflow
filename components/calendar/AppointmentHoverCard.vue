@@ -58,7 +58,9 @@ const visitsLine = computed(() => {
   const f = facts.value
   if (!f) return ''
   const visits = t(`${f.visits} ${f.visits === 1 ? 'visit' : 'visits'}`, `${f.visits} ${f.visits === 1 ? 'visita' : 'visitas'}`)
-  const next = f.nextVisitAt ? t(`next ${formatShortDate(f.nextVisitAt)}`, `próxima ${formatShortDate(f.nextVisitAt)}`) : t('no next visit', 'sin próxima cita')
+  const next = f.nextVisitAt
+    ? t(`next ${formatShortDate(f.nextVisitAt)} ${formatTime(f.nextVisitAt)}`, `próxima ${formatShortDate(f.nextVisitAt)} ${formatTime(f.nextVisitAt)}`)
+    : t('no next visit', 'sin próxima cita')
   return `${visits} · ${next}`
 })
 const line = computed(() => stageLine(props.appointment, props.view.stage))

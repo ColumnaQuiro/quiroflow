@@ -18,7 +18,12 @@ function seed(): Cypress.Chainable<{ account: StaffAccount; roomId: string }> {
         cy.task('db:setStickyNote', { patientId, note: 'Hernia discal L5.' })
         cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId, packageName: 'Bono Ajustes 10', sessionsTotal: 10, sessionsUsed: 7, priceCents: 40000 })
       })
-      seedVisit(account, room.id, 'Sergio', 'Navarro', 11, 30, { confirmationStatus: 'pending', reminderSentAt: todayAt(9, 0) })
+      seedVisit(account, room.id, 'Sergio', 'Navarro', 11, 30, { confirmationStatus: 'pending', reminderSentAt: todayAt(9, 0) }).then(({ patientId }) => {
+        // His next visit, a week on: the header names its time as well as its day.
+        const nextWeek = new Date(todayAt(12, 15))
+        nextWeek.setDate(nextWeek.getDate() + 7)
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId, practitionerId: account.teamMemberId, roomId: room.id, startsAt: nextWeek.toISOString() })
+      })
       return cy.wrap({ account, roomId: room.id })
     }),
   )
@@ -69,6 +74,7 @@ describe('Opening a visit', () => {
       cy.get('[data-cy=appt-hover]').should('not.exist')
       block('Sergio Navarro').trigger('pointerenter', { pointerType: 'mouse' })
       cy.get('[data-cy=appt-hover]').should('contain.text', 'Sergio Navarro').and('contain.text', 'Reminder sent today 09:00 · no reply')
+      cy.get('[data-cy=appt-hover-visits]').should('contain.text', 'next').and('contain.text', '12:15')
 
       // The pointer can leave the block for the card, and the card stays to
       // be read; a click on it opens the visit.
@@ -77,6 +83,7 @@ describe('Opening a visit', () => {
       cy.wait(500)
       cy.get('[data-cy=appt-hover]').should('be.visible').click()
       cy.get('[data-cy=appt-sheet]').should('be.visible').and('contain.text', 'Sergio Navarro')
+      cy.get('[data-cy=appt-sheet-facts]').should('contain.text', 'next').and('contain.text', '12:15')
       cy.get('[data-cy=appt-hover]').should('not.exist')
     })
   })

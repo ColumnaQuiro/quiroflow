@@ -4,20 +4,23 @@ import { deleteAccountSecret, getAccountSecret, setAccountSecret } from '~/serve
 import { PracticeHubCodeNeeded, PracticeHubWebClient, PracticeHubWebError, practiceHubWebClientFor } from '~/server/utils/practicehubWeb'
 import { syncPracticeHubTemplates } from '~/server/utils/practicehubFormTemplates'
 import { EMPTY_FORMS_JOB, formPdfCounts, kickFormsJob, loadFormsJob, saveFormsJob } from '~/server/utils/practicehubFormPdfs'
+import { EMPTY_INVOICES_JOB, invoicePdfCounts, kickInvoicesJob, loadInvoicesJob, saveInvoicesJob } from '~/server/utils/practicehubInvoicePdfs'
 import type { PracticeHubLoginOutcome } from '~/utils/practicehubWebPages'
 
-// Settings > Import > PracticeHub > Signed forms.
+// Settings > Import > PracticeHub > Signed forms, and > Invoice originals.
 //
 // The clinic's sign-in to PracticeHub's WEBSITE (not its API key), and the
-// job that uses it to bring each form's signed original across. One route,
-// one `op`, like quirocitas.post.ts:
+// two jobs that use it: one brings each form's signed original across, the
+// other each invoice's PDF (server/utils/practicehubInvoicePdfs.ts). One
+// route, one `op`, like quirocitas.post.ts:
 //
 //   status   what is saved, and where the job is
 //   connect  save an email and password and sign in; may answer "a code is wanted"
 //   code     the verification code PracticeHub asked for
 //   resend   ask PracticeHub to send that code again
-//   start    start (or carry on) bringing the originals
+//   start    start (or carry on) bringing the signed form originals
 //   stop     stop after the run in flight
+//   invoices_start / invoices_stop   the same, for the invoice originals
 //   forget   remove the saved sign-in and session
 //   templates  rebuild the imported form templates from PracticeHub's form
 //              editor, a few per call; `after` is where the last call stopped
@@ -32,6 +35,8 @@ type Body =
   | { op: 'resend'; via?: 'email' | 'sms' }
   | { op: 'start' }
   | { op: 'stop' }
+  | { op: 'invoices_start' }
+  | { op: 'invoices_stop' }
   | { op: 'forget' }
   | { op: 'templates'; after?: number }
 
@@ -42,11 +47,13 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<Body>(event)
 
   async function status() {
-    const [email, session, job, counts, { data: account }] = await Promise.all([
+    const [email, session, job, counts, invoiceJob, invoiceCounts, { data: account }] = await Promise.all([
       getAccountSecret(admin, accountId, 'practicehub_web_email'),
       getAccountSecret(admin, accountId, 'practicehub_web_session'),
       loadFormsJob(admin, accountId),
       formPdfCounts(admin, accountId),
+      loadInvoicesJob(admin, accountId),
+      invoicePdfCounts(admin, accountId),
       admin.from('accounts').select('practicehub_base_url').eq('id', accountId).maybeSingle(),
     ])
     return {
@@ -58,8 +65,25 @@ export default defineEventHandler(async (event) => {
       code: job.codeMethod ? { method: job.codeMethod, phone: job.codePhone } : null,
       job: { status: job.status, cursor: job.cursor, patients: job.patients, stored: job.stored, unmatched: job.unmatched, failed: job.failed, error: job.error, updatedAt: job.updatedAt },
       ...counts,
+      invoiceOriginals: {
+        job: {
+          status: invoiceJob.status,
+          cursor: invoiceJob.cursor,
+          total: invoiceJob.total,
+          stored: invoiceJob.stored,
+          notHere: invoiceJob.notHere,
+          mismatched: invoiceJob.mismatched,
+          mismatchExamples: invoiceJob.mismatchExamples,
+          failed: invoiceJob.failed,
+          error: invoiceJob.error,
+          updatedAt: invoiceJob.updatedAt,
+        },
+        ...invoiceCounts,
+      },
     }
   }
+  // Set by record() when a code just typed lets the invoice job carry on too.
+  let resumedInvoices = false
   async function record(outcome: PracticeHubLoginOutcome) {
     const job = await loadFormsJob(admin, accountId)
     if (outcome.state === 'code') {
@@ -70,17 +94,23 @@ export default defineEventHandler(async (event) => {
       job.codePhone = null
       // A job that stopped to ask for this code carries on by itself.
       if (job.status === 'needs_code') job.status = 'running'
+      // So does the invoice job, which shares the sign-in.
+      const invoices = await loadInvoicesJob(admin, accountId)
+      if (invoices.status === 'needs_code') {
+        await saveInvoicesJob(admin, accountId, { ...invoices, status: 'running' })
+        resumedInvoices = true
+      }
     }
     await saveFormsJob(admin, accountId, job)
     return job
   }
-
   function refuse(outcome: PracticeHubLoginOutcome): never {
     if (outcome.state === 'wait') throw createError({ statusCode: 429, statusMessage: 'PracticeHub is limiting sign-ins for the moment. Try again in a few minutes.' })
     throw createError({ statusCode: 400, statusMessage: outcome.state === 'refused' ? outcome.message : 'PracticeHub did not sign the import in.' })
   }
 
   const kick = () => kickFormsJob(getRequestURL(event).origin, accountId, useRuntimeConfig().cronSecret)
+  const kickInvoices = () => kickInvoicesJob(getRequestURL(event).origin, accountId, useRuntimeConfig().cronSecret)
 
   try {
     switch (body?.op) {
@@ -103,6 +133,7 @@ export default defineEventHandler(async (event) => {
         await setAccountSecret(admin, accountId, 'practicehub_web_email', email)
         await setAccountSecret(admin, accountId, 'practicehub_web_password', password)
         await record(outcome)
+        if (resumedInvoices) await kickInvoices()
         return await status()
       }
 
@@ -116,6 +147,7 @@ export default defineEventHandler(async (event) => {
         if (outcome.state !== 'in') refuse(outcome)
         const after = await record(outcome)
         if (after.status === 'running') await kick()
+        if (resumedInvoices) await kickInvoices()
         return await status()
       }
 
@@ -144,8 +176,24 @@ export default defineEventHandler(async (event) => {
         return await status()
       }
 
+      case 'invoices_start': {
+        if (!(await practiceHubWebClientFor(admin, accountId))) throw createError({ statusCode: 409, statusMessage: 'Save the PracticeHub sign-in first.' })
+        if ((await loadFormsJob(admin, accountId)).codeMethod) throw createError({ statusCode: 409, statusMessage: 'PracticeHub is waiting for a verification code.' })
+        // From the oldest invoice every time, for the reason 'start' gives:
+        // what is already stored is skipped without a download.
+        await saveInvoicesJob(admin, accountId, { ...EMPTY_INVOICES_JOB, status: 'running', startedAt: new Date().toISOString() })
+        await kickInvoices()
+        return await status()
+      }
+
+      case 'invoices_stop': {
+        const job = await loadInvoicesJob(admin, accountId)
+        if (job.status === 'running') await saveInvoicesJob(admin, accountId, { ...job, status: 'stopped' })
+        return await status()
+      }
+
       case 'forget': {
-        for (const name of ['practicehub_web_email', 'practicehub_web_password', 'practicehub_web_session', 'practicehub_forms_job'] as const) {
+        for (const name of ['practicehub_web_email', 'practicehub_web_password', 'practicehub_web_session', 'practicehub_forms_job', 'practicehub_invoices_job'] as const) {
           await deleteAccountSecret(admin, accountId, name)
         }
         return await status()

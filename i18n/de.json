@@ -8717,6 +8717,8 @@
   "This account isn't linked to a patient record.": "Dieses Konto ist mit keiner Patientenakte verknüpft.",
   "This account isn't linked to a team record.": "Dieses Konto ist mit keinem Teameintrag verknüpft.",
   "This account pays nothing for it, the replies past the included ones neither. They are counted all the same, so you can see what a paying clinic would use.": "Dieses Konto zahlt nichts dafür, auch nicht für Antworten über das Inklusivvolumen hinaus. Sie werden trotzdem gezählt, damit Sie sehen, was eine zahlende Praxis nutzen würde.",
+  "This appointment was deleted.": "Dieser Termin wurde gelöscht.",
+  "It shows because \"Hide deleted\" is off in the calendar's display options.": "Er wird angezeigt, weil „Gelöschte ausblenden“ in den Anzeigeoptionen des Kalenders ausgeschaltet ist.",
   "This appointment can no longer be cancelled online. Call or message the clinic.": "Dieser Termin kann nicht mehr online abgesagt werden. Rufen Sie die Praxis an oder schreiben Sie ihr.",
   "This appointment can't be moved from the app — please contact the clinic.": "Dieser Termin kann nicht in der App verschoben werden — bitte kontaktieren Sie die Praxis.",
   "This appointment falls outside working hours. Book it anyway?": "Dieser Termin liegt außerhalb der Arbeitszeiten. Trotzdem buchen?",

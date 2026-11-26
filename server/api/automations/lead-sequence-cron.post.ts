@@ -1,8 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { RUN_COLUMNS } from '~/server/utils/leadSequences'
-import { kickFormsJob, stalledFormsJobs } from '~/server/utils/practicehubFormPdfs'
-import { kickInvoicesJob, stalledInvoicesJobs } from '~/server/utils/practicehubInvoicePdfs'
 import { advanceRun, enrolDueSegments } from '~/server/utils/automationEngine'
 import { enrolAudienceEntries, enrolBonosRunningLow, enrolDateTriggers, enrolCarePlanMilestones, enrolCompletedDocs } from '~/server/utils/automationTriggers'
 import { enrolCreatedRows } from '~/server/utils/automationAtomRules'
@@ -107,17 +105,6 @@ export default defineEventHandler(async (event) => {
     leadAds = await syncDueLeadAdPages(supabase, origin)
   } catch (err) {
     console.error('[lead-sequence-cron] lead ad sweep failed:', (err as Error)?.message ?? err)
-  }
-
-  // A signed-forms or invoice-originals import whose chain of runs broke (a
-  // deploy mid-run, a request that never arrived). Each run starts the next
-  // itself, so this only has to notice one that stopped being called; here
-  // for the same reason as the sweep above.
-  try {
-    for (const accountId of await stalledFormsJobs(supabase)) await kickFormsJob(origin, accountId, runtimeConfig.cronSecret)
-    for (const accountId of await stalledInvoicesJobs(supabase)) await kickInvoicesJob(origin, accountId, runtimeConfig.cronSecret)
-  } catch (err) {
-    console.error('[lead-sequence-cron] signed-forms or invoice-originals restart failed:', (err as Error)?.message ?? err)
   }
 
   return { due: runs.length, advanced, ...(enrolled ? { enrolled } : {}), ...(leadAds?.filed ? { leadAdsFiled: leadAds.filed } : {}) }

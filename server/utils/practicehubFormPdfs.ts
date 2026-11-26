@@ -5,7 +5,9 @@
 // start and can close everything: each run does a few seconds of work, records
 // where it got to, and calls the next run itself. It does not depend on a
 // browser tab the way the other import steps do, because this one is thousands
-// of downloads rather than one list.
+// of downloads rather than one list. Netlify cuts that chain after about nine
+// runs, and practicehub-web-cron starts it again every minute
+// (server/utils/practicehubWebChain.ts).
 //
 // What a run does:
 //   1. reads every patient's website id (one request);
@@ -28,6 +30,7 @@
 // it is secret, but because only the server reads it and one row per account
 // is all it needs, the same reasoning as quirocitas_ledger_cursor.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { practiceHubWebJobStalled } from '~/server/utils/practicehubWebChain'
 import type { Database } from '~/types/database.types'
 import { getAccountSecret, setAccountSecret } from '~/server/utils/accountSecrets'
 import { PracticeHubCodeNeeded, practiceHubWebClientFor } from '~/server/utils/practicehubWeb'
@@ -248,14 +251,13 @@ export async function kickFormsJob(origin: string, accountId: string, cronSecret
   }).catch(() => {})
 }
 
-/** Accounts whose job says running but has had no run for a while: a chain that broke. */
+/** Accounts whose job says running but has stopped being called: a chain Netlify cut (server/utils/practicehubWebChain.ts). */
 export async function stalledFormsJobs(admin: Admin, now = Date.now()): Promise<string[]> {
   const { data } = await admin.from('account_secrets').select('account_id, value').eq('name', 'practicehub_forms_job').like('value', '%"status":"running"%')
   const stalled: string[] = []
   for (const row of data ?? []) {
     try {
-      const job = JSON.parse(row.value) as PracticeHubFormsJob
-      if (job.leaseUntil < now && now - Date.parse(job.updatedAt ?? '') > 90_000) stalled.push(row.account_id)
+      if (practiceHubWebJobStalled(JSON.parse(row.value) as PracticeHubFormsJob, now)) stalled.push(row.account_id)
     } catch {
       // Unreadable state is not a running job.
     }

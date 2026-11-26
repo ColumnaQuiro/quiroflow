@@ -6,9 +6,10 @@ import { kickFormsJob, runFormsJobSlice } from '~/server/utils/practicehubFormPd
 // the next (server/utils/practicehubFormPdfs.ts).
 //
 // It is called by itself, by Settings > Import when a clinic presses start,
-// and by lead-sequence-cron for a chain that broke. Not named *-cron on
-// purpose: nothing schedules it directly, so it needs no pg_cron job of its
-// own -- the safety net rides on one that is already scheduled.
+// and by practicehub-web-cron every minute for a chain that stopped -- which
+// is every ~nine runs, because Netlify drops a function's calls to its own
+// site as a loop after that many hops (server/utils/practicehubWebChain.ts).
+// Not named *-cron on purpose: nothing schedules it directly.
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
   const secret = getHeader(event, 'x-cron-secret')

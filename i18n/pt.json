@@ -1624,7 +1624,9 @@
   "{0} / {1} points": "{0} / {1} pontos",
   "{0} points per eye": "{0} pontos por olho",
   "{0} · before and after the adjustment": "{0} · antes e depois do ajuste",
-  "{0} · before the adjustment": "{0} · antes do ajuste"
+  "{0} · before the adjustment": "{0} · antes do ajuste",
+  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower \"Paid now\" instead.": "O bono será vendido por {0}, com {1} de desconto sobre {2}. Para deixar parte em dívida, não aplique desconto: baixe «Pago agora».",
+  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower the amount instead.": "O bono será vendido por {0}, com {1} de desconto sobre {2}. Para deixar parte em dívida, não aplique desconto: baixe o valor."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11006,6 +11008,9 @@
   "You cannot run tests": "Não pode fazer testes",
   "after the adjustment": "depois do ajuste",
   "before/after": "antes/depois",
-  "checks with no false positive": "controlos sem falso positivo"
+  "checks with no false positive": "controlos sem falso positivo",
+  "Discounted price (€)": "Preço com desconto (€)",
+  "Remove discount": "Remover desconto",
+  "Apply a discount": "Aplicar desconto"
  }
 }

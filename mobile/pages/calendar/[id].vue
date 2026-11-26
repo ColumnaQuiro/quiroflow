@@ -487,20 +487,29 @@ const sellAmount = ref('')
 // The price it is sold at: the bono's own, or lower for a discount (the web
 // checkout's, utils/bonoSale specialBonoPriceCents).
 const sellPrice = ref('')
+// Shown only once reception asks for a discount (RecordMoneySheet says why).
+const sellDiscounting = ref(false)
 const sellMethod = ref('cash')
 const sellTemplate = computed(() => bonoTemplates.value.find((b) => b.id === sellId.value) ?? null)
 const sellAmountCents = computed(() => Math.round((parseFloat(sellAmount.value.replace(',', '.')) || 0) * 100))
-const sellSpecialCents = computed(() => (sellTemplate.value ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null))
+const sellSpecialCents = computed(() => (sellTemplate.value && sellDiscounting.value ? specialBonoPriceCents(sellTemplate.value.price_cents, sellPrice.value) : null))
 const sellSpecialInvalid = computed(() => sellSpecialCents.value !== null && (sellSpecialCents.value < 0 || sellSpecialCents.value > (sellTemplate.value?.price_cents ?? 0)))
 const sellPriceCents = computed(() => sellSpecialCents.value ?? sellTemplate.value?.price_cents ?? 0)
-watch(sellId, () => {
+function prefillSell() {
   sellPrice.value = sellTemplate.value ? (sellTemplate.value.price_cents / 100).toFixed(2) : ''
   sellAmount.value = sellPrice.value
+}
+watch(sellId, () => {
+  sellDiscounting.value = false
+  prefillSell()
   sellMethod.value = checkoutMethod.value !== 'credit' ? checkoutMethod.value : (paymentMethods.value[0]?.key ?? 'cash')
 })
-// What is taken now follows the price, so a discount is not left owed.
+watch(sellDiscounting, (on) => {
+  if (!on) prefillSell()
+})
+// What is taken now follows a discounted price, so the discount is not left owed.
 watch(sellPrice, (value) => {
-  if (sellTemplate.value) sellAmount.value = value
+  if (sellTemplate.value && sellDiscounting.value) sellAmount.value = value
 })
 const checkoutPackage = computed(() => activePackages.value.find((p) => p.id === checkoutChoice.value) ?? null)
 const checkoutLabel = computed(() => {
@@ -1127,15 +1136,18 @@ watch(
                   <option v-for="b in bonoTemplates" :key="b.id" :value="b.id">{{ b.name }} ({{ b.session_count }}, {{ euros(b.price_cents) }})</option>
                 </select>
                 <template v-if="sellTemplate">
-                  <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
-                    {{ t('Price (€)', 'Precio (€)') }}
+                  <label v-if="sellDiscounting" class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+                    {{ t('Discounted price (€)', 'Precio con descuento (€)') }}
                     <input v-model="sellPrice" type="text" inputmode="decimal" :disabled="saving || processing" data-cy="checkout-sell-price" class="h-11 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" />
                   </label>
-                  <p v-if="sellSpecialCents !== null" class="text-[12px]" :class="sellSpecialInvalid ? 'text-danger-text' : 'text-ink-muted'" data-cy="checkout-sell-discount-note">
+                  <button type="button" :disabled="saving || processing" class="self-start text-[13px] font-medium text-brand disabled:opacity-50" data-cy="checkout-sell-discount-toggle" @click="sellDiscounting = !sellDiscounting">
+                    {{ sellDiscounting ? t('Remove discount', 'Quitar descuento') : t('Apply a discount', 'Aplicar descuento') }}
+                  </button>
+                  <p v-if="sellSpecialCents !== null" class="text-[12px] font-medium" :class="sellSpecialInvalid ? 'text-danger-text' : 'text-warning-text'" data-cy="checkout-sell-discount-note">
                     {{
                       sellSpecialInvalid
                         ? t(`The price can be lowered, not raised: at most ${euros(sellTemplate.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${euros(sellTemplate.price_cents)}.`)
-                        : t(`Special price: ${euros(sellTemplate.price_cents - sellSpecialCents)} off the bono's ${euros(sellTemplate.price_cents)}.`, `Precio especial: ${euros(sellTemplate.price_cents - sellSpecialCents)} de descuento sobre ${euros(sellTemplate.price_cents)}.`)
+                        : t(`The bono will be sold for ${euros(sellSpecialCents)}, ${euros(sellTemplate.price_cents - sellSpecialCents)} off its ${euros(sellTemplate.price_cents)}. To leave part of it owed, keep its price and lower "Paid now" instead.`, `El bono se venderá por ${euros(sellSpecialCents)}, con ${euros(sellTemplate.price_cents - sellSpecialCents)} de descuento sobre ${euros(sellTemplate.price_cents)}. Para dejar parte pendiente, no pongas descuento: baja «Pagado ahora».`)
                     }}
                   </p>
                 </template>

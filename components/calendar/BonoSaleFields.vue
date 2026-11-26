@@ -26,6 +26,10 @@ const amount = defineModel<string>('amount', { required: true })
 // The price this sale is made at, when it is paid at once: the bono's own to
 // begin with, lower for a discount (utils/bonoSale specialBonoPriceCents).
 const price = defineModel<string>('price', { required: true })
+// Whether the price field is shown at all. Hidden until reception asks for a
+// discount: shown by default it was filled in with what the patient paid
+// today, and sold bonos at half price (VisitCheckout's sellDiscounting).
+const discounting = defineModel<boolean>('discounting', { required: true })
 const method = defineModel<string>('method', { required: true })
 
 const t = useT()
@@ -50,8 +54,8 @@ const t = useT()
       </select>
     </label>
     <div v-if="template" class="flex flex-wrap items-center gap-2">
-      <label v-if="installments === 1" class="flex items-center gap-2">
-        {{ t('Price (€)', 'Precio (€)') }}
+      <label v-if="installments === 1 && discounting" class="flex items-center gap-2">
+        {{ t('Discounted price (€)', 'Precio con descuento (€)') }}
         <input v-model="price" data-cy="checkout-sell-price" type="number" min="0" :max="template.price_cents / 100" step="0.01" inputmode="decimal" :disabled="disabled" class="h-9 touch:h-11 w-24 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
       </label>
       <label class="flex items-center gap-2">
@@ -66,11 +70,14 @@ const t = useT()
         </select>
       </label>
     </div>
-    <p v-if="template && installments === 1 && props.specialPriceCents !== null" class="text-[11.5px] font-normal" :class="props.specialPriceCents > template.price_cents || props.specialPriceCents < 0 ? 'text-danger-text' : 'text-ink-faint'" data-cy="checkout-sell-discount-note">
+    <button v-if="template && installments === 1" type="button" :disabled="disabled" class="self-start text-[11.5px] font-medium text-brand hover:underline disabled:opacity-50" data-cy="checkout-sell-discount-toggle" @click="discounting = !discounting">
+      {{ discounting ? t('Remove discount', 'Quitar descuento') : t('Apply a discount', 'Aplicar descuento') }}
+    </button>
+    <p v-if="template && installments === 1 && props.specialPriceCents !== null" class="text-[11.5px] font-medium" :class="props.specialPriceCents > template.price_cents || props.specialPriceCents < 0 ? 'text-danger-text' : 'text-warning-text'" data-cy="checkout-sell-discount-note">
       {{
         props.specialPriceCents > template.price_cents || props.specialPriceCents < 0
           ? t(`The price can be lowered, not raised: at most ${formatEur(template.price_cents)}.`, `El precio se puede bajar, no subir: como máximo ${formatEur(template.price_cents)}.`)
-          : t(`Special price: ${formatEur(template.price_cents - props.specialPriceCents)} off the bono's ${formatEur(template.price_cents)}.`, `Precio especial: ${formatEur(template.price_cents - props.specialPriceCents)} de descuento sobre ${formatEur(template.price_cents)}.`)
+          : t(`The bono will be sold for ${formatEur(props.specialPriceCents)}, ${formatEur(template.price_cents - props.specialPriceCents)} off its ${formatEur(template.price_cents)}. To leave part of it owed, keep its price and lower "Paid now" instead.`, `El bono se venderá por ${formatEur(props.specialPriceCents)}, con ${formatEur(template.price_cents - props.specialPriceCents)} de descuento sobre ${formatEur(template.price_cents)}. Para dejar parte pendiente, no pongas descuento: baja «Pagado ahora».`)
       }}
     </p>
     <p v-if="template && amountCents < totalCents" class="text-[11.5px] font-normal text-ink-faint" data-cy="checkout-sell-owed-note">

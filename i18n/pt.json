@@ -1647,7 +1647,8 @@
   "{0} exercises created": "{0} exercícios criados",
   "{0} rows skipped.": "{0} linhas ignoradas.",
   "The import stopped: {0}": "A importação parou: {0}",
-  "Row {0}": "Linha {0}"
+  "Row {0}": "Linha {0}",
+  "Visits of type: {0}": "Consultas do tipo: {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11124,6 +11125,9 @@
   "1 exercise created": "1 exercício criado",
   "1 row skipped.": "1 linha ignorada.",
   "Import CSV": "Importar CSV",
-  "Row": "Linha"
+  "Row": "Linha",
+  "Choose types": "Escolha os tipos",
+  "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Teve pelo menos uma consulta concluída de algum destes tipos. Os filtros de número de consultas e última consulta contam então só estas.",
+  "Visit type": "Tipo de consulta"
  }
 }

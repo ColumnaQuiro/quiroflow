@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DAY_MS, needsVisitHistory, newestAt, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches } from '../../utils/automationAudience'
+import { DAY_MS, needsVisitHistory, newestAt, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, visitTypeIdsOf } from '../../utils/automationAudience'
+import { FILTERS, FILTER_KEYS, defaultFilterValue, filtersInUse } from '../../utils/automationCatalog'
 
 // The visit-history and "nothing sent lately" filters a recall segment is
 // built from, as both evaluators (per patient at enrolment, in bulk for the
@@ -50,6 +51,37 @@ describe('visit-history filters', () => {
     expect(needsVisitHistory({ last_visit_before_days: 0 })).toBe(false)
     expect(needsVisitHistory({ max_visits: 0 })).toBe(true)
     expect(needsVisitHistory({ last_visit_within_days: 120 })).toBe(true)
+  })
+})
+
+describe('visit type ("Tipo de visita") on a group of patients', () => {
+  it('needs at least one completed visit of the chosen types, counted by the caller', () => {
+    const f = { visit_type_ids: ['massage'] }
+    expect(needsVisitHistory(f)).toBe(true)
+    expect(visitHistoryMatches(f, 0, null, now)).toBe(false)
+    expect(visitHistoryMatches(f, 1, daysAgo(10), now)).toBe(true)
+    // With a band, the band is read off the visits of that type.
+    expect(visitHistoryMatches({ ...f, last_visit_before_days: 90 }, 2, daysAgo(10), now)).toBe(false)
+    expect(visitHistoryMatches({ ...f, last_visit_before_days: 90 }, 2, daysAgo(100), now)).toBe(true)
+  })
+
+  it('reads an empty or malformed list as any type, as every list filter does', () => {
+    expect(visitTypeIdsOf({ visit_type_ids: [] })).toBeNull()
+    expect(visitTypeIdsOf({ visit_type_ids: ['', 3] })).toBeNull()
+    expect(visitTypeIdsOf({})).toBeNull()
+    expect(needsVisitHistory({ visit_type_ids: [] })).toBe(false)
+    expect(visitHistoryMatches({ visit_type_ids: [] }, 0, null, now)).toBe(true)
+    expect(visitTypeIdsOf({ visit_type_ids: ['a', 'b'] })).toEqual(['a', 'b'])
+  })
+
+  it('is offered on a group, owns only its own key, and stays on screen while empty', () => {
+    const def = FILTERS.find((f) => f.key === 'visit_types')!
+    expect(def.segment).toBe(true)
+    expect(def.appointment).toBeFalsy()
+    expect(FILTER_KEYS.visit_types).toEqual(['visit_type_ids'])
+    expect(filtersInUse(defaultFilterValue('visit_types'))).toEqual(['visit_types'])
+    // Not mistaken for the appointment's own type, nor that for it.
+    expect(filtersInUse({ appointment_type_ids: ['x'] })).toEqual(['appointment_types'])
   })
 })
 

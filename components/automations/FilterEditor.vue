@@ -29,6 +29,7 @@ const momentKey = computed(() => (props.atom ? `${props.atom.subject}.${props.at
 const offered = computed(() =>
   FILTERS.filter((f) => (props.mode === 'segment' ? f.segment : f.appointment ? props.appointmentContext : true))
     .filter((f) => !f.moments || f.moments.includes(momentKey.value))
+    .filter((f) => !(f.noAppointment && props.mode === 'trigger' && props.appointmentContext))
     .filter((f) => !used.value.includes(f.key)),
 )
 const intOrUndefined = (raw: string) => (raw.trim() === '' ? undefined : Math.max(0, Math.round(Number(raw) || 0)))
@@ -50,16 +51,19 @@ function add(key: string) {
   adding.value = ''
 }
 
-const typeOptions = computed(() => {
-  const ids: string[] = props.modelValue.appointment_type_ids ?? (props.modelValue.appointment_type_id ? [props.modelValue.appointment_type_id] : [])
-  // Archived types are not offered for a new filter, but one the rule already
-  // uses stays listed (ticked, marked) -- dropping it would untick it on the
-  // next save and silently widen the rule to every other type.
+// Archived types are not offered for a new filter, but one the rule already
+// uses stays listed (ticked, marked) -- dropping it would untick it on the
+// next save and silently widen the rule to every other type. A visit of an
+// archived type is still history, so "Tipo de visita" keeps them the same way.
+function appointmentTypeOptions(ids: string[]) {
   return (b.lookup.value.appointmentTypes as { id: string; name: string; archived_at?: string | null }[])
     .filter((x) => !x.archived_at || ids.includes(x.id))
     .map((x) => ({ value: x.id, label: x.archived_at ? `${x.name} (${t('archived', 'archivado')})` : x.name, muted: !!x.archived_at }))
-})
+}
 const typeIds = computed<string[]>(() => props.modelValue.appointment_type_ids ?? (props.modelValue.appointment_type_id ? [props.modelValue.appointment_type_id] : []))
+const typeOptions = computed(() => appointmentTypeOptions(typeIds.value))
+const visitTypeIds = computed<string[]>(() => (Array.isArray(props.modelValue.visit_type_ids) ? props.modelValue.visit_type_ids : []))
+const visitTypeOptions = computed(() => appointmentTypeOptions(visitTypeIds.value))
 function setTypes(ids: string[]) {
   // The legacy single-type key goes the moment the list is edited.
   const next: Record<string, any> = { ...props.modelValue, appointment_type_ids: ids }
@@ -103,6 +107,16 @@ function setLastVisit(value: number, unit = lastVisitUnit.value) {
           :placeholder="t('Any type', 'Cualquier tipo')"
           @update:model-value="setTypes"
         />
+        <template v-else-if="key === 'visit_types'">
+          <AutomationsMultiPick
+            :model-value="visitTypeIds"
+            :options="visitTypeOptions"
+            :placeholder="t('Choose types', 'Elige tipos')"
+            :test-id="`${testPrefix ?? 'filter'}-visit-types`"
+            @update:model-value="set({ visit_type_ids: $event })"
+          />
+          <span :class="HINT">{{ t('Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.', 'Ha tenido al menos una visita completada de alguno de estos tipos. Los filtros de número de visitas y última visita cuentan entonces solo estas.') }}</span>
+        </template>
         <AutomationsMultiPick
           v-else-if="key === 'practitioners'"
           :model-value="modelValue.practitioner_ids ?? []"

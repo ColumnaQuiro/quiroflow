@@ -1647,7 +1647,8 @@
   "{0} exercises created": "{0} Übungen erstellt",
   "{0} rows skipped.": "{0} Zeilen übersprungen.",
   "The import stopped: {0}": "Der Import wurde abgebrochen: {0}",
-  "Row {0}": "Zeile {0}"
+  "Row {0}": "Zeile {0}",
+  "Visits of type: {0}": "Termine der Art: {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -11124,6 +11125,9 @@
   "1 exercise created": "1 Übung erstellt",
   "1 row skipped.": "1 Zeile übersprungen.",
   "Import CSV": "CSV importieren",
-  "Row": "Zeile"
+  "Row": "Zeile",
+  "Choose types": "Typen wählen",
+  "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Hatte mindestens einen abgeschlossenen Termin eines dieser Typen. Die Filter für Terminanzahl und letzten Termin zählen dann nur diese.",
+  "Visit type": "Terminart"
  }
 }

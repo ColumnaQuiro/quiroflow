@@ -53,6 +53,10 @@ export interface PHApiPatient {
   address?: PHApiAddress[] | null
   /** 1 male, 2 female, 3 other; 0 or null when not given. See practiceHubSex. */
   sex?: string | number | null
+  /** 'active', 'archived' or 'deceased'. Archived and deceased patients are in /patients too. */
+  patient_status?: string | null
+  /** What the patient likes to be called, beside their legal first name. */
+  preferred_name?: string | null
 }
 
 export interface PHApiAddress {
@@ -230,8 +234,21 @@ export function practiceHubPatientRows(
       'City': address.city,
       'Country': address.country,
       'Sex': practiceHubSex(p.sex),
+      'Status': text(p.patient_status).toLowerCase(),
+      'Preferred Name': text(p.preferred_name),
     }
   })
+}
+
+/** Each patient's tags from PracticeHub 2.0's /patients, by patient number. Only 2.0 sends them. */
+export function practiceHubTagsByPatientNumber(patients: Pick<PHV3Patient, 'patient_number' | 'tags'>[]): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const p of patients) {
+    const number = text(p.patient_number)
+    const tags = (p.tags ?? []).map((tag) => text(tag?.name)).filter(Boolean)
+    if (number && tags.length) map.set(number, tags)
+  }
+  return map
 }
 
 /** Each patient's government number from PracticeHub 2.0's /patients, by PracticeHub id. Patients without one are left out. */

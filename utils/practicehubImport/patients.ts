@@ -3,7 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { countryByCode } from '~/utils/countries'
 import { nationalIdAnswer } from '~/utils/docFields'
 import { LANGUAGES } from '~/utils/languages'
-import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
+import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubTagsByPatientNumber, practiceHubUtc, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
 // The Patients step of the PracticeHub import: who to create, who to update
@@ -52,6 +52,7 @@ export const PRACTICEHUB_PATIENT_OVERWRITE_FIELDS = [
   'city',
   'country',
   'gender',
+  'preferred_name',
 ] as const
 
 export interface PracticeHubExistingPatient {
@@ -74,10 +75,14 @@ export interface PracticeHubExistingPatient {
   city: string | null
   country: string | null
   gender: string | null
+  preferred_name: string | null
+  status: string
+  do_not_contact: boolean
+  tags: string[] | null
 }
 
 export const PRACTICEHUB_EXISTING_PATIENT_COLUMNS =
-  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id, address, postal_code, city, country, gender'
+  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id, address, postal_code, city, country, gender, preferred_name, status, do_not_contact, tags'
 
 export interface PracticeHubFieldDiff { field: string; from: string; to: string }
 
@@ -163,6 +168,12 @@ export function practiceHubPatientNotes(row: CsvRow): string | null {
   return parts.length > 0 ? parts.join('\n\n---\n\n') : null
 }
 
+/** Archived or deceased in PracticeHub. */
+export function practiceHubIsInactive(row: CsvRow): boolean {
+  const status = (row['Status'] ?? '').trim().toLowerCase()
+  return status === 'archived' || status === 'deceased'
+}
+
 export function practiceHubMarketingChannels(row: CsvRow): string[] {
   const channels: string[] = []
   if (row['SMS Marketing'] === '1') channels.push('sms')
@@ -212,6 +223,10 @@ export function practiceHubPatientFieldLabel(field: string, t: T): string {
     case 'city': return t('City', 'Ciudad')
     case 'country': return t('Country', 'País')
     case 'gender': return t('Sex', 'Sexo')
+    case 'preferred_name': return t('Preferred name', 'Nombre preferido')
+    case 'status': return t('Status', 'Estado')
+    case 'do_not_contact': return t('Do not contact', 'No contactar')
+    case 'tags': return t('Tags', 'Etiquetas')
     case 'phone': return t('Phone', 'Teléfono')
     default: return field
   }
@@ -229,6 +244,9 @@ export function practiceHubShownValue(field: string, value: unknown, t: T, pract
   if (field === 'gender' && value === 'female') return t('Female', 'Mujer')
   if (field === 'gender' && value === 'male') return t('Male', 'Hombre')
   if (field === 'gender' && value === 'other') return t('Other', 'Otro')
+  if (field === 'status' && value === 'active') return t('Active', 'Activo')
+  if (field === 'status' && value === 'inactive') return t('Inactive', 'Inactivo')
+  if (field === 'do_not_contact' && typeof value === 'boolean') return value ? t('Yes', 'Sí') : t('No', 'No')
   if (field === 'created_at' && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toLocaleDateString('es-ES')
   return practiceHubBlank(value, t)
 }
@@ -273,6 +291,35 @@ export function practiceHubPatientUpdate(
   if (realCreatedAt && new Date(realCreatedAt).getTime() !== new Date(existing.created_at).getTime()) {
     updates.created_at = realCreatedAt
     diff.push({ field: 'created_at', from: show('created_at', existing.created_at), to: show('created_at', realCreatedAt) })
+  }
+
+  // Archived or deceased in PracticeHub makes an active patient inactive, as
+  // archiving one here does. Never the other way: a patient made inactive
+  // here stays so, whatever PracticeHub says.
+  if (incoming.status === 'inactive' && existing.status !== 'inactive') {
+    updates.status = 'inactive'
+    diff.push({ field: 'status', from: show('status', existing.status), to: show('status', 'inactive') })
+  }
+  // Likewise one-way: nothing PracticeHub says lets a patient be contacted again.
+  if (incoming.do_not_contact === true && !existing.do_not_contact) {
+    updates.do_not_contact = true
+    diff.push({ field: 'do_not_contact', from: show('do_not_contact', false), to: show('do_not_contact', true) })
+  }
+
+  // Tags are only ever added. One the clinic removed or added here stays as
+  // it is, and the same tag in different case is not a second one -- the
+  // same comparison the patients_tags trigger makes.
+  const tagsHere = existing.tags ?? []
+  const seen = new Set(tagsHere.map((tag) => tag.trim().toLowerCase()))
+  const newTags = (incoming.tags ?? []).filter((tag) => {
+    const key = tag.trim().toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  if (newTags.length) {
+    updates.tags = [...tagsHere, ...newTags]
+    diff.push({ field: 'tags', from: blank(tagsHere), to: updates.tags.join(', ') })
   }
 
   // The DNI/NIE is not PracticeHub's to overwrite: it only fills a blank one.
@@ -403,6 +450,11 @@ export function practiceHubPatientsDiff(rows: CsvRow[], existingPatients: Practi
       // Only one of the three values the column's check allows: anything else
       // would fail the whole batch's insert, so it is left blank instead.
       gender: ['female', 'male', 'other'].includes(row['Sex']?.trim() ?? '') ? row['Sex']!.trim() : null,
+      preferred_name: row['Preferred Name']?.trim() || null,
+      // Archived and deceased patients come in inactive, as archiving one
+      // here would leave them, so they stay out of recalls and campaigns.
+      status: practiceHubIsInactive(row) ? 'inactive' : 'active',
+      do_not_contact: (row['Status'] ?? '').trim().toLowerCase() === 'deceased',
     }
 
     if (!existing) {
@@ -479,13 +531,17 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
   const phPatients = practiceHubList<PHApiPatient>(snapshot, '/patients')
   const practitioners = practiceHubList<PHNamed>(snapshot, '/practitioners')
   const referralSources = practiceHubList<PHNamed>(snapshot, '/referral_sources')
-  // Tags are only in PracticeHub 2.0's API, which the job does not read:
-  // no tagsByPatientNumber, so they come across empty (see the warning).
+  // Tags are only in PracticeHub 2.0's /patients, like the DNI/NIE below.
   // The DNI/NIE is only in 2.0's /patients, which the read copies when the
   // clinic has saved a 2.0 key. Without one the list is not in the copy, the
   // patients arrive without it, and the plan says so below.
   const v3Patients = snapshot.lists['/v3/patients'] as PHV3Patient[] | undefined
-  const rows = practiceHubPatientRows(phPatients, { practitioners, referralSources, governmentNumberById: practiceHubGovernmentNumbers(v3Patients ?? []) })
+  const rows = practiceHubPatientRows(phPatients, {
+    practitioners,
+    referralSources,
+    tagsByPatientNumber: practiceHubTagsByPatientNumber(v3Patients ?? []),
+    governmentNumberById: practiceHubGovernmentNumbers(v3Patients ?? []),
+  })
   const numberCountries = practiceHubNumberCountries(phPatients)
   // The CSV's "Patient Number" holds a custom reference (DNI, passport) for
   // the patients who have one; the API rows already carry the real number,
@@ -568,13 +624,9 @@ export const planPatients: PracticeHubStepPlanner = async (ctx, snapshot): Promi
       `Not on your team yet, so these patients get no default practitioner: ${unmatched.map((p) => `${p.name} (${p.patients})`).join(', ')}. Add them under Settings → Team with the same name and read again.`,
       `Aún no están en tu equipo, así que estos pacientes quedan sin profesional habitual: ${unmatched.map((p) => `${p.name} (${p.patients})`).join(', ')}. Añádelos en Ajustes → Equipo con el mismo nombre y vuelve a leer.`,
     )] : []),
-    t(
-      'Tags are only in the PracticeHub API, which this sync does not read, so new patients come in without them.',
-      'Las etiquetas solo están en la PracticeHub API, que esta sincronización no lee, así que los pacientes nuevos llegan sin ellas.',
-    ),
     ...(v3Patients ? [] : [t(
-      'The DNI/NIE (PracticeHub’s "Social security number") is only in the PracticeHub API. Save a PracticeHub API key in Settings > Import > Connection and read again to bring it.',
-      'El DNI/NIE (el «Número de la seguridad social» de PracticeHub) solo está en la PracticeHub API. Guarda una clave de la PracticeHub API en Ajustes > Importar > Conexión y vuelve a leer para traerlo.',
+      'Tags and the DNI/NIE (PracticeHub’s "Social security number") are only in the PracticeHub API. Save a PracticeHub API key in Settings > Import > Connection and read again to bring them.',
+      'Las etiquetas y el DNI/NIE (el «Número de la seguridad social» de PracticeHub) solo están en la PracticeHub API. Guarda una clave de la PracticeHub API en Ajustes > Importar > Conexión y vuelve a leer para traerlos.',
     )]),
     // A patient with no clinic is invisible on the main Patients list once
     // its clinic filter applies, with no error anywhere.

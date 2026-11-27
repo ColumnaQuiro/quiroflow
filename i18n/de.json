@@ -1636,7 +1636,9 @@
   "Rooms: PracticeHub {0}.": "Räume: PracticeHub {0}.",
   "PracticeHub rooms with no room of the same name in this clinic: {0}. Their visits come in with no room; add the room under Settings with the same name and sync again to fill it.": "PracticeHub-Räume ohne gleichnamigen Raum in dieser Praxis: {0}. Ihre Termine kommen ohne Raum an; lege den Raum unter Einstellungen mit demselben Namen an und synchronisiere erneut, um ihn zu ergänzen.",
   "This clinic has no rooms, so visits come in with none. PracticeHub has {0}: add rooms under Settings with the same names and sync again to fill them.": "Diese Praxis hat keine Räume, daher kommen Termine ohne Raum an. PracticeHub hat {0}: Lege Räume unter Einstellungen mit denselben Namen an und synchronisiere erneut, um sie zu ergänzen.",
-  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} Termine gehören zu einem anderen PracticeHub-Standort und kommen ohne Raum an: Die Räume dieses Standorts sind nicht die dieser Praxis."
+  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} Termine gehören zu einem anderen PracticeHub-Standort und kommen ohne Raum an: Die Räume dieses Standorts sind nicht die dieser Praxis.",
+  "Hide {0}": "{0} ausblenden",
+  "See the photo of {0}": "Foto von {0} ansehen"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -11085,6 +11087,9 @@
   "Form buttons in WhatsApp no longer lead to a broken link.": "Formular-Schaltflächen in WhatsApp führen nicht mehr zu einem defekten Link.",
   "rooms": "Räume",
   "Visits come in with no room: the copy read from PracticeHub has no rooms. Save the PracticeHub API key (phk_...) in Settings > Import > Connection, read PracticeHub again, and sync to bring each visit's room.": "Termine kommen ohne Raum an: Die aus PracticeHub gelesene Kopie enthält keine Räume. Speichere den PracticeHub-API-Schlüssel (phk_...) unter Einstellungen > Import > Verbindung, lies PracticeHub erneut und synchronisiere, um den Raum jedes Termins zu übernehmen.",
-  "Room set": "Mit Raum"
+  "Room set": "Mit Raum",
+  "This browser can't play this video. Videos filmed on an iPhone play in Safari and in the app.": "Dieser Browser kann dieses Video nicht abspielen. Mit einem iPhone aufgenommene Videos laufen in Safari und in der App.",
+  "Download the video": "Video herunterladen",
+  "Full screen": "Vollbild"
  }
 }

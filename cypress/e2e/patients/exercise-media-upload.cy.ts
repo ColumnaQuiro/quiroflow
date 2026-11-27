@@ -31,6 +31,13 @@ describe('Exercise video upload', () => {
         cy.get('[data-cy="exercise-media-attached"]').should('contain', 'Video attached')
         cy.get('[data-cy="library-save"]').click()
         cy.contains('[data-cy="library-row"]', 'Sentadilla').find('[data-cy="library-row-media"]').should('contain', 'Video')
+        // Staff play it in the row, not in a new tab (an iPhone .mov sent to a
+        // tab was a blank page and a download). These bytes are no video, so
+        // the player says so and offers the file instead of a black box.
+        cy.window().then((win) => cy.stub(win, 'open').as('windowOpen'))
+        cy.contains('[data-cy="library-row"]', 'Sentadilla').find('[data-cy="library-row-media"]').click()
+        cy.contains('[data-cy="library-row"]', 'Sentadilla').find('[data-cy="exercise-media-unplayable"] a').should('have.attr', 'href').and('match', /\/object\/sign\/exercise-media\//)
+        cy.get('@windowOpen').should('not.have.been.called')
 
         cy.task<{ media_path: string }[]>('db:selectRows', { table: 'exercises', columns: 'media_path', match: { id: exercise.id } }).then(([row]) => {
           const path = row.media_path

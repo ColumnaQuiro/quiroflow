@@ -82,3 +82,13 @@ export function videoEmbedUrl(url: string | null | undefined): string | null {
   }
   return null
 }
+
+/**
+ * A still of a YouTube link, for a list to show before anything is played
+ * (i.ytimg.com sets no cookies). Null for anything else: Vimeo has none
+ * without a call to its API.
+ */
+export function videoThumbnailUrl(url: string | null | undefined): string | null {
+  const id = videoEmbedUrl(url)?.match(/^https:\/\/www\.youtube-nocookie\.com\/embed\/([\w-]+)$/)?.[1]
+  return id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : null
+}

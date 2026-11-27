@@ -688,6 +688,7 @@ export const CONSENT_CHANNEL_OPTIONS: { value: string; label: Pair }[] = [
 
 export type FilterKey =
   | 'appointment_types'
+  | 'visit_types'
   | 'practitioners'
   | 'total_visits'
   | 'no_prior_appointments'
@@ -726,6 +727,8 @@ export interface FilterDef {
   segment?: boolean
   /** Only for these moments, as "subject.moment". */
   moments?: string[]
+  /** Not offered where an appointment is in scope: "Appointment type" says it there. */
+  noAppointment?: boolean
 }
 
 // Exactly the filter set evaluateAutomationFilters understands (plus the two
@@ -734,6 +737,11 @@ export interface FilterDef {
 // editor did, so a rule saved here and a rule saved there read the same.
 export const FILTERS: FilterDef[] = [
   { key: 'appointment_types', label: ['Appointment type', 'Tipo de cita'], appointment: true },
+  // The same types, asked of the patient's history rather than of an
+  // appointment in scope: a group send (a one-off above all) has none, so
+  // "Appointment type" cannot be offered there. Completed visits of any of
+  // these; with it, the visit-count and last-visit filters count only them.
+  { key: 'visit_types', label: ['Visit type', 'Tipo de visita'], segment: true, noAppointment: true },
   { key: 'practitioners', label: ['Practitioner', 'Profesional'], appointment: true },
   { key: 'total_visits', label: ['Completed visits', 'Nº de visitas'], segment: true },
   { key: 'no_prior_appointments', label: ['First-time patient', 'Paciente nuevo'], appointment: true },
@@ -781,6 +789,7 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   // moment it was added -- so "Tipo de cita" could never be picked at all.
   // An empty list means "any" to evaluateAutomationFilters and segmentAudience.
   if (Array.isArray(f.appointment_type_ids) || typeof f.appointment_type_id === 'string') used.push('appointment_types')
+  if (Array.isArray(f.visit_type_ids)) used.push('visit_types')
   if (Array.isArray(f.practitioner_ids)) used.push('practitioners')
   if (has('total_visits')) used.push('total_visits')
   if (f.no_prior_appointments === true) used.push('no_prior_appointments')
@@ -816,6 +825,7 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
 /** The stored keys a filter owns, so removing it removes exactly those. */
 export const FILTER_KEYS: Record<FilterKey, string[]> = {
   appointment_types: ['appointment_type_ids', 'appointment_type_id'],
+  visit_types: ['visit_type_ids'],
   practitioners: ['practitioner_ids'],
   total_visits: ['total_visits'],
   no_prior_appointments: ['no_prior_appointments'],
@@ -851,6 +861,8 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
   switch (key) {
     case 'appointment_types':
       return { appointment_type_ids: [] }
+    case 'visit_types':
+      return { visit_type_ids: [] }
     case 'practitioners':
       return { practitioner_ids: [] }
     case 'total_visits':

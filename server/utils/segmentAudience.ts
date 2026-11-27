@@ -1,6 +1,6 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/utils/carePlanOverdue'
-import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, type AudienceRef, type RecallQueueState } from '~/utils/automationAudience'
+import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, visitTypeIdsOf, type AudienceRef, type RecallQueueState } from '~/utils/automationAudience'
 import { localParts } from '~/utils/automationTiming'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { namedRecipients } from '~/server/utils/audienceMembers'
@@ -129,9 +129,13 @@ export async function segmentAudience(
   }
 
   if (candidates.length && needsVisitHistory(f)) {
-    const completed = await allRows<{ patient_id: string; starts_at: string }>((from, to) =>
-      service.from('appointments').select('patient_id, starts_at').eq('account_id', accountId).eq('status', 'completed').order('id').range(from, to),
-    )
+    // "Tipo de visita" narrows the history to those types, as ruleFiltersMatch does.
+    const visitTypeIds = visitTypeIdsOf(f)
+    const completed = await allRows<{ patient_id: string; starts_at: string }>((from, to) => {
+      let query = service.from('appointments').select('patient_id, starts_at').eq('account_id', accountId).eq('status', 'completed')
+      if (visitTypeIds) query = query.in('appointment_type_id', visitTypeIds)
+      return query.order('id').range(from, to)
+    })
     const count = new Map<string, number>()
     const last = new Map<string, number>()
     for (const a of completed) {

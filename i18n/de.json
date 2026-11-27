@@ -1656,7 +1656,8 @@
   "{0} exercises created": "{0} Übungen erstellt",
   "{0} rows skipped.": "{0} Zeilen übersprungen.",
   "The import stopped: {0}": "Der Import wurde abgebrochen: {0}",
-  "Row {0}": "Zeile {0}"
+  "Row {0}": "Zeile {0}",
+  "Visits of type: {0}": "Termine der Art: {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -3004,6 +3005,7 @@
   "Choose a membership…": "Mitgliedschaft wählen…",
   "Choose a password.": "Wählen Sie ein Passwort.",
   "Choose a patient to book": "Patient zum Buchen wählen",
+  "Choose a practitioner to book": "Behandler zum Buchen wählen",
   "Choose a patient to see their record.": "Wählen Sie einen Patienten, um seine Akte anzuzeigen.",
   "Choose a patient.": "Wählen Sie einen Patienten.",
   "Choose a place, or \"Anywhere\".": "Wählen Sie einen Ort oder „Überall“.",
@@ -11139,6 +11141,9 @@
   "1 exercise created": "1 Übung erstellt",
   "1 row skipped.": "1 Zeile übersprungen.",
   "Import CSV": "CSV importieren",
-  "Row": "Zeile"
+  "Row": "Zeile",
+  "Choose types": "Typen wählen",
+  "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Hatte mindestens einen abgeschlossenen Termin eines dieser Typen. Die Filter für Terminanzahl und letzten Termin zählen dann nur diese.",
+  "Visit type": "Terminart"
  }
 }

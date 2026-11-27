@@ -68,7 +68,7 @@ function existingPatient(over: Partial<PracticeHubExistingPatient> = {}): Practi
     id: 'p1', external_reference: '202400007', email: 'lucia@example.test', first_name: 'Lucía', last_name: 'Demo',
     date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null,
     created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null, national_id: null,
-    address: null, postal_code: null, city: null, country: null,
+    address: null, postal_code: null, city: null, country: null, gender: null,
     ...over,
   }
 }
@@ -169,6 +169,28 @@ describe('the address', () => {
     const nothing = practiceHubPatientsDiff(rowsFor(blankAddress), [existingPatient({ address: 'Calle Mayor 12' })], diffOptions())
     expect(nothing.toUpdate).toEqual([])
     expect(nothing.skippedDuplicate).toBe(1)
+  })
+})
+
+describe('the sex', () => {
+  const rowsFor = (sex: string | number | null) => practiceHubPatientRows([{ id: 1, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo', sex }], { practitioners: [], referralSources: [] })
+  const genderOf = (sex: string | number | null) => practiceHubPatientsDiff(rowsFor(sex), [], diffOptions()).toImport[0].patient.gender
+
+  it('reads PracticeHub Classic\'s codes as the words PracticeHub 2.0 gives the same patients', () => {
+    expect(genderOf('1')).toBe('male')
+    expect(genderOf('2')).toBe('female')
+    expect(genderOf(3)).toBe('other')
+  })
+
+  it('leaves it blank when not given, or when it is a code nobody has seen', () => {
+    expect(genderOf('0')).toBeNull()
+    expect(genderOf(null)).toBeNull()
+    expect(genderOf('9')).toBeNull()
+  })
+
+  it('fills a patient already here, and a blank in PracticeHub never clears one', () => {
+    expect(practiceHubPatientsDiff(rowsFor('2'), [existingPatient()], diffOptions()).toUpdate[0].updates).toEqual({ gender: 'female' })
+    expect(practiceHubPatientsDiff(rowsFor('0'), [existingPatient({ gender: 'female' })], diffOptions()).toUpdate).toEqual([])
   })
 })
 

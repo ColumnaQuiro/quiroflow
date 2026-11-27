@@ -51,6 +51,8 @@ export interface PHApiPatient {
    * whether or not anything else is there (965 of 965 at one clinic, 27 Nov 2026).
    */
   address?: PHApiAddress[] | null
+  /** 1 male, 2 female, 3 other; 0 or null when not given. See practiceHubSex. */
+  sex?: string | number | null
 }
 
 export interface PHApiAddress {
@@ -164,6 +166,18 @@ export function practiceHubAddress(address: PHApiAddress | null | undefined): { 
   return { address: street, postalCode, city, country }
 }
 
+// Classic sends the sex as a code; PracticeHub 2.0 sends the same patients'
+// as a word. Matched by id across every clinic's copy on 27 Nov 2026, 1 was
+// male (2,049 of 2,049), 2 female (2,455) and 3 other (3), which are exactly
+// the values a patient's sex takes here. 0 never appeared beside a word, so
+// it is read as not given, the same as null.
+const SEX_BY_CODE: Record<string, string> = { '1': 'male', '2': 'female', '3': 'other' }
+
+/** A Classic sex code as a patient's gender here ('male', 'female', 'other'), or '' when not given. */
+export function practiceHubSex(value: unknown): string {
+  return SEX_BY_CODE[text(value)] ?? ''
+}
+
 const flag = (value: unknown) => (value === true || value === 1 || value === '1' ? '1' : '0')
 
 /** Patients in the shape of the CSV export's rows, keyed by PracticeHub's patient number. */
@@ -215,6 +229,7 @@ export function practiceHubPatientRows(
       'Postcode': address.postalCode,
       'City': address.city,
       'Country': address.country,
+      'Sex': practiceHubSex(p.sex),
     }
   })
 }

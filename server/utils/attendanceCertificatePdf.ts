@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { attendanceCertificateText, certificateLanguage, visitWasAttended, type AttendanceCertificateText } from '~/utils/attendanceCertificate'
+import { attendanceCertificateText, certificateClinicName, certificateLanguage, visitWasAttended, type AttendanceCertificateText } from '~/utils/attendanceCertificate'
 
 // A justificante de asistencia for one visit, as a PDF -- see
 // utils/attendanceCertificate.ts for what it says and why it says nothing
@@ -56,7 +56,7 @@ export async function loadAttendanceCertificateData(
   const text = attendanceCertificateText({
     patientName: [patient.first_name, patient.last_name].filter(Boolean).join(' '),
     nationalId: patient.national_id,
-    clinicName: clinic?.legal_name || clinic?.name || '',
+    clinicName: certificateClinicName(clinic),
     startsAt: appt.starts_at,
     endsAt: appt.ends_at,
     timeZone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,

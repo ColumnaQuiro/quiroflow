@@ -4623,6 +4623,7 @@
   "Hours after the first visit and every few visits": "Stunden nach der ersten Behandlung und alle paar Behandlungen",
   "Hours are each clinic’s own. Each appointment type decides whether it is bookable online, how far ahead and whether it is paid when booking.": "Die Öffnungszeiten gelten je Praxis. Jede Terminart legt fest, ob sie online buchbar ist, wie weit im Voraus und ob bei der Buchung bezahlt wird.",
   "Hours at each clinic": "Arbeitszeiten je Standort",
+  "Hours per clinic": "Arbeitszeiten je Standort",
   "Hours before the appointment": "Stunden vor dem Termin",
   "Hours clocked": "Gestempelte Stunden",
   "Hours that day": "Stunden an diesem Tag",

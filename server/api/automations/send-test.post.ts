@@ -17,10 +17,10 @@ import { toE164 } from '~/utils/phone'
 // whatsapp_template action's lookup in patient_contact_numbers would simply
 // find nothing and no-op (see runWhatsAppAction) -- the caller supplies a
 // whatsappNumber to test against instead, passed through as an override
-// that skips that lookup. A WhatsApp action with a document attached will
-// still fail its patient_docs insert (patient_id has a real FK to patients)
-// and be swallowed by runActionsList's per-action try/catch, same as any
-// other best-effort action failure.
+// that skips that lookup. A form a step attaches (a WhatsApp form button, an
+// email's {{form_link}}) is not copied onto the staff member, who is not a
+// patient (patient_docs.patient_id has a real FK to patients): the test
+// checks the form exists and sends the example link /doc/ejemplo instead.
 //
 // Merge fields that need something a test does not have (the appointment's
 // date and time, an invoice, a review link) are sent as example values

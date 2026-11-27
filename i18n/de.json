@@ -1626,7 +1626,9 @@
   "{0} · before and after the adjustment": "{0} · vor und nach der Justierung",
   "{0} · before the adjustment": "{0} · vor der Justierung",
   "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower \"Paid now\" instead.": "Der Bono wird für {0} verkauft, {1} Rabatt auf {2}. Um einen Teil offen zu lassen, keinen Rabatt geben, sondern „Jetzt bezahlt“ senken.",
-  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower the amount instead.": "Der Bono wird für {0} verkauft, {1} Rabatt auf {2}. Um einen Teil offen zu lassen, keinen Rabatt geben, sondern den Betrag senken."
+  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower the amount instead.": "Der Bono wird für {0} verkauft, {1} Rabatt auf {2}. Um einen Teil offen zu lassen, keinen Rabatt geben, sondern den Betrag senken.",
+  "Sit {0} cm from the screen and look at the cross the whole time. Each dot comes after a 3, 2, 1; tap the screen the moment you see it.": "Setzen Sie sich {0} cm vor den Bildschirm und schauen Sie die ganze Zeit auf das Kreuz. Jeder Punkt kommt nach einem 3, 2, 1; tippen Sie auf den Bildschirm, sobald Sie ihn sehen.",
+  "Sit {0} cm from the screen and look at the cross the whole time. Each dot comes after a 3, 2, 1; press the space bar the moment you see it.": "Setzen Sie sich {0} cm vor den Bildschirm und schauen Sie die ganze Zeit auf das Kreuz. Jeder Punkt kommt nach einem 3, 2, 1; drücken Sie die Leertaste, sobald Sie ihn sehen."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -11014,6 +11016,9 @@
   "checks with no false positive": "Kontrollen ohne falsch positives Ergebnis",
   "Discounted price (€)": "Rabattierter Preis (€)",
   "Remove discount": "Rabatt entfernen",
-  "Apply a discount": "Rabatt gewähren"
+  "Apply a discount": "Rabatt gewähren",
+  "This screen is too narrow for the test, even close up. Use a tablet or a computer.": "Dieser Bildschirm ist für den Test zu schmal, auch aus der Nähe. Nutzen Sie ein Tablet oder einen Computer.",
+  "Keep looking at the cross. After 3, 2, 1 a dot moves out: tap the screen as soon as you see it.": "Schauen Sie weiter auf das Kreuz. Nach 3, 2, 1 bewegt sich ein Punkt nach außen: Tippen Sie auf den Bildschirm, sobald Sie ihn sehen.",
+  "Keep looking at the cross. After 3, 2, 1 a dot moves out: press the space bar (or tap) as soon as you see it.": "Schauen Sie weiter auf das Kreuz. Nach 3, 2, 1 bewegt sich ein Punkt nach außen: Drücken Sie die Leertaste (oder tippen Sie), sobald Sie ihn sehen."
  }
 }

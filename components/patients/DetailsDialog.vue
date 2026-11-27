@@ -452,8 +452,10 @@ const fieldId = useId()
       ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Patient details', 'Datos del paciente')"
-      class="max-h-[92vh] w-full overflow-y-auto rounded-t-card bg-surface-page lg:max-w-[900px] lg:rounded-card"
+      class="max-h-[92vh] w-full scroll-pt-20 overflow-y-auto rounded-t-card bg-surface-page lg:max-w-[900px] lg:rounded-card"
     >
+      <!-- scroll-pt-20: a field scrolled or tabbed to stops below the sticky
+           header rather than under it, where it can be neither seen nor clicked. -->
       <div class="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface-page px-4 py-3 lg:px-5">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Patient details', 'Datos del paciente') }}</h2>
         <button

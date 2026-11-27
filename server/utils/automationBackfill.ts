@@ -98,25 +98,25 @@ async function sourcesOf(service: any, kind: BackfillKind, rule: BackfillRule, d
   const since = new Date(now.getTime() - days * 24 * 3600 * 1000).toISOString()
 
   if (kind === 'appointment') {
-    // A cancellation is dated by when it happened; a missed or completed
-    // visit by its own time.
-    const column = rule.atom.moment === 'cancelled' ? 'cancelled_at' : 'starts_at'
-    const rows = await fetchAllRows<{ id: string; patient_id: string; starts_at: string; cancelled_at: string | null }>((from, to) =>
+    // Dated by the visit's own time: an appointment keeps no record of when
+    // it was cancelled or marked missed. A cancelled visit still ahead is
+    // not in the window; nor is a missed one, which cannot be ahead.
+    const rows = await fetchAllRows<{ id: string; patient_id: string; starts_at: string }>((from, to) =>
       service
         .from('appointments')
-        .select('id, patient_id, starts_at, cancelled_at')
+        .select('id, patient_id, starts_at')
         .eq('account_id', accountId)
         .eq('status', rule.atom.moment)
         // A deleted appointment keeps its status; only deleted_at says so.
         .is('deleted_at', null)
         .not('patient_id', 'is', null)
-        .gte(column, since)
-        .lte(column, nowIso)
-        .order(column, { ascending: false })
+        .gte('starts_at', since)
+        .lte('starts_at', nowIso)
+        .order('starts_at', { ascending: false })
         .order('id')
         .range(from, to),
     )
-    return rows.map((a) => ({ sourceId: a.id, patientId: a.patient_id, at: (column === 'cancelled_at' ? a.cancelled_at : a.starts_at) ?? a.starts_at, appointmentId: a.id }))
+    return rows.map((a) => ({ sourceId: a.id, patientId: a.patient_id, at: a.starts_at, appointmentId: a.id }))
   }
 
   if (kind === 'created') {

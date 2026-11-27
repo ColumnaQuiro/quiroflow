@@ -79,7 +79,8 @@ describe('Automations: including those who already meet the trigger', () => {
             cy.get('[data-test="activate-backfill-count"]').should('have.text', 'This will include 2 patients.')
 
             cy.get('[data-cy="confirm-dialog-confirm"]').click()
-            cy.contains('with 2 patients who already met it').should('be.visible')
+            // The pass is its own request after switching on: its toast says it is done.
+            cy.contains('with 2 patients who already met it', { timeout: 20000 }).should('be.visible')
             cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'true')
 
             cy.task<RunRow[]>('auto:runsForRule', { ruleId: r.id }).then((runs) => {
@@ -106,6 +107,7 @@ describe('Automations: including those who already meet the trigger', () => {
             cy.get('[data-test="activate-backfill-days"]').select('90')
             cy.get('[data-test="activate-backfill-count"]').should('have.text', 'Nobody met it in that time.')
             cy.get('[data-cy="confirm-dialog-confirm"]').click()
+            cy.contains('Nobody else met it', { timeout: 20000 }).should('be.visible')
             cy.get(`${row} [data-test="rule-toggle"]`).should('have.attr', 'aria-checked', 'true')
             cy.task<RunRow[]>('auto:runsForRule', { ruleId: r.id }).should('have.length', 2)
           })
@@ -124,6 +126,8 @@ describe('Automations: including those who already meet the trigger', () => {
         cy.get('[data-test="activate-backfill-count"]').should('contain', 'This will include')
         cy.get('[data-cy="confirm-dialog-confirm"]').click()
         cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
+        // The pass is its own request, after the switch-on and the builder's reload.
+        cy.contains('who already met it', { timeout: 20000 }).should('be.visible')
         cy.task<RunRow[]>('auto:runsForRule', { ruleId: r.id }).should((runs) => {
           expect(runs.map((x) => x.patient_id)).to.include(fresh.id)
         })

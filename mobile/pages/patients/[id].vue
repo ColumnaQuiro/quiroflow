@@ -346,13 +346,15 @@ function goBack() {
 // each shown only to a role that has something in it (the rules above are
 // unchanged). ?tab= opens one directly and is kept in the address, so going
 // back to the record lands on the same tab.
-type RecordTab = 'summary' | 'clinical' | 'progress' | 'money' | 'files'
+type RecordTab = 'summary' | 'clinical' | 'progress' | 'blind-spot' | 'money' | 'files'
 const tabs = computed(() => {
   const list: { key: RecordTab; label: string }[] = [
     { key: 'summary', label: t('Summary', 'Resumen') },
     { key: 'clinical', label: t('Clinical', 'Clínico') },
   ]
   if (can('progress_access') || can('visit_notes_access')) list.push({ key: 'progress', label: t('Progress', 'Progreso') })
+  // The web record's rule: the account has Blind Spot, the role sees progress.
+  if ((can('progress_access') || can('visit_notes_access')) && context.value?.hasBlindSpot) list.push({ key: 'blind-spot', label: t('Blind spot', 'Punto ciego') })
   if (showMoney.value) list.push({ key: 'money', label: t('Payments', 'Pagos') })
   list.push({ key: 'files', label: t('Files', 'Archivos') })
   return list
@@ -463,8 +465,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
       </div>
 
-      <!-- The tabs: they stay at the top while the tab's content scrolls. -->
-      <div role="tablist" :aria-label="t('Patient record sections', 'Secciones de la ficha')" class="sticky top-0 z-10 flex border-b border-line bg-surface px-1.5 md:px-4" data-cy="patient-tabs" @keydown="onTabKeydown">
+      <!-- The tabs: they stay at the top while the tab's content scrolls, and
+           scroll sideways themselves when six do not fit a phone's width. -->
+      <div role="tablist" :aria-label="t('Patient record sections', 'Secciones de la ficha')" class="sticky top-0 z-10 flex overflow-x-auto border-b border-line bg-surface px-1.5 [scrollbar-width:none] md:px-4" data-cy="patient-tabs" @keydown="onTabKeydown">
         <button
           v-for="x in tabs"
           :key="x.key"
@@ -474,7 +477,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
           :aria-selected="tab === x.key"
           :aria-controls="`patient-panel-${x.key}`"
           :tabindex="tab === x.key ? 0 : -1"
-          class="h-11 min-w-0 flex-1 truncate px-1 text-[13.5px]"
+          class="h-11 flex-1 shrink-0 whitespace-nowrap px-2.5 text-[13.5px]"
           :class="tab === x.key ? 'font-semibold text-ink-900 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]' : 'font-medium text-ink-muted'"
           :data-cy="`patient-tab-${x.key}`"
           @click="setTab(x.key)"
@@ -629,6 +632,13 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
              this device's camera (/patients/posture/<id>). ===== -->
         <template v-else-if="tab === 'progress'">
           <PatientsProgressTab v-if="patient && !contextLoading" :patient-id="patientId" :patient="{ first_name: patient.first_name, last_name: patient.last_name, clinic_id: null }" :can="(p: string) => can(p as never)" />
+        </template>
+
+        <!-- ===== Punto ciego: the web's own tab -- each test with both eyes'
+             maps and the report, and a new test on this device
+             (/patients/blind-spot/<id>). ===== -->
+        <template v-else-if="tab === 'blind-spot'">
+          <BlindspotTab v-if="!contextLoading" :patient-id="patientId" />
         </template>
 
         <!-- ===== Pagos ===== -->

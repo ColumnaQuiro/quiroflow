@@ -870,6 +870,9 @@ async function emailFormLink(
   return `${origin}/doc/${token}`
 }
 
+// The token of the example form link a test send carries (mergeFieldSamples' form_link).
+const SAMPLE_DOC_TOKEN = 'ejemplo'
+
 async function runWhatsAppAction(
   supabase: any,
   accountId: string,
@@ -945,6 +948,17 @@ async function runWhatsAppAction(
   // a template with no such buttons instead treats slot 0 (if set) as one
   // more body variable, appended last -- the original single-link design.
   const docTemplateIds: (string | null)[] = Array.isArray(config.doc_template_ids) ? config.doc_template_ids : []
+  // A form's copy for this recipient, as the token its /doc/ link carries.
+  // "Send test to me" runs against the staff member, who is not a patient:
+  // a copy made for them fails patient_docs' foreign key, so every test of a
+  // template with a form button failed with "could not be prepared for this
+  // patient" (Sentry JAVASCRIPT-NUXT-2P/2Q/2V), and one that went in would
+  // sit on the wrong record. A test checks the form still exists and sends
+  // the example link instead, as an email step's test does (emailFormLink).
+  const docLink = async (docTemplateId: string): Promise<string | null> => {
+    if (!context?.samples) return generateDocLink(supabase, accountId, recipient.patient, docTemplateId)
+    return (await docTemplateForLanguage(supabase, docTemplateId, recipient.preferredLanguage)) ? SAMPLE_DOC_TOKEN : null
+  }
 
   // What goes in a dynamic URL button's {{n}} blank, one entry per button.
   //
@@ -1019,7 +1033,7 @@ async function runWhatsAppAction(
     // No dynamic URL button to attach a doc link to -- fall back to the
     // older behaviour of tacking it onto the message body instead.
     if (dynamicUrlButtonIndexes.length === 0 && docTemplateIds[0]) {
-      const token = await generateDocLink(supabase, accountId, recipient.patient, docTemplateIds[0])
+      const token = await docLink(docTemplateIds[0])
       if (token) variables.push(`${origin}/doc/${token}`)
     }
 
@@ -1046,7 +1060,7 @@ async function runWhatsAppAction(
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
       const button = buttons[dynamicUrlButtonIndexes[i]]
       const docTemplateId = docTemplateIds[i] ?? (!buttonParams[i] && ownForm && isFormButton(button) ? ownForm : null)
-      const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
+      const token = docTemplateId ? await docLink(docTemplateId) : null
       const configured = buttonParams[i]
       if (!token && !configured && keptValues?.buttons?.[dynamicUrlButtonIndexes[i]]?.suffix) continue
       // A form button (`<app>/doc/{{1}}`) opens nothing but a document token:
@@ -1075,7 +1089,7 @@ async function runWhatsAppAction(
     // No business-account id on file to look the template up against --
     // fall back to sending exactly what was configured, same as before.
     if (docTemplateIds[0]) {
-      const token = await generateDocLink(supabase, accountId, recipient.patient, docTemplateIds[0])
+      const token = await docLink(docTemplateIds[0])
       if (token) variables.push(`${origin}/doc/${token}`)
     }
     if (variables.length > 0) bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })

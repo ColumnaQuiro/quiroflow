@@ -17,5 +17,9 @@ export function useAccountStore() {
     isOwner: computed(() => context.value?.isOwner ?? false),
     currentClinicId: computed(() => context.value?.clinicId ?? null),
     hasStaffSection: computed(() => context.value?.hasStaffSection ?? false),
+    // permissions: what usePermission() reads (with isOwner). hasBlindSpot:
+    // the Blind Spot tab and test (components/blindspot/).
+    permissions: computed(() => context.value?.permissions ?? {}),
+    hasBlindSpot: computed(() => context.value?.hasBlindSpot ?? false),
   })
 }

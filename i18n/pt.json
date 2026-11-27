@@ -1626,7 +1626,9 @@
   "{0} · before and after the adjustment": "{0} · antes e depois do ajuste",
   "{0} · before the adjustment": "{0} · antes do ajuste",
   "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower \"Paid now\" instead.": "O bono será vendido por {0}, com {1} de desconto sobre {2}. Para deixar parte em dívida, não aplique desconto: baixe «Pago agora».",
-  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower the amount instead.": "O bono será vendido por {0}, com {1} de desconto sobre {2}. Para deixar parte em dívida, não aplique desconto: baixe o valor."
+  "The bono will be sold for {0}, {1} off its {2}. To leave part of it owed, keep its price and lower the amount instead.": "O bono será vendido por {0}, com {1} de desconto sobre {2}. Para deixar parte em dívida, não aplique desconto: baixe o valor.",
+  "Sit {0} cm from the screen and look at the cross the whole time. Each dot comes after a 3, 2, 1; tap the screen the moment you see it.": "Sente-se a {0} cm do ecrã e olhe para a cruz o tempo todo. Cada ponto sai depois de um 3, 2, 1; toque no ecrã assim que o vir.",
+  "Sit {0} cm from the screen and look at the cross the whole time. Each dot comes after a 3, 2, 1; press the space bar the moment you see it.": "Sente-se a {0} cm do ecrã e olhe para a cruz o tempo todo. Cada ponto sai depois de um 3, 2, 1; prima a barra de espaço assim que o vir."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11013,6 +11015,9 @@
   "checks with no false positive": "controlos sem falso positivo",
   "Discounted price (€)": "Preço com desconto (€)",
   "Remove discount": "Remover desconto",
-  "Apply a discount": "Aplicar desconto"
+  "Apply a discount": "Aplicar desconto",
+  "This screen is too narrow for the test, even close up. Use a tablet or a computer.": "Este ecrã é demasiado estreito para o teste, mesmo de perto. Use um tablet ou o computador.",
+  "Keep looking at the cross. After 3, 2, 1 a dot moves out: tap the screen as soon as you see it.": "Sem tirar os olhos da cruz: depois do 3, 2, 1 sai um ponto. Toque no ecrã assim que o vir.",
+  "Keep looking at the cross. After 3, 2, 1 a dot moves out: press the space bar (or tap) as soon as you see it.": "Sem tirar os olhos da cruz: depois do 3, 2, 1 sai um ponto. Prima a barra de espaço (ou toque) assim que o vir."
  }
 }

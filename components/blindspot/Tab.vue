@@ -4,7 +4,9 @@ import { blindSpotAsymmetry, formatBlindSpotArea, type BlindSpotTestRow } from '
 // The patient record's Blind Spot tab: each test session (a lone test, or a
 // before/after pair), both eyes' maps, the difference between eyes visit by
 // visit, and the two-page report for the patient
-// (server/api/blind-spot/report.post.ts). Web only.
+// (server/api/blind-spot/report.post.ts). The staff app shows it too
+// (mobile/pages/patients/[id].vue): every store field read here must exist
+// in mobile/composables/useAccountStore.ts.
 const props = defineProps<{ patientId: string }>()
 
 const t = useT()

@@ -2128,7 +2128,7 @@ async function setPatientClinical(opts: {
 async function patientByName(opts: { accountId: string; firstName: string; lastName: string }) {
   const { data } = await admin
     .from('patients')
-    .select('id, first_name, last_name, default_practitioner_id')
+    .select('id, first_name, last_name, default_practitioner_id, date_of_birth')
     .eq('account_id', opts.accountId)
     .eq('first_name', opts.firstName)
     .eq('last_name', opts.lastName)

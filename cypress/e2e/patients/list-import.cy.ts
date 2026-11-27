@@ -82,4 +82,32 @@ describe('Import into a list', () => {
       cy.contains('a', 'Hoja Segunda').should('be.visible')
     })
   })
+
+  // Quirocitas' patient list export: a line of bare commas above the header,
+  // and birth dates day first. The blank line used to become the header (no
+  // column names to choose from), and "23-02-1989" was refused by the
+  // database, failing every row in its chunk.
+  it('imports a file with a blank line above its header and day-first dates', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/patients/import')
+      cy.get('[data-cy=import-file]').selectFile('cypress/fixtures/list-import-quirocitas.csv', { force: true })
+      cy.contains('3 rows detected.', { timeout: 15000 }).should('be.visible')
+      cy.get('[data-cy=import-map-first_name]').select('Paciente')
+      cy.get('[data-cy=import-map-date_of_birth]').find('option:selected').should('have.text', 'Nacimiento')
+      cy.get('[data-cy=import-continue]').click()
+
+      cy.contains('dt', 'Will import').next().should('have.text', '3')
+      // Named by the file's own line: the blank line and the header come first.
+      cy.get('[data-cy=import-unreadable-dates]').should('contain', 'will be left blank (1: rows 5)')
+      cy.get('[data-cy=import-run]').click()
+
+      cy.contains('button', 'Import another file', { timeout: 20000 }).should('be.visible')
+      cy.get('[data-cy=import-errors]').should('not.exist')
+      cy.task<{ date_of_birth: string | null }>('db:patientByName', { accountId: account.accountId, firstName: 'Ana', lastName: 'Fecha' }).its('date_of_birth').should('eq', '1989-02-23')
+      // Not 8 June: the file writes the day first.
+      cy.task<{ date_of_birth: string | null }>('db:patientByName', { accountId: account.accountId, firstName: 'Bea', lastName: 'Fecha' }).its('date_of_birth').should('eq', '1970-08-06')
+      cy.task<{ date_of_birth: string | null }>('db:patientByName', { accountId: account.accountId, firstName: 'Ceci', lastName: 'Fecha' }).its('date_of_birth').should('eq', null)
+    })
+  })
 })

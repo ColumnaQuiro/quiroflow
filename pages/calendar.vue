@@ -3069,8 +3069,27 @@ watch(
   },
 )
 
+// The time the pointer is at, marked in the hour gutter so a row can be read
+// off without following a gridline across the screen. Unlike hoverCell it
+// follows the pointer over blocks too: the question "what time is this?" is
+// the same over a visit as over an empty slot.
+const pointerGutterMin = ref<number | null>(null)
+const gutterHoverMin = computed(() => {
+  if (gridHasFocus.value && focusCell.value && !focusByTouch.value) return focusCell.value.min
+  return pointerGutterMin.value
+})
+function clearColumnHover() {
+  hoverCell.value = null
+  pointerGutterMin.value = null
+}
+
 function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, tops: HourTops) {
-  if (e.pointerType !== 'mouse' || dragState.value) return
+  if (e.pointerType !== 'mouse' || dragState.value) {
+    pointerGutterMin.value = null
+    return
+  }
+  const gutterMin = snapMin(yInColumn(e), tops)
+  if (pointerGutterMin.value !== gutterMin) pointerGutterMin.value = gutterMin
   // Only the bare column: over a block or a band the pointer is on that, not
   // on a free slot.
   if (e.target !== e.currentTarget) {
@@ -3813,6 +3832,7 @@ function showNowLineOn(day: Date) {
                 <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
                   <!-- In the gutter, which stays put when the rooms scroll sideways. -->
                   <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="gutterHoverMin !== null" class="pointer-events-none absolute left-1 z-[11] -translate-y-1/2 rounded-full bg-ink-900 px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface shadow-card" data-cy="hover-time-label" :style="{ top: `${gridYAt(dayTops, gutterHoverMin)}px` }">{{ slotLabel(gutterHoverMin) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -3841,7 +3861,7 @@ function showNowLineOn(day: Date) {
                   :class="{ 'pointer-events-none': loading }"
                   @pointerdown="onColumnPointerDown"
                   @pointermove="onColumnPointerMove($event, toDateKey(anchorDate), col.id, dayTops)"
-                  @pointerleave="hoverCell = null"
+                  @pointerleave="clearColumnHover"
                   @click="onColumnClick($event, anchorDate, col.id, dayTops)"
                 >
                   <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-closed pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] font-medium text-ink-450" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
@@ -4035,6 +4055,7 @@ function showNowLineOn(day: Date) {
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${weekHeaderPx}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                   <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="gutterHoverMin !== null" class="pointer-events-none absolute left-1 z-[21] -translate-y-1/2 rounded-full bg-ink-900 px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface shadow-card" data-cy="hover-time-label" :style="{ top: `${gridYAt(weekTops, gutterHoverMin)}px` }">{{ slotLabel(gutterHoverMin) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -4104,7 +4125,7 @@ function showNowLineOn(day: Date) {
                     :style="{ minWidth: `${weekColPx}px` }"
                     @pointerdown="onColumnPointerDown"
                     @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, weekTops)"
-                    @pointerleave="hoverCell = null"
+                    @pointerleave="clearColumnHover"
                     @click="onColumnClick($event, day, col.id, weekTops)"
                   >
                     <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-closed pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />

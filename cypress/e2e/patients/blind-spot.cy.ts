@@ -32,7 +32,13 @@ describe('Blind Spot', () => {
         cy.get('[data-cy=blind-spot-start-eye]', { timeout: 10000 }).click()
         cy.get('[data-cy=blind-spot-progress]').should('contain', '/ 4')
         for (let i = 0; i < 6; i++) {
+          // Every dot, catch trials included, comes after a 3-2-1 on the cross.
+          if (i === 0) {
+            cy.get('[data-cy=blind-spot-countdown]', { timeout: 3000 }).should('have.text', '3')
+            cy.get('[data-cy=blind-spot-dot]').should('not.be.visible')
+          }
           cy.get('[data-cy=blind-spot-dot]', { timeout: 5000 }).should('be.visible')
+          cy.get('[data-cy=blind-spot-countdown]').should('not.exist')
           cy.wait(500)
           cy.get('body').trigger('keydown', { code: 'Space', key: ' ' })
           if (i < 5) cy.get('[data-cy=blind-spot-dot]').should('not.be.visible')

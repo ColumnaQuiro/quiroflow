@@ -1,4 +1,5 @@
 import { isReadOnlyAccount, trialGraceEndsAt, trialPhase } from '../../utils/billing'
+import { blindSpotIncluded } from '../../utils/blindSpotPlan'
 
 // The web app resolves account/clinic context from stores/account.ts, a
 // Pinia store -- but mobile's nuxt.config.ts deliberately doesn't register
@@ -38,6 +39,12 @@ export interface PractitionerContext {
    */
   hasStaffSection: boolean
   /**
+   * Whether the account has Blind Spot (blindSpotIncluded, utils/blindSpotPlan.ts):
+   * the web store's hasBlindSpot, which shows the patient's Punto ciego tab
+   * and lets a test be taken. The database asks the same question.
+   */
+  hasBlindSpot: boolean
+  /**
    * The account has not paid (an ended trial past its grace week, or a
    * cancelled plan): every screen reads, and the database refuses any change
    * (20261120184541_trial_grace_then_read_only.sql). The layout says so.
@@ -47,7 +54,7 @@ export interface PractitionerContext {
   graceEndsAt: string | null
 }
 
-type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null; trial_ends_at?: string | null; has_stripe_subscription?: boolean | null }
+type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; blind_spot_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null; trial_ends_at?: string | null; has_stripe_subscription?: boolean | null }
 
 // The server's rule (server/utils/requireGrowth.ts, hasReceptionist), which
 // the web's account store repeats and this repeats again, since neither is
@@ -175,6 +182,7 @@ export function usePractitionerContext() {
       hasReceptionist: receptionistFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
       hasGrowth: growthFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
       hasStaffSection: staffSectionIncluded((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription ?? null),
+      hasBlindSpot: blindSpotIncluded((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription ?? null),
       ...billingStateFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
     }
     loading.value = false

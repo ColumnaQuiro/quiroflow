@@ -26,17 +26,20 @@ describe('Calendar: the time under the pointer', () => {
           const col = rectOf($col)
           // The day grid is twelve hours (08:00-20:00) tall.
           const y = (col.height / 12) * 2 + 4 // just past 10:00
-          cy.wrap($col).trigger('pointermove', 8, y, { pointerType: 'mouse' })
+          // Mid-column: scrolled into view, the column's left edge sits under
+          // the sticky hour gutter.
+          cy.wrap($col).trigger('pointermove', col.width / 2, y, { pointerType: 'mouse' })
           label().should('be.visible').and('have.text', '10:00')
 
-          cy.wrap($col).trigger('pointerleave')
+          // Leaving is not a point on the screen: nothing to check is in view.
+          cy.wrap($col).trigger('pointerleave', { force: true })
           label().should('not.exist')
         })
 
-      // Over the card: the event bubbles up to its column.
+      // Over the card: the event bubbles up to its column. A position relative
+      // to the card, so the coordinates are worked out after Cypress scrolls.
       cy.contains('[data-cy=appt-block]', 'Hora Marcada').then(($b) => {
-        const r = rectOf($b)
-        cy.wrap($b).trigger('pointermove', { clientX: r.left + r.width / 2, clientY: r.top + 2, pointerType: 'mouse' })
+        cy.wrap($b).trigger('pointermove', rectOf($b).width / 2, 2, { pointerType: 'mouse' })
       })
       label().should('be.visible').and('have.text', '11:00')
     })

@@ -204,6 +204,7 @@ const error = ref('')
 
 const firstName = ref(props.patient.first_name)
 const lastName = ref(props.patient.last_name ?? '')
+const preferredName = ref(props.patient.preferred_name ?? '')
 const dateOfBirth = ref(props.patient.date_of_birth ?? '')
 // Worked out as the date is typed, so nobody does the sum in their head, and
 // so the "under age" box can be suggested when the two disagree.
@@ -241,7 +242,7 @@ const doNotContact = ref(props.patient.do_not_contact)
 // themselves and are not part of this.
 const formState = () =>
   JSON.stringify([
-    firstName.value, lastName.value, dateOfBirth.value, email.value, address.value, postalCode.value, city.value, country.value,
+    firstName.value, lastName.value, preferredName.value, dateOfBirth.value, email.value, address.value, postalCode.value, city.value, country.value,
     nationalId.value, clinicId.value, tagsInput.value, occupation.value, emergencyContact.value, referralSource.value,
     preferredLanguage.value, defaultPractitionerId.value, invoiceEmailEnabled.value, reminderChannel.value, confirmationChannel.value,
     reminderHours.value, marketingChannels.value, status.value, isMinor.value, billToTutor.value, doNotContact.value,
@@ -268,6 +269,7 @@ function onScrimClick() {
 async function startEditing() {
   firstName.value = props.patient.first_name
   lastName.value = props.patient.last_name ?? ''
+  preferredName.value = props.patient.preferred_name ?? ''
   dateOfBirth.value = props.patient.date_of_birth ?? ''
   email.value = props.patient.email ?? ''
   address.value = props.patient.address ?? ''
@@ -387,6 +389,7 @@ async function save() {
     .update({
       first_name: firstName.value,
       last_name: lastName.value || null,
+      preferred_name: preferredName.value.trim() || null,
       date_of_birth: dateOfBirth.value || null,
       email: email.value || null,
       address: address.value || null,
@@ -449,8 +452,10 @@ const fieldId = useId()
       ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Patient details', 'Datos del paciente')"
-      class="max-h-[92vh] w-full overflow-y-auto rounded-t-card bg-surface-page lg:max-w-[900px] lg:rounded-card"
+      class="max-h-[92vh] w-full scroll-pt-20 overflow-y-auto rounded-t-card bg-surface-page lg:max-w-[900px] lg:rounded-card"
     >
+      <!-- scroll-pt-20: a field scrolled or tabbed to stops below the sticky
+           header rather than under it, where it can be neither seen nor clicked. -->
       <div class="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface-page px-4 py-3 lg:px-5">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Patient details', 'Datos del paciente') }}</h2>
         <button
@@ -490,6 +495,10 @@ const fieldId = useId()
             </template>
             <template v-else>{{ t('Not recorded', 'Sin registrar') }}</template>
           </dd>
+        </div>
+        <div>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Preferred name', 'Nombre preferido') }}</dt>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700" data-cy="patient-preferred-name">{{ patient.preferred_name ?? t('Not recorded', 'Sin registrar') }}</dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
@@ -589,6 +598,10 @@ const fieldId = useId()
           <div>
             <label :for="`${fieldId}-lastName`" :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
             <input :id="`${fieldId}-lastName`" v-model="lastName" type="text" :class="inputClass" />
+          </div>
+          <div>
+            <label :for="`${fieldId}-preferredName`" :class="labelClass">{{ t('Preferred name', 'Nombre preferido') }}</label>
+            <input :id="`${fieldId}-preferredName`" v-model="preferredName" type="text" :class="inputClass" :placeholder="t('What they like to be called', 'Cómo le gusta que le llamen')" data-cy="patient-preferred-name-input" />
           </div>
           <div>
             <label :for="`${fieldId}-dateOfBirth`" :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>

@@ -13,7 +13,7 @@ import {
   type PracticeHubPatientsDiffOptions,
 } from '../../utils/practicehubImport/patients'
 import type { PracticeHubImportContext, PracticeHubSnapshot } from '../../utils/practicehubImport/types'
-import { practiceHubGovernmentNumbers, practiceHubPatientRows } from '../../utils/practicehubApiRows'
+import { practiceHubGovernmentNumbers, practiceHubPatientRows, practiceHubTagsByPatientNumber } from '../../utils/practicehubApiRows'
 
 // The Patients step of the PracticeHub import, shared by the browser screen
 // and the server sync. The pure rules first, then the server planner against
@@ -69,6 +69,7 @@ function existingPatient(over: Partial<PracticeHubExistingPatient> = {}): Practi
     date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null,
     created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null, national_id: null,
     address: null, postal_code: null, city: null, country: null, gender: null,
+    preferred_name: null, status: 'active', do_not_contact: false, tags: [],
     ...over,
   }
 }
@@ -191,6 +192,57 @@ describe('the sex', () => {
   it('fills a patient already here, and a blank in PracticeHub never clears one', () => {
     expect(practiceHubPatientsDiff(rowsFor('2'), [existingPatient()], diffOptions()).toUpdate[0].updates).toEqual({ gender: 'female' })
     expect(practiceHubPatientsDiff(rowsFor('0'), [existingPatient({ gender: 'female' })], diffOptions()).toUpdate).toEqual([])
+  })
+})
+
+describe('archived and deceased patients', () => {
+  const rowsFor = (patient_status: string | null) => practiceHubPatientRows([{ id: 1, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo', patient_status }], { practitioners: [], referralSources: [] })
+  const created = (status: string | null) => practiceHubPatientsDiff(rowsFor(status), [], diffOptions()).toImport[0].patient
+  const updated = (status: string | null, over: Partial<PracticeHubExistingPatient> = {}) => practiceHubPatientsDiff(rowsFor(status), [existingPatient(over)], diffOptions()).toUpdate[0]?.updates
+
+  it('come in inactive, and a deceased one is never contacted', () => {
+    expect(created('active')).toMatchObject({ status: 'active', do_not_contact: false })
+    expect(created('archived')).toMatchObject({ status: 'inactive', do_not_contact: false })
+    expect(created('Deceased')).toMatchObject({ status: 'inactive', do_not_contact: true })
+    expect(created(null)).toMatchObject({ status: 'active', do_not_contact: false })
+  })
+
+  it('make an active patient here inactive, never the other way', () => {
+    expect(updated('archived')).toEqual({ status: 'inactive' })
+    expect(updated('deceased')).toEqual({ status: 'inactive', do_not_contact: true })
+    // Made inactive here, or told not to be contacted: PracticeHub does not undo it.
+    expect(updated('active', { status: 'inactive', do_not_contact: true })).toBeUndefined()
+  })
+})
+
+describe('tags', () => {
+  const rowsFor = (tags: string[]) => practiceHubPatientRows(
+    [{ id: 1, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo' }],
+    { practitioners: [], referralSources: [], tagsByPatientNumber: practiceHubTagsByPatientNumber([{ patient_number: 202400007, tags: tags.map((name) => ({ name })) }]) },
+  )
+
+  it('are read from PracticeHub 2.0 by patient number', () => {
+    const map = practiceHubTagsByPatientNumber([{ patient_number: ' 7 ', tags: [{ name: ' VIP ' }, { name: '' }] }, { patient_number: '8', tags: [] }, { patient_number: null, tags: [{ name: 'x' }] }])
+    expect([...map]).toEqual([['7', ['VIP']]])
+    expect(practiceHubPatientsDiff(rowsFor(['VIP', '2X3 1X6']), [], diffOptions()).toImport[0].patient.tags).toEqual(['VIP', '2X3 1X6'])
+  })
+
+  it('are only ever added to a patient here, ignoring case', () => {
+    const [u] = practiceHubPatientsDiff(rowsFor(['vip', 'Embarazo']), [existingPatient({ tags: ['VIP', 'Local'] })], diffOptions()).toUpdate
+    expect(u.updates).toEqual({ tags: ['VIP', 'Local', 'Embarazo'] })
+    // None new, and one only here: nothing to write.
+    expect(practiceHubPatientsDiff(rowsFor(['VIP']), [existingPatient({ tags: ['VIP', 'Local'] })], diffOptions()).toUpdate).toEqual([])
+  })
+})
+
+describe('the preferred name', () => {
+  const rowsFor = (preferred_name: string | null) => practiceHubPatientRows([{ id: 1, patient_number: '202400007', first_name: 'José', last_name: 'Demo', preferred_name }], { practitioners: [], referralSources: [] })
+
+  it('goes onto a new patient and fills or corrects one here, never blanking it', () => {
+    expect(practiceHubPatientsDiff(rowsFor(' Pepe '), [], diffOptions()).toImport[0].patient.preferred_name).toBe('Pepe')
+    expect(practiceHubPatientsDiff(rowsFor(''), [], diffOptions()).toImport[0].patient.preferred_name).toBeNull()
+    expect(practiceHubPatientsDiff(rowsFor('Pepe'), [existingPatient({ first_name: 'José' })], diffOptions()).toUpdate[0].updates).toEqual({ preferred_name: 'Pepe' })
+    expect(practiceHubPatientsDiff(rowsFor(null), [existingPatient({ first_name: 'José', preferred_name: 'Pepe' })], diffOptions()).toUpdate).toEqual([])
   })
 })
 
@@ -323,6 +375,18 @@ describe('the server step', () => {
 
     const again = await planPatients(ctx, snapshot())
     expect(again.total).toBe(0)
+  })
+
+  it('brings the tags in the 2.0 copy, and asks for a key only when there is none', async () => {
+    const tables: Record<string, Row[]> = { team_members: [], patients: [], patient_contact_numbers: [] }
+    const withV3 = { ...snapshot(), lists: { ...snapshot().lists, '/v3/patients': [{ id: 501, patient_number: '202400007', tags: [{ name: 'VIP' }] }] } }
+    const plan = await planPatients(setup(tables), withV3)
+    expect(plan.warnings.some((w) => w.includes('Tags'))).toBe(false)
+    await plan.apply(() => {}, () => false)
+    expect(tables.patients!.find((p) => p.external_reference === '202400007')?.tags).toEqual(['VIP'])
+
+    const without = await planPatients(setup({ team_members: [], patients: [], patient_contact_numbers: [] }), snapshot())
+    expect(without.warnings.some((w) => w.startsWith('Tags and the DNI/NIE'))).toBe(true)
   })
 
   it('updates what PracticeHub changed and adds only the new number', async () => {

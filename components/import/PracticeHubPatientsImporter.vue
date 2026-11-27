@@ -3,7 +3,7 @@ import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
 import { shrinkImageForUpload } from '~/utils/imageShrink'
 import { planProfilePhotos, practiceHubPhotoPath, sniffImageType, type PracticeHubPhotoSource } from '~/utils/practicehubProfilePhotos'
-import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
+import { practiceHubGovernmentNumbers, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubTagsByPatientNumber, type PHApiPatient, type PHNamed, type PHV3Patient } from '~/utils/practicehubApiRows'
 import {
   practiceHubBlank,
   practiceHubLanguageLabel,
@@ -89,7 +89,7 @@ async function loadFromV3(): Promise<{ tagsByPatientNumber: Map<string, string[]
   try {
     const patients = await usePracticeHubV3().fetchAll<PHV3Patient>('/patients')
     return {
-      tagsByPatientNumber: new Map(patients.map((p) => [String(p.patient_number ?? '').trim(), (p.tags ?? []).map((tag) => tag.name).filter(Boolean)])),
+      tagsByPatientNumber: practiceHubTagsByPatientNumber(patients),
       governmentNumberById: practiceHubGovernmentNumbers(patients),
     }
   } catch {

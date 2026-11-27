@@ -7691,6 +7691,7 @@ export type Database = {
           occupation: string | null
           photo_storage_path: string | null
           postal_code: string | null
+          preferred_name: string | null
           preferred_language: string
           pregnancy_due_date: string | null
           pregnancy_multiples: number | null
@@ -7753,6 +7754,7 @@ export type Database = {
           occupation?: string | null
           photo_storage_path?: string | null
           postal_code?: string | null
+          preferred_name?: string | null
           preferred_language?: string
           pregnancy_due_date?: string | null
           pregnancy_multiples?: number | null
@@ -7815,6 +7817,7 @@ export type Database = {
           occupation?: string | null
           photo_storage_path?: string | null
           postal_code?: string | null
+          preferred_name?: string | null
           preferred_language?: string
           pregnancy_due_date?: string | null
           pregnancy_multiples?: number | null

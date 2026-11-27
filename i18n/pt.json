@@ -1632,7 +1632,16 @@
   "What’s new, {0} unread": "Novidades, {0} por ler",
   "Week of {0}": "Semana de {0}",
   "{0} changes": "{0} alterações",
-  "{0} fixes": "{0} correções"
+  "{0} fixes": "{0} correções",
+  "Unclosed quotes near line {0}.": "Aspas por fechar perto da linha {0}.",
+  "Could not read this file: {0}": "Não foi possível ler este ficheiro: {0}",
+  "{0} ready to import": "{0} prontos para importar",
+  "{0} will be skipped": "{0} serão ignorados",
+  "Import {0} exercises": "Importar {0} exercícios",
+  "{0} exercises created": "{0} exercícios criados",
+  "{0} rows skipped.": "{0} linhas ignoradas.",
+  "The import stopped: {0}": "A importação parou: {0}",
+  "Row {0}": "Linha {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11078,6 +11087,29 @@
   "“Appointment practitioner” variable in automations": "Variável «Profissional da consulta» nas automações",
   "Another appointment at the same time is no longer flagged as a clash.": "Outra consulta à mesma hora já não é marcada como conflito.",
   "The receptionist no longer says there are no slots when one is left.": "A rececionista já não diz que não há vagas quando ainda resta uma.",
-  "Form buttons in WhatsApp no longer lead to a broken link.": "Os botões de formulário no WhatsApp já não levam a um link partido."
+  "Form buttons in WhatsApp no longer lead to a broken link.": "Os botões de formulário no WhatsApp já não levam a um link partido.",
+  "No name": "Sem nome",
+  "Not a YouTube or Vimeo video": "Não é um vídeo do YouTube ou Vimeo",
+  "Repeated in the file": "Repetido no ficheiro",
+  "No column is called \"nombre\". Use the template, or name the columns nombre, video_youtube and instrucciones.": "Nenhuma coluna se chama «nombre». Use o modelo ou dê às colunas os nomes nombre, video_youtube e instrucciones.",
+  "This file has no exercises, only the header row.": "Este ficheiro não tem exercícios, só a linha de títulos.",
+  "Import exercises from a CSV": "Importar exercícios de um CSV",
+  "One exercise per row. Columns:": "Um exercício por linha. Colunas:",
+  "required": "obrigatório",
+  "a YouTube link in any form (youtube.com/watch, youtu.be, Shorts) or Vimeo; optional": "uma ligação do YouTube em qualquer formato (youtube.com/watch, youtu.be, Shorts) ou do Vimeo; opcional",
+  "how to do it; optional": "como fazer; opcional",
+  "Separated by commas or semicolons, as Excel saves it. Sets and repetitions are chosen when assigning, not here.": "Separadas por vírgulas ou ponto e vírgula, como o Excel as guarda. As séries e repetições escolhem-se ao atribuir, não aqui.",
+  "Download the template": "Descarregar o modelo",
+  "Choose a CSV or Excel file": "Escolha um ficheiro CSV ou Excel",
+  "or drop it here": "ou largue-o aqui",
+  "Instructions": "Instruções",
+  "(empty)": "(vazio)",
+  "Import 1 exercise": "Importar 1 exercício",
+  "Choose another file": "Escolher outro ficheiro",
+  "Rows with a problem are left out; fix them in the file and import it again.": "As linhas com algum problema ficam de fora; corrija-as no ficheiro e importe-o novamente.",
+  "1 exercise created": "1 exercício criado",
+  "1 row skipped.": "1 linha ignorada.",
+  "Import CSV": "Importar CSV",
+  "Row": "Linha"
  }
 }

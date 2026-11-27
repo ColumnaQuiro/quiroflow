@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { readSteps } from '~/utils/exerciseSchedule'
-import { videoEmbedUrl } from '~/utils/learn'
+import { videoEmbedUrl, videoThumbnailUrl } from '~/utils/learn'
 // The clinic's library of home exercises (the Exercises section's Library
 // tab, pages/exercises/index.vue; it was Settings > Exercise Library until
 // the section existed, and that address redirects here): what a practitioner picks from
@@ -67,8 +67,38 @@ async function load() {
   schedulesSection.value?.reload()
   loadScheduled()
   catalogSection.value?.reload()
+  signThumbs()
 }
 onMounted(load)
+
+// --- what each row plays ---
+//
+// Every row shows its exercise's picture -- the catalogue poster, the
+// YouTube still, a frame of the clinic's own video -- and pressing it plays
+// the video under the row (ExercisesMediaPlayer), one at a time. It used to
+// open a new tab instead, which for an uploaded iPhone video was a blank tab
+// and a file in Downloads. The uploads are private, so their thumbnails are
+// signed together, in one request, after the list loads.
+const playingId = ref<string | null>(null)
+const thumbs = ref<Record<string, string>>({})
+async function signThumbs() {
+  const paths = active.value.map((e) => e.media_path).filter((p): p is string => !!p && !thumbs.value[p])
+  if (!paths.length) return
+  thumbs.value = { ...thumbs.value, ...(await media.signedUrls(paths)) }
+}
+function thumbOf(e: LibraryExercise): string | null {
+  const s = exerciseMediaSource(e)
+  if (!s) return null
+  if (s.kind === 'catalog') return catalog.media(s.slug).poster
+  if (s.kind === 'embed') return videoThumbnailUrl(e.media_url)
+  if (s.kind === 'image') return thumbs.value[s.path] ?? null
+  return null
+}
+function playLabel(e: LibraryExercise) {
+  const s = exerciseMediaSource(e)
+  if (playingId.value === e.id) return t(`Hide ${e.name}`, `Ocultar ${e.name}`)
+  return s?.kind === 'image' ? t(`See the photo of ${e.name}`, `Ver la foto de ${e.name}`) : t(`Play ${e.name}`, `Reproducir ${e.name}`)
+}
 
 const nowCount = (e: LibraryExercise) => e.current?.[0]?.count ?? 0
 const everCount = (e: LibraryExercise) => e.ever?.[0]?.count ?? 0
@@ -370,6 +400,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
               </div>
             </div>
             <div v-if="!loading && shown.length > 0" class="hidden items-center gap-3 border-t border-line-row py-1.5 pl-[18px] pr-3 text-[12px] font-medium text-ink-muted sm:flex" aria-hidden="true">
+              <span class="w-20 shrink-0" />
               <span class="flex-1">{{ t('Name', 'Nombre') }}</span>
               <span class="w-[110px] text-right">{{ t('Doing it now', 'Haciéndolo ahora') }}</span>
               <span class="w-[72px] touch:w-[88px]" />
@@ -393,36 +424,65 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
               <UiBtn @click="clearSearch">{{ t('Show all', 'Ver todos') }}</UiBtn>
             </div>
 
-            <div v-for="e in shown" :key="e.id" data-cy="library-row" class="flex min-h-[56px] items-center gap-3 border-t border-line-row py-2 pl-[18px] pr-3">
-              <div class="flex min-w-0 flex-1 flex-col">
-                <strong class="truncate text-[14.5px] text-ink-900" data-cy="library-row-name">{{ e.name }}</strong>
-                <span v-if="e.instructions" class="truncate text-[13px] text-ink-muted">{{ e.instructions }}</span>
-                <span class="text-[12.5px] text-ink-500 sm:hidden">{{ countLabel(e) }}</span>
+            <div v-for="e in shown" :key="e.id" data-cy="library-row" class="border-t border-line-row">
+              <div class="flex min-h-[56px] items-center gap-3 py-2 pl-[18px] pr-3">
+                <button
+                  v-if="exerciseMediaSource(e)"
+                  type="button"
+                  class="group relative h-9 w-16 shrink-0 overflow-hidden rounded-ctlSm bg-surface-subtle sm:h-[45px] sm:w-20"
+                  :class="playingId === e.id ? 'ring-2 ring-brand' : ''"
+                  :aria-expanded="playingId === e.id"
+                  :aria-label="playLabel(e)"
+                  :title="playLabel(e)"
+                  :data-cy="exerciseMediaSource(e)!.kind === 'catalog' ? 'library-row-catalog-video' : exerciseMediaSource(e)!.kind === 'embed' ? 'library-row-embed' : 'library-row-media'"
+                  @click="playingId = playingId === e.id ? null : e.id"
+                >
+                  <img v-if="thumbOf(e)" :src="thumbOf(e)!" alt="" loading="lazy" class="h-full w-full object-cover" />
+                  <!-- A frame of the clinic's own video: #t skips the black first frame, and is what makes iOS draw one at all. -->
+                  <video
+                    v-else-if="exerciseMediaSource(e)!.kind === 'video' && thumbs[e.media_path!]"
+                    :src="`${thumbs[e.media_path!]}#t=0.5`"
+                    preload="metadata"
+                    muted
+                    playsinline
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none h-full w-full object-cover"
+                  />
+                  <span v-if="exerciseMediaSource(e)!.kind !== 'image'" class="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/25">
+                    <span class="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" /></svg>
+                    </span>
+                  </span>
+                  <span class="sr-only">{{ exerciseMediaSource(e)!.kind === 'image' ? t('Photo', 'Foto') : t('Video', 'Vídeo') }}</span>
+                </button>
+                <div v-else class="flex h-9 w-16 shrink-0 items-center justify-center rounded-ctlSm bg-surface-subtle text-ink-faint sm:h-[45px] sm:w-20" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" class="h-5 w-5"><circle cx="12" cy="4.5" r="2" /><path d="M12 7v7M12 14l-3 6M12 14l3 6M7 10l5-2 5 2" /></svg>
+                </div>
+                <div class="flex min-w-0 flex-1 flex-col">
+                  <strong class="truncate text-[14.5px] text-ink-900" data-cy="library-row-name">{{ e.name }}</strong>
+                  <span v-if="e.instructions" class="truncate text-[13px] text-ink-muted">{{ e.instructions }}</span>
+                  <span class="text-[12.5px] text-ink-500 sm:hidden">{{ countLabel(e) }}</span>
+                </div>
+                <span class="hidden w-[110px] shrink-0 text-right text-[13.5px] text-ink-500 sm:block" data-cy="library-row-count">{{ countLabel(e) }}</span>
+                <!-- The link, to open it on its own site: a fixed slot from sm up, so the counts line up down the list; on a phone an empty one takes no room from the instructions. -->
+                <div class="flex shrink-0 justify-end sm:w-[72px] sm:touch:w-[88px]">
+                  <a v-if="e.media_url" :href="e.media_url" target="_blank" rel="noopener" :class="[iconBtn, 'text-brand-text']" :title="e.media_url" data-cy="library-row-link">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+                    <span class="sr-only">{{ t('Open the link', 'Abrir el enlace') }}</span>
+                  </a>
+                </div>
+                <div class="flex shrink-0">
+                  <button type="button" data-cy="library-edit" :class="iconBtn" :aria-label="t(`Edit ${e.name}`, `Editar ${e.name}`)" :title="t('Edit', 'Editar')" @click="openEdit(e)">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  </button>
+                  <button type="button" data-cy="library-archive" :class="iconBtn" :aria-label="t(`Archive ${e.name}`, `Archivar ${e.name}`)" :title="t('Archive', 'Archivar')" @click="setArchived(e, true)">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4" /></svg>
+                  </button>
+                </div>
               </div>
-              <span class="hidden w-[110px] shrink-0 text-right text-[13.5px] text-ink-500 sm:block" data-cy="library-row-count">{{ countLabel(e) }}</span>
-              <!-- What the patient sees with it: two fixed slots from sm up, so the counts line up down the list; on a phone an empty one takes no room from the instructions. -->
-              <div class="flex shrink-0 justify-end sm:w-[72px] sm:touch:w-[88px]">
-                <button v-if="e.media_path" type="button" :class="[iconBtn, 'text-brand-text']" :title="exerciseMediaKind(e.media_path) === 'video' ? t('Play the video', 'Ver el vídeo') : t('See the photo', 'Ver la foto')" data-cy="library-row-media" @click="openWhenReady(() => media.signedUrl(e.media_path!))">
-                  <svg v-if="exerciseMediaKind(e.media_path) === 'video'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" /></svg>
-                  <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
-                  <span class="sr-only">{{ exerciseMediaKind(e.media_path) === 'video' ? t('Video', 'Vídeo') : t('Photo', 'Foto') }}</span>
-                </button>
-                <button v-else-if="e.starter_key" type="button" :class="[iconBtn, 'text-brand-text']" :title="t('Play the demonstration', 'Ver la demostración')" data-cy="library-row-catalog-video" @click="openWhenReady(async () => catalog.media(e.starter_key!).video)">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" /></svg>
-                  <span class="sr-only">{{ t('Demonstration', 'Demostración') }}</span>
-                </button>
-                <a v-if="e.media_url" :href="e.media_url" target="_blank" rel="noopener" :class="[iconBtn, 'text-brand-text']" :title="e.media_url" data-cy="library-row-link">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
-                  <span class="sr-only">{{ t('Open the link', 'Abrir el enlace') }}</span>
-                </a>
-              </div>
-              <div class="flex shrink-0">
-                <button type="button" data-cy="library-edit" :class="iconBtn" :aria-label="t(`Edit ${e.name}`, `Editar ${e.name}`)" :title="t('Edit', 'Editar')" @click="openEdit(e)">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                </button>
-                <button type="button" data-cy="library-archive" :class="iconBtn" :aria-label="t(`Archive ${e.name}`, `Archivar ${e.name}`)" :title="t('Archive', 'Archivar')" @click="setArchived(e, true)">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4" /></svg>
-                </button>
+              <div v-if="playingId === e.id && exerciseMediaSource(e)" class="pb-4 pl-[18px] pr-3 sm:pl-[110px]" data-cy="library-row-player">
+                <ExercisesMediaPlayer class="max-w-[560px]" :source="exerciseMediaSource(e)!" :label="e.name" autoplay />
               </div>
             </div>
           </section>

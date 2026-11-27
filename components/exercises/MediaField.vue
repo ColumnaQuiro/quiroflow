@@ -31,20 +31,23 @@ async function onFile(e: Event) {
   emit('update:modelValue', result.path)
 }
 
-async function preview() {
-  if (!props.modelValue) return
-  const path = props.modelValue
-  openWhenReady(() => media.signedUrl(path))
-}
+// "View" plays it under the field (ExercisesMediaPlayer) rather than in a
+// new tab, where an iPhone .mov was a blank page and a download.
+const previewing = ref(false)
+watch(
+  () => props.modelValue,
+  () => (previewing.value = false),
+)
 </script>
 
 <template>
   <div class="text-[12.5px]" data-cy="exercise-media-field">
     <div v-if="modelValue" class="flex flex-wrap items-center gap-3 rounded-ctl border border-line-control bg-surface px-3 py-2">
       <span class="font-medium text-ink-900" data-cy="exercise-media-attached">{{ exerciseMediaKind(modelValue) === 'video' ? t('Video attached', 'Vídeo adjunto') : t('Photo attached', 'Foto adjunta') }}</span>
-      <button type="button" class="font-medium text-brand-text" @click="preview">{{ t('View', 'Ver') }}</button>
+      <button type="button" class="font-medium text-brand-text" :aria-expanded="previewing" data-cy="exercise-media-view" @click="previewing = !previewing">{{ previewing ? t('Hide', 'Ocultar') : t('View', 'Ver') }}</button>
       <button type="button" class="font-medium text-ink-muted hover:text-danger-text" data-cy="exercise-media-remove" @click="emit('update:modelValue', null)">{{ t('Remove', 'Quitar') }}</button>
     </div>
+    <ExercisesMediaPlayer v-if="modelValue && previewing" class="mt-2" :source="{ kind: exerciseMediaKind(modelValue), path: modelValue }" :label="exerciseMediaKind(modelValue) === 'video' ? t('Video attached', 'Vídeo adjunto') : t('Photo attached', 'Foto adjunta')" autoplay />
     <template v-else>
       <input ref="fileInput" type="file" accept="video/*,image/*" class="hidden" data-cy="exercise-media-input" @change="onFile" />
       <button type="button" class="font-medium text-brand-text disabled:text-ink-muted" :disabled="uploading" data-cy="exercise-media-upload" @click="fileInput?.click()">

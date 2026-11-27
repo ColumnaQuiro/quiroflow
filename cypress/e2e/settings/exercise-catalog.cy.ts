@@ -21,8 +21,12 @@ describe('Exercise catalogue', () => {
         cy.get('[data-cy="exercises-tab-catalog"]').click()
         cy.get('[data-cy="catalog-region-back"]').click()
         cy.contains('[data-cy="catalog-exercise"]', 'Glute bridge').find('[data-cy="catalog-exercise-add"]').click()
-        cy.contains('[data-cy="library-row"]', 'Glute bridge').find('[data-cy="library-row-catalog-video"]').should('exist')
         cy.contains('[data-cy="catalog-exercise"]', 'Glute bridge').find('[data-cy="catalog-exercise-added"]').should('exist')
+        // In the library it plays in its row (the list is on its own tab).
+        cy.get('[data-cy="exercises-tab-exercises"]').click()
+        cy.contains('[data-cy="library-row"]', 'Glute bridge').find('[data-cy="library-row-catalog-video"]').click()
+        cy.contains('[data-cy="library-row"]', 'Glute bridge').find('[data-cy="library-row-player"] [data-cy="catalog-video"]').should('have.attr', 'src').and('match', /\/exercise-catalog\/glute-bridge\.mp4$/)
+        cy.get('[data-cy="exercises-tab-catalog"]').click()
 
         // A starter programme: its exercises join the library, the bridge is not doubled.
         cy.get('[data-cy="catalog-region-programs"]').click()

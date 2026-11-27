@@ -3,6 +3,8 @@
 // so it is shown through a short-lived signed URL; staff upload into their
 // account's folder, and a patient can sign only the media of an exercise
 // they were given.
+import { videoEmbedUrl } from '../utils/learn'
+
 export const EXERCISE_MEDIA_MAX_BYTES = 50 * 1024 * 1024
 const BUCKET = 'exercise-media'
 const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/webm', 'image/jpeg', 'image/png', 'image/webp', 'image/gif']
@@ -11,6 +13,24 @@ const VIDEO_EXT = /\.(mp4|mov|webm)$/i
 /** "video" or "image", from the stored path's extension. */
 export function exerciseMediaKind(path: string): 'video' | 'image' {
   return VIDEO_EXT.test(path) ? 'video' : 'image'
+}
+
+/**
+ * What plays for an exercise when staff press play, in the order the patient
+ * is shown them: the clinic's own upload, else the catalogue demonstration,
+ * else a YouTube or Vimeo link. Null when there is nothing to play here (no
+ * media, or a link to some other site, which can only be opened).
+ */
+export type ExerciseMediaSource =
+  | { kind: 'video' | 'image'; path: string }
+  | { kind: 'catalog'; slug: string }
+  | { kind: 'embed'; url: string; link: string }
+
+export function exerciseMediaSource(e: { media_path?: string | null; starter_key?: string | null; media_url?: string | null }): ExerciseMediaSource | null {
+  if (e.media_path) return { kind: exerciseMediaKind(e.media_path), path: e.media_path }
+  if (e.starter_key) return { kind: 'catalog', slug: e.starter_key }
+  const embed = videoEmbedUrl(e.media_url)
+  return embed && e.media_url ? { kind: 'embed', url: embed, link: e.media_url } : null
 }
 
 export function useExerciseMedia() {
@@ -40,5 +60,14 @@ export function useExerciseMedia() {
     return data?.signedUrl ?? null
   }
 
-  return { upload, remove, signedUrl }
+  /** Several in one request, for a list's thumbnails: path -> URL, leaving out any it could not sign. */
+  async function signedUrls(paths: string[]): Promise<Record<string, string>> {
+    if (!paths.length) return {}
+    const { data } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600)
+    const out: Record<string, string> = {}
+    for (const d of data ?? []) if (d.path && d.signedUrl && !d.error) out[d.path] = d.signedUrl
+    return out
+  }
+
+  return { upload, remove, signedUrl, signedUrls }
 }

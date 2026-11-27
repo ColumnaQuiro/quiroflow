@@ -4,6 +4,7 @@ import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { matchIncomingAppointments, type HeldReason, type IncomingAppointment } from '~/utils/importAppointmentMatch'
 import { quiroflowKeeps, type KeptReason } from '~/utils/importAppointmentGuard'
 import { practiceHubAppointmentRows, practiceHubWallClock, type PHApiAppointment, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
+import { practiceHubRoomPlan, type PHV3Resource } from '~/utils/practicehubImport/rooms'
 import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } from '~/utils/practicehubImport/types'
 
 // The Appointments step of a PracticeHub import, run on the server
@@ -32,8 +33,11 @@ import { practiceHubList, type PracticeHubPlan, type PracticeHubStepPlanner } fr
 // the row is listed as kept (utils/importAppointmentGuard.ts). Deliberately never
 // touched: `rescheduled` (keeps a detected time change silent -- no
 // reschedule automation fires for a bulk historical sync), `note`,
-// `external_reference`, `created_at`, `room_id`, and all QuiroFlow-native
-// confirmation/reminder/check-in/flow timestamps. The one exception to
+// `external_reference`, `created_at`, and all QuiroFlow-native
+// confirmation/reminder/check-in/flow timestamps. `room_id` is only ever
+// filled, never changed: a visit with no room here takes PracticeHub's
+// (./rooms.ts), unless QuiroFlow moved it or keeps its version; a room chosen
+// here stands. The one exception to
 // `external_reference` is a visit adopted by a re-created PracticeHub
 // appointment (utils/importAppointmentMatch.ts): it takes the new id, so the
 // next run and the ledger import find it by id.
@@ -188,6 +192,7 @@ export interface AppointmentHereRow {
   practitioner_id: string | null
   practitioner_name: string | null
   appointment_type_id: string | null
+  room_id: string | null
 }
 
 export interface PlannedInsert { ref: string; startsAt: string; appointment: TablesInsert<'appointments'>; note: string | null }
@@ -223,6 +228,8 @@ export function planPracticeHubAppointmentRows(input: {
   practitionerIdFor: (name: string) => string | null
   /** The type for a row's type name; `ref` is its PracticeHub appointment id. */
   typeIdFor: (name: string, ref: string) => string | null
+  /** The room here a PracticeHub appointment was in, by its id; none when absent. */
+  roomIdFor?: (ref: string) => string | null
   shown?: (field: string, value: unknown) => string
 }): AppointmentRowsPlan {
   const { rows, patientByRef, accountId, clinicId, timeZone } = input
@@ -287,6 +294,7 @@ export function planPracticeHubAppointmentRows(input: {
     const typeName = row['Appointment Type']?.trim() || ''
     const note = row['Note']?.trim() || null
     const status = practiceHubAppointmentStatus(row['Status'] || '')
+    const roomId = (extRef && input.roomIdFor?.(extRef)) || null
 
     if (!existing) {
       plan.inserts.push({
@@ -300,6 +308,7 @@ export function planPracticeHubAppointmentRows(input: {
           practitioner_id: (practName && input.practitionerIdFor(practName)) || null,
           practitioner_name: practName || null,
           appointment_type_id: (typeName && input.typeIdFor(typeName, extRef)) || null,
+          room_id: roomId,
           starts_at: start.toISOString(),
           ends_at: end.toISOString(),
           status,
@@ -331,6 +340,13 @@ export function planPracticeHubAppointmentRows(input: {
       })
       updates = {}
       diff = []
+    }
+    // A room only fills a blank, and only on a visit QuiroFlow neither moved
+    // nor keeps (who moved it chose where it is, room or no room) and that is
+    // in the clinic the room belongs to.
+    if (roomId && !keptReason && !existing.rescheduled && !existing.room_id && existing.clinic_id === clinicId) {
+      updates.room_id = roomId
+      diff.push({ field: 'room_id', from: shown('room_id', null), to: shown('room_id', roomId) })
     }
     // An adopted visit still takes the new id when its fields are kept, so
     // the next run and the ledger import find it.
@@ -462,6 +478,57 @@ export async function practiceHubTypesHere(supabase: Admin, accountId: string) {
 
 const errText = (e: unknown) => (e as { message?: string })?.message ?? String(e)
 
+/**
+ * What the preview says about rooms: which PracticeHub room went to which room
+ * here, and why a visit comes in with none. Silent when neither side has
+ * anything to say: no rooms here and at most one in PracticeHub.
+ */
+export function practiceHubRoomWarnings(input: {
+  t: (en: string, es: string) => string
+  nf: Intl.NumberFormat
+  roomsHere: readonly { id: string; name: string }[]
+  phResources: readonly PHV3Resource[] | undefined
+  roomPlan: ReturnType<typeof practiceHubRoomPlan>
+}): string[] {
+  const { t, nf, roomsHere, phResources, roomPlan } = input
+  if (!phResources) {
+    return roomsHere.length
+      ? [t(
+          'Visits come in with no room: the copy read from PracticeHub has no rooms. Save the PracticeHub API key (phk_...) in Settings > Import > Connection, read PracticeHub again, and sync to bring each visit\'s room.',
+          'Las visitas llegan sin sala: la copia leída de PracticeHub no trae salas. Guarda la clave de la API de PracticeHub (phk_...) en Ajustes > Importar > Conexión, vuelve a leer PracticeHub y sincroniza para traer la sala de cada visita.',
+        )]
+      : []
+  }
+  const out: string[] = []
+  const matched = roomPlan.rooms.filter((r) => r.room)
+  const unmatched = roomPlan.rooms.filter((r) => !r.room)
+  if (matched.length) {
+    const pairs = matched.map((r) => `"${r.name}" → ${r.room!.name}`).join(', ')
+    out.push(t(`Rooms: PracticeHub ${pairs}.`, `Salas: PracticeHub ${pairs}.`))
+  }
+  // A clinic with no rooms here hears about PracticeHub's only when there is
+  // more than one: a single room tells nobody where a visit was.
+  if (unmatched.length && (roomsHere.length || roomPlan.rooms.length > 1)) {
+    const names = unmatched.map((r) => `"${r.name}" (${nf.format(r.visits)})`).join(', ')
+    out.push(roomsHere.length
+      ? t(
+          `PracticeHub rooms with no room of the same name in this clinic: ${names}. Their visits come in with no room; add the room under Settings with the same name and sync again to fill it.`,
+          `Salas de PracticeHub sin una sala con el mismo nombre en esta clínica: ${names}. Sus visitas llegan sin sala; crea la sala en Ajustes con el mismo nombre y vuelve a sincronizar para rellenarla.`,
+        )
+      : t(
+          `This clinic has no rooms, so visits come in with none. PracticeHub has ${names}: add rooms under Settings with the same names and sync again to fill them.`,
+          `Esta clínica no tiene salas, así que las visitas llegan sin sala. PracticeHub tiene ${names}: crea salas en Ajustes con los mismos nombres y vuelve a sincronizar para rellenarlas.`,
+        ))
+  }
+  if (roomPlan.elsewhere && (matched.length || roomsHere.length)) {
+    out.push(t(
+      `${nf.format(roomPlan.elsewhere)} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.`,
+      `${nf.format(roomPlan.elsewhere)} visitas son de otro centro de PracticeHub y llegan sin sala: las salas de ese centro no son las de esta clínica.`,
+    ))
+  }
+  return out
+}
+
 export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): Promise<PracticeHubPlan> => {
   const { supabase, accountId, clinicId, t } = ctx
   const nf = new Intl.NumberFormat('es-ES')
@@ -473,7 +540,11 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     appointmentTypes: practiceHubList<PHNamed>(snapshot, '/appointment_types'),
   })
 
-  const [zone, teamRes, typeRows, patients, existing] = await Promise.all([
+  // 2.0's rooms, absent from a copy read without a 2.0 key (or before rooms
+  // were read): then no visit gets a room, and the preview says why.
+  const phResources = snapshot.lists['/v3/resources'] as PHV3Resource[] | undefined
+
+  const [zone, teamRes, typeRows, patients, existing, roomsRes] = await Promise.all([
     practiceHubClinicZone(supabase, accountId, clinicId),
     supabase.from('team_members').select('id, full_name, deleted_at').eq('account_id', accountId).order('id'),
     practiceHubTypesHere(supabase, accountId),
@@ -481,9 +552,19 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     // Every appointment, not only imported ones: a visit entered here carries
     // no PracticeHub id and can still be the one a re-created appointment
     // describes.
-    readAllForAccount<AppointmentHereRow>(supabase, accountId, 'appointments', 'id, external_reference, patient_id, clinic_id, starts_at, ends_at, status, rescheduled, checked_in_at, practitioner_id, practitioner_name, appointment_type_id'),
+    readAllForAccount<AppointmentHereRow>(supabase, accountId, 'appointments', 'id, external_reference, patient_id, clinic_id, starts_at, ends_at, status, rescheduled, checked_in_at, practitioner_id, practitioner_name, appointment_type_id, room_id'),
+    // The rooms of the clinic being imported into, oldest first so a twin
+    // name always resolves to the same one. Never created here.
+    clinicId
+      ? supabase.from('calendar_resources').select('id, name').eq('account_id', accountId).eq('clinic_id', clinicId).order('created_at').order('id')
+      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
   ])
   if (teamRes.error) throw new Error(`team_members: ${teamRes.error.message}`)
+  // Read wrong, every visit would quietly come in with no room.
+  if (roomsRes.error) throw new Error(`calendar_resources: ${roomsRes.error.message}`)
+  const roomsHere = roomsRes.data ?? []
+  const roomPlan = practiceHubRoomPlan({ appointments: phAppointments, resources: phResources ?? [], roomsHere })
+  const roomName = new Map(roomsHere.map((r) => [r.id, r.name]))
   // Someone on the team now wins a shared name over someone who has left.
   const team = [...(teamRes.data ?? [])].sort((a, b) => Number(!!a.deleted_at) - Number(!!b.deleted_at))
   const memberNamed = byExactName(team, (m) => m.full_name)
@@ -518,6 +599,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     if (field === 'status') return statusLabel(String(value))
     if (field === 'practitioner_id') return teamName.get(value as string) ?? String(value)
     if (field === 'appointment_type_id') return typeName.get(value as string) ?? String(value)
+    if (field === 'room_id') return roomName.get(value as string) ?? String(value)
     return String(value)
   }
   const fieldLabel = (field: string) => {
@@ -529,6 +611,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
       case 'practitioner_name': return t('Practitioner', 'Profesional')
       case 'appointment_type_id': return t('Appointment type', 'Tipo de cita')
       case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
+      case 'room_id': return t('Room', 'Sala')
       default: return field
     }
   }
@@ -548,6 +631,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
     timeZone: zone,
     practitionerIdFor: (name) => memberNamed(name)?.id ?? null,
     typeIdFor: (name, ref) => typeFor(name, ref)?.id ?? null,
+    roomIdFor: (ref) => roomPlan.roomFor(ref)?.id ?? null,
     shown,
   })
 
@@ -578,6 +662,8 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
   const adopted = plan.updates.filter((u) => u.adopted).length
   const noClinic = !clinicId
   const { inserts, updates, held, kept } = plan
+  const roomsSet = inserts.filter((i) => i.appointment.room_id).length + updates.filter((u) => u.updates.room_id).length
+  const roomWarnings = practiceHubRoomWarnings({ t, nf, roomsHere, phResources, roomPlan })
 
   return {
     stats: [
@@ -589,6 +675,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
       { label: t('No matching patient', 'Sin paciente coincidente'), value: nf.format(plan.skippedNoPatient) },
       { label: t('Already up to date', 'Ya al día'), value: nf.format(plan.skippedUnchanged) },
       ...(plan.skippedInvalidDate ? [{ label: t('Unreadable date', 'Fecha ilegible'), value: nf.format(plan.skippedInvalidDate) }] : []),
+      ...(roomsSet ? [{ label: t('Room set', 'Con sala'), value: nf.format(roomsSet) }] : []),
     ],
     columns: [
       { key: 'when', label: t('Date', 'Fecha') },
@@ -624,7 +711,12 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
         when: when(i.startsAt),
         ref: i.ref,
         change: t('New', 'Nueva'),
-        detail: [i.appointment.practitioner_name ?? t('N/A', 'N/D'), statusLabel(i.appointment.status ?? 'booked'), ...(i.note ? [t('with a visit note', 'con nota de visita')] : [])].join(' · '),
+        detail: [
+          i.appointment.practitioner_name ?? t('N/A', 'N/D'),
+          statusLabel(i.appointment.status ?? 'booked'),
+          ...(i.appointment.room_id ? [`${t('Room', 'Sala')} ${shown('room_id', i.appointment.room_id)}`] : []),
+          ...(i.note ? [t('with a visit note', 'con nota de visita')] : []),
+        ].join(' · '),
       })),
     ],
     warnings: [
@@ -649,6 +741,7 @@ export const planAppointments: PracticeHubStepPlanner = async (ctx, snapshot): P
         `${nf.format(untypedNames.size)} appointment types are not here yet (${[...untypedNames.keys()].join(', ')}): their visits come in with no type, and the Appointment types step creates them and links the visits.`,
         `${nf.format(untypedNames.size)} tipos de cita aún no existen aquí (${[...untypedNames.keys()].join(', ')}): sus visitas llegan sin tipo, y el paso Tipos de cita los crea y enlaza las visitas.`,
       )] : []),
+      ...roomWarnings,
     ],
     total: inserts.length + updates.length,
     async apply(progress, shouldStop) {

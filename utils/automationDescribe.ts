@@ -251,6 +251,11 @@ export function filtersText(t: Translate, filters: Record<string, any> | null | 
         if (n) parts.push(t(`Type: ${n}`, `Tipo: ${n}`))
         break
       }
+      case 'visit_types': {
+        const n = names(f.visit_type_ids, lookup.appointmentTypes)
+        if (n) parts.push(t(`Visits of type: ${n}`, `Visitas de tipo: ${n}`))
+        break
+      }
       case 'practitioners': {
         const n = names(f.practitioner_ids, lookup.practitioners)
         if (n) parts.push(n)

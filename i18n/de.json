@@ -11013,6 +11013,10 @@
   "checks with no false positive": "Kontrollen ohne falsch positives Ergebnis",
   "Discounted price (€)": "Rabattierter Preis (€)",
   "Remove discount": "Rabatt entfernen",
-  "Apply a discount": "Rabatt gewähren"
+  "Apply a discount": "Rabatt gewähren",
+  "By creating an account you accept the": "Mit dem Erstellen des Kontos akzeptieren Sie die",
+  "Terms of service": "Nutzungsbedingungen",
+  "and the": "und die",
+  "Privacy policy": "Datenschutzerklärung"
  }
 }

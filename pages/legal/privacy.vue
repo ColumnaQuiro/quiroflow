@@ -30,7 +30,7 @@ useHead({ title: () => t('Privacy policy — QuiroFlow', 'Política de privacida
       </div>
 
       <h1 class="mt-8 text-2xl font-semibold text-ink-900">{{ t('Privacy policy', 'Política de privacidad') }}</h1>
-      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 6 November 2026', 'Última actualización: 6 de noviembre de 2026') }}</p>
+      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 27 November 2026', 'Última actualización: 27 de noviembre de 2026') }}</p>
 
       <div class="mt-8 rounded-card border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink-700">
         <p class="font-medium text-ink-900">{{ t('Who this policy covers, and who it doesn\'t', 'A quién se aplica esta política, y a quién no') }}</p>

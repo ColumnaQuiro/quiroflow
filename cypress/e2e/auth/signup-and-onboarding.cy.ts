@@ -11,9 +11,20 @@ describe('Signup and onboarding', () => {
     cy.visit('/signup')
     cy.get('#email').type(email)
     cy.get('#password').type(password)
+    // What is being agreed to is linked before the button is pressed.
+    cy.get('[data-cy=signup-legal] a[href="/legal/terms"]').should('be.visible')
+    cy.get('[data-cy=signup-legal] a[href="/legal/privacy"]').should('be.visible')
     cy.contains('button', 'Create account').click()
 
     cy.location('pathname', { timeout: 15000 }).should('eq', '/onboarding')
+
+    // And the acceptance is on record, against this user, with the version
+    // of the text they were shown. Nothing was stored at all before.
+    cy.task('db:legalAcceptances', email).then((rows: any) => {
+      expect(rows).to.have.length(1)
+      expect(rows[0].version).to.match(/^\d{4}-\d{2}-\d{2}$/)
+      expect(rows[0].user_id).to.be.a('string')
+    })
 
     cy.get('#owner-name').type(ownerName)
     cy.get('#owner-phone').type('600 00 00 00')

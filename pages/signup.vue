@@ -101,6 +101,10 @@ async function onSubmit() {
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,
     password: password.value,
+    // Which Terms and Privacy policy the line under the button linked to.
+    // The database records it as the user is created (legal_acceptances),
+    // so the acceptance does not depend on any later call succeeding.
+    options: { data: { legal_version: LEGAL_VERSION } },
   })
   loading.value = false
   if (signUpError) {
@@ -202,6 +206,13 @@ async function onSubmit() {
         >
           {{ t('Create account', 'Crear cuenta') }}
         </OnboardingPrimaryButton>
+
+        <p class="text-center text-[12.5px] leading-relaxed text-ink-muted" data-cy="signup-legal">
+          {{ t('By creating an account you accept the', 'Al crear la cuenta aceptas las') }}
+          <NuxtLink to="/legal/terms" target="_blank" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Terms of service', 'Condiciones del servicio') }}</NuxtLink>
+          {{ t('and the', 'y la') }}
+          <NuxtLink to="/legal/privacy" target="_blank" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Privacy policy', 'Política de privacidad') }}</NuxtLink>.
+        </p>
 
         <p v-if="loading" class="flex items-center justify-center gap-1.5 text-[12.5px] text-ink-muted">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-[13px] w-[13px]">

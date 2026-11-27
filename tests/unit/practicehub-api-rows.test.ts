@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { practiceHubAppointmentRows, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, practiceHubWallClock } from '../../utils/practicehubApiRows'
+import { practiceHubAppointmentRows, practiceHubDefaultPractitionerId, practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, practiceHubWallClock } from '../../utils/practicehubApiRows'
 
 // The Patients and Appointments importers can read PracticeHub's Classic API
 // instead of a CSV export. These pin the API -> row mapping to the shapes the
@@ -64,6 +64,22 @@ describe('PracticeHub API records as import rows', () => {
     expect(row['Preferred Language']).to.eq('fr')
     expect(row['Account Balance']).to.eq('-45.00')
     expect(row['Tags']).to.eq('VIP, Embarazo')
+  })
+
+  // One default per modality. The list is usually in modality order but not
+  // always, and the patient's own practitioner is the first modality's.
+  it('takes the first modality\'s default practitioner, whatever order PracticeHub lists them in', () => {
+    expect(practiceHubDefaultPractitionerId([{ modality_id: 2, practitioner_id: 4 }, { modality_id: 1, practitioner_id: 2 }])).toBe('2')
+    expect(practiceHubDefaultPractitionerId([{ modality_id: '1', practitioner_id: '10' }, { modality_id: '2', practitioner_id: '4' }])).toBe('10')
+    // Without modalities, the order PracticeHub gave.
+    expect(practiceHubDefaultPractitionerId([{ practitioner_id: 7 }, { practitioner_id: 8 }])).toBe('7')
+    expect(practiceHubDefaultPractitionerId([])).toBe('')
+    expect(practiceHubDefaultPractitionerId(null)).toBe('')
+    const [row] = practiceHubPatientRows(
+      [{ ...patients[0], default_practitioners: [{ modality_id: 2, practitioner_id: 4 }, { modality_id: 1, practitioner_id: 9 }] }],
+      { practitioners: [...practitioners, { id: 4, first_name: 'Otra', last_name: 'Terapeuta' }], referralSources },
+    )
+    expect(row['Default Practitioner']).to.eq('Marta Ruiz')
   })
 
   it('names a referring patient, and leaves a deleted one blank as the CSV does', () => {

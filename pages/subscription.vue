@@ -37,6 +37,8 @@ interface SubscriptionRow {
   plan_id: string
   /** Plan on which this account has no practitioner or location limit (grandfathered terms). */
   limits_waived_on_plan: string | null
+  /** Null while a trial's plan still follows the team (sync_trial_plan); set once somebody chose one. */
+  plan_chosen_at: string | null
   plans: {
     name: string
     monthly_price_cents: number
@@ -136,7 +138,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, blind_spot_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents)',
+      'status, billing_interval, extra_professionals, extra_clinics, growth_addon, receptionist_addon, branding_addon, blind_spot_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, limits_waived_on_plan, plan_chosen_at, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, extra_clinic_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -177,6 +179,17 @@ const interval = computed<'monthly' | 'annual'>(() =>
   subscription.value?.billing_interval === 'annual' ? 'annual' : 'monthly',
 )
 const currentPlanIncludesGrowth = computed(() => planIncludesGrowth(subscription.value?.plan_id))
+/**
+ * While a trial has no card and nobody has chosen a plan, the database keeps
+ * it on the plan the team needs (sync_trial_plan, 20261127064737): Practice
+ * from two practitioners, invites included, Solo otherwise. Said on the card,
+ * so a plan that changed on its own after an invite is not a mystery.
+ */
+const planFollowsTeam = computed(() => {
+  const sub = subscription.value
+  if (!sub || store.isBlindSpotOnly) return false
+  return sub.status === 'trialing' && !sub.comped && !sub.stripe_subscription_id && !sub.plan_chosen_at && !sub.limits_waived_on_plan && (sub.plan_id === 'starter' || sub.plan_id === 'pro')
+})
 
 /** Whether Growth is a billed line of its own, rather than bundled into the plan. */
 const growthBilled = computed(() => !!subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
@@ -736,6 +749,7 @@ async function addPaymentMethod() {
               :alternative-yearly-cents="alternativeYearly"
               :comped-since="subscription.created_at"
               :trial-ends-at="subscription.trial_ends_at"
+              :plan-follows-team="planFollowsTeam"
               :can-manage="store.isOwner"
               @change-plan="changingPlan = true"
             />

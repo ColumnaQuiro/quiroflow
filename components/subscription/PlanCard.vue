@@ -18,6 +18,8 @@ const props = defineProps<{
   alternativeYearlyCents: number | null
   compedSince: string | null
   trialEndsAt: string | null
+  /** The trial's plan is still the one the team size picks (sync_trial_plan), not one somebody chose. */
+  planFollowsTeam?: boolean
   canManage: boolean
 }>()
 
@@ -33,7 +35,7 @@ const comped = computed(() => props.state === 'comped')
     <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
       <div class="flex-1">
         <div class="flex items-center gap-2.5">
-          <h2 class="text-[19px] font-semibold tracking-tightTitle text-ink-900">{{ planName }}</h2>
+          <h2 class="text-[19px] font-semibold tracking-tightTitle text-ink-900" data-cy="plan-name">{{ planName }}</h2>
           <SubscriptionStatePill :state="state" />
         </div>
         <p class="mt-1.5 text-[13.5px] text-ink-muted">{{ description }}</p>
@@ -86,6 +88,15 @@ const comped = computed(() => props.state === 'comped')
         {{ t('Charged so far', 'Cobrado hasta ahora') }} <strong class="font-semibold text-ink-700">{{ formatEur(0) }}</strong>.
         <template v-if="trialEndsAt">
           {{ t('Billing begins on', 'La facturación empieza el') }} {{ formatLongDate(trialEndsAt) }}.
+        </template>
+        <template v-if="planFollowsTeam">
+          <br />
+          <span data-cy="plan-follows-team">{{
+            t(
+              'During the trial the plan follows your team: Practice from two practitioners, invites included. Choose one yourself and it stays.',
+              'Durante la prueba el plan sigue a tu equipo: Practice a partir de dos profesionales, contando las invitaciones. Si eliges uno tú, se mantiene.',
+            )
+          }}</span>
         </template>
       </p>
 

@@ -109,6 +109,13 @@ function choosePractitioner(id: string) {
   practitionerId.value = id
   practitionerChosen.value = true
 }
+// Opened from the "everyone" view (its columns are rooms) or the unassigned
+// tab, nothing is prefilled -- and "No practitioner" used to show as already
+// chosen. Bookings made there landed on no practitioner's calendar tab and in
+// nobody's My Day, both of which list one practitioner's visits only, so the
+// patient was booked and still never seen. Until someone is picked, or "No
+// practitioner" is picked on purpose, the question stays open.
+const practitionerAnswered = computed(() => !!practitionerId.value || practitionerChosen.value)
 
 const appointmentTypeId = ref((props.appointmentTypes.find((x) => x.id === props.prefillAppointmentTypeId) ?? props.appointmentTypes[0])?.id ?? '')
 const note = ref('')
@@ -563,10 +570,11 @@ function problemReason(p: SeriesProblem) {
 // -- Submit ------------------------------------------------------------------
 const hasPatient = computed(() => (patientMode.value === 'existing' ? !!selectedPatient.value : !!newPatientFirstName.value.trim()))
 const blockedByClash = computed(() => !!clash.value && !allowDoubleBooking.value)
-const canBook = computed(() => hasPatient.value && validTime.value && !blockedByClash.value && !saving.value)
+const canBook = computed(() => hasPatient.value && practitionerAnswered.value && validTime.value && !blockedByClash.value && !saving.value)
 const cta = computed(() => {
   if (saving.value) return t('Booking…', 'Reservando…')
   if (!hasPatient.value) return t('Choose a patient to book', 'Elige paciente para reservar')
+  if (!practitionerAnswered.value) return t('Choose a practitioner to book', 'Elige profesional para reservar')
   if (blockedByClash.value) return t('Choose another time', 'Elige otra hora')
   return t(`Book · ${formatWeekdayDate(startsAt.value)} ${formatTime(startsAt.value)}`, `Reservar · ${formatWeekdayDate(startsAt.value)} ${formatTime(startsAt.value)}`)
 })
@@ -1010,9 +1018,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               type="button"
               role="radio"
               data-cy="create-practitioner"
-              :aria-checked="practitionerId === ''"
+              :aria-checked="practitionerId === '' && practitionerChosen"
               class="flex min-h-14 flex-col items-start justify-center rounded-[11px] px-3 py-1.5 text-left text-[14px] font-semibold"
-              :class="practitionerId === '' ? 'border-[1.5px] border-brand bg-brand-tint text-ink-900' : 'border border-line-control bg-surface text-ink-muted hover:border-line-controlHover'"
+              :class="practitionerId === '' && practitionerChosen ? 'border-[1.5px] border-brand bg-brand-tint text-ink-900' : 'border border-line-control bg-surface text-ink-muted hover:border-line-controlHover'"
               @click="choosePractitioner('')"
             >
               {{ t('No practitioner', 'Sin profesional') }}

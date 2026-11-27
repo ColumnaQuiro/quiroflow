@@ -407,6 +407,70 @@ describe('Block ladder', () => {
   })
 })
 
+describe('A narrow week block (a clinic with many rooms, the week fitted to the screen)', () => {
+  const narrow: LadderInput = {
+    density: 'week',
+    width: 30,
+    height: 24,
+    stage: 'arrived',
+    owes: true,
+    bono: true,
+    note: true,
+    moved: 2,
+    noNext: true,
+    forms: true,
+    marker: true,
+    pillText: 'Llegó',
+    nameText: 'L. Gómez',
+    firstName: 'Laura',
+    lastName: 'Gómez Pardo',
+  }
+
+  it('is narrow under 56px, and only there', () => {
+    expect(blockLadder({ ...narrow, width: 55 }).narrow).to.equal(true)
+    expect(blockLadder({ ...narrow, width: 56 }).narrow).to.equal(false)
+    expect(blockLadder({ ...narrow, density: 'day' }).narrow, 'never in the day view').to.equal(false)
+  })
+
+  it('prints the first name where it fits, else the initials', () => {
+    // 41px leaves 35 for "Laura" at 6.6px a letter (33).
+    expect(blockLadder({ ...narrow, width: 41 }).narrowName).to.equal('Laura')
+    expect(blockLadder({ ...narrow, width: 30 }).narrowName).to.equal('LG')
+  })
+
+  it('puts the surnames under the first name when the block is tall enough', () => {
+    const tall = blockLadder({ ...narrow, width: 41, height: 40 })
+    expect(tall.nameLines).to.deep.equal(['Laura', 'Gómez Pardo'])
+    expect(tall.narrowName).to.equal(null)
+    expect(blockLadder({ ...narrow, width: 30, height: 40 }).nameLines, 'no room for the first name: initials, one line').to.equal(null)
+  })
+
+  it('keeps the money and drops what has no room beside the name', () => {
+    const l = blockLadder({ ...narrow, width: 41 })
+    expect(l.owes).to.equal('dot')
+    expect([l.pill, l.meta, l.forms, l.noNext, l.note, l.marker, l.bono, l.moved]).to.deep.equal(['none', 'none', false, false, false, false, false, false])
+  })
+
+  it('turns the practitioner badge into an edge stripe, which takes 3px rather than the name line', () => {
+    expect(blockLadder(narrow).badge, 'not the whole-clinic tab').to.equal('none')
+    expect(blockLadder({ ...narrow, badgeText: 'S' }).badge).to.equal('edge')
+    // The stripe's 3px cost the first name at 41px, not at 44.
+    expect(blockLadder({ ...narrow, width: 41, badgeText: 'S' }).narrowName).to.equal('LG')
+    expect(blockLadder({ ...narrow, width: 44, badgeText: 'S' }).narrowName).to.equal('Laura')
+  })
+
+  it('runs the stripe across the top of a full week\'s 20px block, leaving the initials the whole width', () => {
+    expect(blockLadder({ ...narrow, width: 18, badgeText: 'S' }).badge).to.equal('edge-top')
+    expect(blockLadder({ ...narrow, width: 26, badgeText: 'S' }).badge).to.equal('edge')
+    expect(blockLadder({ ...narrow, width: 18 }).badge, 'no badge asked for, no stripe').to.equal('none')
+  })
+
+  it('leaves the wider week block exactly as it was', () => {
+    const wide = blockLadder({ ...narrow, width: 82, height: 59, badgeText: 'S', stage: 'confirmed' })
+    expect([wide.narrow, wide.narrowName, wide.badge]).to.deep.equal([false, null, 'meta'])
+  })
+})
+
 describe('Practitioner badge initials', () => {
   it('uses one letter where it is enough, two only where it is not', () => {
     const labels = practitionerBadgeLabels([

@@ -34,6 +34,15 @@ import type { AppointmentStage } from './appointmentStage'
 //   7 clinical note     day; an icon beside the name
 //   8 moved count       day, two-line blocks
 //
+// Below WEEK_NARROW_BELOW_PX a week block is "narrow": a working week of a
+// clinic with seven rooms (six tables and a first-visit room) has to fit
+// forty sub-columns in a laptop's width, some 28px each, and a full week
+// fifty-six at some 20px. There nothing from 2 down fits beside the name, so
+// the block keeps only what it is read for: the patient (first name, or
+// initials where even that is cut), the practitioner as a stripe of their
+// colour down the left edge instead of the badge, and the two that are never
+// dropped -- the red flag and the € dot. The hover card has the rest.
+//
 // Pure, so the ladder can be pinned in a spec without rendering anything --
 // the block measures itself and asks this what to draw.
 
@@ -98,8 +107,18 @@ export interface Ladder {
   marker: boolean
   /** Where the practitioner badge goes: before the name, or leading the
    *  detail line (two-line week blocks). Never dropped for room once asked
-   *  for: on the whole-clinic tab it is what the block is read for. */
-  badge: 'none' | 'name' | 'meta'
+   *  for: on the whole-clinic tab it is what the block is read for. On a
+   *  narrow block it becomes a stripe of the practitioner's colour down the
+   *  left edge ('edge'), the one form of it that takes no room from the name;
+   *  under EDGE_TOP_BELOW_PX, across the top ('edge-top'), since even its 3px
+   *  down the side cut the two initials of a full week's 20px column. */
+  badge: 'none' | 'name' | 'meta' | 'edge' | 'edge-top'
+  /** A week block under WEEK_NARROW_BELOW_PX wide. */
+  narrow: boolean
+  /** Narrow blocks only: the text to print on the name line in place of the
+   *  short name -- the first name, or the initials where that does not fit.
+   *  Null where the block prints nameLines instead. */
+  narrowName: string | null
   /** Tall enough that the detail row may wrap instead of dropping anything. */
   wrap: boolean
 }
@@ -121,6 +140,16 @@ export const WEEK_THREE_LINES_ROOMY_FROM_PX = 56
 export const WRAP_FROM_PX = 76
 /** Narrower than this, a day block's stage pill shows its icon only. */
 export const PILL_LABEL_FROM_PX = 200
+/** Narrower than this, a week block is narrow: see the comment at the top. */
+export const WEEK_NARROW_BELOW_PX = 56
+/** A narrow block at least this tall prints the first name over the surnames. */
+export const NARROW_TWO_LINES_FROM_PX = 30
+// A narrow block's padding and border: 2px a side and the 1px border, plus
+// the 3px stripe when it carries one.
+const NARROW_INNER_PAD_PX = 6
+const EDGE_PX = 3
+/** Narrower than this, a narrow block's practitioner stripe runs across the top. */
+export const EDGE_TOP_BELOW_PX = 26
 
 // Rough text widths at the block's 11-11.5px type: good enough to decide what
 // fits, which is all this is for -- the template still ellipsises.
@@ -158,6 +187,37 @@ export function blockLadder(input: LadderInput): Ladder {
   // against it.
   const pillHidden = input.stage === 'completed' || (week && input.stage === 'confirmed')
   const badgeRoom = input.badgeText ? badgePx(input.badgeText) + GAP_PX : 0
+
+  if (week && input.width < WEEK_NARROW_BELOW_PX) {
+    const edgeTop = input.width < EDGE_TOP_BELOW_PX
+    const room = input.width - NARROW_INNER_PAD_PX - (input.badgeText && !edgeTop ? EDGE_PX : 0) - (input.redFlag ? WEEK_ICON_PX + 2 : 0)
+    const first = (input.firstName ?? '').trim()
+    const last = (input.lastName ?? '').trim()
+    const fits = (s: string) => Math.ceil(s.length * WEEK_NAME_CHAR_PX) <= room
+    const initials = (first[0] ?? '') + (last[0] ?? '')
+    const twoLines = input.height >= NARROW_TWO_LINES_FROM_PX && !!first && !!last && fits(first)
+    const narrowName = twoLines ? null : first && fits(first) ? first : initials || input.nameText || ''
+    return {
+      compact: !twoLines,
+      shortName: false,
+      fullerName: null,
+      nameLines: twoLines ? [first, last] : null,
+      tight: twoLines,
+      pill: 'none',
+      owes: input.owes ? 'dot' : 'none',
+      meta: 'none',
+      forms: false,
+      note: false,
+      bono: false,
+      moved: false,
+      noNext: false,
+      marker: false,
+      badge: !input.badgeText ? 'none' : edgeTop ? 'edge-top' : 'edge',
+      wrap: false,
+      narrow: true,
+      narrowName,
+    }
+  }
 
   if (week) {
     // The short name is rank 1, so the forms icon only goes where it would
@@ -205,6 +265,8 @@ export function blockLadder(input: LadderInput): Ladder {
       marker: !!input.marker,
       badge: !input.badgeText ? 'none' : compact ? 'name' : 'meta',
       wrap: false,
+      narrow: false,
+      narrowName: null,
     }
   }
 
@@ -233,7 +295,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap: false }
+    return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap: false, narrow: false, narrowName: null }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
@@ -261,7 +323,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const bono = take(input.bono, textPx(input.bonoText ?? 'Bono 00/00', 14))
   const moved = take(input.moved > 0, MOVED_PX)
 
-  return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap }
+  return { compact, shortName: false, fullerName: null, nameLines: null, tight: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, badge: input.badgeText ? 'name' : 'none', wrap, narrow: false, narrowName: null }
 }
 
 // "de la Fuente Ruiz" starts with a surname of three words, not one.

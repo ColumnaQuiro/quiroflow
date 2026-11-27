@@ -163,6 +163,72 @@ describe('Segment trigger', () => {
     })
   })
 
+  it('a one-off send by visit type: counted, then enrolled', () => {
+    const tag = `tipo-${Math.random().toString(36).slice(2, 8)}`
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
+    const suffix = Math.random().toString(36).slice(2, 6)
+    cy.task<{ id: string; name: string }>('db:createAppointmentType', { accountId: account.accountId, name: `Masaje ${suffix}` }).as('massage')
+    cy.task<{ id: string; name: string }>('db:createAppointmentType', { accountId: account.accountId, name: `Ajuste ${suffix}` }).as('adjustment')
+    cy.get<{ id: string; name: string }>('@massage').then((massage) => {
+      cy.get<{ id: string; name: string }>('@adjustment').then((adjustment) => {
+        const withVisits = (firstName: string, visits: { typeId: string; daysAgo: number; status?: string }[]) =>
+          cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName, tags: [tag] }).then((p) => {
+            for (const v of visits) {
+              cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt: daysAgo(v.daysAgo), status: v.status ?? 'completed', appointmentTypeId: v.typeId })
+            }
+          })
+        // Two massages: in by type, and in with "at least 2".
+        withVisits('Dosmasajes', [{ typeId: massage.id, daysAgo: 90 }, { typeId: massage.id, daysAgo: 30 }])
+        // One massage and one adjustment: in by type, out of "at least 2"
+        // because only the massages count once a type is chosen.
+        withVisits('Unmasaje', [{ typeId: massage.id, daysAgo: 60 }, { typeId: adjustment.id, daysAgo: 20 }])
+        // Adjustments only, and a massage booked but not yet had: out.
+        withVisits('Ajustes', [{ typeId: adjustment.id, daysAgo: 40 }, { typeId: adjustment.id, daysAgo: 10 }])
+        withVisits('Reservada', [{ typeId: massage.id, daysAgo: -7, status: 'booked' }])
+        cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nunca', tags: [tag] })
+
+        cy.visit('/automations/new')
+        cy.get('[data-test="trigger-subject"]').select('group')
+        cy.get('[data-test="segment-once"]').click()
+        // The appointment's own type is meaningless without an appointment;
+        // the visit type is what a group is offered instead.
+        cy.get('[data-test="segment-filter-add"] option[value="appointment_types"]').should('not.exist')
+        cy.get('[data-test="segment-filter-add"]').select('tag_contains')
+        cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
+        cy.get('[data-test="segment-count"]').should('contain', '5')
+        cy.get('[data-test="segment-filter-add"]').select('visit_types')
+        cy.get('[data-test="segment-filter-visit-types"]').click()
+        cy.get('[data-test="segment-filter-visit_types"]').contains('label', massage.name).find('input').check()
+        cy.get('[data-test="segment-count"]').should('contain', '2')
+        cy.get('[data-test="segment-count"]').contains('See the list').click()
+        cy.get('[data-test="segment-count"]').should('contain', 'Dosmasajes').and('contain', 'Unmasaje').and('not.contain', 'Ajustes').and('not.contain', 'Reservada').and('not.contain', 'Nunca')
+        cy.get('[data-test="segment-count"]').contains('Hide the list').click()
+        cy.get('[data-test="segment-filter-add"]').select('min_visits')
+        cy.get('[data-test="segment-filter-min_visits"] input').type('{selectall}2')
+        cy.get('[data-test="segment-count"]').should('contain', '1')
+
+        cy.get('[data-test="insert-root-root-0"]').click({ force: true })
+        cy.get('[data-test="add-step-tag"]').click()
+        cy.get('[data-test="tag-input"]').type('contactado')
+        autoSaved()
+        cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+        cy.get('[data-test="automation-enabled"]').click()
+        cy.get('[data-test="segment-activate"]').should('contain', '1 patient')
+        cy.get('[data-test="segment-activate-test"]').click()
+        cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'true')
+        cy.location('pathname').then((path) => {
+          const ruleId = path.split('/').pop()!
+          cy.task<{ segment: any }>('auto:ruleRow', { ruleId }).then((rule) => {
+            expect(rule.segment.schedule.kind).to.eq('once')
+            expect(rule.segment.filters).to.deep.eq({ tag_contains: tag, visit_type_ids: [massage.id], min_visits: 2 })
+          })
+          cy.request({ method: 'POST', url: '/api/automations/lead-sequence-cron', headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' } })
+          cy.task<{ patient_id: string }[]>('auto:runsForRule', { ruleId }).should('have.length', 1)
+        })
+      })
+    })
+  })
+
   it('a daily cap takes the most recently seen first and the rest the next day', () => {
     const tag = `tope-${Math.random().toString(36).slice(2, 8)}`
     const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()

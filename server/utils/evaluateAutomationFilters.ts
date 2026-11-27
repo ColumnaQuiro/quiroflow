@@ -1,7 +1,7 @@
 import { carePlanOverdueDays } from '~/utils/carePlanOverdue'
 import { ageMatches, visitNumberMatches, type VisitNumberFilter } from '~/utils/automationTrigger'
 import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
-import { asAudienceRefs, audienceFilterMatches, needsAudienceMembership, needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
+import { asAudienceRefs, audienceFilterMatches, needsAudienceMembership, needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches, visitTypeIdsOf } from '~/utils/automationAudience'
 // automation_rules.filters narrows a trigger down to a specific audience --
 // e.g. "only when the appointment type is Primera visita, and only the
 // first time it's ever completed for this patient" -- mirroring the
@@ -16,6 +16,11 @@ export interface AutomationFilters {
   // to match several at once (AND) could never fire.
   appointment_type_id?: string
   appointment_type_ids?: string[]
+  // "Tipo de visita", for a group of patients, which has no appointment in
+  // scope for appointment_type_ids to be asked of: at least one completed
+  // visit of any of these types. With it, the visit-history filters below
+  // (counts and last visit) look at visits of these types only.
+  visit_type_ids?: string[]
   total_visits?: number
   no_prior_appointments?: boolean
   has_future_appointment?: boolean
@@ -162,9 +167,14 @@ export async function ruleFiltersMatch(
 
   // The visit-history filters, from one read of the patient's completed
   // visits: the count (of the chosen types, when a trigger names any -- a
-  // segment never does) and the most recent of them all.
+  // segment never does) and the most recent of them all. "Tipo de visita"
+  // (visit_type_ids) narrows that history itself, count and last visit alike;
+  // segmentAudience reads it the same way, so the count and the cron agree.
   if (needsVisitHistory(filters)) {
-    const { data: completed } = await supabase.from('appointments').select('starts_at, appointment_type_id').eq('patient_id', patientId).eq('status', 'completed')
+    const visitTypeIds = visitTypeIdsOf(filters)
+    let query = supabase.from('appointments').select('starts_at, appointment_type_id').eq('patient_id', patientId).eq('status', 'completed')
+    if (visitTypeIds) query = query.in('appointment_type_id', visitTypeIds)
+    const { data: completed } = await query
     const visits: { starts_at: string; appointment_type_id: string | null }[] = completed ?? []
     const count = typeIds ? visits.filter((v) => v.appointment_type_id && typeIds.includes(v.appointment_type_id)).length : visits.length
     const lastVisitAt = newestAt(visits.map((v) => ({ at: v.starts_at })))

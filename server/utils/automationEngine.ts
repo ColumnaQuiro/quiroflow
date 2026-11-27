@@ -230,6 +230,8 @@ export async function startPatientRun(
     resumeAt?: string
     /** Ask the rule's "only if" filters again when the run first walks (after the hold). */
     recheckFilters?: boolean
+    /** Enrolled by the switch-on pass over who already met the trigger (server/utils/automationBackfill.ts), at someone's request. */
+    backfill?: { by: string | null }
   },
 ): Promise<string | null> {
   if (!opts.force) {
@@ -258,6 +260,7 @@ export async function startPatientRun(
         triggerBody: opts.triggerBody ?? null,
         extraContext: opts.extraContext ?? null,
         ...(opts.recheckFilters ? { recheckFilters: true } : {}),
+        ...(opts.backfill ? { backfill: { by: opts.backfill.by, at: new Date().toISOString() } } : {}),
       },
     })
     .select(RUN_COLUMNS)
@@ -267,9 +270,20 @@ export async function startPatientRun(
     return null
   }
 
-  await logRunEvent(supabase, run, { outcome: 'started', detail: opts.triggerBody?.triggerEvent ?? null })
+  const startedOn = opts.triggerBody?.triggerEvent ?? null
+  await logRunEvent(supabase, run, { outcome: 'started', detail: opts.backfill ? `backfill${startedOn ? `: ${startedOn}` : ''}` : startedOn })
   if (opts.advance !== false) await advanceRun(supabase, run as SequenceRun, opts.origin)
   return run.id as string
+}
+
+/**
+ * A run the switch-on pass started for someone who already met the trigger:
+ * however personal each message, hundreds go out at once, so its emails wait
+ * for the campaign budget rather than taking the day's reminders' reserve.
+ */
+function isBackfillRun(run: { context?: unknown }): boolean {
+  const ctx = run.context as { backfill?: unknown } | null | undefined
+  return Boolean(ctx && typeof ctx === 'object' && ctx.backfill)
 }
 
 /**
@@ -642,7 +656,7 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
 
     const step = action
     const result = isMessage(step)
-      ? await withEmailScope({ kind: isBulkEmailRule(rule) ? 'bulk' : 'transactional', accountId: run.account_id }, () => sendStep(supabase, run, subject, step, origin))
+      ? await withEmailScope({ kind: isBulkEmailRule(rule) || isBackfillRun(run) ? 'bulk' : 'transactional', accountId: run.account_id }, () => sendStep(supabase, run, subject, step, origin))
       : await applyStep(supabase, run, rule, subject, action, origin)
 
     // No room in today's email budget. Not a failure, so no attempt is spent:

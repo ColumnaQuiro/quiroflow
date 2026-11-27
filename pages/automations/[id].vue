@@ -261,7 +261,8 @@ function toggleEnabled() {
   if (b.draft.value.rule.trigger.subject === 'group') segmentDialog.value = true
   else activateDialog.value = true
 }
-async function setEnabled(target: boolean) {
+/** True once the server has it as asked. `quiet`: no toast, someone else says what happened. */
+async function setEnabled(target: boolean, opts: { quiet?: boolean } = {}): Promise<boolean> {
   if (b.isNew.value || b.dirty.value) return saveWith({ enabled: target })
   const id = b.ruleId.value!
   const before = b.draft.value.enabled
@@ -270,20 +271,31 @@ async function setEnabled(target: boolean) {
   try {
     await useStaffFetch(`/api/automations/${id}/enabled`, { method: 'POST', body: { enabled: target } })
     forgetList()
-    showToast(target ? t('Switched on', 'Activada') : t('Paused', 'Pausada'))
+    if (!opts.quiet) showToast(target ? t('Switched on', 'Activada') : t('Paused', 'Pausada'))
     // Re-read for what the server set beside it; not over edits made meanwhile.
     if (b.ruleId.value === id && !b.dirty.value) await b.load(id, { silent: true })
+    return true
   } catch (e: any) {
     if (b.ruleId.value === id) b.markEnabled(before)
     if (e?.data?.data?.problems) problems.value = e.data.data.problems
     else showToast(serverMessage(e) ?? t('Could not change it.', 'No se ha podido cambiar.'), 'error')
+    return false
   } finally {
     toggling.value = false
   }
 }
-function confirmActivate() {
+// "Also everyone who already meets it": the pass runs once it is on --
+// saved first when there was anything unsaved, so it reads what is stored.
+const includeExisting = useAutomationBackfill()
+async function confirmActivate(backfillDays: number | null) {
   activateDialog.value = false
-  setEnabled(true)
+  if (!(await setEnabled(true, { quiet: backfillDays !== null }))) return
+  const id = b.ruleId.value
+  if (backfillDays === null || !id) return
+  if ((await includeExisting(id, b.draft.value.rule.name, backfillDays)) !== null) {
+    forgetList()
+    if (b.ruleId.value === id && !b.dirty.value) await b.load(id, { silent: true })
+  }
 }
 async function activateSegment(testMode: boolean) {
   segmentDialog.value = false
@@ -575,6 +587,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       :is-marketing="b.draft.value.rule.is_marketing"
       :dry-run="b.draft.value.rule.dry_run"
       :inside="inside"
+      :rule-id="b.ruleId.value"
       @confirm="confirmActivate"
       @cancel="activateDialog = false"
     />

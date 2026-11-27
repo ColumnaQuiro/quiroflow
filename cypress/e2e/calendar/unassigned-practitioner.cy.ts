@@ -1,7 +1,7 @@
 // An appointment with no practitioner is invisible on this calendar: the grid
 // is one tab per practitioner and the query behind a tab is a plain
 // `.eq('practitioner_id', ...)`, so a NULL row matches no tab at all. These
-// two specs cover the two halves of that -- not creating such a row by
+// specs cover the two halves of that -- not creating such a row by
 // accident, and being able to find one that exists anyway.
 
 // Noon local, which sits inside the grid's 08:00-20:00 window (START_HOUR /
@@ -73,6 +73,81 @@ describe('Appointments with no practitioner', () => {
         // tab, which is the only place this calendar can show it.
         cy.get('[data-testid="practitioner-tab"]').should('have.length', 1).and('contain.text', 'Dana Practitioner').and('have.class', 'bg-brand')
         cy.contains('Alice Anderson').should('be.visible')
+      })
+    })
+  })
+
+  // The "whole clinic" view lays the day out by room, so a slot clicked there
+  // carries a room and no practitioner -- and the panel showed "No
+  // practitioner" as already chosen. Two visits booked that way at a clinic
+  // went on no practitioner's tab and into nobody's My Day, which lists one
+  // practitioner's visits only: the patients were booked and never seen.
+  it('asks who the visit is with when booked from the whole-clinic view, and lands in My Day', () => {
+    cy.seedStaffAccount({ ownerName: 'Dana Practitioner' }).then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30 })
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Alice',
+        lastName: 'Anderson',
+      }).then(() => {
+        cy.login(account.email, account.password)
+        cy.visit('/calendar')
+        cy.contains('select', 'Work week').select('day')
+        cy.get('[data-testid=practitioner-tab-all]').click()
+        cy.get('[data-testid=practitioner-tab-all]').should('have.attr', 'aria-pressed', 'true')
+
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-patient-search]')
+        cy.get('[data-cy=create-sheet]').within(() => {
+          cy.get('[data-cy=create-patient-search]').type('Alice')
+          cy.contains('[data-cy=create-patient-result]', 'Alice Anderson').click()
+          cy.contains('[data-cy=create-type]', 'Consultation').click()
+
+          // Nobody is chosen for the user, not even "No practitioner", and the
+          // booking waits for an answer.
+          cy.get('[data-cy=create-practitioner][aria-checked=true]').should('not.exist')
+          cy.get('[data-cy=create-submit]').should('be.disabled').and('contain.text', 'Choose a practitioner to book')
+
+          cy.contains('[data-cy=create-practitioner]', 'Dana Practitioner').click()
+          cy.get('[data-cy=create-submit]').should('not.be.disabled').click()
+        })
+        cy.get('[data-cy=create-sheet]').should('not.exist')
+
+        // Where the report came from: the visit is on the practitioner's own
+        // day, not only somewhere in the clinic's.
+        cy.visit('/practitioner')
+        cy.contains('Alice Anderson').should('be.visible')
+      })
+    })
+  })
+
+  // "No practitioner" is still a choice, as long as it is made on purpose.
+  it('books with no practitioner when that is picked deliberately', () => {
+    cy.seedStaffAccount({ ownerName: 'Dana Practitioner' }).then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30 })
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Nadia',
+        lastName: 'Nobody',
+      }).then(() => {
+        cy.login(account.email, account.password)
+        cy.visit('/calendar')
+        cy.contains('select', 'Work week').select('day')
+        cy.get('[data-testid=practitioner-tab-all]').click()
+
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-patient-search]')
+        cy.get('[data-cy=create-sheet]').within(() => {
+          cy.get('[data-cy=create-patient-search]').type('Nadia')
+          cy.contains('[data-cy=create-patient-result]', 'Nadia Nobody').click()
+          cy.contains('[data-cy=create-type]', 'Consultation').click()
+          cy.contains('[data-cy=create-practitioner]', 'No practitioner').click().should('have.attr', 'aria-checked', 'true')
+          cy.get('[data-cy=create-submit]').should('not.be.disabled').click()
+        })
+        cy.get('[data-cy=create-sheet]').should('not.exist')
+
+        cy.get('[data-testid="practitioner-tab-unassigned"]').click()
+        cy.contains('Nadia Nobody').should('be.visible')
       })
     })
   })

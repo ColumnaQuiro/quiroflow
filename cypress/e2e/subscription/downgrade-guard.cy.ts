@@ -5,6 +5,10 @@ describe('Subscription downgrade seat guard', () => {
       // practitioners can be seeded without enforce_practitioner_seats itself
       // rejecting the setup.
       cy.setExtraProfessionals(account.accountId, 2)
+      // Solo with two extra seats is a plan the owner chose. Left to the trial
+      // rule (20261127064737), three practitioners would put the trial on
+      // Practice with no extra seats, and there would be no downgrade to test.
+      cy.task('db:updateRows', { table: 'subscriptions', values: { plan_chosen_at: new Date().toISOString() }, match: { account_id: account.accountId } })
 
       const seedPractitioner = (fullName: string, email: string) =>
         cy.task('db:createTeamMemberWithRole', {

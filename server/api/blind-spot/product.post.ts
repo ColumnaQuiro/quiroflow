@@ -41,6 +41,9 @@ export default defineEventHandler(async (event) => {
     if (paying) {
       throw createError({ statusCode: 409, statusMessage: 'Change the plan under Subscription first: this account pays for Blind Spot on its own.' })
     }
+    // Solo is only where it starts: once the product below changes, the trial
+    // rule (sync_trial_plan, 20261127064737) sizes it to the team, so a
+    // clinic of three lands on Practice.
     await serviceRole.from('subscriptions').update({ plan_id: 'starter' }).eq('account_id', teamMember.account_id)
   }
 

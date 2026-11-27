@@ -93,6 +93,10 @@ export interface PHApiAppointment {
   end: string | null
   status?: string | null
   note?: string | null
+  /** Which of the clinic's PracticeHub locations. */
+  location_id?: number | string | null
+  /** The room on that location's calendar: an id in 2.0's /resources (utils/practicehubImport/rooms.ts). */
+  resource_id?: number | string | null
 }
 
 export interface PHNamed {

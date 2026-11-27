@@ -8719,6 +8719,8 @@
   "This account isn't linked to a patient record.": "Esta conta não está associada a uma ficha de paciente.",
   "This account isn't linked to a team record.": "Esta conta não está associada a um registo da equipa.",
   "This account pays nothing for it, the replies past the included ones neither. They are counted all the same, so you can see what a paying clinic would use.": "Esta conta não paga nada por ela, nem pelas respostas além das incluídas. São contadas na mesma, para ver o que uma clínica pagante usaria.",
+  "This appointment was deleted.": "Esta marcação foi eliminada.",
+  "It shows because \"Hide deleted\" is off in the calendar's display options.": "Aparece porque «Ocultar eliminadas» está desativado nas opções de visualização do calendário.",
   "This appointment can no longer be cancelled online. Call or message the clinic.": "Esta marcação já não pode ser cancelada online. Ligue ou envie uma mensagem à clínica.",
   "This appointment can't be moved from the app — please contact the clinic.": "Esta marcação não pode ser alterada na app — contacte a clínica.",
   "This appointment falls outside working hours. Book it anyway?": "Esta marcação fica fora do horário de trabalho. Marcar mesmo assim?",

@@ -27,10 +27,20 @@ export interface VisitHistoryFilters {
 const positive = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
 const counted = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0
 
+/**
+ * The visit types a segment filter narrows the patient's history to
+ * ("Tipo de visita": visit_type_ids), or null for any type. An empty list
+ * means any, as every list filter does.
+ */
+export function visitTypeIdsOf(f: { visit_type_ids?: unknown } | null | undefined): string[] | null {
+  const ids = Array.isArray(f?.visit_type_ids) ? f.visit_type_ids.filter((x): x is string => typeof x === 'string' && x.length > 0) : []
+  return ids.length ? ids : null
+}
+
 /** Whether any of these filters needs the patient's completed visits read at all. */
-export function needsVisitHistory(f: VisitHistoryFilters | null | undefined): boolean {
+export function needsVisitHistory(f: (VisitHistoryFilters & { visit_type_ids?: unknown }) | null | undefined): boolean {
   if (!f) return false
-  return counted(f.total_visits) || counted(f.min_visits) || counted(f.max_visits) || positive(f.last_visit_before_days) || positive(f.last_visit_within_days)
+  return !!visitTypeIdsOf(f) || counted(f.total_visits) || counted(f.min_visits) || counted(f.max_visits) || positive(f.last_visit_before_days) || positive(f.last_visit_within_days)
 }
 
 /**
@@ -40,8 +50,11 @@ export function needsVisitHistory(f: VisitHistoryFilters | null | undefined): bo
  * band "within 180, before 90" reads 91..180 days, and the two bands a plan
  * splits at 180 days do not both take the same person.
  */
-export function visitHistoryMatches(f: VisitHistoryFilters | null | undefined, count: number, lastVisitAt: number | null, now: number): boolean {
+export function visitHistoryMatches(f: (VisitHistoryFilters & { visit_type_ids?: unknown }) | null | undefined, count: number, lastVisitAt: number | null, now: number): boolean {
   if (!f) return true
+  // "Tipo de visita": at least one completed visit of those types. The
+  // caller has already counted only them, so `count` is theirs.
+  if (visitTypeIdsOf(f) && count === 0) return false
   if (counted(f.total_visits) && count !== f.total_visits) return false
   if (counted(f.min_visits) && count < f.min_visits) return false
   if (counted(f.max_visits) && count > f.max_visits) return false

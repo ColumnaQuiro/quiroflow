@@ -1652,7 +1652,8 @@
   "This will include {0} patients.": "Isto incluirá {0} pacientes.",
   "\"{0}\" is on. Nobody else met it.": "«{0}» ativada. Mais ninguém a cumpria.",
   "\"{0}\" is on, with 1 patient who already met it.": "«{0}» ativada, com 1 paciente que já a cumpria.",
-  "\"{0}\" is on, with {1} patients who already met it.": "«{0}» ativada, com {1} pacientes que já a cumpriam."
+  "\"{0}\" is on, with {1} patients who already met it.": "«{0}» ativada, com {1} pacientes que já a cumpriam.",
+  "Visits of type: {0}": "Consultas do tipo: {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -3000,6 +3001,7 @@
   "Choose a membership…": "Escolha uma subscrição…",
   "Choose a password.": "Escolha uma palavra-passe.",
   "Choose a patient to book": "Escolha um paciente para marcar",
+  "Choose a practitioner to book": "Escolha um profissional para marcar",
   "Choose a patient to see their record.": "Escolha um paciente para ver a sua ficha.",
   "Choose a patient.": "Escolha um paciente.",
   "Choose a place, or \"Anywhere\".": "Escolha um local, ou «Em qualquer lugar».",
@@ -11140,6 +11142,9 @@
   "Counting…": "A contar…",
   "Could not count them. Try again.": "Não foi possível contá-los. Tente novamente.",
   "Nobody it has already reached, and no minors, archived patients or anyone marked \"do not contact\".": "Ninguém a quem já tenha chegado, nem menores, arquivados ou marcados «não contactar».",
-  "It is on, but those who already met it could not be included.": "Está ativada, mas não foi possível incluir quem já a cumpria."
+  "It is on, but those who already met it could not be included.": "Está ativada, mas não foi possível incluir quem já a cumpria.",
+  "Choose types": "Escolha os tipos",
+  "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Teve pelo menos uma consulta concluída de algum destes tipos. Os filtros de número de consultas e última consulta contam então só estas.",
+  "Visit type": "Tipo de consulta"
  }
 }

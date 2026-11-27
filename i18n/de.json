@@ -1652,7 +1652,8 @@
   "This will include {0} patients.": "Das schließt {0} Patienten ein.",
   "\"{0}\" is on. Nobody else met it.": "„{0}“ ist aktiv. Sonst hat sie niemand erfüllt.",
   "\"{0}\" is on, with 1 patient who already met it.": "„{0}“ ist aktiv, mit 1 Patienten, der sie schon erfüllte.",
-  "\"{0}\" is on, with {1} patients who already met it.": "„{0}“ ist aktiv, mit {1} Patienten, die sie schon erfüllten."
+  "\"{0}\" is on, with {1} patients who already met it.": "„{0}“ ist aktiv, mit {1} Patienten, die sie schon erfüllten.",
+  "Visits of type: {0}": "Termine der Art: {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -3000,6 +3001,7 @@
   "Choose a membership…": "Mitgliedschaft wählen…",
   "Choose a password.": "Wählen Sie ein Passwort.",
   "Choose a patient to book": "Patient zum Buchen wählen",
+  "Choose a practitioner to book": "Behandler zum Buchen wählen",
   "Choose a patient to see their record.": "Wählen Sie einen Patienten, um seine Akte anzuzeigen.",
   "Choose a patient.": "Wählen Sie einen Patienten.",
   "Choose a place, or \"Anywhere\".": "Wählen Sie einen Ort oder „Überall“.",
@@ -11140,6 +11142,9 @@
   "Counting…": "Wird gezählt…",
   "Could not count them. Try again.": "Sie konnten nicht gezählt werden. Versuchen Sie es erneut.",
   "Nobody it has already reached, and no minors, archived patients or anyone marked \"do not contact\".": "Niemand, den sie schon erreicht hat, und keine Minderjährigen, archivierten Patienten oder als „nicht kontaktieren“ markierten Personen.",
-  "It is on, but those who already met it could not be included.": "Sie ist aktiv, aber wer sie schon erfüllte, konnte nicht einbezogen werden."
+  "It is on, but those who already met it could not be included.": "Sie ist aktiv, aber wer sie schon erfüllte, konnte nicht einbezogen werden.",
+  "Choose types": "Typen wählen",
+  "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Hatte mindestens einen abgeschlossenen Termin eines dieser Typen. Die Filter für Terminanzahl und letzten Termin zählen dann nur diese.",
+  "Visit type": "Terminart"
  }
 }

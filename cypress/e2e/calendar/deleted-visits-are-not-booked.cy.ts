@@ -39,6 +39,35 @@ describe('Deleted visits are not bookings', () => {
     })
   })
 
+  // With "Hide deleted" off, a deleted visit used to look exactly like a live
+  // one, so deleting it seemed to do nothing and the panel offered the delete
+  // again. It is struck through now, says so, and is not deletable twice.
+  it('draws a shown deleted visit as deleted, and does not offer to delete it again', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ya', lastName: 'Borrada' }).then((p) => {
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, practitionerId: account.teamMemberId, startsAt: today(11), deletedAt: new Date().toISOString() })
+      })
+
+      cy.login(account.email, account.password)
+      cy.visit('/calendar', {
+        onBeforeLoad: (win) => {
+          win.localStorage.setItem('quiroflow-calendar-view-mode', 'day')
+          win.localStorage.setItem('quiroflow-calendar-display', JSON.stringify({ hideDeleted: false }))
+        },
+      })
+      cy.contains('[data-cy=appt-block]', 'Ya Borrada').within(() => {
+        cy.get('[data-stage]').should('have.attr', 'data-stage', 'cancelled')
+        cy.get('[data-cy=appt-block-name]').should('have.class', 'line-through')
+        cy.get('[data-cy=appt-block-stage]').should('have.attr', 'title', 'Deleted')
+      })
+      cy.contains('[data-cy=appt-block]', 'Ya Borrada').click()
+      cy.get('[data-cy=appt-sheet]').within(() => {
+        cy.get('[data-cy=appt-deleted-note]').should('contain.text', 'This appointment was deleted.')
+        cy.get('[data-cy=delete-appointment]').should('not.exist')
+      })
+    })
+  })
+
   it('offers the care-plan sessions a deleted booking no longer holds', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lucía', lastName: 'Marín' }).then((patient) => {

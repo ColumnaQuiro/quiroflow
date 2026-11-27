@@ -76,6 +76,9 @@ export interface BlockView {
   movedCount: number
   noNext: boolean
   marker?: VisitMarkerView | null
+  /** Deleted ("Eliminar cita"), shown because "Hide deleted" is off. Drawn
+   *  with the cancelled look; this only changes the pill's word. */
+  deleted?: boolean
   /** Set on the whole-clinic tab only: one practitioner's own tab has no
    *  need to say whose each visit is. */
   practitioner?: PractitionerBadgeView | null
@@ -114,7 +117,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => observer?.disconnect())
 
-const pillText = computed(() => stageLabel(props.view.stage, props.view.arrivedAt))
+const pillText = computed(() => (props.view.deleted ? t('Deleted', 'Eliminada') : stageLabel(props.view.stage, props.view.arrivedAt)))
 const owesText = computed(() => t(`Owes ${formatEur(props.view.owesCents)}`, `Debe ${formatEur(props.view.owesCents)}`))
 const formsText = computed(() => pendingFormsLabel(props.view.pendingForms, t))
 const noNextText = computed(() => t('No next visit booked', 'Sin próxima cita reservada'))

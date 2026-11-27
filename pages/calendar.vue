@@ -1643,7 +1643,13 @@ function blockView(appt: AppointmentRow): BlockView {
   return blockViewById.value.get(appt.id) ?? buildBlockView(appt)
 }
 function buildBlockView(appt: AppointmentRow): BlockView {
-  const stage = stageOf(appt)
+  // A deleted visit only reaches the grid with "Hide deleted" off, and it
+  // used to be drawn exactly like a live one: deleting it seemed to do
+  // nothing, and a clinic with the switch off on one browser saw visits the
+  // front desk had removed. It takes a cancelled visit's look instead --
+  // struck, faded, dashed -- and drops the flags a cancelled one drops
+  // (forms pending, no next visit). The pill says "Eliminada".
+  const stage = appt.deleted_at ? 'cancelled' : stageOf(appt)
   const payment = visitPaymentById.value[appt.id] ?? { kind: 'none' as const }
   return {
     id: appt.id,
@@ -1652,6 +1658,7 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     firstName: appt.patients?.first_name?.trim(),
     lastName: appt.patients?.last_name?.trim(),
     stage,
+    deleted: !!appt.deleted_at,
     arrivedAt: appt.checked_in_at ? formatTime(appt.checked_in_at) : null,
     timeLabel: formatTime(appt.starts_at),
     typeName: appt.appointment_types?.name ?? null,

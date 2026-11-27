@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
+import { firstFilledRow, headersMissing, importDate, importDateOrder, importErrorReason, skipBlankLeadingLines } from '~/utils/patientImportFile'
 
 // The "Other system" patients importer -- unlike the PracticeHub CSV
 // importers, this one can't hardcode column names (row['First Name'] etc.)
@@ -81,6 +82,9 @@ const runError = ref('')
 const rawRows = ref<CsvRow[]>([])
 const headers = ref<string[]>([])
 const mapping = ref<Record<string, string>>({})
+// Blank lines above the header (Quirocitas' list export starts with one),
+// skipped -- counted so a row number in an error is still the file's own.
+const leadingBlankRows = ref(0)
 
 function normalizeHeader(h: string): string {
   return h
@@ -117,11 +121,12 @@ function cellText(value: unknown): string {
 }
 
 /** The first sheet of an .xlsx as header-keyed rows, the shape Papa gives a CSV. */
-async function readExcel(file: File): Promise<{ rows: CsvRow[]; fields: string[] }> {
+async function readExcel(file: File): Promise<{ rows: CsvRow[]; fields: string[]; skipped: number }> {
   // Loaded only when someone picks a spreadsheet, not with the page.
   const { readSheet } = await import('read-excel-file/browser')
   const sheet = (await readSheet(file)) as unknown[][]
-  const [head, ...body] = sheet
+  const skipped = firstFilledRow(sheet)
+  const [head, ...body] = sheet.slice(skipped)
   const fields = (head ?? []).map((h, i) => cellText(h) || `${t('Column', 'Columna')} ${i + 1}`)
   const rows: CsvRow[] = []
   for (const line of body) {
@@ -134,7 +139,7 @@ async function readExcel(file: File): Promise<{ rows: CsvRow[]; fields: string[]
     })
     if (any) rows.push(row)
   }
-  return { rows, fields }
+  return { rows, fields, skipped }
 }
 
 async function handleFile(file: File) {
@@ -143,9 +148,10 @@ async function handleFile(file: File) {
 
   let rows: CsvRow[]
   let fields: string[]
+  let skipped = 0
   if (/\.xlsx$/i.test(file.name)) {
     try {
-      ;({ rows, fields } = await readExcel(file))
+      ;({ rows, fields, skipped } = await readExcel(file))
     } catch (err) {
       fileError.value = t(`Could not read this spreadsheet: ${(err as Error).message}`, `No se pudo leer esta hoja de cálculo: ${(err as Error).message}`)
       return
@@ -154,7 +160,8 @@ async function handleFile(file: File) {
     fileError.value = t('Old .xls files cannot be read. Save it as .xlsx or CSV and try again.', 'Los archivos .xls antiguos no se pueden leer. Guárdalo como .xlsx o CSV y vuelve a intentarlo.')
     return
   } else {
-    const text = await file.text()
+    const { text, skipped: blankLines } = skipBlankLeadingLines(await file.text())
+    skipped = blankLines
     const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
     if (parsed.errors.length > 0) {
       fileError.value = t(`Could not parse this file: ${parsed.errors[0].message}`, `No se pudo procesar este archivo: ${parsed.errors[0].message}`)
@@ -167,9 +174,17 @@ async function handleFile(file: File) {
     fileError.value = t('This file has no rows.', 'Este archivo no tiene filas.')
     return
   }
+  if (headersMissing(fields)) {
+    fileError.value = t(
+      'The columns of this file have no titles. Open it, make sure its first row with data holds the column titles (Name, Phone, Email…), save it and drop it here again.',
+      'Las columnas de este archivo no tienen título. Ábrelo, comprueba que su primera fila con datos tenga los títulos de las columnas (Nombre, Teléfono, Email…), guárdalo y suéltalo aquí otra vez.',
+    )
+    return
+  }
 
   rawRows.value = rows
   headers.value = fields
+  leadingBlankRows.value = skipped
   guessMapping()
   stage.value = 'mapping'
 }
@@ -262,6 +277,12 @@ const matchedExistingIds = ref<string[]>([])
 const matchedWithoutConsent = ref(0)
 const skippedDuplicate = ref(0)
 const skippedNoName = ref(0)
+// Dates of birth the file has but that are not a real date in any reading:
+// imported blank rather than failing the rows around them.
+const unreadableDates = ref<number[]>([])
+const unreadableDatesShown = computed(() =>
+  unreadableDates.value.slice(0, 10).join(', ') + (unreadableDates.value.length > 10 ? '…' : ''),
+)
 const totalRows = ref(0)
 
 function mappedValue(row: CsvRow, key: string): string {
@@ -356,6 +377,12 @@ async function computeDiff() {
 
   skippedDuplicate.value = 0
   skippedNoName.value = 0
+  const unreadable: number[] = []
+  // Which way round the file writes its dates, settled once from the whole
+  // column: "06-08-1970" alone could be either.
+  const dateOrder = importDateOrder(mapping.value.date_of_birth ? rows.map((r) => mappedValue(r, 'date_of_birth')) : [])
+  // The file's own line number: header, plus any blank lines above it.
+  const lineOf = (index: number) => index + 2 + leadingBlankRows.value
   const mapped: MappedPatient[] = []
   const updates: MappedUpdate[] = []
   const matchedIds: string[] = []
@@ -382,13 +409,16 @@ async function computeDiff() {
     const numbers: ContactNumber[] = phone ? [{ country_code: store.defaultPhoneCountry, number: phone, is_whatsapp: consent.includes('whatsapp') }] : []
 
     const tagsRaw = mappedValue(row, 'tags')
+    const dateText = mappedValue(row, 'date_of_birth')
+    const dateOfBirth = importDate(dateText, dateOrder)
+    if (dateText && !dateOfBirth) unreadable.push(lineOf(index))
     const patient: TablesInsert<'patients'> = {
       account_id: store.accountId!,
       clinic_id: targetClinicId.value || null,
       first_name: firstName,
       last_name: mappedValue(row, 'last_name') || null,
       email: email || null,
-      date_of_birth: mappedValue(row, 'date_of_birth') || null,
+      date_of_birth: dateOfBirth,
       address: mappedValue(row, 'address') || null,
       postal_code: mappedValue(row, 'postal_code') || null,
       city: mappedValue(row, 'city') || null,
@@ -400,7 +430,7 @@ async function computeDiff() {
     }
 
     if (!existing) {
-      mapped.push({ sourceRow: index + 2, patient, numbers })
+      mapped.push({ sourceRow: lineOf(index), patient, numbers })
       return
     }
     if (matchedSet.has(existing.id)) {
@@ -415,7 +445,7 @@ async function computeDiff() {
       skippedDuplicate.value++
       return
     }
-    updates.push({ id: existing.id, label: `${patient.first_name} ${patient.last_name ?? ''}`.trim(), updates: fieldUpdates, diff, numbers, sourceRow: index + 2 })
+    updates.push({ id: existing.id, label: `${patient.first_name} ${patient.last_name ?? ''}`.trim(), updates: fieldUpdates, diff, numbers, sourceRow: lineOf(index) })
   })
 
   // Contact numbers are additive-only on an update, same as the PracticeHub
@@ -440,6 +470,7 @@ async function computeDiff() {
 
   toImport.value = mapped
   toUpdate.value = updates
+  unreadableDates.value = unreadable
   matchedExistingIds.value = matchedIds
   matchedWithoutConsent.value = matchedIds.filter((id) => !(byId.get(id)?.marketing_channels ?? []).length).length
 }
@@ -476,12 +507,36 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
-async function insertContactNumbers(patientId: string, numbers: ContactNumber[], sourceRow: number) {
+// What went wrong with a row, and what to do about it -- the database's own
+// words kept at the end, in brackets, for whoever is asked to help.
+function rowError(what: 'imported' | 'chunk' | 'updated' | 'phones', rows: string, label: string, message: string): string {
+  // Translated on its own, then put into the sentence: a reason passed
+  // through as English would stay English in Portuguese and German.
+  const reason = importErrorReason(message)
+  const why = t(reason.en, reason.es)
+  const who = label ? ` (${label})` : ''
+  switch (what) {
+    case 'phones': return t(`Phone numbers for ${rows}${who} were not saved: ${why} (${message})`, `No se guardaron los teléfonos de ${rows}${who}: ${why} (${message})`)
+    case 'chunk': return t(`${rows} were not imported: ${why} (${message})`, `${rows} no se importaron: ${why} (${message})`)
+    case 'updated': return t(`${rows}${who} was not updated: ${why} (${message})`, `${rows}${who} no se actualizó: ${why} (${message})`)
+    default: return t(`${rows}${who} was not imported: ${why} (${message})`, `${rows}${who} no se importó: ${why} (${message})`)
+  }
+}
+const rowName = (n: number) => t(`Row ${n}`, `La fila ${n}`)
+const rowsName = (from: number, to: number) => t(`Rows ${from}-${to}`, `Las filas ${from}-${to}`)
+const patientName = (p: TablesInsert<'patients'>) => `${p.first_name} ${p.last_name ?? ''}`.trim()
+// A bad value in one row (class 22, data exception) or a clash with another
+// patient (class 23, integrity) fails only that row: worth saving the rest
+// one by one. Anything else -- no connection, no permission -- would fail
+// every row the same way.
+const rowSpecific = (code: string | undefined) => !!code && (code.startsWith('22') || code.startsWith('23'))
+
+async function insertContactNumbers(patientId: string, numbers: ContactNumber[], sourceRow: number, label = '') {
   if (numbers.length === 0) return
   const { error } = await supabase.from('patient_contact_numbers').insert(
     numbers.map((n) => ({ account_id: store.accountId!, patient_id: patientId, country_code: n.country_code, number: n.number, is_whatsapp: n.is_whatsapp })),
   )
-  if (error) importErrors.value.push(t(`Phone numbers for row ${sourceRow} were not saved: ${error.message}`, `No se guardaron los teléfonos de la fila ${sourceRow}: ${error.message}`))
+  if (error) importErrors.value.push(rowError('phones', t(`row ${sourceRow}`, `la fila ${sourceRow}`), label, error.message))
 }
 
 async function runImport() {
@@ -500,8 +555,23 @@ async function runImport() {
     for (let i = 0; i < toImport.value.length; i += CHUNK_SIZE) {
       const chunk = toImport.value.slice(i, i + CHUNK_SIZE)
       const { data: inserted, error } = await supabase.from('patients').insert(chunk.map((c) => c.patient)).select('id')
+      if (error && rowSpecific(error.code)) {
+        // One bad row fails its whole chunk of 100: save them one at a time,
+        // so only that row is left out, and named.
+        for (const c of chunk) {
+          const { data: one, error: oneError } = await supabase.from('patients').insert(c.patient).select('id').single()
+          if (oneError) {
+            importErrors.value.push(rowError('imported', rowName(c.sourceRow), patientName(c.patient), oneError.message))
+            continue
+          }
+          importedCount.value++
+          listedPatientIds.push(one.id)
+          await insertContactNumbers(one.id, c.numbers, c.sourceRow, patientName(c.patient))
+        }
+        continue
+      }
       if (error) {
-        importErrors.value.push(t(`Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not imported: ${error.message}`, `Las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} no se importaron: ${error.message}`))
+        importErrors.value.push(rowError('chunk', rowsName(chunk[0].sourceRow, chunk[chunk.length - 1].sourceRow), '', error.message))
         continue
       }
       importedCount.value += inserted.length
@@ -511,7 +581,7 @@ async function runImport() {
       )
       if (numberRows.length > 0) {
         const { error: numbersError } = await supabase.from('patient_contact_numbers').insert(numberRows)
-        if (numbersError) importErrors.value.push(t(`Phone numbers for rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not saved: ${numbersError.message}`, `No se guardaron los teléfonos de las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${numbersError.message}`))
+        if (numbersError) importErrors.value.push(rowError('phones', t(`rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}`, `las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}`), '', numbersError.message))
       }
     }
 
@@ -522,11 +592,11 @@ async function runImport() {
       await runWithConcurrency(chunk, CONCURRENCY, async (row) => {
         const { error } = await supabase.from('patients').update(row.updates).eq('id', row.id)
         if (error) {
-          importErrors.value.push(t(`Row ${row.sourceRow} (${row.label}) was not updated: ${error.message}`, `La fila ${row.sourceRow} (${row.label}) no se actualizó: ${error.message}`))
+          importErrors.value.push(rowError('updated', rowName(row.sourceRow), row.label, error.message))
           return
         }
         updatedCount.value++
-        await insertContactNumbers(row.id, row.numbers, row.sourceRow)
+        await insertContactNumbers(row.id, row.numbers, row.sourceRow, row.label)
       })
     }
 
@@ -570,6 +640,7 @@ function reset() {
   fileError.value = ''
   headers.value = []
   mapping.value = {}
+  leadingBlankRows.value = 0
   toImport.value = []
   toUpdate.value = []
   matchedExistingIds.value = []
@@ -633,6 +704,7 @@ const fieldId = useId()
               <td class="px-3 py-2">
                 <select
                   v-model="mapping[field.key]"
+                  :data-cy="`import-map-${field.key}`"
                   class="h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-sm touch:h-11 text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 >
                   <option value="">{{ t('Not in the file', 'No está en el archivo') }}</option>
@@ -711,6 +783,12 @@ const fieldId = useId()
         </dl>
         <p v-if="listChoice" data-cy="import-list-summary" class="mt-3 text-sm text-ink-700">
           {{ t(`${toImport.length + matchedExistingIds.length} will be on the list “${targetListName}”: ${toImport.length} new and ${matchedExistingIds.length} already here.`, `${toImport.length + matchedExistingIds.length} estarán en la lista «${targetListName}»: ${toImport.length} nuevos y ${matchedExistingIds.length} que ya existían.`) }}
+        </p>
+        <p v-if="unreadableDates.length > 0" data-cy="import-unreadable-dates" class="mt-1 text-sm text-warning-text">
+          {{ t(
+            `Some dates of birth are not a real date and will be left blank (${unreadableDates.length}: rows ${unreadableDatesShown}). To keep them, correct them in the file as day-month-year (23-02-1989) and drop it here again.`,
+            `Algunas fechas de nacimiento no son una fecha válida y se dejarán en blanco (${unreadableDates.length}: filas ${unreadableDatesShown}). Si quieres conservarlas, corrígelas en el archivo como día-mes-año (23-02-1989) y vuelve a soltarlo aquí.`,
+          ) }}
         </p>
         <p v-if="matchedWithoutConsent > 0 && (consentEmail || consentWhatsapp)" data-cy="import-consent-kept" class="mt-1 text-sm text-warning-text">
           {{ t(`${matchedWithoutConsent} of those already here have no marketing consent and keep it that way: campaigns will not reach them.`, `${matchedWithoutConsent} de los que ya existían no tienen consentimiento de publicidad y así siguen: las campañas no les llegarán.`) }}
@@ -804,11 +882,17 @@ const fieldId = useId()
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div v-if="importErrors.length > 0" class="rounded-card border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
+      <div v-if="importErrors.length > 0" data-cy="import-errors" class="rounded-card border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
+        <p class="mt-2">
+          {{ t(
+            'Correct these rows in the file and import it again: anyone already imported is recognised by their record ID, ID number or email and is not duplicated.',
+            'Corrige estas filas en el archivo y vuelve a importarlo: quien ya se importó se reconoce por su ID de registro, DNI o correo y no se duplica.',
+          ) }}
+        </p>
       </div>
       <p v-if="listedId" data-cy="import-listed" class="text-sm text-ink-700">
         {{ t(`${listedCount} added to the list “${targetListName}” (anyone already on it stays as they were).`, `${listedCount} añadidos a la lista «${targetListName}» (quien ya estaba sigue igual).`) }}

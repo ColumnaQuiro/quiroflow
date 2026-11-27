@@ -241,25 +241,32 @@ function toggle(r: Row) {
   if (r.trigger.subject === 'group') segmentFor.value = r
   else activateFor.value = r
 }
-async function setEnabled(r: Row, on: boolean) {
+/** True once the server has it as asked. `quiet`: no toast, someone else says what happened. */
+async function setEnabled(r: Row, on: boolean, opts: { quiet?: boolean } = {}): Promise<boolean> {
   toggling.value = r.id
   r.enabled = on
   try {
     await useStaffFetch(`/api/automations/${r.id}/enabled`, { method: 'POST', body: { enabled: on } })
     if (on) r.blockers = []
-    showToast(on ? t(`"${r.name}" is on`, `«${r.name}» activada`) : t(`"${r.name}" is paused`, `«${r.name}» pausada`))
+    if (!opts.quiet) showToast(on ? t(`"${r.name}" is on`, `«${r.name}» activada`) : t(`"${r.name}" is paused`, `«${r.name}» pausada`))
+    return true
   } catch (e: any) {
     r.enabled = !on
     if (e?.data?.data?.problems) problems.value = { ruleId: r.id, list: e.data.data.problems }
     else showToast(serverMessage(e) ?? t('Could not change it.', 'No se ha podido cambiar.'), 'error')
+    return false
   } finally {
     toggling.value = null
   }
 }
-function confirmActivate() {
+// "Also everyone who already meets it": the pass runs once it is on.
+const includeExisting = useAutomationBackfill()
+async function confirmActivate(backfillDays: number | null) {
   const r = activateFor.value
   activateFor.value = null
-  if (r) setEnabled(r, true)
+  if (!r) return
+  if (!(await setEnabled(r, true, { quiet: backfillDays !== null }))) return
+  if (backfillDays !== null && (await includeExisting(r.id, r.name, backfillDays)) !== null) await load()
 }
 async function activateSegment(testMode: boolean) {
   const r = segmentFor.value
@@ -471,6 +478,7 @@ function hideBanner() {
       :is-marketing="activateFor.is_marketing"
       :dry-run="activateFor.dry_run"
       :inside="activateFor.usesRuns ? (stats[activateFor.id]?.inside ?? 0) : 0"
+      :rule-id="activateFor.id"
       @confirm="confirmActivate"
       @cancel="activateFor = null"
     />

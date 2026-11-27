@@ -41,6 +41,7 @@ function practiceHubListName(path: string | undefined): string {
     case '/v3/patients': return t('ID numbers', 'DNI / NIE')
     case '/custom_form_responses': return t('form responses', 'respuestas de formularios')
     case '/exercises': return t('exercises', 'ejercicios')
+    case '/v3/resources': return t('rooms', 'salas')
     default: return path ?? ''
   }
 }

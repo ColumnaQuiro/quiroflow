@@ -62,6 +62,10 @@ export const PRACTICEHUB_LISTS = [
   // (utils/practicehubImport/exercises.ts). Last, for the same reason as
   // '/v3/patients' above: a read under way keeps its place by index.
   '/exercises',
+  // 2.0's rooms (its "resources": the rooms, tables or benches of a
+  // location's calendar), so each visit can come in with its room
+  // (utils/practicehubImport/rooms.ts). Last, for the same reason again.
+  '/v3/resources',
 ] as const
 export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
 
@@ -81,7 +85,7 @@ export type PracticeHubListPath = (typeof PRACTICEHUB_LISTS)[number] | '/files'
 // each planner's source.
 export const PRACTICEHUB_STEP_LISTS: Record<PracticeHubStepKind, readonly PracticeHubListPath[]> = {
   patients: ['/patients', '/practitioners', '/referral_sources', '/v3/patients'],
-  appointments: ['/appointments', '/patients', '/practitioners', '/appointment_types'],
+  appointments: ['/appointments', '/patients', '/practitioners', '/appointment_types', '/v3/resources'],
   appointment_types: ['/appointment_types', '/appointments', '/billable_items'],
   ledger: ['/patients', '/invoices', '/payments', '/payment_methods'],
   bonos: ['/patients', '/patient_packages'],
@@ -119,10 +123,15 @@ export const PRACTICEHUB_LINK_LISTS: Partial<Record<PracticeHubStepKind, Practic
 // clinic of 327 patients with 135 of them filled in arrived with none
 // (23 Nov 2026). It is last in the list so that a read already under way when
 // this shipped keeps its place by index.
-export const PRACTICEHUB_V3_LISTS: ReadonlySet<PracticeHubListPath> = new Set<PracticeHubListPath>(['/billable_items', '/v3/patients'])
+//
+// '/v3/resources' is 2.0's /resources: each room's name and location. A
+// Classic appointment carries only `resource_id` and `location_id`, and the
+// Classic endpoint that would name them is not documented anywhere a clinic's
+// key can read, so the names come from 2.0.
+export const PRACTICEHUB_V3_LISTS: ReadonlySet<PracticeHubListPath> = new Set<PracticeHubListPath>(['/billable_items', '/v3/patients', '/v3/resources'])
 
 /** Where a list is asked for in 2.0's API when that is not its name in the copy. */
-export const PRACTICEHUB_V3_API_PATHS: Partial<Record<PracticeHubListPath, string>> = { '/v3/patients': '/patients' }
+export const PRACTICEHUB_V3_API_PATHS: Partial<Record<PracticeHubListPath, string>> = { '/v3/patients': '/patients', '/v3/resources': '/resources' }
 
 export interface PracticeHubSnapshot {
   /** When the read that made this copy finished. */

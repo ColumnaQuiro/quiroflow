@@ -126,6 +126,7 @@ const here = (id: string, over: Partial<AppointmentHereRow> = {}): AppointmentHe
   practitioner_id: null,
   practitioner_name: null,
   appointment_type_id: null,
+  room_id: null,
   ...over,
 })
 const phRow = (id: string, start: string, end: string, over: Record<string, string> = {}) => ({
@@ -299,6 +300,69 @@ describe('planAppointments', () => {
     expect(res.written).to.equal(2)
     expect(tables.visit_notes!.filter((n) => n.appointment_id === 'a').map((n) => n.body)).to.deep.equal(['Desde PracticeHub'])
     expect(tables.visit_notes!.filter((n) => n.appointment_id === 'b').map((n) => n.body)).to.deep.equal(['Escrita aquí'])
+  })
+
+  it("brings each visit's room from PracticeHub, only into a room this clinic has, and fills a blank only", async () => {
+    const tables = clinicTables()
+    tables.calendar_resources = [
+      { id: 'room-1', account_id: ACCOUNT, clinic_id: CLINIC, name: '1' },
+      { id: 'room-2', account_id: ACCOUNT, clinic_id: CLINIC, name: 'Camilla 2' },
+      // Another clinic's room of the same name is never this one.
+      { id: 'room-x', account_id: ACCOUNT, clinic_id: 'clinic-2', name: '3' },
+    ]
+    tables.appointments!.push(
+      // Already imported with no room: takes PracticeHub's.
+      { id: 'a', account_id: ACCOUNT, external_reference: '9600', patient_id: 'pat-1', clinic_id: CLINIC, starts_at: madrid('2026-09-01 10:00'), ends_at: madrid('2026-09-01 10:15'), status: 'completed', rescheduled: false, checked_in_at: null, practitioner_id: 'tm-1', practitioner_name: 'Ana Demo', appointment_type_id: null, room_id: null },
+      // A room chosen here stands.
+      { id: 'b', account_id: ACCOUNT, external_reference: '9601', patient_id: 'pat-1', clinic_id: CLINIC, starts_at: madrid('2026-09-02 10:00'), ends_at: madrid('2026-09-02 10:15'), status: 'booked', rescheduled: false, checked_in_at: null, practitioner_id: 'tm-1', practitioner_name: 'Ana Demo', appointment_type_id: null, room_id: 'room-2' },
+      // Moved here: nothing is taken from PracticeHub, its room neither.
+      { id: 'c', account_id: ACCOUNT, external_reference: '9602', patient_id: 'pat-1', clinic_id: CLINIC, starts_at: madrid('2026-09-03 12:00'), ends_at: madrid('2026-09-03 12:15'), status: 'booked', rescheduled: true, checked_in_at: null, practitioner_id: 'tm-1', practitioner_name: 'Ana Demo', appointment_type_id: null, room_id: null },
+    )
+    const at = (id: number, day: string, resource: number, location = 1) => ({ id, patient_id: 500, practitioner_id: 1, start: `2026-09-${day} 10:00:00`, end: `2026-09-${day} 10:15:00`, status: id === 9600 ? 'processed' : 'pending', location_id: location, resource_id: resource })
+    const snap = snapshot([
+      at(9600, '01', 1),
+      at(9601, '02', 1),
+      at(9602, '03', 1),
+      at(9603, '04', 2), // "Sala 2" -> "Camilla 2": one "2" on each side
+      at(9604, '05', 3), // "3" is only another clinic's
+      at(9605, '06', 9, 2), // another PracticeHub location's "1"
+    ], {
+      '/v3/resources': [
+        { id: 1, location_id: 1, name: ' 1 ' },
+        { id: 2, location_id: 1, name: 'Sala 2' },
+        { id: 3, location_id: 1, name: '3' },
+        { id: 9, location_id: 2, name: '1' },
+      ],
+    })
+    const p = await planAppointments(ctxFor(tables), snap)
+    expect(p.stats.find((s) => s.label === 'Room set')?.value).to.equal('2')
+    expect(p.warnings).to.include('Rooms: PracticeHub "1" → 1, "Sala 2" → Camilla 2.')
+    expect(p.warnings.some((w) => w.includes('"3" (1)'))).to.equal(true)
+    expect(p.warnings.some((w) => w.startsWith('1 visits are at another PracticeHub location'))).to.equal(true)
+    expect(p.rows.find((r) => r.ref === '9600')?.detail).to.equal('Room: (blank) → 1')
+
+    await p.apply(noop, never)
+    const room = (ref: string) => tables.appointments!.find((a) => a.account_id === ACCOUNT && a.external_reference === ref)?.room_id ?? null
+    expect(['9600', '9601', '9602', '9603', '9604', '9605'].map(room)).to.deep.equal(['room-1', 'room-2', null, 'room-2', null, null])
+
+    // Run again, nothing is left to write.
+    expect((await planAppointments(ctxFor(tables), snap)).total).to.equal(0)
+  })
+
+  it('says why visits have no room when the copy has no rooms, and nothing when neither side has any', async () => {
+    const snap = snapshot([{ id: 9500, patient_id: 500, start: '2026-09-09 10:00:00', end: '2026-09-09 10:15:00', status: 'pending', location_id: 1, resource_id: 1 }])
+    const plain = await planAppointments(ctxFor(clinicTables()), snap)
+    expect(plain.warnings.some((w) => w.includes('room'))).to.equal(false)
+
+    const withRooms = clinicTables()
+    withRooms.calendar_resources = [{ id: 'room-1', account_id: ACCOUNT, clinic_id: CLINIC, name: '1' }]
+    const noCopy = await planAppointments(ctxFor(withRooms), snap)
+    expect(noCopy.warnings.some((w) => w.includes('the copy read from PracticeHub has no rooms'))).to.equal(true)
+    await noCopy.apply(noop, never)
+    expect(withRooms.appointments![0]!.room_id ?? null).to.equal(null)
+
+    const oneRoomThere = await planAppointments(ctxFor(clinicTables()), snapshot(snap.lists['/appointments'] as Row[], { '/v3/resources': [{ id: 1, location_id: 1, name: '1' }] }))
+    expect(oneRoomThere.warnings.some((w) => w.includes('room'))).to.equal(false)
   })
 
   it('writes nothing without a clinic, and stops between chunks when told to', async () => {

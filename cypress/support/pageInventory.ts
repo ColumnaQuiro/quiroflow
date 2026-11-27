@@ -76,6 +76,7 @@ export const APP_PAGES = [
   '/patients/import',
   '/practitioner',
   '/jornada',
+  '/novedades',
   '/personal',
   '/team-chat',
   '/recalls',

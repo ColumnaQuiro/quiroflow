@@ -248,7 +248,11 @@ const ariaLabel = computed(() =>
       boxClass,
       isSolid ? 'appt-solid' : '',
       week ? 'rounded-[6px]' : 'rounded-ctl',
-      ladder.compact ? (week ? 'justify-center px-1 py-0.5' : 'justify-center px-2') : week ? (ladder.tight ? 'justify-center gap-px px-[5px] py-px' : 'gap-px px-[5px] py-1') : 'gap-[3px] px-[9px] py-1.5',
+      ladder.narrow
+        ? ladder.badge === 'edge-top' || width < 26
+          ? ['justify-center px-0', ladder.badge === 'edge-top' ? 'pt-[2px]' : '']
+          : ['justify-center pr-px', ladder.badge === 'edge' ? 'pl-[4px]' : 'pl-px']
+        : ladder.compact ? (week ? 'justify-center px-1 py-0.5' : 'justify-center px-2') : week ? (ladder.tight ? 'justify-center gap-px px-[5px] py-px' : 'gap-px px-[5px] py-1') : 'gap-[3px] px-[9px] py-1.5',
       selected ? 'ring-2 ring-brand ring-offset-2 ring-offset-brand-tint' : '',
       dim ? 'opacity-[.28]' : '',
     ]"
@@ -256,7 +260,21 @@ const ariaLabel = computed(() =>
     :data-stage="view.stage"
     :aria-label="ariaLabel"
   >
-    <div class="flex min-w-0 items-center gap-[5px]">
+    <!-- A narrow block's practitioner: their colour down the left edge, where
+         the badge would have taken the whole name line. Dashed grey for a
+         visit nobody is down for, as the badge does. -->
+    <span
+      v-if="ladder.badge === 'edge' || ladder.badge === 'edge-top'"
+      class="absolute left-0"
+      :class="[
+        ladder.badge === 'edge' ? 'inset-y-0 w-[3px]' : 'inset-x-0 top-0 h-[3px]',
+        view.practitioner?.color ? '' : ladder.badge === 'edge' ? 'border-l border-dashed border-ink-faint3' : 'border-t border-dashed border-ink-faint3',
+      ]"
+      :style="view.practitioner?.color ? { background: `color-mix(in srgb, ${view.practitioner.color} 66%, rgb(var(--color-ink-900)))` } : {}"
+      :title="view.practitioner?.name ?? t('No practitioner', 'Sin profesional')"
+      data-cy="appt-block-edge"
+    />
+    <div class="flex min-w-0 items-center" :class="ladder.narrow ? 'gap-0' : 'gap-[5px]'">
       <span v-if="leadTime && ladder.compact" class="shrink-0 font-mono text-[11.5px] text-ink-muted" data-cy="appt-block-lead-time">{{ view.timeLabel }}</span>
       <CalendarPractitionerBadge
         v-if="ladder.badge === 'name' && view.practitioner"
@@ -270,13 +288,13 @@ const ariaLabel = computed(() =>
         class="min-w-0 shrink truncate font-semibold"
         :class="[
           ladder.tight ? 'leading-[1.15]' : 'leading-[1.2]',
-          week ? 'text-[11px]' : 'text-[13px]',
+          ladder.narrow ? (ladder.badge === 'edge-top' || width < 26 ? 'w-full text-center text-[9.5px] tracking-[-0.03em] text-clip' : 'text-[10.5px] tracking-[-0.01em] text-clip') : week ? 'text-[11px]' : 'text-[13px]',
           view.stage === 'completed' ? 'text-ink-muted' : 'text-ink-900',
           struck ? 'line-through' : '',
           privacy ? 'select-none blur-sm' : '',
         ]"
         data-cy="appt-block-name"
-      >{{ ladder.nameLines?.[0] ?? ladder.fullerName ?? (ladder.shortName ? view.shortName : view.name) }}</span>
+      >{{ ladder.narrowName ?? ladder.nameLines?.[0] ?? ladder.fullerName ?? (ladder.shortName ? view.shortName : view.name) }}</span>
       <span
         v-if="ladder.marker"
         class="inline-flex shrink-0"
@@ -320,7 +338,7 @@ const ariaLabel = computed(() =>
     <span
       v-if="ladder.nameLines"
       class="min-w-0 truncate text-[11px] font-semibold"
-      :class="[ladder.tight ? 'leading-[1.15]' : 'leading-[1.2]', view.stage === 'completed' ? 'text-ink-muted' : 'text-ink-900', struck ? 'line-through' : '', privacy ? 'select-none blur-sm' : '']"
+      :class="[ladder.tight ? 'leading-[1.15]' : 'leading-[1.2]', view.stage === 'completed' ? 'text-ink-muted' : 'text-ink-900', struck ? 'line-through' : '', privacy ? 'select-none blur-sm' : '', ladder.narrow ? 'font-medium tracking-[-0.01em] text-clip' : '']"
       data-cy="appt-block-surname"
     >{{ ladder.nameLines[1] }}</span>
 
@@ -349,7 +367,8 @@ const ariaLabel = computed(() =>
 
     <span
       v-if="ladder.owes === 'dot'"
-      class="absolute bottom-[3px] right-[3px] flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-danger-on"
+      class="absolute flex items-center justify-center rounded-full bg-danger-text font-bold text-danger-on"
+      :class="ladder.narrow ? 'bottom-px right-px h-[10px] w-[10px] text-[8px]' : 'bottom-[3px] right-[3px] h-[13px] w-[13px] text-[11px]'"
       :title="owesText"
       data-cy="appt-block-owes"
     >€</span>

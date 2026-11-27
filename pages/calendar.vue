@@ -41,9 +41,25 @@ const WEEK_ROOM_ROW_PX = 26 // the room-label row of WEEK_HEADER_PX, absent when
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column, when there is room for it
 // ...and the narrowest it gives way to before the week scrolls sideways. At
 // 128 a working week with one room and Unassigned needed 1,338px, so on a
-// 1440px laptop Friday started off the edge of the screen. Narrower columns
-// still fit a visit's name and time; the cards truncate, as on a phone.
-const WEEK_ROOM_COL_MIN_PX = 76
+// 1440px laptop Friday started off the edge of the screen. The floor was then
+// 76, which a clinic with six tables and a first-visit room still blew
+// through: eight sub-columns a day is 3,040px for the working week, and the
+// front desk saw under two days of it at a time. A week is read across, so
+// it now always fits on a laptop; under WEEK_NARROW_BELOW_PX a block keeps
+// only the patient's first name or initials and the practitioner's colour
+// (utils/appointmentBlock). Below this, two letters no longer fit and the
+// week scrolls again -- in practice a tablet, or a full week of nine
+// sub-columns a day.
+const WEEK_ROOM_COL_MIN_PX = 18
+// Narrower than this, a room sub-column gives up the double-booking strip
+// down its right (its few pixels are the name's) and splits overlapping
+// visits into fewer lanes: past these, the rest are a "+N" chip. 70 is where
+// a block beside the strip falls under WEEK_NARROW_BELOW_PX (56 + the 10px
+// strip + 2px a side), so the strip goes when the block turns narrow and not
+// before; every width the old 76px floor allowed is untouched.
+const WEEK_NARROW_COL_PX = 70
+const WEEK_NARROW_MAX_LANES = 2
+const WEEK_SLIVER_COL_PX = 36
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
 // The panels and dialogs load when first opened (Lazy*): the new- and
@@ -1729,13 +1745,25 @@ function dayHeaderCounts(day: Date) {
 // other, so there's no need to crop height or stack z-index to keep a
 // block from hiding the one behind it.
 // The lanes share what is left of the column beside its gutter.
-const gutterPx = computed(() => (viewMode.value === 'day' ? DAY_GUTTER_PX : WEEK_GUTTER_PX))
+const weekNarrow = computed(() => viewMode.value !== 'day' && weekColPx.value < WEEK_NARROW_COL_PX)
+// A room's heading in a narrow week column: "Sala 3" is "3" there, the word
+// every heading shares being the part that pushed the numbers off. The full
+// name is the heading's tooltip.
+function roomShortLabel(name: string) {
+  return name.replace(/^(sala|room|camilla|cabina|box|consulta|consultorio)\s+/i, '')
+}
+const gutterPx = computed(() => (viewMode.value === 'day' ? DAY_GUTTER_PX : weekNarrow.value ? 0 : WEEK_GUTTER_PX))
+// The gap either side of a block: 2px, 1px in a narrow week column, none in a
+// full week's 20px one, where the column's own divider separates the blocks
+// and those 2px are what two initials needed.
+const blockInsetPx = computed(() => (!weekNarrow.value ? 2 : weekColPx.value < 26 ? 0 : 1))
 function columnStyle(block: LayoutBlock, top: number, height: number) {
   const totalCols = Math.max(block._totalCols, 1)
   const lanes = `(100% - ${gutterPx.value}px)`
+  const inset = blockInsetPx.value
   return {
-    left: `calc(${lanes} * ${block._col / totalCols} + 2px)`,
-    width: `calc(${lanes} / ${totalCols} - 4px)`,
+    left: `calc(${lanes} * ${block._col / totalCols} + ${inset}px)`,
+    width: `calc(${lanes} / ${totalCols} - ${inset * 2}px)`,
     top: `${top}px`,
     height: `${height}px`,
     zIndex: '10',
@@ -1904,6 +1932,10 @@ function assignRowLayout(sorted: AppointmentRow[], tops: HourTops, rowPx: number
     return a as LaidOutAppointment
   })
 }
+// Two visits side by side in a 40px column are 18px each, which still holds
+// two initials; in a sliver of one, a second lane would hold nothing, so the
+// second visit is the "+1" chip that opens the day.
+const weekMaxLanes = computed(() => (weekColPx.value >= WEEK_NARROW_COL_PX ? WEEK_MAX_LANES : weekColPx.value >= WEEK_SLIVER_COL_PX ? WEEK_NARROW_MAX_LANES : 1))
 const layoutByColumn = computed(() => {
   const day = viewMode.value === 'day'
   const rows = rowsMode.value
@@ -1916,7 +1948,7 @@ const layoutByColumn = computed(() => {
         key,
         day
           ? assignOverlapLayout(list, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
-          : assignOverlapLayout(list, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX),
+          : assignOverlapLayout(list, weekMaxLanes.value, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX),
       )
   }
   return { blocks, boxes }
@@ -4022,7 +4054,7 @@ function showNowLineOn(day: Date) {
                 </div>
               </div>
 
-              <div v-for="(day, di) in visibleWeekDays" :key="toDateKey(day)" data-cy="week-day-col" :data-day="dayKeyFor(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+              <div v-for="(day, di) in visibleWeekDays" :key="toDateKey(day)" data-cy="week-day-col" :data-day="dayKeyFor(day)" class="flex min-w-0 flex-1 flex-col border-r border-line last:border-r-0">
                 <div class="sticky top-0 z-30 bg-surface">
                   <div
                     class="relative flex h-6 items-center justify-center gap-1"
@@ -4046,10 +4078,12 @@ function showNowLineOn(day: Date) {
                     <div
                       v-for="col in dayColumns"
                       :key="col.id"
-                      class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[11px] font-medium text-ink-muted2 last:border-r-0"
+                      class="flex flex-1 items-center justify-center truncate border-r border-line-divider text-[11px] font-medium text-ink-muted2 last:border-r-0"
+                      :class="weekNarrow ? 'px-px' : 'px-1'"
                       :style="{ minWidth: `${weekColPx}px` }"
+                      :title="col.name"
                     >
-                      {{ col.name }}
+                      <span class="truncate">{{ !weekNarrow ? col.name : col.id === '__none' ? t('N/A', 'S/A') : roomShortLabel(col.name) }}</span>
                     </div>
                   </div>
                 </div>
@@ -4211,7 +4245,7 @@ function showNowLineOn(day: Date) {
                         {{ g.label }}
                       </div>
                     </template>
-                    <template v-for="g in [gutterMarkFor(toDateKey(day), col.id)]" :key="`gutter-${toDateKey(day)}-${col.id}`">
+                    <template v-for="g in [weekNarrow ? null : gutterMarkFor(toDateKey(day), col.id)]" :key="`gutter-${toDateKey(day)}-${col.id}`">
                       <div
                         v-if="g"
                         data-cy="gutter-ghost"

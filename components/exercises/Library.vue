@@ -184,6 +184,10 @@ function clearSearch() {
   filter.value = 'all'
 }
 
+// --- many at once, from a spreadsheet (ExercisesImportDialog) ---
+
+const importing = ref(false)
+
 // --- adding and editing (one form, for a new one or the one being edited) ---
 
 const editingId = ref<string | null>(null)
@@ -340,7 +344,10 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 )
               }}
             </p>
-            <UiBtn variant="primary" data-cy="library-new" @click="openNew">{{ t('New exercise', 'Nuevo ejercicio') }}</UiBtn>
+            <div class="flex shrink-0 gap-2">
+              <UiBtn data-cy="library-import" @click="importing = true">{{ t('Import CSV', 'Importar CSV') }}</UiBtn>
+              <UiBtn variant="primary" data-cy="library-new" @click="openNew">{{ t('New exercise', 'Nuevo ejercicio') }}</UiBtn>
+            </div>
           </div>
 
           <div role="tablist" :aria-label="t('Exercise library sections', 'Secciones de la biblioteca')" class="-mb-1 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" @keydown="onTabKey">
@@ -525,6 +532,14 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
             </p>
           </div>
         </div>
+    <ExercisesImportDialog
+      v-if="importing && store.accountId"
+      :account-id="store.accountId"
+      :team-member-id="store.teamMember?.id ?? null"
+      :existing-names="active.map((e) => e.name)"
+      @imported="load"
+      @close="importing = false"
+    />
     <!-- The form, for a new exercise or the one being edited. -->
     <div v-if="panelOpen" class="fixed inset-0 z-50 flex justify-end">
       <div class="absolute inset-0 bg-scrim/20" data-cy="library-form-backdrop" @click="onBackdrop" />

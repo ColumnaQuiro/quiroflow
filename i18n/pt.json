@@ -1638,7 +1638,16 @@
   "This clinic has no rooms, so visits come in with none. PracticeHub has {0}: add rooms under Settings with the same names and sync again to fill them.": "Esta clínica não tem salas, por isso as visitas chegam sem sala. O PracticeHub tem {0}: crie salas em Definições com os mesmos nomes e sincronize de novo para as preencher.",
   "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} visitas são de outro local do PracticeHub e chegam sem sala: as salas desse local não são as desta clínica.",
   "Hide {0}": "Ocultar {0}",
-  "See the photo of {0}": "Ver a foto de {0}"
+  "See the photo of {0}": "Ver a foto de {0}",
+  "Unclosed quotes near line {0}.": "Aspas por fechar perto da linha {0}.",
+  "Could not read this file: {0}": "Não foi possível ler este ficheiro: {0}",
+  "{0} ready to import": "{0} prontos para importar",
+  "{0} will be skipped": "{0} serão ignorados",
+  "Import {0} exercises": "Importar {0} exercícios",
+  "{0} exercises created": "{0} exercícios criados",
+  "{0} rows skipped.": "{0} linhas ignoradas.",
+  "The import stopped: {0}": "A importação parou: {0}",
+  "Row {0}": "Linha {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11091,6 +11100,29 @@
   "Room set": "Com sala",
   "This browser can't play this video. Videos filmed on an iPhone play in Safari and in the app.": "Este navegador não consegue reproduzir este vídeo. Os gravados com um iPhone veem-se no Safari e na app.",
   "Download the video": "Descarregar o vídeo",
-  "Full screen": "Ecrã inteiro"
+  "Full screen": "Ecrã inteiro",
+  "No name": "Sem nome",
+  "Not a YouTube or Vimeo video": "Não é um vídeo do YouTube ou Vimeo",
+  "Repeated in the file": "Repetido no ficheiro",
+  "No column is called \"nombre\". Use the template, or name the columns nombre, video_youtube and instrucciones.": "Nenhuma coluna se chama «nombre». Use o modelo ou dê às colunas os nomes nombre, video_youtube e instrucciones.",
+  "This file has no exercises, only the header row.": "Este ficheiro não tem exercícios, só a linha de títulos.",
+  "Import exercises from a CSV": "Importar exercícios de um CSV",
+  "One exercise per row. Columns:": "Um exercício por linha. Colunas:",
+  "required": "obrigatório",
+  "a YouTube link in any form (youtube.com/watch, youtu.be, Shorts) or Vimeo; optional": "uma ligação do YouTube em qualquer formato (youtube.com/watch, youtu.be, Shorts) ou do Vimeo; opcional",
+  "how to do it; optional": "como fazer; opcional",
+  "Separated by commas or semicolons, as Excel saves it. Sets and repetitions are chosen when assigning, not here.": "Separadas por vírgulas ou ponto e vírgula, como o Excel as guarda. As séries e repetições escolhem-se ao atribuir, não aqui.",
+  "Download the template": "Descarregar o modelo",
+  "Choose a CSV or Excel file": "Escolha um ficheiro CSV ou Excel",
+  "or drop it here": "ou largue-o aqui",
+  "Instructions": "Instruções",
+  "(empty)": "(vazio)",
+  "Import 1 exercise": "Importar 1 exercício",
+  "Choose another file": "Escolher outro ficheiro",
+  "Rows with a problem are left out; fix them in the file and import it again.": "As linhas com algum problema ficam de fora; corrija-as no ficheiro e importe-o novamente.",
+  "1 exercise created": "1 exercício criado",
+  "1 row skipped.": "1 linha ignorada.",
+  "Import CSV": "Importar CSV",
+  "Row": "Linha"
  }
 }

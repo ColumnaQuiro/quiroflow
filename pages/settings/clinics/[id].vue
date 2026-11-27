@@ -96,7 +96,7 @@ async function load() {
 async function loadContext() {
   const now = new Date().toISOString()
   const [links, upcoming, all, others, fiscal, facturas] = await Promise.all([
-    supabase.from('team_member_clinics').select('team_members(id, full_name, is_practitioner, deleted_at, business_hours)').eq('clinic_id', clinicId),
+    supabase.from('team_member_clinics').select('business_hours, team_members(id, full_name, is_practitioner, deleted_at, business_hours)').eq('clinic_id', clinicId),
     supabase
       .from('appointments')
       .select('id', { count: 'exact', head: true })
@@ -113,10 +113,15 @@ async function loadContext() {
   ])
   fiscalClinic.value = fiscal.data ?? null
   facturaCount.value = facturas.count ?? 0
+  // A week set for THIS clinic is theirs here just as much as a week of their
+  // own is (practitionerHoursAt): either way these hours do not apply to them.
   practitioners.value = ((links.data ?? []) as any[])
-    .map((l) => l.team_members)
-    .filter((m) => m && m.is_practitioner && !m.deleted_at)
-    .map((m) => ({ id: m.id, full_name: m.full_name, ownHours: hasBusinessHoursConfigured(m.business_hours as BusinessHours | null) }))
+    .filter((l) => l.team_members && l.team_members.is_practitioner && !l.team_members.deleted_at)
+    .map((l) => ({
+      id: l.team_members.id,
+      full_name: l.team_members.full_name,
+      ownHours: hasBusinessHoursConfigured(l.team_members.business_hours as BusinessHours | null) || hasBusinessHoursConfigured(l.business_hours as BusinessHours | null),
+    }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, 'es'))
   upcomingCount.value = upcoming.count ?? 0
   appointmentCount.value = all.count ?? 0

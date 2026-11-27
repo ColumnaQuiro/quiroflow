@@ -1,4 +1,4 @@
-import type { Breadcrumb, DataCollection, ErrorEvent } from '@sentry/core'
+import type { Breadcrumb, DataCollection, ErrorEvent, StreamedSpanJSON } from '@sentry/core'
 
 // What Sentry may and may not see. Shared by sentry.client.config.ts and
 // sentry.server.config.ts, and pure so tests/unit can hold it to its word.
@@ -61,6 +61,53 @@ export function scrubEvent<T extends ErrorEvent>(event: T): T {
     event.breadcrumbs = event.breadcrumbs.map(scrubBreadcrumb).filter((b): b is Breadcrumb => b !== null)
   }
   return event
+}
+
+/**
+ * Every URL or path inside a piece of text, without its query string or
+ * fragment: `GET https://x.supabase.co/rest/v1/patients?phone=eq.6…` becomes
+ * `GET https://x.supabase.co/rest/v1/patients`. A span's name is that kind of
+ * text.
+ */
+export function scrubUrlsInText(text: string): string {
+  return text.replace(/((?:[a-z][a-z0-9+.-]*:\/\/|\/)[^\s?#]*)[?#]\S*/gi, '$1')
+}
+
+/**
+ * A Storage object's URL ends in the file's own name -- whatever the clinic
+ * called a patient's report or photo. Spans keep the bucket and drop the rest.
+ */
+function scrubStoragePaths(text: string): string {
+  return text.replace(/(\/storage\/v1\/object\/(?:(?:sign|public|authenticated|info|upload\/sign)\/)?[^/\s?#]+)\/[^?#]+/g, '$1/…')
+}
+
+/** Span attributes that only ever hold a query string, a SQL statement or a body. */
+const SPAN_ATTRIBUTE_DROPPED = /(^|[._])(query|query_string|search|statement|body|data)([._]|$)|^db\.query\.text$/i
+
+/**
+ * A performance span (sentry.server.config.ts samples a share of server
+ * requests) before it leaves: the same rule as events, applied to the span's
+ * name and every attribute. dataCollection.urlQueryParams already keeps the
+ * SDK from recording queries; this is the second line, as scrubEvent is.
+ */
+export function scrubSpan<T extends StreamedSpanJSON>(span: T): T {
+  const scrub = (text: string) => scrubStoragePaths(scrubUrlsInText(text))
+  span.name = scrub(span.name)
+  const attributes = span.attributes as Record<string, unknown>
+  for (const key of Object.keys(attributes)) {
+    if (SPAN_ATTRIBUTE_DROPPED.test(key)) {
+      delete attributes[key]
+      continue
+    }
+    const value = attributes[key]
+    if (typeof value === 'string') {
+      attributes[key] = scrub(value)
+    } else if (value && typeof value === 'object' && typeof (value as { value?: unknown }).value === 'string') {
+      const typed = value as { value: string }
+      typed.value = scrub(typed.value)
+    }
+  }
+  return span
 }
 
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {

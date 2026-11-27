@@ -588,9 +588,11 @@ export default defineNuxtConfig({
     // The CI e2e build skips gzipping every client chunk to print its size:
     // a few seconds nobody reads on the path every shard waits on.
     build: process.env.E2E_BUILD ? { reportCompressedSize: false } : {},
-    // Sentry runs errors-only here (tracesSampleRate 0, no replay -- see
-    // sentry.client.config.ts), so its tracing and debug-logging code is dead
-    // weight in the bundle every page loads. These are the flags Sentry's own
+    // Sentry runs errors-only in the browser (tracesSampleRate 0, no replay --
+    // see sentry.client.config.ts), so its tracing and debug-logging code is
+    // dead weight in the bundle every page loads. Server tracing
+    // (sentry.server.config.ts) is bundled by Nitro, not Vite, so this does
+    // not reach it. These are the flags Sentry's own
     // bundleSizeOptimizations sets, set here so they apply to every build:
     // the module only adds its plugin when source maps are being uploaded.
     define: {

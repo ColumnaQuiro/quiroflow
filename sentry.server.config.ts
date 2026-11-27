@@ -1,10 +1,11 @@
 import * as Sentry from '@sentry/nuxt'
-import { SENTRY_DATA_COLLECTION, scrubBreadcrumb, scrubEvent } from './utils/sentryPrivacy'
+import { SENTRY_DATA_COLLECTION, scrubBreadcrumb, scrubEvent, scrubSpan } from './utils/sentryPrivacy'
+import { nameRequestSpan, serverTraceRate, serverTracesSampler } from './utils/sentryTracing'
 import { supabaseFailureFingerprint, watchSupabaseFailures } from './utils/supabaseFailures'
 import { createConsoleThrottle, isFrameworkRequestErrorLog, serverConsoleError, serverConsoleReport } from './utils/sentryServerConsole'
 
-// Error monitoring on the server: every SSR page and /api route, which on
-// Netlify is the one function .netlify/functions-internal/server. The SDK
+// Error monitoring, and a sampled share of performance traces, on the
+// server: every SSR page and /api route, which on Netlify is the one function .netlify/functions-internal/server. The SDK
 // bundles this file into the Nitro build and runs it at startup.
 //
 // Read from the environment rather than useRuntimeConfig, which does not
@@ -17,7 +18,11 @@ if (dsn) {
     environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || 'production',
     // release: injected at build time by the module (nuxt.config.ts).
     dataCollection: SENTRY_DATA_COLLECTION,
-    tracesSampleRate: 0,
+    // A share of requests is traced, for p50/p95 per route and the Supabase
+    // calls inside each: see utils/sentryTracing.ts. Spans are scrubbed the
+    // way events are.
+    tracesSampler: serverTracesSampler(serverTraceRate(process.env.SENTRY_TRACES_SAMPLE_RATE)),
+    beforeSendSpan: (span) => scrubSpan(nameRequestSpan(span)),
     beforeSend: (event) => scrubEvent(event),
     beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
   })

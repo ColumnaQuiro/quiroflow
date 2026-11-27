@@ -44,6 +44,11 @@ export const PRACTICEHUB_PATIENT_OVERWRITE_FIELDS = [
   'preferred_language',
   'marketing_channels',
   'default_practitioner_id',
+  // The name PracticeHub gives, kept even while nobody here has it: when that
+  // person joins and their imported visits are linked, those visits are what
+  // fill the patient's practitioner, not whoever else they once saw
+  // (appointments_fill_patient_practitioner, 20261127153025).
+  'default_practitioner_name',
   'balance_cents',
   // Each part on its own, so a PracticeHub address with no postcode keeps
   // the one already here rather than blanking it.
@@ -66,6 +71,7 @@ export interface PracticeHubExistingPatient {
   preferred_language: string
   marketing_channels: string[] | null
   default_practitioner_id: string | null
+  default_practitioner_name: string | null
   created_at: string
   balance_cents: number
   photo_storage_path: string | null
@@ -82,7 +88,7 @@ export interface PracticeHubExistingPatient {
 }
 
 export const PRACTICEHUB_EXISTING_PATIENT_COLUMNS =
-  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id, address, postal_code, city, country, gender, preferred_name, status, do_not_contact, tags'
+  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, default_practitioner_name, created_at, balance_cents, photo_storage_path, national_id, address, postal_code, city, country, gender, preferred_name, status, do_not_contact, tags'
 
 export interface PracticeHubFieldDiff { field: string; from: string; to: string }
 
@@ -214,6 +220,7 @@ export function practiceHubPatientFieldLabel(field: string, t: T): string {
     case 'preferred_language': return t('Language', 'Idioma')
     case 'marketing_channels': return t('Marketing consent', 'Consentimiento de marketing')
     case 'default_practitioner_id': return t('Usual practitioner', 'Profesional habitual')
+    case 'default_practitioner_name': return t('Usual practitioner in PracticeHub', 'Profesional habitual en PracticeHub')
     case 'balance_cents': return t('Balance', 'Saldo')
     case 'created_at': return t('Patient since', 'Paciente desde')
     case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
@@ -441,7 +448,8 @@ export function practiceHubPatientsDiff(rows: CsvRow[], existingPatients: Practi
       // see created_at above on why a bulk insert must not carry undefined.
       national_id: nationalIdAnswer(row['Government Number']),
       marketing_channels: practiceHubMarketingChannels(row),
-      default_practitioner_id: opts.practitionerFor(row['Default Practitioner'] || ''),
+      default_practitioner_id: opts.practitionerFor(practitionerName),
+      default_practitioner_name: practitionerName || null,
       // Every row carries these keys, null when blank: see created_at above.
       address: row['Address']?.trim() || null,
       postal_code: row['Postcode']?.trim() || null,

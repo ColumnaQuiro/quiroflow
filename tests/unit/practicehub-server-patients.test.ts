@@ -66,7 +66,7 @@ const ACCOUNT = 'acc'
 function existingPatient(over: Partial<PracticeHubExistingPatient> = {}): PracticeHubExistingPatient {
   return {
     id: 'p1', external_reference: '202400007', email: 'lucia@example.test', first_name: 'Lucía', last_name: 'Demo',
-    date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null,
+    date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null, default_practitioner_name: null,
     created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null, national_id: null,
     address: null, postal_code: null, city: null, country: null, gender: null,
     preferred_name: null, status: 'active', do_not_contact: false, tags: [],
@@ -262,6 +262,23 @@ describe('what each row does', () => {
     expect(d.unmatchedPractitioners).toEqual([{ name: 'Pablo Nuevo', patients: 2 }])
   })
 
+  // A clinic imports before its team joins. The name has to stay on the
+  // patient, or the first colleague whose visits are linked takes every
+  // patient they ever saw (20261127153025).
+  it('keeps PracticeHub\'s practitioner by name while nobody on the team has it', () => {
+    const d = practiceHubPatientsDiff([row({ 'Default Practitioner': ' Pablo Nuevo ' }), row({ 'Patient Number': '2', 'Email Address': '' })], [], diffOptions())
+    expect(d.toImport[0]!.patient).toMatchObject({ default_practitioner_id: null, default_practitioner_name: 'Pablo Nuevo' })
+    expect(d.toImport[1]!.patient).toMatchObject({ default_practitioner_id: null, default_practitioner_name: null })
+  })
+
+  it('puts back PracticeHub\'s practitioner over one filled here from a colleague\'s visits', () => {
+    const here = [existingPatient({ default_practitioner_id: 'tm-2' })]
+    const d = practiceHubPatientsDiff([row({ 'Default Practitioner': 'Marta Ruiz' })], here, diffOptions({
+      practitionerFor: practiceHubPractitionerMatcher([{ id: 'tm-1', full_name: 'Marta Ruiz' }, { id: 'tm-2', full_name: 'Pablo Nuevo' }]),
+    }))
+    expect(d.toUpdate[0]!.updates).toEqual({ default_practitioner_id: 'tm-1', default_practitioner_name: 'Marta Ruiz' })
+  })
+
   it('a row with only a last name gets it as the first name', () => {
     const d = practiceHubPatientsDiff([row({ 'First Name': '', 'Last Name': 'Demo' })], [], diffOptions())
     expect(d.toImport[0]!.patient).toMatchObject({ first_name: 'Demo', last_name: null })
@@ -409,7 +426,7 @@ describe('the server step', () => {
   it('brings the DNI/NIE from the 2.0 list in the copy, and says when the copy has none', async () => {
     const tables: Record<string, Row[]> = {
       team_members: [{ id: 'tm-1', account_id: ACCOUNT, full_name: 'Marta Ruiz' }],
-      patients: [{ ...existingPatient({ id: 'p1', balance_cents: -4500, preferred_language: 'fr', default_practitioner_id: 'tm-1', referral_source: 'Google' }), account_id: ACCOUNT }],
+      patients: [{ ...existingPatient({ id: 'p1', balance_cents: -4500, preferred_language: 'fr', default_practitioner_id: 'tm-1', default_practitioner_name: 'Marta Ruiz', referral_source: 'Google' }), account_id: ACCOUNT }],
       patient_contact_numbers: [
         { id: 'n1', account_id: ACCOUNT, patient_id: 'p1', number: '600112233' }, { id: 'n2', account_id: ACCOUNT, patient_id: 'p1', number: '3037105245' },
         { id: 'n3', account_id: ACCOUNT, patient_id: 'p1', number: '700000000' },

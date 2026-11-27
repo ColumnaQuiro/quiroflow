@@ -40,7 +40,11 @@ export interface PHApiPatient {
   note?: string | null
   numbers?: { number: string | null; type?: string | null; iso2?: string | null }[] | null
   communication_preferences?: { marketing?: { sms?: number | boolean | null; email?: number | boolean | null } | null } | null
-  default_practitioners?: { practitioner_id: number | string }[] | null
+  /**
+   * One per modality the clinic has (chiropractic, a second therapy...), so a
+   * patient can carry two. See practiceHubDefaultPractitionerId.
+   */
+  default_practitioners?: { practitioner_id: number | string; modality_id?: number | string | null }[] | null
   referral_source_type?: string | null
   referral_source_id?: number | string | null
   /** A signed S3 link to the profile photo, or null. See utils/practicehubProfilePhotos.ts. */
@@ -188,6 +192,25 @@ export function practiceHubSex(value: unknown): string {
 
 const flag = (value: unknown) => (value === true || value === 1 || value === '1' ? '1' : '0')
 
+/**
+ * The patient's own practitioner among PracticeHub's defaults: the one for the
+ * clinic's first modality. A patient seen for two modalities has one default
+ * for each, and the list is not always in modality order: at one clinic (25
+ * Nov 2026) 154 of 155 such patients listed modality 1 first, and the other
+ * came in as the second modality's practitioner instead of their
+ * chiropractor's. '' when there is none.
+ */
+export function practiceHubDefaultPractitionerId(defaults: PHApiPatient['default_practitioners']): string {
+  const modality = (d: { modality_id?: number | string | null }) => {
+    const n = Number(text(d.modality_id))
+    return text(d.modality_id) && Number.isFinite(n) ? n : Number.POSITIVE_INFINITY
+  }
+  const first = [...(defaults ?? [])]
+    .filter((d) => text(d?.practitioner_id))
+    .sort((a, b) => modality(a) - modality(b))[0]
+  return text(first?.practitioner_id)
+}
+
 /** Patients in the shape of the CSV export's rows, keyed by PracticeHub's patient number. */
 export function practiceHubPatientRows(
   patients: PHApiPatient[],
@@ -229,7 +252,7 @@ export function practiceHubPatientRows(
       'Other Numbers': others.map((n) => text(n.number)).join('\n'),
       'SMS Marketing': flag(marketing?.sms),
       'Email Marketing': flag(marketing?.email),
-      'Default Practitioner': nameOf(practitioners.get(text(p.default_practitioners?.[0]?.practitioner_id))),
+      'Default Practitioner': nameOf(practitioners.get(practiceHubDefaultPractitionerId(p.default_practitioners))),
       'Referral Source': referral,
       'Tags': (lookups.tagsByPatientNumber?.get(patientNumber) ?? []).join(', '),
       'Government Number': lookups.governmentNumberById?.get(text(p.id)) ?? '',

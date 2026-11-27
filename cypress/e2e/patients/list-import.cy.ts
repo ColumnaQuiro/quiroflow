@@ -90,7 +90,10 @@ describe('Import into a list', () => {
   it('imports a file with a blank line above its header and day-first dates', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/patients/import')
+      // Reached from the lists page, not visited directly: a file chosen on
+      // the server-rendered input before Vue hydrates it is never read.
+      cy.visit('/patients?view=lists')
+      cy.clickUntil('[data-cy=list-import]', '[data-cy=import-file]')
       cy.get('[data-cy=import-file]').selectFile('cypress/fixtures/list-import-quirocitas.csv', { force: true })
       cy.contains('3 rows detected.', { timeout: 15000 }).should('be.visible')
       cy.get('[data-cy=import-map-first_name]').select('Paciente')

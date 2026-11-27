@@ -12,7 +12,9 @@ const root = ref<HTMLElement | null>(null)
 useDismissOnOutside(root, open)
 
 // The count is worked out from a login's metadata and today's date, neither of
-// which the server render can be trusted to agree on with the browser.
+// which the server render can be trusted to agree on with the browser. The
+// button also waits for hydration: server-rendered, a click before it would
+// be lost, and the panel never open (as TeamAlertButton found first).
 const hydrated = ref(false)
 onMounted(() => (hydrated.value = true))
 const count = computed(() => (hydrated.value ? unread.value.length : 0))
@@ -42,6 +44,7 @@ function kindLabel(kind: NewsKind) {
     <button
       type="button"
       data-cy="news-open"
+      :disabled="!hydrated"
       :aria-expanded="open"
       :aria-label="count ? t(`What’s new, ${count} unread`, `Novedades, ${count} sin leer`) : t('What’s new', 'Novedades')"
       class="flex h-7 items-center gap-1.5 rounded-ctl border px-2 text-[12.5px] font-semibold touch:h-11"

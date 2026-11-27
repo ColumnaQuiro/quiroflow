@@ -45,6 +45,26 @@ export interface PHApiPatient {
   referral_source_id?: number | string | null
   /** A signed S3 link to the profile photo, or null. See utils/practicehubProfilePhotos.ts. */
   profile_image?: string | null
+  /**
+   * Always one entry, even for a patient with no address: every field blank
+   * apart from `country`, which PracticeHub fills with the clinic's own ("ES")
+   * whether or not anything else is there (965 of 965 at one clinic, 27 Nov 2026).
+   */
+  address?: PHApiAddress[] | null
+  /** 1 male, 2 female, 3 other; 0 or null when not given. See practiceHubSex. */
+  sex?: string | number | null
+}
+
+export interface PHApiAddress {
+  address_one?: string | null
+  address_two?: string | null
+  address_three?: string | null
+  city?: string | null
+  /** The province. There is no column for it here, and almost nobody fills it. */
+  county_state?: string | null
+  postcode?: string | null
+  /** An ISO code, "ES". */
+  country?: string | null
 }
 
 /**
@@ -125,6 +145,39 @@ export function practiceHubWallClock(value: string | null | undefined, timeZone:
   return new Date(wallClockToUtc(m[1], `${m[2]}:${m[3]}`, timeZone) + Number(m[4] ?? 0) * 1000)
 }
 
+// The country column is free text, and what clinics type into it is a name
+// ("España"), so the code PracticeHub sends is written the same way.
+const COUNTRY_NAMES = new Intl.DisplayNames(['es'], { type: 'region' })
+
+/**
+ * A patient's address as the four fields a patient has here. The country only
+ * comes with a real address: PracticeHub sets it on every patient, and taking
+ * it alone would write "España" onto hundreds of records with no address.
+ */
+export function practiceHubAddress(address: PHApiAddress | null | undefined): { address: string; postalCode: string; city: string; country: string } {
+  const street = [address?.address_one, address?.address_two, address?.address_three].map(text).filter(Boolean).join(', ')
+  const postalCode = text(address?.postcode)
+  const city = text(address?.city)
+  const code = text(address?.country).toUpperCase()
+  let country = ''
+  if ((street || postalCode || city) && code) {
+    try { country = COUNTRY_NAMES.of(code) ?? code } catch { country = code }
+  }
+  return { address: street, postalCode, city, country }
+}
+
+// Classic sends the sex as a code; PracticeHub 2.0 sends the same patients'
+// as a word. Matched by id across every clinic's copy on 27 Nov 2026, 1 was
+// male (2,049 of 2,049), 2 female (2,455) and 3 other (3), which are exactly
+// the values a patient's sex takes here. 0 never appeared beside a word, so
+// it is read as not given, the same as null.
+const SEX_BY_CODE: Record<string, string> = { '1': 'male', '2': 'female', '3': 'other' }
+
+/** A Classic sex code as a patient's gender here ('male', 'female', 'other'), or '' when not given. */
+export function practiceHubSex(value: unknown): string {
+  return SEX_BY_CODE[text(value)] ?? ''
+}
+
 const flag = (value: unknown) => (value === true || value === 1 || value === '1' ? '1' : '0')
 
 /** Patients in the shape of the CSV export's rows, keyed by PracticeHub's patient number. */
@@ -152,6 +205,7 @@ export function practiceHubPatientRows(
     else if (p.referral_source_type === 'patient') referral = nameOf(patientsById.get(text(p.referral_source_id)))
 
     const marketing = p.communication_preferences?.marketing
+    const address = practiceHubAddress(p.address?.[0])
     return {
       'Patient Number': patientNumber,
       'First Name': text(p.first_name),
@@ -171,6 +225,11 @@ export function practiceHubPatientRows(
       'Referral Source': referral,
       'Tags': (lookups.tagsByPatientNumber?.get(patientNumber) ?? []).join(', '),
       'Government Number': lookups.governmentNumberById?.get(text(p.id)) ?? '',
+      'Address': address.address,
+      'Postcode': address.postalCode,
+      'City': address.city,
+      'Country': address.country,
+      'Sex': practiceHubSex(p.sex),
     }
   })
 }

@@ -68,6 +68,7 @@ function existingPatient(over: Partial<PracticeHubExistingPatient> = {}): Practi
     id: 'p1', external_reference: '202400007', email: 'lucia@example.test', first_name: 'Lucía', last_name: 'Demo',
     date_of_birth: '1990-04-02', referral_source: null, preferred_language: 'es', marketing_channels: [], default_practitioner_id: null,
     created_at: '2024-03-05T09:15:00+00:00', balance_cents: 0, photo_storage_path: null, national_id: null,
+    address: null, postal_code: null, city: null, country: null, gender: null,
     ...over,
   }
 }
@@ -134,6 +135,62 @@ describe('updating a patient already here', () => {
     expect(custom.updates.external_reference).toBe('202400007')
     const other = practiceHubPatientUpdate(existingPatient({ external_reference: 'MANUAL-1' }), incoming, '202400007', '202400007', undefined, show, blank)
     expect(other.updates.external_reference).toBeUndefined()
+  })
+})
+
+describe('the address', () => {
+  // Every PracticeHub record carries one address entry, and its country is
+  // set even when nothing else is: this is how they arrive.
+  const phPatient = (address: Record<string, string | null>) => ({ id: 1, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo', address: [address] })
+  const blankAddress = { address_one: '', address_two: '', address_three: '', city: '', county_state: '', postcode: '', country: 'ES' }
+  const rowsFor = (address: Record<string, string | null>) => practiceHubPatientRows([phPatient(address)], { practitioners: [], referralSources: [] })
+
+  it('goes onto a new patient, its lines joined, the country as a name', () => {
+    const rows = rowsFor({ ...blankAddress, address_one: 'Calle Mayor 12', address_two: '3º B', postcode: '12540', city: 'Vila-real' })
+    const [created] = practiceHubPatientsDiff(rows, [], diffOptions()).toImport
+    expect(created.patient).toMatchObject({ address: 'Calle Mayor 12, 3º B', postal_code: '12540', city: 'Vila-real', country: 'España' })
+  })
+
+  it('leaves every field blank, country included, for a patient with no address', () => {
+    const [created] = practiceHubPatientsDiff(rowsFor(blankAddress), [], diffOptions()).toImport
+    expect(created.patient).toMatchObject({ address: null, postal_code: null, city: null, country: null })
+    // A record with no address entry at all reads the same.
+    const none = practiceHubPatientRows([{ id: 2, patient_number: '2', first_name: 'Iván', address: null }], { practitioners: [], referralSources: [] })
+    expect(practiceHubPatientsDiff(none, [], diffOptions()).toImport[0].patient.country).toBeNull()
+  })
+
+  it('fills a patient imported before without one, and never blanks one with an empty PracticeHub field', () => {
+    const filled = practiceHubPatientsDiff(rowsFor({ ...blankAddress, address_one: 'Calle Mayor 12', postcode: '12540', city: 'Vila-real' }), [existingPatient()], diffOptions())
+    expect(filled.toUpdate[0].updates).toEqual({ address: 'Calle Mayor 12', postal_code: '12540', city: 'Vila-real', country: 'España' })
+
+    const kept = practiceHubPatientsDiff(rowsFor({ ...blankAddress, address_one: 'Calle Nueva 1' }), [existingPatient({ address: 'Calle Mayor 12', postal_code: '12540', city: 'Vila-real', country: 'España' })], diffOptions())
+    expect(kept.toUpdate[0].updates).toEqual({ address: 'Calle Nueva 1' })
+
+    const nothing = practiceHubPatientsDiff(rowsFor(blankAddress), [existingPatient({ address: 'Calle Mayor 12' })], diffOptions())
+    expect(nothing.toUpdate).toEqual([])
+    expect(nothing.skippedDuplicate).toBe(1)
+  })
+})
+
+describe('the sex', () => {
+  const rowsFor = (sex: string | number | null) => practiceHubPatientRows([{ id: 1, patient_number: '202400007', first_name: 'Lucía', last_name: 'Demo', sex }], { practitioners: [], referralSources: [] })
+  const genderOf = (sex: string | number | null) => practiceHubPatientsDiff(rowsFor(sex), [], diffOptions()).toImport[0].patient.gender
+
+  it('reads PracticeHub Classic\'s codes as the words PracticeHub 2.0 gives the same patients', () => {
+    expect(genderOf('1')).toBe('male')
+    expect(genderOf('2')).toBe('female')
+    expect(genderOf(3)).toBe('other')
+  })
+
+  it('leaves it blank when not given, or when it is a code nobody has seen', () => {
+    expect(genderOf('0')).toBeNull()
+    expect(genderOf(null)).toBeNull()
+    expect(genderOf('9')).toBeNull()
+  })
+
+  it('fills a patient already here, and a blank in PracticeHub never clears one', () => {
+    expect(practiceHubPatientsDiff(rowsFor('2'), [existingPatient()], diffOptions()).toUpdate[0].updates).toEqual({ gender: 'female' })
+    expect(practiceHubPatientsDiff(rowsFor('0'), [existingPatient({ gender: 'female' })], diffOptions()).toUpdate).toEqual([])
   })
 })
 

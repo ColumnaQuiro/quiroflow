@@ -45,6 +45,13 @@ export const PRACTICEHUB_PATIENT_OVERWRITE_FIELDS = [
   'marketing_channels',
   'default_practitioner_id',
   'balance_cents',
+  // Each part on its own, so a PracticeHub address with no postcode keeps
+  // the one already here rather than blanking it.
+  'address',
+  'postal_code',
+  'city',
+  'country',
+  'gender',
 ] as const
 
 export interface PracticeHubExistingPatient {
@@ -62,10 +69,15 @@ export interface PracticeHubExistingPatient {
   balance_cents: number
   photo_storage_path: string | null
   national_id: string | null
+  address: string | null
+  postal_code: string | null
+  city: string | null
+  country: string | null
+  gender: string | null
 }
 
 export const PRACTICEHUB_EXISTING_PATIENT_COLUMNS =
-  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id'
+  'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents, photo_storage_path, national_id, address, postal_code, city, country, gender'
 
 export interface PracticeHubFieldDiff { field: string; from: string; to: string }
 
@@ -195,6 +207,11 @@ export function practiceHubPatientFieldLabel(field: string, t: T): string {
     case 'created_at': return t('Patient since', 'Paciente desde')
     case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
     case 'national_id': return 'DNI / NIE'
+    case 'address': return t('Address', 'Dirección')
+    case 'postal_code': return t('Postal code', 'Código postal')
+    case 'city': return t('City', 'Ciudad')
+    case 'country': return t('Country', 'País')
+    case 'gender': return t('Sex', 'Sexo')
     case 'phone': return t('Phone', 'Teléfono')
     default: return field
   }
@@ -209,6 +226,9 @@ export function practiceHubShownValue(field: string, value: unknown, t: T, pract
   if (field === 'default_practitioner_id') return practitionerName(value) ?? practiceHubBlank(value, t)
   if (field === 'balance_cents' && typeof value === 'number') return formatEur(value)
   if (field === 'preferred_language' && typeof value === 'string') return practiceHubLanguageLabel(value)
+  if (field === 'gender' && value === 'female') return t('Female', 'Mujer')
+  if (field === 'gender' && value === 'male') return t('Male', 'Hombre')
+  if (field === 'gender' && value === 'other') return t('Other', 'Otro')
   if (field === 'created_at' && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toLocaleDateString('es-ES')
   return practiceHubBlank(value, t)
 }
@@ -375,6 +395,14 @@ export function practiceHubPatientsDiff(rows: CsvRow[], existingPatients: Practi
       national_id: nationalIdAnswer(row['Government Number']),
       marketing_channels: practiceHubMarketingChannels(row),
       default_practitioner_id: opts.practitionerFor(row['Default Practitioner'] || ''),
+      // Every row carries these keys, null when blank: see created_at above.
+      address: row['Address']?.trim() || null,
+      postal_code: row['Postcode']?.trim() || null,
+      city: row['City']?.trim() || null,
+      country: row['Country']?.trim() || null,
+      // Only one of the three values the column's check allows: anything else
+      // would fail the whole batch's insert, so it is left blank instead.
+      gender: ['female', 'male', 'other'].includes(row['Sex']?.trim() ?? '') ? row['Sex']!.trim() : null,
     }
 
     if (!existing) {

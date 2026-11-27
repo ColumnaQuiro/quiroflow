@@ -32,6 +32,17 @@ export interface AttendanceCertificateText {
   signatureLabel: string
 }
 
+/**
+ * The clinic the body sentence says they attended: the name patients know it
+ * by, not the razón social. The fiscal identity (legal name, NIF, address) is
+ * already in the header above, so repeating the legal name here only made the
+ * sentence name a company the patient has never heard of. The legal name
+ * stands in only when the clinic has no name of its own.
+ */
+export function certificateClinicName(clinic: { name: string | null; legal_name: string | null } | null | undefined): string {
+  return clinic?.name?.trim() || clinic?.legal_name?.trim() || ''
+}
+
 export function certificateLanguage(preferred: string | null | undefined): CertificateLanguage {
   return preferred === 'en' ? 'en' : 'es'
 }

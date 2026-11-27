@@ -7669,6 +7669,7 @@ export type Database = {
           created_at: string
           date_of_birth: string | null
           default_practitioner_id: string | null
+          default_practitioner_name: string | null
           diagnosis: string | null
           do_not_contact: boolean
           app_push_opted_out: boolean
@@ -7732,6 +7733,7 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          default_practitioner_name?: string | null
           diagnosis?: string | null
           do_not_contact?: boolean
           app_push_opted_out?: boolean
@@ -7795,6 +7797,7 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          default_practitioner_name?: string | null
           diagnosis?: string | null
           do_not_contact?: boolean
           app_push_opted_out?: boolean

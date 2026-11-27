@@ -38,6 +38,10 @@ export interface PanelAppointment extends StageFacts {
   note: string | null
   same_day_info_sent_at: string | null
   created_at: string
+  /** Set by "Eliminar cita". The calendar only shows such a visit with
+   *  "Hide deleted" off; the panel then says so rather than offering the
+   *  delete again. */
+  deleted_at?: string | null
   patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number; red_flags?: string | null; tags?: string[] } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string } | null
@@ -727,7 +731,7 @@ async function remove() {
 // which the database checks too (20260925074722).
 const { can, restricted } = usePermission()
 const readOnly = computed(() => restricted('calendar_read_only'))
-const canDelete = computed(() => !readOnly.value && can('appointments_delete'))
+const canDelete = computed(() => !readOnly.value && can('appointments_delete') && !props.appointment.deleted_at)
 
 function onBillingCompleted() {
   refreshFacts()
@@ -786,6 +790,11 @@ async function useExpectedType() {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
         </NuxtLink>
       </div>
+
+      <p v-if="appointment.deleted_at" class="mt-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-600" data-cy="appt-deleted-note">
+        <span class="font-semibold text-ink-900">{{ t('This appointment was deleted.', 'Esta cita está eliminada.') }}</span>
+        {{ t('It shows because "Hide deleted" is off in the calendar\'s display options.', 'Se ve porque «Ocultar eliminadas» está desactivado en las opciones de visualización del calendario.') }}
+      </p>
 
       <div v-if="!editing" class="mt-3 flex items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
         <span class="h-2.5 w-2.5 shrink-0 rounded-[3px]" :style="{ background: typeColor }" aria-hidden="true" />

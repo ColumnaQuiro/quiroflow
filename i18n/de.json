@@ -1636,7 +1636,16 @@
   "Rooms: PracticeHub {0}.": "Räume: PracticeHub {0}.",
   "PracticeHub rooms with no room of the same name in this clinic: {0}. Their visits come in with no room; add the room under Settings with the same name and sync again to fill it.": "PracticeHub-Räume ohne gleichnamigen Raum in dieser Praxis: {0}. Ihre Termine kommen ohne Raum an; lege den Raum unter Einstellungen mit demselben Namen an und synchronisiere erneut, um ihn zu ergänzen.",
   "This clinic has no rooms, so visits come in with none. PracticeHub has {0}: add rooms under Settings with the same names and sync again to fill them.": "Diese Praxis hat keine Räume, daher kommen Termine ohne Raum an. PracticeHub hat {0}: Lege Räume unter Einstellungen mit denselben Namen an und synchronisiere erneut, um sie zu ergänzen.",
-  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} Termine gehören zu einem anderen PracticeHub-Standort und kommen ohne Raum an: Die Räume dieses Standorts sind nicht die dieser Praxis."
+  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} Termine gehören zu einem anderen PracticeHub-Standort und kommen ohne Raum an: Die Räume dieses Standorts sind nicht die dieser Praxis.",
+  "Unclosed quotes near line {0}.": "Nicht geschlossene Anführungszeichen nahe Zeile {0}.",
+  "Could not read this file: {0}": "Diese Datei konnte nicht gelesen werden: {0}",
+  "{0} ready to import": "{0} bereit zum Import",
+  "{0} will be skipped": "{0} werden übersprungen",
+  "Import {0} exercises": "{0} Übungen importieren",
+  "{0} exercises created": "{0} Übungen erstellt",
+  "{0} rows skipped.": "{0} Zeilen übersprungen.",
+  "The import stopped: {0}": "Der Import wurde abgebrochen: {0}",
+  "Row {0}": "Zeile {0}"
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -11086,6 +11095,29 @@
   "Form buttons in WhatsApp no longer lead to a broken link.": "Formular-Schaltflächen in WhatsApp führen nicht mehr zu einem defekten Link.",
   "rooms": "Räume",
   "Visits come in with no room: the copy read from PracticeHub has no rooms. Save the PracticeHub API key (phk_...) in Settings > Import > Connection, read PracticeHub again, and sync to bring each visit's room.": "Termine kommen ohne Raum an: Die aus PracticeHub gelesene Kopie enthält keine Räume. Speichere den PracticeHub-API-Schlüssel (phk_...) unter Einstellungen > Import > Verbindung, lies PracticeHub erneut und synchronisiere, um den Raum jedes Termins zu übernehmen.",
-  "Room set": "Mit Raum"
+  "Room set": "Mit Raum",
+  "No name": "Kein Name",
+  "Not a YouTube or Vimeo video": "Kein YouTube- oder Vimeo-Video",
+  "Repeated in the file": "Mehrfach in der Datei",
+  "No column is called \"nombre\". Use the template, or name the columns nombre, video_youtube and instrucciones.": "Keine Spalte heißt „nombre“. Verwenden Sie die Vorlage oder benennen Sie die Spalten nombre, video_youtube und instrucciones.",
+  "This file has no exercises, only the header row.": "Diese Datei enthält keine Übungen, nur die Kopfzeile.",
+  "Import exercises from a CSV": "Übungen aus einer CSV importieren",
+  "One exercise per row. Columns:": "Eine Übung pro Zeile. Spalten:",
+  "required": "Pflichtfeld",
+  "a YouTube link in any form (youtube.com/watch, youtu.be, Shorts) or Vimeo; optional": "ein YouTube-Link in beliebiger Form (youtube.com/watch, youtu.be, Shorts) oder Vimeo; optional",
+  "how to do it; optional": "Ausführung; optional",
+  "Separated by commas or semicolons, as Excel saves it. Sets and repetitions are chosen when assigning, not here.": "Durch Komma oder Semikolon getrennt, wie Excel speichert. Sätze und Wiederholungen werden beim Zuweisen gewählt, nicht hier.",
+  "Download the template": "Vorlage herunterladen",
+  "Choose a CSV or Excel file": "CSV- oder Excel-Datei wählen",
+  "or drop it here": "oder hier ablegen",
+  "Instructions": "Anleitung",
+  "(empty)": "(leer)",
+  "Import 1 exercise": "1 Übung importieren",
+  "Choose another file": "Andere Datei wählen",
+  "Rows with a problem are left out; fix them in the file and import it again.": "Zeilen mit einem Problem werden ausgelassen; korrigieren Sie sie in der Datei und importieren Sie sie erneut.",
+  "1 exercise created": "1 Übung erstellt",
+  "1 row skipped.": "1 Zeile übersprungen.",
+  "Import CSV": "CSV importieren",
+  "Row": "Zeile"
  }
 }

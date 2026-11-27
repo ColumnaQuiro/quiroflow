@@ -1636,7 +1636,16 @@
   "Rooms: PracticeHub {0}.": "Salas: PracticeHub {0}.",
   "PracticeHub rooms with no room of the same name in this clinic: {0}. Their visits come in with no room; add the room under Settings with the same name and sync again to fill it.": "Salas do PracticeHub sem uma sala com o mesmo nome nesta clínica: {0}. As suas visitas chegam sem sala; crie a sala em Definições com o mesmo nome e sincronize de novo para a preencher.",
   "This clinic has no rooms, so visits come in with none. PracticeHub has {0}: add rooms under Settings with the same names and sync again to fill them.": "Esta clínica não tem salas, por isso as visitas chegam sem sala. O PracticeHub tem {0}: crie salas em Definições com os mesmos nomes e sincronize de novo para as preencher.",
-  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} visitas são de outro local do PracticeHub e chegam sem sala: as salas desse local não são as desta clínica."
+  "{0} visits are at another PracticeHub location and come in with no room: that location's rooms are not this clinic's.": "{0} visitas são de outro local do PracticeHub e chegam sem sala: as salas desse local não são as desta clínica.",
+  "Unclosed quotes near line {0}.": "Aspas por fechar perto da linha {0}.",
+  "Could not read this file: {0}": "Não foi possível ler este ficheiro: {0}",
+  "{0} ready to import": "{0} prontos para importar",
+  "{0} will be skipped": "{0} serão ignorados",
+  "Import {0} exercises": "Importar {0} exercícios",
+  "{0} exercises created": "{0} exercícios criados",
+  "{0} rows skipped.": "{0} linhas ignoradas.",
+  "The import stopped: {0}": "A importação parou: {0}",
+  "Row {0}": "Linha {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11086,6 +11095,29 @@
   "Form buttons in WhatsApp no longer lead to a broken link.": "Os botões de formulário no WhatsApp já não levam a um link partido.",
   "rooms": "salas",
   "Visits come in with no room: the copy read from PracticeHub has no rooms. Save the PracticeHub API key (phk_...) in Settings > Import > Connection, read PracticeHub again, and sync to bring each visit's room.": "As visitas chegam sem sala: a cópia lida do PracticeHub não traz salas. Guarde a chave da API do PracticeHub (phk_...) em Definições > Importar > Ligação, volte a ler o PracticeHub e sincronize para trazer a sala de cada visita.",
-  "Room set": "Com sala"
+  "Room set": "Com sala",
+  "No name": "Sem nome",
+  "Not a YouTube or Vimeo video": "Não é um vídeo do YouTube ou Vimeo",
+  "Repeated in the file": "Repetido no ficheiro",
+  "No column is called \"nombre\". Use the template, or name the columns nombre, video_youtube and instrucciones.": "Nenhuma coluna se chama «nombre». Use o modelo ou dê às colunas os nomes nombre, video_youtube e instrucciones.",
+  "This file has no exercises, only the header row.": "Este ficheiro não tem exercícios, só a linha de títulos.",
+  "Import exercises from a CSV": "Importar exercícios de um CSV",
+  "One exercise per row. Columns:": "Um exercício por linha. Colunas:",
+  "required": "obrigatório",
+  "a YouTube link in any form (youtube.com/watch, youtu.be, Shorts) or Vimeo; optional": "uma ligação do YouTube em qualquer formato (youtube.com/watch, youtu.be, Shorts) ou do Vimeo; opcional",
+  "how to do it; optional": "como fazer; opcional",
+  "Separated by commas or semicolons, as Excel saves it. Sets and repetitions are chosen when assigning, not here.": "Separadas por vírgulas ou ponto e vírgula, como o Excel as guarda. As séries e repetições escolhem-se ao atribuir, não aqui.",
+  "Download the template": "Descarregar o modelo",
+  "Choose a CSV or Excel file": "Escolha um ficheiro CSV ou Excel",
+  "or drop it here": "ou largue-o aqui",
+  "Instructions": "Instruções",
+  "(empty)": "(vazio)",
+  "Import 1 exercise": "Importar 1 exercício",
+  "Choose another file": "Escolher outro ficheiro",
+  "Rows with a problem are left out; fix them in the file and import it again.": "As linhas com algum problema ficam de fora; corrija-as no ficheiro e importe-o novamente.",
+  "1 exercise created": "1 exercício criado",
+  "1 row skipped.": "1 linha ignorada.",
+  "Import CSV": "Importar CSV",
+  "Row": "Linha"
  }
 }

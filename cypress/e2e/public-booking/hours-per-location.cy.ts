@@ -14,6 +14,8 @@ import { clinicDateOf, wallClockToUtc } from '../../../utils/clinicClock'
 // 2. That time comes out of their hours at the clinic by itself.
 // 3. The public API's availability agrees with what booking accepts.
 // 4. Settings -> Team is where the week is set.
+// 5. Somebody at two clinics can have a different week at each, set there,
+//    booked by it, and shown to them on their own page.
 const MADRID = 'Europe/Madrid'
 
 function nextDay(day: string, fromDays = 2): string {
@@ -164,6 +166,62 @@ describe('Hours per location', () => {
         cy.get('[data-cy=member-save]').click()
         cy.get('[data-cy=member-save-bar]').should('not.exist')
         cy.task<{ businessHours: unknown }>('db:teamMemberLocationHours', { teamMemberId: account.teamMemberId, clinicId: gymId }).its('businessHours').should('eq', null)
+      })
+    })
+  })
+
+  it('keeps a different week at each of two clinics, books by it, and shows both on their own page', () => {
+    const mon = nextDay('mon')
+    const tue = dayAfter(mon)
+    cy.get('@acct').then((account: any) => {
+      cy.get<string>('@gymId').then((gymId) => {
+        cy.task('db:linkTeamMemberToClinic', { teamMemberId: account.teamMemberId, clinicId: gymId })
+        cy.login(account.email, account.password)
+        cy.visit(`/settings/team/${account.teamMemberId}`)
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+
+        // Mondays at the clinic, Tuesdays at Box Norte: 09:00-14:00 each, the
+        // range a day starts with.
+        cy.get('[data-cy=member-location]').not(':contains("Box Norte")').within(() => {
+          cy.get('[data-cy=member-location-set]').click()
+          cy.get('[data-cy=hours-day-toggle]').eq(0).click()
+        })
+        cy.contains('[data-cy=member-location]', 'Box Norte').within(() => {
+          cy.get('[data-cy=member-location-set]').click()
+          cy.get('[data-cy=hours-day-toggle]').eq(1).click()
+        })
+        cy.get('[data-cy=member-save]').click()
+        cy.get('[data-cy=member-save-bar]').should('not.exist')
+
+        const days = (hours: Record<string, [string, string][]> | null) => Object.keys(hours ?? {}).filter((d) => (hours ?? {})[d].length > 0)
+        cy.task<{ businessHours: Record<string, [string, string][]> | null }>('db:teamMemberLocationHours', { teamMemberId: account.teamMemberId, clinicId: account.clinicId }).then(({ businessHours }) => {
+          expect(days(businessHours), 'the clinic: Monday').to.deep.eq(['mon'])
+        })
+        cy.task<{ businessHours: Record<string, [string, string][]> | null }>('db:teamMemberLocationHours', { teamMemberId: account.teamMemberId, clinicId: gymId }).then(({ businessHours }) => {
+          expect(days(businessHours), 'Box Norte: Tuesday').to.deep.eq(['tue'])
+        })
+
+        cy.get('@type').then((type: any) => {
+          bookOnline(account, account.clinicId, type, at(mon, '10:00')).its('error').should('eq', null)
+          bookOnline(account, account.clinicId, type, at(tue, '10:00')).its('error').should('contain', 'not available for booking')
+          bookOnline(account, gymId, type, at(tue, '10:00')).its('error').should('eq', null)
+          bookOnline(account, gymId, type, at(mon, '11:00')).its('error').should('contain', 'not available for booking')
+        })
+
+        cy.visit('/settings/team')
+        cy.get('[data-cy=team-hours-per-clinic]', { timeout: 20000 }).should('have.length', 1)
+
+        cy.visit('/account')
+        cy.get('[data-cy=account-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=account-hours-clinic]').should('have.length', 2)
+        cy.get('[data-cy=account-hours-clinic]').not(':contains("Box Norte")').within(() => {
+          cy.get('[data-cy=account-hours-mon]').should('contain', '09:00–14:00')
+          cy.get('[data-cy=account-hours-tue]').should('not.contain', '09:00')
+        })
+        cy.contains('[data-cy=account-hours-clinic]', 'Box Norte').within(() => {
+          cy.get('[data-cy=account-hours-tue]').should('contain', '09:00–14:00')
+          cy.get('[data-cy=account-hours-mon]').should('not.contain', '09:00')
+        })
       })
     })
   })

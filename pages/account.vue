@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { UiLanguage } from '~/utils/uiLanguage'
-import type { BusinessHours } from '~/utils/businessHours'
-import { hasBusinessHoursConfigured } from '~/utils/businessHours'
+import { hasBusinessHoursConfigured, practitionerHoursAt, type BusinessHours, type LocationHours } from '~/utils/businessHours'
 import { formatTime } from '~/utils/billing'
 
 // "Mi cuenta": the signed-in person's own page. Design: the "QuiroFlow Mi
@@ -72,6 +71,8 @@ interface Me {
 const me = ref<Me | null>(null)
 const roleName = ref<string | null>(null)
 const myClinicIds = ref<string[]>([])
+// Their week at each clinic, where one has been set (team_member_clinics.business_hours).
+const myLocations = ref<LocationHours[]>([])
 const ownerCount = ref<number | null>(null)
 const twoFactorSince = ref<string | null>(null)
 const twoFactorEnabled = ref<boolean | null>(null)
@@ -81,13 +82,14 @@ async function loadMe() {
   if (!tm) return
   const [{ data: row }, { data: memberClinics }, owners] = await Promise.all([
     supabase.from('team_members').select('is_practitioner, online_booking_enabled, business_hours, role_id').eq('id', tm.id).maybeSingle(),
-    supabase.from('team_member_clinics').select('clinic_id').eq('team_member_id', tm.id),
+    supabase.from('team_member_clinics').select('clinic_id, business_hours').eq('team_member_id', tm.id),
     tm.is_owner
       ? supabase.from('team_members').select('id', { count: 'exact', head: true }).eq('account_id', tm.account_id).eq('is_owner', true).is('deleted_at', null)
       : Promise.resolve({ count: null }),
   ])
   me.value = row ? { ...row, business_hours: (row.business_hours as BusinessHours | null) ?? null } : null
   myClinicIds.value = (memberClinics ?? []).map((c) => c.clinic_id)
+  myLocations.value = (memberClinics ?? []).map((c) => ({ clinic_id: c.clinic_id, business_hours: (c.business_hours as BusinessHours | null) ?? null }))
   ownerCount.value = owners.count ?? null
   if (row?.role_id) {
     const { data: role } = await supabase.from('account_roles').select('name').eq('id', row.role_id).maybeSingle()
@@ -204,9 +206,9 @@ const WEEK: { key: string; en: string; es: string }[] = [
 ]
 const ownHours = computed(() => hasBusinessHoursConfigured(me.value?.business_hours))
 const hoursSource = computed<BusinessHours | null>(() => (ownHours.value ? (me.value?.business_hours ?? null) : (store.currentClinic?.business_hours ?? null)))
-const weekRows = computed(() =>
-  WEEK.map((d) => {
-    const windows = hoursSource.value?.[d.key] ?? []
+function rowsOf(hours: BusinessHours | null | undefined) {
+  return WEEK.map((d) => {
+    const windows = hours?.[d.key] ?? []
     return {
       key: d.key,
       day: t(d.en, d.es),
@@ -214,8 +216,21 @@ const weekRows = computed(() =>
       // never through the middle of "16:00–21:00".
       ranges: windows.map(([a, b]) => `${a}–${b}`),
     }
-  }),
-)
+  })
+}
+const weekRows = computed(() => rowsOf(hoursSource.value))
+// Somebody at more than one clinic with a week set for any of them works
+// different hours at each: one week per clinic, read the way booking and the
+// calendar read it (practitionerHoursAt). Everybody else sees the one week.
+const hoursPerClinic = computed(() => {
+  const mine = store.clinics.filter((c) => myClinicIds.value.includes(c.id))
+  if (mine.length < 2 || !myLocations.value.some((l) => hasBusinessHoursConfigured(l.business_hours))) return []
+  return mine.map((c) => ({
+    id: c.id,
+    name: c.name,
+    rows: rowsOf(practitionerHoursAt(c.id, c.business_hours as BusinessHours | null, me.value?.business_hours, myLocations.value)),
+  }))
+})
 const anyHours = computed(() => hasBusinessHoursConfigured(hoursSource.value))
 
 // --- Idioma: applies at once ------------------------------------------------
@@ -468,18 +483,34 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 <span class="text-[13px] font-semibold text-ink-700">{{ t('Your hours', 'Tu horario') }}</span>
                 <span class="text-[12px] text-ink-muted">{{ t('An owner changes them in Settings › Team', 'Lo cambia una persona propietaria en Ajustes › Equipo') }}</span>
               </div>
-              <p v-if="!ownHours" class="text-[12.5px] text-ink-muted">
-                {{ anyHours ? t("You follow the clinic's hours:", 'Sigues el horario de la clínica:') : t('No hours set yet, for you or the clinic.', 'Aún no hay horario, ni tuyo ni de la clínica.') }}
-              </p>
-              <div v-if="anyHours" class="overflow-hidden rounded-ctl border border-line">
-                <div v-for="(r, i) in weekRows" :key="r.key" class="flex items-center gap-3 px-3.5 py-2 text-[13.5px]" :class="i ? 'border-t border-line-divider' : ''">
-                  <span class="w-[90px] shrink-0 font-semibold text-ink-900">{{ r.day }}</span>
-                  <span v-if="r.ranges.length" class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[12.5px] text-ink-700">
-                    <span v-for="range in r.ranges" :key="range" class="whitespace-nowrap">{{ range }}</span>
-                  </span>
-                  <span v-else class="text-[13px] text-ink-faint">{{ t('Not working', 'No trabaja') }}</span>
+              <template v-if="hoursPerClinic.length">
+                <div v-for="c in hoursPerClinic" :key="c.id" class="flex flex-col gap-1.5" data-cy="account-hours-clinic">
+                  <span class="text-[12.5px] font-semibold text-ink-700">{{ c.name }}</span>
+                  <div class="overflow-hidden rounded-ctl border border-line">
+                    <div v-for="(r, i) in c.rows" :key="r.key" class="flex items-center gap-3 px-3.5 py-2 text-[13.5px]" :class="i ? 'border-t border-line-divider' : ''" :data-cy="`account-hours-${r.key}`">
+                      <span class="w-[90px] shrink-0 font-semibold text-ink-900">{{ r.day }}</span>
+                      <span v-if="r.ranges.length" class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[12.5px] text-ink-700">
+                        <span v-for="range in r.ranges" :key="range" class="whitespace-nowrap">{{ range }}</span>
+                      </span>
+                      <span v-else class="text-[13px] text-ink-faint">{{ t('Not working', 'No trabaja') }}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </template>
+              <template v-else>
+                <p v-if="!ownHours" class="text-[12.5px] text-ink-muted">
+                  {{ anyHours ? t("You follow the clinic's hours:", 'Sigues el horario de la clínica:') : t('No hours set yet, for you or the clinic.', 'Aún no hay horario, ni tuyo ni de la clínica.') }}
+                </p>
+                <div v-if="anyHours" class="overflow-hidden rounded-ctl border border-line">
+                  <div v-for="(r, i) in weekRows" :key="r.key" class="flex items-center gap-3 px-3.5 py-2 text-[13.5px]" :class="i ? 'border-t border-line-divider' : ''">
+                    <span class="w-[90px] shrink-0 font-semibold text-ink-900">{{ r.day }}</span>
+                    <span v-if="r.ranges.length" class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[12.5px] text-ink-700">
+                      <span v-for="range in r.ranges" :key="range" class="whitespace-nowrap">{{ range }}</span>
+                    </span>
+                    <span v-else class="text-[13px] text-ink-faint">{{ t('Not working', 'No trabaja') }}</span>
+                  </div>
+                </div>
+              </template>
             </div>
 
             <div

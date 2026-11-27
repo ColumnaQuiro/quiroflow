@@ -1647,7 +1647,12 @@
   "{0} exercises created": "{0} exercícios criados",
   "{0} rows skipped.": "{0} linhas ignoradas.",
   "The import stopped: {0}": "A importação parou: {0}",
-  "Row {0}": "Linha {0}"
+  "Row {0}": "Linha {0}",
+  "Only the {0} most recent will be included.": "Só serão incluídos os {0} mais recentes.",
+  "This will include {0} patients.": "Isto incluirá {0} pacientes.",
+  "\"{0}\" is on. Nobody else met it.": "«{0}» ativada. Mais ninguém a cumpria.",
+  "\"{0}\" is on, with 1 patient who already met it.": "«{0}» ativada, com 1 paciente que já a cumpria.",
+  "\"{0}\" is on, with {1} patients who already met it.": "«{0}» ativada, com {1} pacientes que já a cumpriam."
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11123,6 +11128,18 @@
   "1 exercise created": "1 exercício criado",
   "1 row skipped.": "1 linha ignorada.",
   "Import CSV": "Importar CSV",
-  "Row": "Linha"
+  "Row": "Linha",
+  "Nobody met it in that time.": "Ninguém a cumpriu nesse período.",
+  "This will include 1 patient.": "Isto incluirá 1 paciente.",
+  "Who it includes": "Quem inclui?",
+  "Only from now on": "Só a partir de agora",
+  "Whoever meets it after you switch it on.": "Quem a cumprir depois de a ativar.",
+  "Also everyone who already meets it": "Também todos os que já cumprem a condição",
+  "Once, now, plus everyone from now on.": "Uma única vez, agora, e além disso todos os novos.",
+  "Those who met it in the last": "Quem a cumpriu nos últimos",
+  "Counting…": "A contar…",
+  "Could not count them. Try again.": "Não foi possível contá-los. Tente novamente.",
+  "Nobody it has already reached, and no minors, archived patients or anyone marked \"do not contact\".": "Ninguém a quem já tenha chegado, nem menores, arquivados ou marcados «não contactar».",
+  "It is on, but those who already met it could not be included.": "Está ativada, mas não foi possível incluir quem já a cumpria."
  }
 }

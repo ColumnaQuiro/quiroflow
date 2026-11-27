@@ -1647,7 +1647,12 @@
   "{0} exercises created": "{0} Übungen erstellt",
   "{0} rows skipped.": "{0} Zeilen übersprungen.",
   "The import stopped: {0}": "Der Import wurde abgebrochen: {0}",
-  "Row {0}": "Zeile {0}"
+  "Row {0}": "Zeile {0}",
+  "Only the {0} most recent will be included.": "Nur die {0} neuesten werden einbezogen.",
+  "This will include {0} patients.": "Das schließt {0} Patienten ein.",
+  "\"{0}\" is on. Nobody else met it.": "„{0}“ ist aktiv. Sonst hat sie niemand erfüllt.",
+  "\"{0}\" is on, with 1 patient who already met it.": "„{0}“ ist aktiv, mit 1 Patienten, der sie schon erfüllte.",
+  "\"{0}\" is on, with {1} patients who already met it.": "„{0}“ ist aktiv, mit {1} Patienten, die sie schon erfüllten."
  },
  "s": {
   " (half day)": " (halber Tag)",
@@ -11123,6 +11128,18 @@
   "1 exercise created": "1 Übung erstellt",
   "1 row skipped.": "1 Zeile übersprungen.",
   "Import CSV": "CSV importieren",
-  "Row": "Zeile"
+  "Row": "Zeile",
+  "Nobody met it in that time.": "Niemand hat sie in diesem Zeitraum erfüllt.",
+  "This will include 1 patient.": "Das schließt 1 Patienten ein.",
+  "Who it includes": "Wen schließt sie ein?",
+  "Only from now on": "Nur ab jetzt",
+  "Whoever meets it after you switch it on.": "Wer sie erfüllt, nachdem Sie sie aktiviert haben.",
+  "Also everyone who already meets it": "Auch alle, die die Bedingung schon erfüllen",
+  "Once, now, plus everyone from now on.": "Einmalig, jetzt, und dazu alle neuen.",
+  "Those who met it in the last": "Wer sie erfüllt hat in den letzten",
+  "Counting…": "Wird gezählt…",
+  "Could not count them. Try again.": "Sie konnten nicht gezählt werden. Versuchen Sie es erneut.",
+  "Nobody it has already reached, and no minors, archived patients or anyone marked \"do not contact\".": "Niemand, den sie schon erreicht hat, und keine Minderjährigen, archivierten Patienten oder als „nicht kontaktieren“ markierten Personen.",
+  "It is on, but those who already met it could not be included.": "Sie ist aktiv, aber wer sie schon erfüllte, konnte nicht einbezogen werden."
  }
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
 // Settings -> Team: everyone who signs in, and who of them sees patients.
 // Each person opens onto their own page (/settings/team/<id>) where
 // everything about them is edited. The old Settings -> Practitioners page is
@@ -37,6 +38,8 @@ interface InviteRow {
 
 const members = ref<MemberRow[]>([])
 const clinicLinks = ref<Record<string, string[]>>({})
+// Who has a week set for some clinic (team_member_clinics.business_hours).
+const hoursPerClinic = ref<Set<string>>(new Set())
 const invites = ref<InviteRow[]>([])
 const roles = ref<{ id: string; name: string }[]>([])
 const twoFactorEnrolled = ref<Set<string>>(new Set())
@@ -55,7 +58,7 @@ async function load() {
   const accountId = store.accountId!
   const [m, links, inv, r, tf, acc, aal, seats] = await Promise.all([
     supabase.from('team_members').select('id, full_name, color, role_id, photo_storage_path, online_booking_enabled, is_practitioner, is_owner, business_hours, deleted_at').eq('account_id', accountId).order('full_name'),
-    supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
+    supabase.from('team_member_clinics').select('team_member_id, clinic_id, business_hours'),
     supabase.from('account_invites').select('id, email, full_name, role_id, token, is_practitioner, link_practitioner_name, created_at, last_sent_at').is('accepted_at', null).order('created_at', { ascending: false }),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
     supabase.rpc('team_two_factor_status', { p_account_id: accountId }),
@@ -68,6 +71,7 @@ async function load() {
   const byMember: Record<string, string[]> = {}
   for (const l of links.data ?? []) (byMember[l.team_member_id] ??= []).push(l.clinic_id)
   clinicLinks.value = byMember
+  hoursPerClinic.value = new Set((links.data ?? []).filter((l) => hasBusinessHoursConfigured(l.business_hours as BusinessHours | null)).map((l) => l.team_member_id))
   invites.value = (inv.data ?? []) as InviteRow[]
   roles.value = r.data ?? []
   twoFactorEnrolled.value = new Set(((tf.data ?? []) as { team_member_id: string; enrolled: boolean }[]).filter((x) => x.enrolled).map((x) => x.team_member_id))
@@ -400,6 +404,7 @@ onMounted(() => {
                     <UiPill tone="success" v-if="m.online_booking_enabled">{{ t('Online booking', 'Reserva online') }}</UiPill>
                     <UiPill tone="neutral" v-else>{{ t('Not bookable online', 'No se reserva online') }}</UiPill>
                     <UiPill tone="neutral" v-if="hasOwnHours(m)">{{ t('Own hours', 'Horario propio') }}</UiPill>
+                    <UiPill tone="neutral" v-if="hoursPerClinic.has(m.id)" data-cy="team-hours-per-clinic">{{ t('Hours per clinic', 'Horario por sede') }}</UiPill>
                   </template>
                   <UiPill tone="neutral">{{ clinicsText(m.id) }}</UiPill>
                   <UiPill tone="success" v-if="twoFactorEnrolled.has(m.id)">{{ t('Two-factor', 'Verificación en dos pasos') }}</UiPill>

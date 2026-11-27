@@ -4636,6 +4636,7 @@
   "Hours after the first visit and every few visits": "Horas após a primeira consulta e a cada poucas consultas",
   "Hours are each clinic’s own. Each appointment type decides whether it is bookable online, how far ahead and whether it is paid when booking.": "O horário é o de cada clínica. Cada tipo de marcação decide se pode ser marcado online, com quanta antecedência e se é pago ao marcar.",
   "Hours at each clinic": "Horário em cada clínica",
+  "Hours per clinic": "Horário por clínica",
   "Hours before the appointment": "Horas antes da marcação",
   "Hours clocked": "Horas registadas",
   "Hours that day": "Horas nesse dia",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { attendanceCertificateText, certificateLanguage, visitWasAttended } from '../../utils/attendanceCertificate'
+import { attendanceCertificateText, certificateClinicName, certificateLanguage, visitWasAttended } from '../../utils/attendanceCertificate'
 
 // The justificante a patient hands their employer. It must state the visit
 // in the clinic's own clock, and only for a visit that took place.
@@ -8,7 +8,7 @@ describe('attendanceCertificateText', () => {
   const base = {
     patientName: 'Ana Pérez',
     nationalId: '12345678Z',
-    clinicName: 'Clínica Demo S.L.',
+    clinicName: 'Clínica Demo',
     // 08:30-09:00 UTC is 10:30-11:00 in Madrid in October (CEST).
     startsAt: '2026-10-20T08:30:00Z',
     endsAt: '2026-10-20T09:00:00Z',
@@ -20,7 +20,7 @@ describe('attendanceCertificateText', () => {
   it('reads in Spanish with the DNI and the clinic-local times', () => {
     const text = attendanceCertificateText({ ...base, language: 'es' })
     expect(text.title).toBe('Justificante de asistencia')
-    expect(text.body).toBe('Se hace constar que Ana Pérez, con DNI/NIE 12345678Z, ha asistido a consulta en Clínica Demo S.L. el martes, 20 de octubre de 2026, de 10:30 a 11:00 h.')
+    expect(text.body).toBe('Se hace constar que Ana Pérez, con DNI/NIE 12345678Z, ha asistido a consulta en Clínica Demo el martes, 20 de octubre de 2026, de 10:30 a 11:00 h.')
     expect(text.practitionerLine).toBe('Profesional: Laura Gómez')
   })
 
@@ -30,9 +30,23 @@ describe('attendanceCertificateText', () => {
 
   it('reads in English for an English-speaking patient', () => {
     // ICU versions differ on the comma after the weekday.
-    expect(attendanceCertificateText({ ...base, language: 'en' }).body).toMatch(/attended an appointment at Clínica Demo S\.L\. on Tuesday,? 20 October 2026, from 10:30 to 11:00\.$/)
+    expect(attendanceCertificateText({ ...base, language: 'en' }).body).toMatch(/attended an appointment at Clínica Demo on Tuesday,? 20 October 2026, from 10:30 to 11:00\.$/)
     expect(certificateLanguage('en')).toBe('en')
     expect(certificateLanguage('fr')).toBe('es')
+  })
+})
+
+describe('certificateClinicName', () => {
+  // The header already carries the razón social and NIF; the sentence names
+  // the clinic the patient knows.
+  it('is the clinic name, not the legal name', () => {
+    expect(certificateClinicName({ name: 'Clínica Demo', legal_name: 'Demo Salud S.L.' })).toBe('Clínica Demo')
+  })
+
+  it('falls back to the legal name only when the clinic has no name', () => {
+    expect(certificateClinicName({ name: '  ', legal_name: 'Demo Salud S.L.' })).toBe('Demo Salud S.L.')
+    expect(certificateClinicName({ name: null, legal_name: 'Demo Salud S.L.' })).toBe('Demo Salud S.L.')
+    expect(certificateClinicName(null)).toBe('')
   })
 })
 

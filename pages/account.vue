@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { UiLanguage } from '~/utils/uiLanguage'
-import type { BusinessHours } from '~/utils/businessHours'
-import { hasBusinessHoursConfigured, practitionerHoursAt, type LocationHours } from '~/utils/businessHours'
+import { hasBusinessHoursConfigured, practitionerHoursAt, type BusinessHours, type LocationHours } from '~/utils/businessHours'
 import { formatTime } from '~/utils/billing'
 
 // "Mi cuenta": the signed-in person's own page. Design: the "QuiroFlow Mi

@@ -38,8 +38,11 @@ describe('Calendar: the time under the pointer', () => {
 
       // Over the card: the event bubbles up to its column. A position relative
       // to the card, so the coordinates are worked out after Cypress scrolls.
+      // Scrolled to the middle, not the top: at the top the label sits under
+      // the sticky column heads, and in a sticky gutter Cypress counts an
+      // element covered that way as not visible.
       cy.contains('[data-cy=appt-block]', 'Hora Marcada').then(($b) => {
-        cy.wrap($b).trigger('pointermove', rectOf($b).width / 2, 2, { pointerType: 'mouse' })
+        cy.wrap($b).trigger('pointermove', rectOf($b).width / 2, 2, { pointerType: 'mouse', scrollBehavior: 'center' })
       })
       label().should('be.visible').and('have.text', '11:00')
     })

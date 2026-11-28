@@ -73,9 +73,17 @@ watch([offeredLanguages, patientLanguage], () => {
   const own = patientLanguage.value
   sendLanguage.value = own && (offeredLanguages.value as readonly string[]).includes(own) ? own : 'es'
 })
+// Who the send dialog writes to. A minor is never written to directly: both
+// senders refuse it (send-email, inboxSend), so the dialog does not offer them.
+const recipient = ref<{ firstName: string; email: string | null; isMinor: boolean } | null>(null)
 onMounted(async () => {
-  const { data } = await supabase.from('patients').select('preferred_language').eq('id', props.patientId).maybeSingle<{ preferred_language: string | null }>()
+  const { data } = await supabase
+    .from('patients')
+    .select('preferred_language, first_name, email, is_minor')
+    .eq('id', props.patientId)
+    .maybeSingle<{ preferred_language: string | null; first_name: string | null; email: string | null; is_minor: boolean | null }>()
   patientLanguage.value = data?.preferred_language ?? null
+  recipient.value = data ? { firstName: data.first_name ?? '', email: data.email?.trim() || null, isMinor: !!data.is_minor } : null
 })
 const hasLanguage = (tpl: Template) => sendLanguage.value === 'es' || !!docTranslationsOf(tpl.translations)[sendLanguage.value]
 
@@ -106,10 +114,87 @@ async function copyLink(doc: Doc) {
     if (copiedId.value === doc.id) copiedId.value = null
   }, 2000)
 }
-function sendViaWhatsApp(doc: Doc) {
-  if (!patientPhoneDigits.value) return
-  const message = `${t('Hi! Please complete this document:', '¡Hola! Por favor completa este documento:')} ${docLink(doc)}`
-  window.open(`https://wa.me/${patientPhoneDigits.value}?text=${encodeURIComponent(message)}`, '_blank')
+// "Send a form" used to make the patient's copy and then open it HERE, in the
+// staff editor, and send nothing: the button said send and the computer
+// opened a form. Now picking a form asks how it goes to the patient, through
+// the clinic's own email and WhatsApp (the senders BillingTab's direct debit
+// link uses, with their guards), and filling it in at the clinic is one of
+// the choices rather than the only thing that happens.
+type SendChannel = 'email' | 'whatsapp'
+const sendAsk = ref<Doc | null>(null)
+const sendChannel = ref<SendChannel | null>(null)
+const sendBusy = ref(false)
+const sendError = ref('')
+const sendChannels = computed<SendChannel[]>(() => {
+  if (!recipient.value || recipient.value.isMinor) return []
+  const out: SendChannel[] = []
+  if (recipient.value.email && can('recalls_access')) out.push('email')
+  if (patientPhoneDigits.value && can('inbox_access')) out.push('whatsapp')
+  return out
+})
+function askToSend(doc: Doc) {
+  sendAsk.value = doc
+  sendError.value = ''
+  sendChannel.value = sendChannels.value[0] ?? null
+}
+// What the patient reads, in the form's own language: a form sent in
+// English should not arrive under a Spanish sentence.
+function patientMessage(doc: Doc): { subject: string; greeting: string; body: string; text: string } {
+  const name = recipient.value?.firstName?.trim() ?? ''
+  const link = docLink(doc)
+  const m = (() => {
+    switch (doc.language) {
+      case 'en':
+        return { subject: `Form to fill in: ${doc.title}`, greeting: name ? `Hi ${name},` : 'Hi,', body: `We are sending you "${doc.title}" to fill in. It takes a couple of minutes, from your phone: ${link}` }
+      case 'fr':
+        return { subject: `Formulaire à remplir : ${doc.title}`, greeting: name ? `Bonjour ${name},` : 'Bonjour,', body: `Nous vous envoyons « ${doc.title} » à remplir. Cela prend quelques minutes, depuis votre téléphone : ${link}` }
+      case 'ca':
+        return { subject: `Formulari per omplir: ${doc.title}`, greeting: name ? `Hola ${name},` : 'Hola,', body: `T'enviem «${doc.title}» perquè l'omplis. Són un parell de minuts, des del mòbil: ${link}` }
+      default:
+        return { subject: `Formulario para rellenar: ${doc.title}`, greeting: name ? `Hola ${name},` : 'Hola,', body: `Te enviamos «${doc.title}» para que lo rellenes. Son un par de minutos, desde el móvil: ${link}` }
+    }
+  })()
+  return { ...m, text: `${m.greeting}\n\n${m.body}` }
+}
+async function sendDoc() {
+  const doc = sendAsk.value
+  const channel = sendChannel.value
+  if (!doc || !channel) return
+  sendBusy.value = true
+  sendError.value = ''
+  const { subject, body, text } = patientMessage(doc)
+  try {
+    if (channel === 'email') {
+      // send-email writes the "Hola <name>," itself, above the body.
+      await useStaffFetch(`/api/patients/${props.patientId}/send-email`, { method: 'POST', body: { subject, body } })
+    } else {
+      await useStaffFetch('/api/whatsapp/inbox-send', { method: 'POST', body: { patientId: props.patientId, text } })
+    }
+    showToast(channel === 'email' ? t(`Form sent by email to ${recipient.value?.email}`, `Formulario enviado por email a ${recipient.value?.email}`) : t('Form sent by WhatsApp', 'Formulario enviado por WhatsApp'))
+    sendAsk.value = null
+  } catch (err: any) {
+    // Most often WhatsApp's 24-hour window: free text only goes to someone
+    // who wrote in the last day. The error says so; the fallbacks are below it.
+    sendError.value = err?.data?.statusMessage ?? t('The form could not be sent.', 'No se ha podido enviar el formulario.')
+  } finally {
+    sendBusy.value = false
+  }
+}
+// The fallback when the clinic's WhatsApp cannot send (outside the 24-hour
+// window, or no WhatsApp connected): WhatsApp on this computer, message ready.
+function waMeLink(doc: Doc) {
+  return `https://wa.me/${patientPhoneDigits.value}?text=${encodeURIComponent(patientMessage(doc).text)}`
+}
+// With nowhere to send it, the dialog's main button copies the link instead.
+async function onSendConfirm() {
+  if (sendChannels.value.length) return sendDoc()
+  if (sendAsk.value) await copyLink(sendAsk.value)
+  showToast(t('Link copied', 'Enlace copiado'))
+  sendAsk.value = null
+}
+function fillHere(doc: Doc) {
+  sendAsk.value = null
+  openLink(doc)
 }
 
 // The staff copy of a form, answers only (pages/patients/docs/[id].vue), for
@@ -148,15 +233,20 @@ async function createDoc(initialTitle: string, initialFields: DocField[], templa
     })
     .select('*')
     .single()
-  if (error || !data) return
+  if (error || !data) {
+    showToast(`${t('The form was not created.', 'No se ha creado el formulario.')}${error ? ` (${error.message})` : ''}`, 'error')
+    return null
+  }
   const created = data as unknown as Doc
   docs.value = [created, ...docs.value]
-  openDoc(created)
+  return created
 }
 
+// A blank document has nothing in it yet, so it opens here to be written.
 async function newBlankDoc() {
   showNewMenu.value = false
-  await createDoc(t('Untitled', 'Sin título'), [])
+  const created = await createDoc(t('Untitled', 'Sin título'), [])
+  if (created) openDoc(created)
 }
 
 async function newFromTemplate(template: Template) {
@@ -192,7 +282,8 @@ async function newFromTemplate(template: Template) {
     // clinic sends, not whatever locale this browser happens to run in.
     today: new Date().toLocaleDateString('es-ES'),
   })
-  await createDoc(sent.title, rendered, template.id, sent.language)
+  const created = await createDoc(sent.title, rendered, template.id, sent.language)
+  if (created) askToSend(created)
 }
 
 function backToList() {
@@ -378,13 +469,14 @@ function metaFor(doc: Doc) {
               {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}
             </button>
             <button
-              v-if="patientPhoneDigits"
+              v-if="!doc.completed_at"
               type="button"
               class="text-[11.5px] font-medium text-success-text hover:text-success-deep touch:min-h-11"
-              :title="t('Send patient link via WhatsApp', 'Enviar el enlace del paciente por WhatsApp')"
-              @click="sendViaWhatsApp(doc)"
+              :title="t('Send the patient their link by email or WhatsApp', 'Enviar al paciente su enlace por email o WhatsApp')"
+              data-cy="doc-send"
+              @click="askToSend(doc)"
             >
-              {{ t('Resend', 'Reenviar') }}
+              {{ t('Send', 'Enviar') }}
             </button>
             <UiIconBtn v-if="can('patient_docs_delete')" icon="trash" tone="danger" data-cy="doc-delete" :label="t('Delete', 'Eliminar')" @click="deleteAsk = doc" />
           </div>
@@ -415,6 +507,50 @@ function metaFor(doc: Doc) {
         <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
       </div>
     </template>
+
+    <UiConfirmDialog
+      v-if="sendAsk"
+      :title="recipient?.firstName ? t(`Send ${sendAsk.title} to ${recipient.firstName}`, `Enviar ${sendAsk.title} a ${recipient.firstName}`) : t(`Send ${sendAsk.title}`, `Enviar ${sendAsk.title}`)"
+      :confirm-label="sendChannels.length ? (sendBusy ? t('Sending…', 'Enviando…') : t('Send', 'Enviar')) : t('Copy link', 'Copiar enlace')"
+      :cancel-label="t('Not now', 'Ahora no')"
+      :busy="sendBusy"
+      :disabled="sendChannels.length > 0 && !sendChannel"
+      data-cy="doc-send-dialog"
+      @confirm="onSendConfirm"
+      @cancel="sendAsk = null"
+    >
+      <fieldset v-if="sendChannels.length" class="flex flex-col gap-1.5">
+        <legend class="mb-1 text-[13px] text-ink-muted">{{ t('It reaches them as a link to fill in from their phone.', 'Le llega como un enlace para rellenarlo desde el móvil.') }}</legend>
+        <label v-for="channel in sendChannels" :key="channel" class="flex cursor-pointer items-center gap-2.5 rounded-ctl border px-3 py-2 text-[14px] touch:py-3" :class="sendChannel === channel ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'">
+          <input v-model="sendChannel" type="radio" name="doc-send-channel" :value="channel" class="accent-brand" :data-cy="`doc-send-channel-${channel}`" />
+          <span class="font-semibold text-ink-900">{{ channel === 'email' ? t('By email', 'Por email') : t('By WhatsApp', 'Por WhatsApp') }}</span>
+          <span class="min-w-0 truncate text-ink-muted">{{ channel === 'email' ? recipient?.email : `+${patientPhoneDigits}` }}</span>
+        </label>
+      </fieldset>
+      <p v-else class="text-[13.5px] leading-snug text-ink-700">
+        {{ recipient?.isMinor
+          ? t('This patient is under age, so QuiroFlow does not write to them directly. Copy the link for their guardian, or fill it in here.', 'Es menor de edad, así que QuiroFlow no le escribe directamente. Copia el enlace para su tutor, o rellénalo aquí.')
+          : t('There is no email or WhatsApp to send it to from here. Copy the link, or fill it in here.', 'No hay email ni WhatsApp al que enviarlo desde aquí. Copia el enlace, o rellénalo aquí.') }}
+      </p>
+      <div v-if="sendError" role="alert" class="rounded-ctl border border-danger-border bg-danger-bg px-3 py-2 text-[13px] text-danger-text" data-cy="doc-send-error">
+        {{ sendError }}
+        <a
+          v-if="sendChannel === 'whatsapp' && patientPhoneDigits"
+          :href="waMeLink(sendAsk)"
+          target="_blank"
+          rel="noopener"
+          class="mt-1 block font-semibold underline"
+        >{{ t('Open it in WhatsApp on this computer instead', 'Abrirlo en WhatsApp en este ordenador') }}</a>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-divider pt-3 text-[13px]">
+        <button v-if="sendChannels.length" type="button" class="font-medium text-brand-text hover:text-brand-hover touch:min-h-11" @click="copyLink(sendAsk)">
+          {{ copiedId === sendAsk.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}
+        </button>
+        <button type="button" class="font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Opens the patient’s form in a new tab, to fill in at the clinic', 'Abre el formulario del paciente en una pestaña nueva, para rellenarlo en la clínica')" data-cy="doc-fill-here" @click="fillHere(sendAsk)">
+          {{ t('They are here: fill it in on this screen', 'Está aquí: rellenarlo en esta pantalla') }}
+        </button>
+      </div>
+    </UiConfirmDialog>
 
     <UiConfirmDialog
       v-if="deleteAsk"

@@ -69,7 +69,7 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
 
   // Paged, both: PostgREST stops at 1000 rows without saying so, and a busy
   // clinic's 13 weeks of leads can pass that.
-  const [rows, progressRows, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
+  const [rows, progressRows, convertedRows, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
     fetchAllRows((from, to) =>
       supabase
         .from('leads')
@@ -87,6 +87,24 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
       supabase
         .rpc('growth_lead_progress', { p_account_id: accountId, p_since: windowStart.toISOString() })
         .order('lead_id')
+        .range(from, to),
+    ),
+    // Who became a patient THIS MONTH, whenever they first enquired. Not
+    // taken from `rows`: a conversion is usually a returning visit three to
+    // five weeks after the enquiry, so counting only leads that also arrived
+    // this month read 0 for the current month while people converted in it
+    // -- and a lead from before the 13-week window can still convert now.
+    // converted_at is set on every path to Converted
+    // (20261128065806_lead_converted_at_on_every_conversion.sql).
+    fetchAllRows((from, to) =>
+      supabase
+        .from('leads')
+        .select('id, source, estimated_value_cents')
+        .eq('account_id', accountId)
+        .is('deleted_at', null)
+        .eq('furthest_stage', 'converted')
+        .gte('converted_at', monthStart.toISOString())
+        .order('id')
         .range(from, to),
     ),
     supabase
@@ -147,16 +165,20 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
   const totalSpend = [...spendByChannel.values()].reduce((sum, cents) => sum + cents, 0)
   const hasSpend = totalSpend > 0
 
-  const convertedThisMonth = thisMonth.filter((lead) => lead.reached.converted)
-  const revenueCents = convertedThisMonth.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? defaultCents ?? 0), 0)
+  // Converted, revenue and cost per new patient go by the month the
+  // conversion happened -- this month's spend against this month's new
+  // patients. The funnel above stays a cohort of this month's arrivals,
+  // which is what a drop-off chart has to be.
+  const revenueCents = convertedRows.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? defaultCents ?? 0), 0)
+  const convertedIn = (channel: string | null) =>
+    channel === null ? convertedRows.length : convertedRows.filter((lead) => channelOf(lead.source) === channel).length
 
   // --- Channels -----------------------------------------------------------
-  function channelFigures(mine: Lead[], spend: number | null): Omit<GrowthChannelPayload, 'channel'> {
+  function channelFigures(mine: Lead[], converted: number, spend: number | null): Omit<GrowthChannelPayload, 'channel'> {
     const booked = mine.filter((lead) => lead.reached.booked)
     // Of the booked leads whose appointment has come round, how many came.
     const due = booked.filter((lead) => lead.due)
     const showed = due.filter((lead) => lead.reached.showed).length
-    const converted = mine.filter((lead) => lead.reached.converted).length
     return {
       spendCents: spend,
       leads: mine.length,
@@ -166,15 +188,23 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
     }
   }
 
-  const channelNames = new Set<string>([...leads.map((lead) => channelOf(lead.source)), ...spendByChannel.keys()])
+  const channelNames = new Set<string>([
+    ...leads.map((lead) => channelOf(lead.source)),
+    ...convertedRows.map((lead) => channelOf(lead.source)),
+    ...spendByChannel.keys(),
+  ])
   const channels: GrowthChannelPayload[] = [...channelNames]
     .map((channel) => ({
       channel,
-      ...channelFigures(thisMonth.filter((lead) => channelOf(lead.source) === channel), spendByChannel.get(channel) ?? null),
+      ...channelFigures(
+        thisMonth.filter((lead) => channelOf(lead.source) === channel),
+        convertedIn(channel),
+        spendByChannel.get(channel) ?? null,
+      ),
     }))
     .sort((a, b) => b.leads - a.leads)
 
-  const totals = channelFigures(thisMonth, hasSpend ? totalSpend : null)
+  const totals = channelFigures(thisMonth, convertedIn(null), hasSpend ? totalSpend : null)
 
   // --- Trend --------------------------------------------------------------
   // A cohort view, not a calendar of events: of the leads that ARRIVED in a
@@ -225,7 +255,7 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
     newLeads: thisMonth.length,
     leads90d: leads.filter((lead) => lead.createdAt >= ninetyDaysAgo).length,
     spendCents: hasSpend ? totalSpend : null,
-    converted: convertedThisMonth.length,
+    converted: convertedRows.length,
     revenueCents,
     funnel,
     channels,

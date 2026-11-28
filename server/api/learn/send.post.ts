@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { sendPushToPatients } from '~/server/utils/pushNotifications'
 import { sendResendEmail } from '~/server/utils/resend'
+import { learnInLanguage } from '~/utils/learnContent'
 
 // "Enviar lectura" on a patient record: one article from the clinic's
 // library, delivered the best way the patient can receive it -- a push to
@@ -17,6 +18,10 @@ import { sendResendEmail } from '~/server/utils/resend'
 // The send itself is inserted as the staff member, so the learn_sends policy
 // (the patient record's scope) decides whether they may send to this patient
 // at all; delivery then runs on the service role.
+//
+// The push and the email name each article in the language on the
+// patient's record when it has one (utils/learnContent.ts), as the reader
+// will show it.
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 export default defineEventHandler(async (event) => {
@@ -26,7 +31,7 @@ export default defineEventHandler(async (event) => {
   if (!body?.patientId || !requested.length) throw createError({ statusCode: 400, statusMessage: 'patientId and articleId are required' })
   const { supabase, teamMember } = await requireTeamMember(event)
 
-  const { data: found } = await supabase.from('learn_articles').select('id, title, summary').in('id', requested).is('archived_at', null)
+  const { data: found } = await supabase.from('learn_articles').select('id, title, summary, translations').in('id', requested).is('archived_at', null)
   // In the order asked for, which for the pack is the order the clinic set.
   let articles = requested.map((id) => (found ?? []).find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a)
   if (!articles.length) throw createError({ statusCode: 404, statusMessage: 'Article not found' })
@@ -46,6 +51,8 @@ export default defineEventHandler(async (event) => {
   const sends = articles.map((a) => ({ article: a, send: sent.find((s) => s.article_id === a.id)! }))
 
   const service = serverSupabaseServiceRole<Database>(event)
+  const { data: language } = await service.from('patients').select('preferred_language').eq('id', body.patientId).eq('account_id', teamMember.account_id).maybeSingle()
+  const shown = (a: (typeof articles)[number]) => learnInLanguage({ title: a.title, summary: a.summary, translations: a.translations }, language?.preferred_language)
   const origin = getRequestURL(event).origin
   const urlOf = (token: string) => `${origin}/aprende/${token}`
   const first = sends[0]!
@@ -53,7 +60,7 @@ export default defineEventHandler(async (event) => {
   try {
     const push = await sendPushToPatients(service, teamMember.account_id, [body.patientId], {
       title: sends.length === 1 ? 'Nueva lectura de tu clínica' : `${sends.length} lecturas nuevas de tu clínica`,
-      body: sends.map((s) => s.article.title).join(' · '),
+      body: sends.map((s) => shown(s.article).title).join(' · '),
       data: { type: 'learn', sendId: first.send.id },
     })
     if (push.delivered > 0) channel = 'app'
@@ -69,15 +76,18 @@ export default defineEventHandler(async (event) => {
       const clinic = account?.name ?? 'Tu clínica'
       const items = sends
         .map(
-          ({ article, send }) => `<p style="font-size:18px;font-weight:700;margin:16px 0 4px">${esc(article.title)}</p>
-            ${article.summary ? `<p style="color:#4A4F60;margin:0 0 16px">${esc(article.summary)}</p>` : ''}
-            <p><a href="${urlOf(send.token)}" style="display:inline-block;background:#4F46E5;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:600">Leer</a></p>`,
+          ({ article, send }) => {
+            const { title, summary } = shown(article)
+            return `<p style="font-size:18px;font-weight:700;margin:16px 0 4px">${esc(title)}</p>
+            ${summary ? `<p style="color:#4A4F60;margin:0 0 16px">${esc(summary)}</p>` : ''}
+            <p><a href="${urlOf(send.token)}" style="display:inline-block;background:#4F46E5;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:600">Leer</a></p>`
+          },
         )
         .join('')
       try {
         await sendResendEmail({
           to: patient.email,
-          subject: sends.length === 1 ? `${first.article.title} · ${clinic}` : `${sends.length} lecturas para ti · ${clinic}`,
+          subject: sends.length === 1 ? `${shown(first.article).title} · ${clinic}` : `${sends.length} lecturas para ti · ${clinic}`,
           html: `<div style="font-family:system-ui,sans-serif;max-width:520px;color:#22252F">
             <p>Hola${patient.first_name ? ` ${esc(patient.first_name)}` : ''},</p>
             <p>En ${esc(clinic)} te hemos preparado ${sends.length === 1 ? 'esta lectura' : 'estas lecturas'}:</p>

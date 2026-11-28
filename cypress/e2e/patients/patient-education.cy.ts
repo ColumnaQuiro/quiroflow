@@ -23,22 +23,88 @@ describe('Patient education', () => {
       cy.get('[data-cy=learn-row]').should('have.length', 1).and('contain', 'Espalda y embarazo')
       cy.get('[data-cy=learn-filter-all]').click()
 
-      // A new one of the clinic's own, with a video.
+      // A new one of the clinic's own, with a video, written in its own page.
       cy.get('[data-cy=learn-new]').click()
+      cy.get('[data-cy=learn-form][data-ready=true]', { timeout: 20000 })
       cy.get('[data-cy=learn-title]').type('Nuestro método')
-      cy.get('[data-cy=learn-body]').type('Primer párrafo.{enter}{enter}Segundo párrafo.')
+      cy.get('[data-cy=learn-block-text]').first().type('Primer párrafo.{enter}Segundo párrafo.')
+      cy.get('[data-cy=learn-block-text]').should('have.length', 2)
       cy.get('[data-cy=learn-video-url]').type('https://youtu.be/dQw4w9WgXcQ')
       cy.get('[data-cy=learn-tag-primera_visita]').click()
       cy.get('[data-cy=learn-minutes]').type('2')
       cy.get('[data-cy=learn-save]').click()
+      cy.location('pathname').should('match', /^\/settings\/education\/[0-9a-f-]{36}$/)
+      cy.get('[data-cy=learn-back]').click()
       cy.get('[data-cy=learn-row]').should('have.length', 13)
-      cy.task<{ title: string; tags: string[]; video_url: string; starter_key: string | null }[]>('db:selectRows', { table: 'learn_articles', columns: 'title, tags, video_url, starter_key', match: { account_id: account.accountId, title: 'Nuestro método' } }).then(([a]) => {
+      cy.task<{ title: string; tags: string[]; video_url: string; starter_key: string | null; body: string }[]>('db:selectRows', { table: 'learn_articles', columns: 'title, tags, video_url, starter_key, body', match: { account_id: account.accountId, title: 'Nuestro método' } }).then(([a]) => {
         expect(a!.tags).to.deep.eq(['primera_visita'])
         expect(a!.starter_key).to.eq(null)
+        // The plain text of the blocks, for app versions that read only body.
+        expect(a!.body).to.eq('Primer párrafo.\n\nSegundo párrafo.')
       })
       // Never sent, so it can be deleted outright.
       cy.contains('[data-cy=learn-row]', 'Nuestro método').find('[data-cy=learn-delete]').click()
       cy.get('[data-cy=learn-row]').should('have.length', 12)
+    })
+  })
+
+  // 20261128083000_learn_articles_rich_content.sql: the body is blocks
+  // (headings, lists, formatting), a clinic adds its own tags, and an article
+  // has other languages -- read by a patient in the one on their record.
+  it('writes headings, lists and a tag of the clinic’s own, in Spanish and English; an English-speaking patient reads the English', () => {
+    const email = `idioma-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    type Row = { id: string; content: { type: string; runs?: { text: string; bold?: boolean }[] }[]; body: string; tags: string[]; translations: { en?: { title: string } } }
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ada', lastName: 'Idioma' }).then((patient) => {
+        cy.task('db:updateRows', { table: 'patients', values: { preferred_language: 'en' }, match: { id: patient.id } })
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
+        cy.login(account.email, account.password)
+        cy.visit('/settings/education/new')
+        cy.get('[data-cy=learn-form][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=learn-title]').type('Agua')
+        // Markdown shortcuts: "# " a heading, "- " a list that Enter continues and an empty item ends.
+        cy.get('[data-cy=learn-block-text]').first().type('# Cuándo beber{enter}- Al despertar{enter}Antes de dormir{enter}{enter}Poco a poco.')
+        cy.get('[data-cy=learn-block-text]').should('have.length', 4)
+        cy.get('[data-cy=learn-block-text][data-type=heading]').should('have.text', 'Cuándo beber')
+        cy.get('[data-cy=learn-block-text][data-type=bullet]').should('have.length', 2)
+        // "/" opens the block menu; picking Callout turns the line into one.
+        cy.get('[data-cy=learn-block-text]').last().type('{enter}/nota')
+        cy.get('[data-cy=learn-slash-menu]').should('be.visible')
+        cy.get('[data-cy=learn-slash-callout]').click()
+        cy.get('[data-cy=learn-block-text][data-type=callout]').type('Lleva siempre una botella.')
+        // A tag of the clinic's own, beside the built-in ones.
+        cy.get('[data-cy=learn-new-tag]').type('Nutrición')
+        cy.get('[data-cy=learn-add-tag]').click()
+        cy.get('[data-cy="learn-tag-Nutrición"]').should('have.attr', 'aria-pressed', 'true')
+        // English: a copy of the Spanish to write over.
+        cy.get('[data-cy=learn-add-language]').click()
+        cy.get('[data-cy=learn-add-language-en]').click()
+        cy.get('[data-cy=learn-translation-note]').should('be.visible')
+        cy.get('[data-cy=learn-block-text]').should('have.length', 5)
+        cy.get('[data-cy=learn-title]').type('Water')
+        cy.get('[data-cy=learn-block-text][data-type=heading]').clear().type('When to drink')
+        cy.get('[data-cy=learn-save]').click()
+        cy.location('pathname').should('match', /^\/settings\/education\/[0-9a-f-]{36}$/)
+        cy.task<Row[]>('db:selectRows', { table: 'learn_articles', columns: 'id, content, body, tags, translations', match: { account_id: account.accountId, title: 'Agua' } }).then(([a]) => {
+          expect(a!.content.map((b) => b.type)).to.deep.eq(['heading', 'bullet', 'bullet', 'paragraph', 'callout'])
+          expect(a!.tags).to.deep.eq(['Nutrición'])
+          expect(a!.translations.en!.title).to.eq('Water')
+          expect(a!.body).to.contain('• Al despertar\n• Antes de dormir')
+          cy.task('db:insertRows', { table: 'learn_sends', rows: [{ account_id: account.accountId, patient_id: patient.id, article_id: a!.id, channel: 'app' }] })
+
+          // The patient, whose language is English, reads the English.
+          cy.login(email, password)
+          cy.visit('/portal')
+          cy.get('[data-cy=patient-learn]', { timeout: 20000 }).should('contain', 'Water')
+          cy.get('[data-cy=patient-learn-item]').click()
+          cy.get('[data-cy=patient-learn-read][data-phase=ready]', { timeout: 20000 })
+          cy.get('[data-cy=learn-article] h1').should('have.text', 'Water')
+          cy.get('[data-cy=learn-heading]').should('have.text', 'When to drink')
+          cy.get('[data-cy=learn-list] li').should('have.length', 2)
+          cy.get('[data-cy=learn-callout]').should('contain', 'Lleva siempre una botella.')
+        })
+      })
     })
   })
 
@@ -133,11 +199,13 @@ describe('Patient education', () => {
           cy.visit('/settings/education')
           cy.get('[data-cy=learn-library][data-ready=true]', { timeout: 20000 })
           cy.get(`[data-cy=learn-edit-${visible!.id}]`).click()
+          cy.get('[data-cy=learn-form][data-ready=true]', { timeout: 20000 })
           cy.get('[data-cy=learn-announce]').should('not.exist')
           cy.get('[data-cy=learn-visible-all]').check()
           cy.get('[data-cy=learn-announce-check]').should('be.checked')
           cy.get('[data-cy=learn-save]').click()
-          cy.get('[data-cy=learn-form]').should('not.exist')
+          cy.get('[data-cy=learn-announced]').should('be.visible')
+          cy.get('[data-cy=learn-back]').click()
           cy.contains('[data-cy=learn-row]', 'Dormir sin dolor').find('[data-cy=learn-row-visible]').should('exist')
           articleOf(visible!.id).should((a) => {
             expect(a.visible_to_patients).to.eq(true)
@@ -145,6 +213,7 @@ describe('Patient education', () => {
           })
           // Edited again, it offers no second announcement, and the server refuses one.
           cy.get(`[data-cy=learn-edit-${visible!.id}]`).click()
+          cy.get('[data-cy=learn-form][data-ready=true]', { timeout: 20000 })
           cy.get('[data-cy=learn-announced]').should('be.visible')
           cy.get('[data-cy=learn-announce]').should('not.exist')
           cy.task<string>('db:accessTokenFor', { email: account.email, password: account.password }).then((token) => {

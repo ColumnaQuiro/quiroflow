@@ -31,15 +31,18 @@ const rules: Rule[] = [
   { test: (p) => p === '/settings/team' || p.startsWith('/settings/team/') || p === '/settings/practitioners', check: (s) => can(s, 'settings_access') && can(s, 'team_admin') },
   { test: (p) => p === '/settings/roles' || p.startsWith('/settings/roles/'), check: (s) => can(s, 'settings_access') && can(s, 'roles_admin') },
   {
-    // /settings/clinics/<id> and /settings/appointment-types/<id> are one
-    // clinic's or one type's own page, under the same key as their list.
+    // /settings/clinics/<id>, /settings/appointment-types/<id> and
+    // /settings/education/<id> are one clinic's, type's or article's own
+    // page, under the same key as their list.
     test: (p) =>
       // online-booking, reschedule-reasons and new-patient-fields were missing
       // until 30 Sep 2026 and fell through to plain settings_access, so a
       // role the menu hid them from could still open them by address.
       ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/patient-types', '/settings/education', '/settings/care-plans', '/settings/app', '/settings/branding', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields', '/settings/custom-fields'].includes(p) ||
       p.startsWith('/settings/clinics/') ||
-      p.startsWith('/settings/appointment-types/'),
+      p.startsWith('/settings/appointment-types/') ||
+      // /settings/education/<id>: one article's editor.
+      p.startsWith('/settings/education/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
   { test: (p) => p === '/settings/exercises', check: (s) => can(s, 'exercises_manage') },
@@ -57,6 +60,9 @@ const rules: Rule[] = [
   // Owners only: deciding how long clinical records are kept, and
   // anonymising them, is the data controller's call (20261017182107_record_retention.sql).
   { test: (p) => p === '/settings/privacy', check: (s) => s.isOwner },
+  // Owners only: Novedades tells the clinic what changed in the product it
+  // pays for, and that is the owner's to read and pass on to the team.
+  { test: (p) => p === '/novedades', check: (s) => s.isOwner },
   {
     // payment-methods, invoice-settings and fiscal-data now redirect into
     // Payments and Invoicing; they keep the gate so a bookmark never lands

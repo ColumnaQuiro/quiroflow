@@ -2,10 +2,9 @@
 import { NEWS_AREAS, newsWeekStart, type NewsArea, type NewsEntry, type NewsKind } from '../utils/productNews'
 
 // Novedades: every change worth telling a clinic about, a week at a time,
-// from utils/productNews.ts. Open to every team member: it describes the
-// product, not the clinic's data. A "Go there" button can still lead to a
-// screen the person has no access to; the route guard answers that as it
-// does for any other link.
+// from utils/productNews.ts. Owners only (utils/routePermissions.ts, and the
+// top bar shows the button to no one else): what changes in the product is
+// the owner's to read and pass on to the team.
 const t = useT()
 const { entries, unreadIds, markSeen } = useProductNews()
 

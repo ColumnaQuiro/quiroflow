@@ -227,7 +227,8 @@ watch(supabaseFailure, (f) => {
             <!-- Where the help assistant (SupportHelpWidget) was until
             27 Nov 2026: in production it had been asked three questions in
             all, and no clinic had ever escalated one to a person. -->
-            <NewsTopBarButton />
+            <!-- Owners only, as /novedades is (utils/routePermissions.ts). -->
+            <NewsTopBarButton v-if="store.isOwner" />
             <AppThemeToggle />
             <AppAccountMenu />
           </div>

@@ -4814,7 +4814,14 @@ async function cardPaymentsFor(opts: { patientId: string }) {
   return data
 }
 
+// What the database recorded when this address signed up
+// (20261127090000_legal_acceptances.sql).
+async function legalAcceptances(email: string) {
+  return unwrap(await admin.from('legal_acceptances').select('version, user_id').eq('email', email))
+}
+
 export const dbTasks = {
+  'db:legalAcceptances': legalAcceptances,
   'db:updateAsStaff': updateAsStaff,
   'db:tryInsertRows': tryInsertRows,
   'db:seedReportDataset': seedReportDataset,

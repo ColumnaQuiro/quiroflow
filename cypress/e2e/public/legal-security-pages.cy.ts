@@ -21,6 +21,8 @@ describe('Security and privacy pages', () => {
     cy.contains('Irlanda').should('be.visible')
     cy.get('[data-cy=subprocessors] li').should('have.length.at.least', 8)
     cy.get('[data-cy=subprocessors]').should('contain', 'Supabase').and('contain', 'Anthropic').and('contain', 'Cláusulas contractuales tipo')
+    // Used by the code and missing from the list until 27 Nov 2026.
+    cy.get('[data-cy=subprocessors]').should('contain', 'Brevo').and('contain', 'GoCardless').and('contain', 'Suecia')
     cy.contains('Where your data is').should('not.exist')
   })
 

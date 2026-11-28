@@ -139,6 +139,10 @@ const sections = computed(() => [
         'Los archivos se guardan en el almacenamiento de objetos de Amazon Web Services, que guarda cada uno de forma redundante en varios centros de datos de la región.',
       ),
       t(
+        'Every night a second copy of all files is made to separate Amazon Web Services storage in the EU (Sweden). It keeps earlier versions, and the process that writes it cannot delete anything there.',
+        'Cada noche se hace una segunda copia de todos los archivos en un almacenamiento aparte de Amazon Web Services en la UE (Suecia). Conserva las versiones anteriores, y el proceso que la escribe no puede borrar nada allí.',
+      ),
+      t(
         'Errors are reported to us automatically as they happen, without any patient data in them.',
         'Los errores nos llegan automáticamente en cuanto ocurren, sin ningún dato de pacientes.',
       ),
@@ -192,7 +196,7 @@ const sections = computed(() => [
       </div>
 
       <h1 class="mt-8 text-2xl font-semibold text-ink-900">{{ t('Security & data protection', 'Seguridad y protección de datos') }}</h1>
-      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 29 October 2026', 'Última actualización: 29 de octubre de 2026') }}</p>
+      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 27 November 2026', 'Última actualización: 27 de noviembre de 2026') }}</p>
 
       <p class="mt-6 text-[14px] leading-relaxed text-ink-700">
         {{

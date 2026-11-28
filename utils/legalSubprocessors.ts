@@ -16,6 +16,19 @@
 //   transfer out, and its own subprocessors are listed at
 //   trust.mistral.ai/subprocessors. Whether it may train on the audio is an
 //   account toggle (Admin > Privacy), so nothing is claimed about that here.
+// Added 27 Nov 2026, after a review found three providers the code already
+// used and this list did not name:
+// - Brevo: the fallback server/utils/resend.ts sends through once Resend's
+//   daily allowance is spent. A French company; help.brevo.com ("Data storage
+//   location") places its databases in the EU only, so there is no transfer.
+// - Amazon Web Services, directly: .github/workflows/backup-storage.yml
+//   copies every stored file each night to a bucket in eu-north-1
+//   (Stockholm). Until then AWS appeared only as what Supabase runs on.
+// - GoCardless: each clinic connects its OWN GoCardless account by OAuth
+//   (server/utils/gocardless.ts), so the contract is the clinic's.
+//   gocardless.com/privacy/details names GoCardless SAS (France) as the
+//   entity serving the EU and the United Kingdom as where most data is
+//   processed. It states no transfer mechanism, so none is claimed here.
 // A provider added to the app belongs here in the same change, and one whose
 // region or certification changes has to be corrected here too.
 
@@ -56,6 +69,22 @@ export const LEGAL_SUBPROCESSORS: Subprocessor[] = [
     basis: DPF,
   },
   {
+    name: 'Brevo',
+    purpose: { en: 'Backup email provider', es: 'Proveedor de email de reserva' },
+    location: { en: 'EU (France, Germany and Belgium)', es: 'UE (Francia, Alemania y Bélgica)' },
+    basis: { en: 'Data stays in the EU', es: 'Los datos se quedan en la UE' },
+    note: {
+      en: 'Only for emails sent after the main provider\'s daily limit is reached',
+      es: 'Solo para los emails que se envían cuando el proveedor principal llega a su límite diario',
+    },
+  },
+  {
+    name: 'Amazon Web Services',
+    purpose: { en: 'Nightly backup copy of the files', es: 'Copia de seguridad nocturna de los archivos' },
+    location: { en: 'EU (Sweden)', es: 'UE (Suecia)' },
+    basis: { en: `Data stays in the EU · ${DPF.en}`, es: `Los datos se quedan en la UE · ${DPF.es}` },
+  },
+  {
     name: 'Meta Platforms (WhatsApp)',
     purpose: { en: 'WhatsApp messages and Facebook lead ads', es: 'Mensajes de WhatsApp y anuncios de captación de Facebook' },
     location: { en: 'United States', es: 'Estados Unidos' },
@@ -67,6 +96,16 @@ export const LEGAL_SUBPROCESSORS: Subprocessor[] = [
     purpose: { en: 'Card payments and subscriptions', es: 'Pagos con tarjeta y suscripciones' },
     location: { en: 'EU (Ireland) and United States', es: 'UE (Irlanda) y Estados Unidos' },
     basis: DPF,
+  },
+  {
+    name: 'GoCardless',
+    purpose: { en: 'Direct debit payments', es: 'Cobros por domiciliación bancaria' },
+    location: { en: 'EU (France) and United Kingdom', es: 'UE (Francia) y Reino Unido' },
+    basis: { en: 'The clinic\'s own agreement with GoCardless', es: 'El contrato de la propia clínica con GoCardless' },
+    note: {
+      en: 'Only if the clinic connects its own GoCardless account',
+      es: 'Solo si la clínica conecta su propia cuenta de GoCardless',
+    },
   },
   {
     name: 'Anthropic',

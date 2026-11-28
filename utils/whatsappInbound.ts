@@ -79,3 +79,34 @@ export function reactionEmoji(text: string | null | undefined): string | null {
 export function skipReaction(msg: InboundNonTextMessage): boolean {
   return msg.type === 'reaction' && !msg.reaction?.emoji
 }
+
+/**
+ * What Meta attaches to the first message someone sends from an ad that
+ * opens WhatsApp ("Click to WhatsApp", or a lead form ending in WhatsApp):
+ * messages[].referral. source_type 'ad' for an ad, 'post' for an organic
+ * post's message button.
+ */
+export interface InboundReferral {
+  source_type?: string
+  source_id?: string
+  source_url?: string
+  headline?: string
+  body?: string
+  ctwa_clid?: string
+}
+
+/**
+ * The ad this message came from, as lead_attribution.ad -- its headline, or
+ * its id when it has none. Null when it did not come from an ad.
+ *
+ * Read on arrival because the form behind the same ad, which carries the
+ * campaign, reaches us later -- half an hour later on 27 Nov 2026 -- and
+ * until it does the lead looked like someone who had simply written in. The
+ * receptionist answered in that gap and quoted QuiroBalance's 70 € first
+ * visit to someone the ad had promised 50 €.
+ */
+export function adFromReferral(referral: InboundReferral | null | undefined): string | null {
+  if (referral?.source_type !== 'ad') return null
+  const label = (referral.headline ?? '').replace(/\s+/g, ' ').trim() || (referral.source_id ?? '').trim()
+  return (label || 'Meta Ads').slice(0, 255)
+}

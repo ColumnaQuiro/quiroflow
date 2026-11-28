@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { inboundNonTextBody, isReactionBody, reactionEmoji, reactionOn, skipReaction } from '../../utils/whatsappInbound'
+import { adFromReferral, inboundNonTextBody, isReactionBody, reactionEmoji, reactionOn, skipReaction } from '../../utils/whatsappInbound'
+import { cameFromAd } from '../../utils/receptionistLeadOrigin'
 import { isNoReplyMessage } from '../../utils/receptionistAutoReply'
 
 // A 👍 on the receptionist's "your visit is moved" arrived as an empty bubble.
@@ -41,5 +42,27 @@ describe('WhatsApp messages that are not text', () => {
     expect(isReactionBody('Ha reaccionado con ❤️')).toBe(true)
     expect(isNoReplyMessage(['Ha reaccionado con 👍'], [])).toBe(true)
     expect(isNoReplyMessage(['Ha reaccionado con 👍', '¿Y el jueves?'], [])).toBe(false)
+  })
+})
+
+// The ad's 50 € first visit was quoted as the regular 70 € because the lead
+// only became the ad's when its form arrived, half an hour after the reply.
+describe('A WhatsApp message sent from an ad', () => {
+  it('names the ad by its headline, or its id', () => {
+    expect(adFromReferral({ source_type: 'ad', source_id: '1202', headline: '  -30% En tu\nPrimera Visita ' })).toBe('-30% En tu Primera Visita')
+    expect(adFromReferral({ source_type: 'ad', source_id: '1202' })).toBe('1202')
+    expect(adFromReferral({ source_type: 'ad' })).toBe('Meta Ads')
+  })
+
+  it('is not an ad when it came from a post, or from nowhere', () => {
+    expect(adFromReferral({ source_type: 'post', source_id: '9', headline: 'Un post' })).toBeNull()
+    expect(adFromReferral(undefined)).toBeNull()
+    expect(adFromReferral(null)).toBeNull()
+  })
+
+  it('is what makes the receptionist read them as from the ad', () => {
+    const ad = adFromReferral({ source_type: 'ad', headline: '-30% En tu Primera Visita' })
+    expect(cameFromAd({ channel: 'whatsapp', source: 'Meta Ads · WhatsApp', externalSource: 'whatsapp', campaign: null, ad })).toBe(true)
+    expect(cameFromAd({ channel: 'whatsapp', source: 'WhatsApp', externalSource: 'whatsapp', campaign: null, ad: null })).toBe(false)
   })
 })

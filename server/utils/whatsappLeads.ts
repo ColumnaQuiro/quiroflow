@@ -57,6 +57,8 @@ export async function leadForWhatsAppSender(
   accountId: string,
   fromNumber: string,
   profileName: string | null,
+  /** The ad they wrote from (adFromReferral), if they did. */
+  fromAd: string | null = null,
 ): Promise<string | null> {
   const name = (profileName ?? '').trim() || placeholderName(fromNumber)
 
@@ -80,7 +82,9 @@ export async function leadForWhatsAppSender(
     // Spelled so the dashboard's channelOf() reads it as its own channel: it
     // splits a source on '·' and takes the head, which is how "Meta Ads ·
     // <campaign>" becomes the "Meta Ads" row.
-    source: 'WhatsApp',
+    // Someone who wrote from an ad is counted as the ad's; the form that
+    // may follow names the campaign, and replaces this.
+    source: fromAd ? 'Meta Ads · WhatsApp' : 'WhatsApp',
     // The same pair the lead-ad ingest and the Instagram path dedupe on,
     // uniquely indexed per account. Two messages arriving together cannot
     // become two leads.
@@ -123,4 +127,25 @@ export async function leadForWhatsAppSender(
   })
 
   return lead.id
+}
+
+/**
+ * Records the ad a WhatsApp lead wrote from (adFromReferral) as its
+ * attribution, so the receptionist reads them as someone from the ad --
+ * cameFromAd -- and offers the ad's first visit.
+ *
+ * Never over what is already there: a lead's form, when it arrives, says
+ * more (the campaign) and is written over this one instead
+ * (leadIngest.ts upserts its attribution).
+ */
+export async function recordWhatsAppAd(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  leadId: string,
+  ad: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('lead_attribution')
+    .upsert({ lead_id: leadId, account_id: accountId, ad, first_touch: 'WhatsApp' }, { onConflict: 'lead_id', ignoreDuplicates: true })
+  if (error) console.error('[whatsapp] could not record the ad a lead wrote from:', leadId, error.message)
 }

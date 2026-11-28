@@ -1,11 +1,11 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { inboundNonTextBody, reactionOn, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
+import { adFromReferral, inboundNonTextBody, reactionOn, skipReaction, type InboundNonTextMessage, type InboundReferral } from '~/utils/whatsappInbound'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { automationEvent } from '~/server/utils/automationEngine'
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
-import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
+import { leadForWhatsAppSender, recordWhatsAppAd } from '~/server/utils/whatsappLeads'
 import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
@@ -54,6 +54,9 @@ interface MetaMessage {
   // The message this one replies to: set on a quick-reply button's tap, and
   // on a reply the patient quoted.
   context?: { id?: string }
+  // The ad they came from, on the first message sent from an ad that opens
+  // WhatsApp (adFromReferral).
+  referral?: InboundReferral
 }
 
 interface MetaChangeValue {
@@ -455,10 +458,15 @@ export default defineEventHandler(async (event) => {
         // mean the message attached to nothing and the person who sent it
         // was never recorded as having asked. That last case now creates the
         // lead, the way an Instagram DM already does.
+        const fromAd = adFromReferral(msg.referral)
         const leadId = patientId
           ? null
           : ((await findLeadIdByPhone(supabase, account.id, msg.from))
-            ?? (await leadForWhatsAppSender(supabase, account.id, msg.from, profileNames.get(msg.from) ?? null)))
+            ?? (await leadForWhatsAppSender(supabase, account.id, msg.from, profileNames.get(msg.from) ?? null, fromAd)))
+        // Written down before the receptionist reads the lead, which is what
+        // makes it offer the ad's price rather than the regular one: the
+        // form behind the same ad can arrive half an hour later.
+        if (leadId && fromAd) await recordWhatsAppAd(supabase, account.id, leadId, fromAd)
         const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
         const media = mediaKind ? msg[mediaKind] : undefined
 

@@ -57,6 +57,9 @@ const rules: Rule[] = [
   // Owners only: deciding how long clinical records are kept, and
   // anonymising them, is the data controller's call (20261017182107_record_retention.sql).
   { test: (p) => p === '/settings/privacy', check: (s) => s.isOwner },
+  // Owners only: Novedades tells the clinic what changed in the product it
+  // pays for, and that is the owner's to read and pass on to the team.
+  { test: (p) => p === '/novedades', check: (s) => s.isOwner },
   {
     // payment-methods, invoice-settings and fiscal-data now redirect into
     // Payments and Invoicing; they keep the gate so a bookmark never lands

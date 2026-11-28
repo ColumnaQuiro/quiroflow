@@ -2,7 +2,8 @@
 // bar's button where the help assistant used to be, its panel, and the page,
 // all from utils/productNews.ts. What is unread on a given day depends on the
 // entries' dates, so this checks that seeing them clears the count and that
-// it stays cleared after a reload, not how many there are.
+// it stays cleared after a reload, not how many there are. Owners only: the
+// rest of the team sees neither the button nor the page.
 describe('What’s new', () => {
   it('opens from the top bar, explains where a change is, and remembers it was read', () => {
     cy.seedStaffAccount().then((account) => {
@@ -37,6 +38,20 @@ describe('What’s new', () => {
       cy.reload()
       cy.get('[data-cy=news-page]').should('be.visible')
       cy.get('[data-cy=news-unread-count]').should('not.exist')
+    })
+  })
+
+  it('is not shown to a team member who is not an owner', () => {
+    cy.seedStaffAccount().then((account) => {
+      const email = `news-member-${Date.now()}@example.test`
+      cy.task('db:createTeamMemberWithRole', { accountId: account.accountId, clinicId: account.clinicId, roleName: 'Practitioner', email, password: 'valencia2026', fullName: 'Marta Quiro', isPractitioner: true })
+      cy.login(email, 'valencia2026')
+      cy.visit('/jornada')
+      // The top bar has rendered: its neighbour is there, the button is not.
+      cy.get('[data-cy=theme-toggle]').should('be.visible')
+      cy.get('[data-cy=news-open]').should('not.exist')
+      cy.visit('/novedades')
+      cy.location('pathname', { timeout: 15000 }).should('not.eq', '/novedades')
     })
   })
 })

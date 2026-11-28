@@ -85,6 +85,14 @@ describe('Translating a form', () => {
         cy.get('[data-cy=doc-send-language-en]').should('have.attr', 'aria-pressed', 'true')
         cy.contains('[data-cy=doc-send-template]', 'Consentimiento').should('contain', 'Not translated: goes in Spanish')
         cy.contains('[data-cy=doc-send-template]', 'Anamnesis').should('not.contain', 'Not translated').click()
+        // Picking it asks how it goes to the patient; it used to open the
+        // staff editor here and send nothing.
+        cy.get('[data-cy=doc-send-dialog]').should('contain', 'Send Intake to Ellis')
+          .and('contain', 'There is no email or WhatsApp to send it to from here.')
+        cy.contains('button', 'Mark as completed').should('not.exist')
+        cy.get('[data-cy=confirm-dialog-cancel]').click()
+        cy.get('[data-cy=doc-send-dialog]').should('not.exist')
+        cy.get('[data-cy=doc-send]').should('have.length', 1)
 
         cy.task<{ language: string | null; title: string; fields: { label: string; options?: string[] }[] }[]>('auto:docsFor', { patientId: patient.id }).then((docs) => {
           expect(docs).to.have.length(1)

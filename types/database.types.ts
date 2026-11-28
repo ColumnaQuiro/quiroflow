@@ -5663,7 +5663,10 @@ export type Database = {
           account_id: string
           announced_at: string | null
           archived_at: string | null
+          asset_paths: string[]
           body: string
+          content: Json
+          cover_path: string | null
           created_at: string
           created_by: string | null
           exercise_program_id: string | null
@@ -5674,6 +5677,7 @@ export type Database = {
           summary: string | null
           tags: string[]
           title: string
+          translations: Json
           updated_at: string
           video_url: string | null
           visible_to_patients: boolean
@@ -5682,7 +5686,10 @@ export type Database = {
           account_id: string
           announced_at?: string | null
           archived_at?: string | null
+          asset_paths?: string[]
           body?: string
+          content?: Json
+          cover_path?: string | null
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
@@ -5693,6 +5700,7 @@ export type Database = {
           summary?: string | null
           tags?: string[]
           title: string
+          translations?: Json
           updated_at?: string
           video_url?: string | null
           visible_to_patients?: boolean
@@ -5701,7 +5709,10 @@ export type Database = {
           account_id?: string
           announced_at?: string | null
           archived_at?: string | null
+          asset_paths?: string[]
           body?: string
+          content?: Json
+          cover_path?: string | null
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
@@ -5712,6 +5723,7 @@ export type Database = {
           summary?: string | null
           tags?: string[]
           title?: string
+          translations?: Json
           updated_at?: string
           video_url?: string | null
           visible_to_patients?: boolean

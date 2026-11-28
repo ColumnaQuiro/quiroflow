@@ -211,8 +211,10 @@ describe('Growth dashboard', () => {
 
     cy.visit('/growth?growth=1')
 
-    cy.get('[data-test="kpi-cpnp"]').should('contain', '500 €').and('contain', '1 converted')
-    cy.get('[data-test="kpi-revenue"]').should('contain', '1000 €')
+    // cy.contains, not should('contain'): es-ES puts a no-break space before
+    // the €, which only cy.contains reads as a space.
+    cy.get('[data-test="kpi-cpnp"]').should('contain', '1 converted').contains('500 €')
+    cy.get('[data-test="kpi-revenue"]').contains('1000 €')
     // The funnel is still this month's arrivals: neither lead arrived now.
     cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
   })
@@ -228,7 +230,7 @@ describe('Growth dashboard', () => {
     }).then(({ id }) => {
       cy.request({ method: 'PATCH', url: `/api/growth/leads/${id}`, body: { stage: 'converted' } })
       cy.visit('/growth?growth=1')
-      cy.get('[data-test="kpi-revenue"]').should('contain', '500 €')
+      cy.get('[data-test="kpi-revenue"]').contains('500 €')
     })
   })
 

@@ -249,11 +249,13 @@ export async function fileLead(supabase: any, accountId: string, lead: LeadToFil
   // cost still gives us a lead worth keeping.
   const attribution = lead.attribution ? definedOnly(lead.attribution) : undefined
   if (attribution && Object.keys(attribution).length > 0) {
-    const { error: attributionError } = await loose(supabase).from('lead_attribution').insert({
+    // Upserted: a lead folded from WhatsApp may already have the row the
+    // ad's referral wrote (recordWhatsAppAd), and the form says more.
+    const { error: attributionError } = await loose(supabase).from('lead_attribution').upsert({
       lead_id: filed.id,
       account_id: accountId,
       ...attribution,
-    } as never)
+    } as never, { onConflict: 'lead_id' })
     if (attributionError) {
       console.error(`[${logTag}] attribution was not saved for lead`, filed.id, attributionError.message)
     }

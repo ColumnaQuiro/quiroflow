@@ -13,11 +13,29 @@ import type { Ref } from 'vue'
 // It relies on nothing but the click: a menu that closed on its button's
 // `blur` stayed open in Safari, which does not focus a button when it is
 // clicked, so the blur never came.
-export function useDismissOnOutside(root: Ref<HTMLElement | null | undefined>, open: Ref<boolean>) {
+//
+// A template `ref="name"` placed inside a `v-for` fills the ref with an ARRAY
+// of elements, not one element, and a ref on a component holds the component.
+// The patient's "Send history" menu (AppointmentsTab, inside the loop over
+// visit groups) was the first: every press anywhere on the page threw
+// "r.contains is not a function" and the menu never closed. So whatever the
+// ref holds is read down to the elements it stands for.
+type DismissRoot = Element | { $el?: unknown } | null | undefined
+function rootElements(value: DismissRoot | DismissRoot[]): Element[] {
+  const items = Array.isArray(value) ? value : [value]
+  const out: Element[] = []
+  for (const item of items) {
+    if (item instanceof Element) out.push(item)
+    else if (item && typeof item === 'object' && item.$el instanceof Element) out.push(item.$el)
+  }
+  return out
+}
+
+export function useDismissOnOutside(root: Ref<DismissRoot | DismissRoot[]>, open: Ref<boolean>) {
   function onPointerDown(e: PointerEvent) {
     if (!open.value) return
-    const el = root.value
-    if (el && e.target instanceof Node && el.contains(e.target)) return
+    const target = e.target
+    if (target instanceof Node && rootElements(root.value).some((el) => el.contains(target))) return
     open.value = false
   }
   function onKeydown(e: KeyboardEvent) {

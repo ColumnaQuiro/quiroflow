@@ -144,6 +144,23 @@ function isActive(to: string, exact = false) {
   return route.path === to || route.path.startsWith(`${to}/`)
 }
 
+// The page you are on is marked by SidebarIcon's brand tile, so its row only
+// steps up to the hover grey. Collapsed, the tile is the whole mark: a grey box
+// around it would just be a second outline.
+function activeRowClass(active: boolean) {
+  if (!active) return 'text-ink-600 hover:bg-surface-sidebarHover'
+  return collapsed.value ? 'text-ink-900 font-semibold' : 'bg-surface-sidebarHover text-ink-900 font-semibold'
+}
+
+// The same 24-unit line drawings as the nav items (useSidebarNavItems.ts).
+const FOOTER_ICONS = {
+  help: 'M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0 -17 0zM9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2-2.4 3.6M12 17h.01',
+  refer: 'M4.5 9h15v3.5h-15zM5.5 12.5V20h13v-7.5M12 9v11M12 9c-1.6-3.6-5.3-3.9-4.9-1.5.3 1.3 2.6 1.5 4.9 1.5zM12 9c1.6-3.6 5.3-3.9 4.9-1.5-.3 1.3-2.6 1.5-4.9 1.5z',
+  settings: 'M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9M13 7.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0zM7 16.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0z',
+  // The chevron is added in the template: it points the way the click goes.
+  collapse: 'M6 4h12a2.5 2.5 0 0 1 2.5 2.5v11a2.5 2.5 0 0 1 -2.5 2.5h-12a2.5 2.5 0 0 1 -2.5 -2.5v-11a2.5 2.5 0 0 1 2.5 -2.5zM9.5 4v16',
+}
+
 function groupOpen(group: { id: string; items: SidebarNavItem[] }) {
   // Collapsed to icons there is no heading to reopen a group from, so every
   // icon shows.
@@ -323,16 +340,16 @@ onUnmounted(() => navObserver?.disconnect())
               :to="item.to"
               data-cy="nav-item"
               :data-to="item.to"
-              class="relative flex items-center gap-[9px] rounded-ctlSm text-[13.5px]"
+              class="relative flex items-center gap-1.5 rounded-ctlSm text-[13.5px]"
               :class="[
-                collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11',
-                isActive(item.to, item.exact) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover',
+                collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-1.5 touch:h-11',
+                activeRowClass(isActive(item.to, item.exact)),
               ]"
               :aria-current="isActive(item.to, item.exact) ? 'page' : undefined"
               :aria-label="collapsed ? itemName(item) : undefined"
               :title="collapsed ? itemName(item) : undefined"
             >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path :d="item.icon" /></svg>
+              <SidebarIcon :path="item.icon" :active="isActive(item.to, item.exact)" />
               <template v-if="!collapsed">
                 <span class="flex-1">{{ item.label }}</span>
                 <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2" data-cy="nav-badge-myday">{{ myDayCount }}</span>
@@ -355,23 +372,23 @@ onUnmounted(() => navObserver?.disconnect())
             :href="helpCentreUrl"
             target="_blank"
             rel="noopener"
-            class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
-            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
+            class="flex items-center gap-1.5 rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
+            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-1.5 touch:h-11'"
             :aria-label="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
             :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M6.2 6.3a1.8 1.8 0 013.4.8c0 1.2-1.6 1.4-1.6 2.5" stroke-linecap="round" /><circle cx="8" cy="11.5" r="0.15" fill="currentColor" /></svg>
+            <SidebarIcon :path="FOOTER_ICONS.help" />
             <span v-if="!collapsed" class="flex-1">{{ t('Help Centre', 'Centro de ayuda') }}</span>
           </a>
           <button
             type="button"
-            class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
-            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
+            class="flex items-center gap-1.5 rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
+            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-1.5 touch:h-11'"
             :aria-label="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
             :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
             @click="referFriendsOpen = true"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M8 4.8v6.4M6 6.5c0-.9.9-1.5 2-1.5s2 .5 2 1.3c0 1.7-4 .9-4 2.7 0 .8.9 1.3 2 1.3s2-.6 2-1.5" stroke-linecap="round" /></svg>
+            <SidebarIcon :path="FOOTER_ICONS.refer" />
             <span v-if="!collapsed" class="flex-1 text-left">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</span>
           </button>
         </div>
@@ -396,35 +413,30 @@ onUnmounted(() => navObserver?.disconnect())
         v-if="can('settings_access')"
         :to="store.isBlindSpotOnly ? '/settings/team' : '/settings'"
         data-cy="nav-settings"
-        class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px]"
+        class="flex items-center gap-1.5 rounded-ctlSm text-[13.5px]"
         :class="[
-          collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11',
-          isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover',
+          collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-1.5 touch:h-11',
+          activeRowClass(isActive('/settings')),
         ]"
         :aria-current="isActive('/settings') ? 'page' : undefined"
         :aria-label="collapsed ? t('Settings', 'Ajustes') : undefined"
         :title="collapsed ? t('Settings', 'Ajustes') : undefined"
       >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
+        <SidebarIcon :path="FOOTER_ICONS.settings" :active="isActive('/settings')" />
         <span v-if="!collapsed" class="flex-1">{{ t('Settings', 'Ajustes') }}</span>
       </NuxtLink>
       <!-- Desktop-only -- the mobile drawer doesn't have a collapsed state. -->
       <button
         type="button"
         data-cy="sidebar-collapse"
-        class="hidden items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-sidebarHover hover:text-ink-700 lg:flex"
-        :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
+        class="hidden items-center gap-1.5 rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-sidebarHover hover:text-ink-700 lg:flex"
+        :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-1.5 touch:h-11'"
         :aria-label="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : undefined"
         :aria-expanded="!collapsed"
         :title="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : undefined"
         @click="toggleCollapsed"
       >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-          <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-          <path d="M6 2.5v11" />
-          <path v-if="collapsed" d="M8.6 6.5L10.2 8l-1.6 1.5" stroke-linecap="round" stroke-linejoin="round" />
-          <path v-else d="M10.2 6.5L8.6 8l1.6 1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <SidebarIcon :path="FOOTER_ICONS.collapse + (collapsed ? 'M13.5 10l2 2-2 2' : 'M15.5 10l-2 2 2 2')" />
         <span v-if="!collapsed" class="flex-1 text-left">{{ t('Collapse', 'Contraer') }}</span>
       </button>
     </div>

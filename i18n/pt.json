@@ -1662,7 +1662,10 @@
   "\"{0}\" is on. Nobody else met it.": "«{0}» ativada. Mais ninguém a cumpria.",
   "\"{0}\" is on, with 1 patient who already met it.": "«{0}» ativada, com 1 paciente que já a cumpria.",
   "\"{0}\" is on, with {1} patients who already met it.": "«{0}» ativada, com {1} pacientes que já a cumpriam.",
-  "Visits of type: {0}": "Consultas do tipo: {0}"
+  "Visits of type: {0}": "Consultas do tipo: {0}",
+  "Form sent by email to {0}": "Formulário enviado por email para {0}",
+  "Send {0} to {1}": "Enviar {0} a {1}",
+  "Send {0}": "Enviar {0}"
  },
  "s": {
   " (half day)": " (meio dia)",
@@ -11162,6 +11165,16 @@
   "It is on, but those who already met it could not be included.": "Está ativada, mas não foi possível incluir quem já a cumpria.",
   "Choose types": "Escolha os tipos",
   "Has had at least one completed visit of any of these types. The visit-count and last-visit filters then count only these.": "Teve pelo menos uma consulta concluída de algum destes tipos. Os filtros de número de consultas e última consulta contam então só estas.",
-  "Visit type": "Tipo de consulta"
+  "Visit type": "Tipo de consulta",
+  "Form sent by WhatsApp": "Formulário enviado por WhatsApp",
+  "The form could not be sent.": "Não foi possível enviar o formulário.",
+  "The form was not created.": "O formulário não foi criado.",
+  "Send the patient their link by email or WhatsApp": "Enviar ao paciente a sua ligação por email ou WhatsApp",
+  "It reaches them as a link to fill in from their phone.": "Recebe uma ligação para o preencher a partir do telemóvel.",
+  "This patient is under age, so QuiroFlow does not write to them directly. Copy the link for their guardian, or fill it in here.": "É menor de idade, por isso o QuiroFlow não lhe escreve diretamente. Copie a ligação para o seu tutor, ou preencha-o aqui.",
+  "There is no email or WhatsApp to send it to from here. Copy the link, or fill it in here.": "Não há email nem WhatsApp para onde o enviar a partir daqui. Copie a ligação, ou preencha-o aqui.",
+  "Open it in WhatsApp on this computer instead": "Abri-lo no WhatsApp neste computador",
+  "Opens the patient’s form in a new tab, to fill in at the clinic": "Abre o formulário do paciente num novo separador, para o preencher na clínica",
+  "They are here: fill it in on this screen": "Está aqui: preenchê-lo neste ecrã"
  }
 }

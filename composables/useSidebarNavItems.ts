@@ -14,6 +14,12 @@ export interface SidebarNavItem {
   label: string
   to: string
   perm: () => boolean
+  /**
+   * One SVG path on a 24-unit grid, drawn as a line by components/SidebarIcon.vue
+   * (18px, round caps and joins). One picture per page, never shared with
+   * another: two clocks and two stars once sat in the same list. A dot is a
+   * zero-length line (`h.01`), which only shows because the caps are round.
+   */
   icon: string
   badge?: NavBadge
   /**
@@ -50,32 +56,32 @@ export function useSidebarNavItems() {
       // The daily loop, in the order of the g-shortcuts: what reception has
       // open all day. The Inbox was the twelfth item an owner saw.
       items: [
-        { label: t('Dashboard', 'Panel'), to: '/dashboard', perm: () => scope('dashboard_scope') !== 'none', icon: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z' },
-        { label: t('My Day', 'Mi día'), to: '/practitioner', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4', badge: 'myday' },
-        { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
-        { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
+        { label: t('Dashboard', 'Panel'), to: '/dashboard', perm: () => scope('dashboard_scope') !== 'none', icon: 'M5.5 3.5h3a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-3a2 2 0 0 1 -2 -2v-5a2 2 0 0 1 2 -2zM15.5 3.5h3a2 2 0 0 1 2 2v1a2 2 0 0 1 -2 2h-3a2 2 0 0 1 -2 -2v-1a2 2 0 0 1 2 -2zM5.5 15.5h3a2 2 0 0 1 2 2v1a2 2 0 0 1 -2 2h-3a2 2 0 0 1 -2 -2v-1a2 2 0 0 1 2 -2zM15.5 11.5h3a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-3a2 2 0 0 1 -2 -2v-5a2 2 0 0 1 2 -2z' },
+        { label: t('My Day', 'Mi día'), to: '/practitioner', perm: () => scope('calendar_scope') !== 'none', icon: 'M7.5 4.5h9a2.5 2.5 0 0 1 2.5 2.5v11.5a2.5 2.5 0 0 1 -2.5 2.5h-9a2.5 2.5 0 0 1 -2.5 -2.5v-11.5a2.5 2.5 0 0 1 2.5 -2.5zM9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5M9 12.5l2 2 4-4.5', badge: 'myday' },
+        { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M6 5h12a2.5 2.5 0 0 1 2.5 2.5v10.5a2.5 2.5 0 0 1 -2.5 2.5h-12a2.5 2.5 0 0 1 -2.5 -2.5v-10.5a2.5 2.5 0 0 1 2.5 -2.5zM3.5 10h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01' },
+        { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox', perm: () => can('inbox_access'), icon: 'M3.5 13.5l2.3-6.9A2.3 2.3 0 0 1 8 5h8a2.3 2.3 0 0 1 2.2 1.6l2.3 6.9V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18zM3.5 13.5H8l1.5 2.5h5l1.5-2.5h4.5', badge: 'inbox' },
       ],
     },
     {
       id: 'patients',
       label: t('Patients', 'Pacientes'),
       items: [
-        { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
-        { label: t('Recalls', 'Recuperaciones'), to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
+        { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M8.2 8a3.8 3.8 0 1 0 7.6 0a3.8 3.8 0 1 0 -7.6 0zM4.5 20.5c.8-3.9 3.9-6 7.5-6s6.7 2.1 7.5 6' },
+        { label: t('Recalls', 'Recuperaciones'), to: '/recalls', perm: () => can('recalls_access'), icon: 'M9 4.5L4.5 9 9 13.5M4.5 9H14a5.5 5.5 0 0 1 0 11h-3', badge: 'recalls' },
         // Reuses recalls_access rather than a new permission key -- both are
         // patient-outreach lists with the same "who should staff be allowed to
         // see this" shape, and a brand new key would default to owner-only
         // until someone visits Settings > Roles to grant it, hiding the feature
         // from every non-owner account until then.
-        { label: t('Waitlist', 'Lista de espera'), to: '/waitlist', perm: () => can('recalls_access'), icon: 'M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2.2 1.3' },
-        { label: t('Care Plan Alerts', 'Alertas de plan'), to: '/care-plan-alerts', perm: () => can('recalls_access'), icon: 'M8 1.5l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 10.2 4.6 12l.7-3.8-2.8-2.7 3.8-.5z' },
+        { label: t('Waitlist', 'Lista de espera'), to: '/waitlist', perm: () => can('recalls_access'), icon: 'M6.5 3.5h11M6.5 20.5h11M8 3.5v2.8a4 4 0 0 0 1.6 3.2L12 12l2.4-2.5A4 4 0 0 0 16 6.3V3.5M8 20.5v-2.8a4 4 0 0 1 1.6-3.2L12 12l2.4 2.5a4 4 0 0 1 1.6 3.2v2.8' },
+        { label: t('Care Plan Alerts', 'Alertas de plan'), to: '/care-plan-alerts', perm: () => can('recalls_access'), icon: 'M2.8 12a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0 -4.4 0zM9.8 12a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0 -4.4 0zM7.2 12h2.6M14.2 12h1.8M20 8v4.5M20 16h.01' },
         // Everyone's home exercises in one place, and assigning them to many at once.
-        { label: t('Exercises', 'Ejercicios'), to: '/exercises', perm: () => can('exercises_manage'), icon: 'M2 8h2M12 8h2M4 5.5v5M12 5.5v5M5.5 6.8v2.4M10.5 6.8v2.4M5.5 8h5' },
+        { label: t('Exercises', 'Ejercicios'), to: '/exercises', perm: () => can('exercises_manage'), icon: 'M6.3 6.5h0.4a1.3 1.3 0 0 1 1.3 1.3v8.4a1.3 1.3 0 0 1 -1.3 1.3h-0.4a1.3 1.3 0 0 1 -1.3 -1.3v-8.4a1.3 1.3 0 0 1 1.3 -1.3zM17.3 6.5h0.4a1.3 1.3 0 0 1 1.3 1.3v8.4a1.3 1.3 0 0 1 -1.3 1.3h-0.4a1.3 1.3 0 0 1 -1.3 -1.3v-8.4a1.3 1.3 0 0 1 1.3 -1.3zM2.5 10v4M21.5 10v4M8 12h8' },
         // Campaigns and Growth > Automations, as one: every automation, patient
         // or lead, lives here. In every plan -- lead automations inside it are
         // what needs Growth, and they say so. Campaigns became Automations;
         // the palette still finds it by the old name.
-        { label: t('Automations', 'Automatizaciones'), to: '/automations', perm: () => can('communication_config'), icon: 'M8.9 1.5 3.5 9h3.8l-.6 5.5L12.5 7H8.7z', badge: 'automations', keywords: t('Campaigns', 'Campañas') },
+        { label: t('Automations', 'Automatizaciones'), to: '/automations', perm: () => can('communication_config'), icon: 'M13 2.5L5 13.5h6l-1 8 8-11h-6z', badge: 'automations', keywords: t('Campaigns', 'Campañas') },
       ],
     },
     {
@@ -87,20 +93,20 @@ export function useSidebarNavItems() {
         // Messages between colleagues. Everyone, like Working time: the people
         // who most need it have no Inbox (pages/team-chat.vue). "Team chat",
         // because Settings has a Team of its own.
-        { label: t('Team chat', 'Chat de equipo'), to: '/team-chat', perm: () => true, icon: 'M5.5 6.5a2 2 0 100-4 2 2 0 000 4zM11 7a1.7 1.7 0 100-3.4A1.7 1.7 0 0011 7zM1.8 13c0-2 1.6-3.3 3.7-3.3S9.2 11 9.2 13M9.6 9.9c.4-.2.9-.3 1.4-.3 1.8 0 3.2 1.1 3.2 2.9', badge: 'team' },
+        { label: t('Team chat', 'Chat de equipo'), to: '/team-chat', perm: () => true, icon: 'M4 4.5h10A1.5 1.5 0 0 1 15.5 6v6.5A1.5 1.5 0 0 1 14 14H8.5L5 17v-3H4a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 4 4.5zM18.5 9H20a1.5 1.5 0 0 1 1.5 1.5V17a1.5 1.5 0 0 1-1.5 1.5h-1v3l-3.5-3H12a1.5 1.5 0 0 1-1.5-1.5v-.5', badge: 'team' },
         // Registro de jornada: everyone clocks, so everyone has it.
-        { label: t('Working time', 'Registro de jornada'), to: '/jornada', perm: () => true, icon: 'M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8zM8 4.6V8l2.4 1.5' },
+        { label: t('Working time', 'Registro de jornada'), to: '/jornada', perm: () => true, icon: 'M4.5 13.5a7.5 7.5 0 1 0 15 0a7.5 7.5 0 1 0 -15 0zM12 13.5V10M10 2.5h4M12 2.5V6M18.2 7.3l1.3-1.3' },
         // Personal: the team's people, holidays and what waits for the owner
         // (pages/personal.vue). Owners only, as Turnos and Comisiones are.
-        { label: t('Staff', 'Personal'), to: '/personal', perm: () => store.isOwner, icon: 'M2.5 3h11v10h-11zM6 6.6a1.4 1.4 0 102.8 0 1.4 1.4 0 00-2.8 0M4.6 11c.3-1.2 1.3-1.9 2.8-1.9s2.5.7 2.8 1.9M10.8 5.6h1.4M10.8 7.6h1.4' },
+        { label: t('Staff', 'Personal'), to: '/personal', perm: () => store.isOwner, icon: 'M6.5 4h11a2.5 2.5 0 0 1 2.5 2.5v11.5a2.5 2.5 0 0 1 -2.5 2.5h-11a2.5 2.5 0 0 1 -2.5 -2.5v-11.5a2.5 2.5 0 0 1 2.5 -2.5zM9.4 10.5a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0zM8 17c.6-1.9 2.1-3 4-3s3.4 1.1 4 3M10 4V2.5h4V4' },
       ],
     },
     {
       id: 'money',
       label: t('Money', 'Dinero'),
       items: [
-        { label: t('Billing', 'Facturación'), to: '/billing', perm: () => can('billing_access'), icon: 'M2 4h12v8h-12zM2 7h12' },
-        { label: t('Reports', 'Informes'), to: '/reports', perm: () => can('reports_access'), icon: 'M2.4 8h2.6v5.6h-2.6zM6.7 4.6h2.6v9h-2.6zM11 6.6h2.6v7h-2.6z' },
+        { label: t('Billing', 'Facturación'), to: '/billing', perm: () => can('billing_access'), icon: 'M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21zM9.5 8h5M9.5 11.5h5M9.5 15h3' },
+        { label: t('Reports', 'Informes'), to: '/reports', perm: () => can('reports_access'), icon: 'M12 3.5a8.5 8.5 0 1 0 8.5 8.5H12zM15 3.3a5.7 5.7 0 0 1 5.7 5.7H15z' },
       ],
     },
     {
@@ -118,10 +124,10 @@ export function useSidebarNavItems() {
       items: [
         // "Overview", not a second "Dashboard": collapsed, or read aloud, two
         // items with one name are indistinguishable.
-        { label: t('Overview', 'Resumen'), to: '/growth', exact: true, perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
-        { label: t('Leads', 'Leads'), to: '/growth/leads', perm: () => can('leads_access') || can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
-        { label: t('AI receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
-        { label: t('Reputation', 'Reputación'), to: '/growth/reputation', perm: () => can('communication_config'), icon: 'M8 1.8l1.8 3.7 4 .6-2.9 2.8.7 4L8 11l-3.6 1.9.7-4-2.9-2.8 4-.6z' },
+        { label: t('Overview', 'Resumen'), to: '/growth', exact: true, perm: () => can('communication_config'), icon: 'M3.5 17.5L9 12l4 4 7.5-8M15.5 8h5v5' },
+        { label: t('Leads', 'Leads'), to: '/growth/leads', perm: () => can('leads_access') || can('communication_config'), icon: 'M3.5 4.5h17l-6.5 8v6l-4 2v-8z' },
+        { label: t('AI receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4.5 14v-2a7.5 7.5 0 0 1 15 0v2M5 13h0.5a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1 -1.5 1.5h-0.5a1.5 1.5 0 0 1 -1.5 -1.5v-3a1.5 1.5 0 0 1 1.5 -1.5zM18.5 13h0.5a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1 -1.5 1.5h-0.5a1.5 1.5 0 0 1 -1.5 -1.5v-3a1.5 1.5 0 0 1 1.5 -1.5zM19 19c0 1.5-1.5 2.5-3.5 2.5H13' },
+        { label: t('Reputation', 'Reputación'), to: '/growth/reputation', perm: () => can('communication_config'), icon: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z' },
       ],
     },
   ])
@@ -135,8 +141,8 @@ export function useSidebarNavItems() {
         id: 'blind-spot',
         label: 'Blind Spot',
         items: [
-          { label: t('Tests', 'Pruebas'), to: '/blind-spot', perm: () => scope('patients_scope') !== 'none', icon: 'M1.8 8s2.3-4.5 6.2-4.5S14.2 8 14.2 8s-2.3 4.5-6.2 4.5S1.8 8 1.8 8zM8 9.8a1.8 1.8 0 100-3.6 1.8 1.8 0 000 3.6z', keywords: t('Blind spot', 'Punto ciego') },
-          { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
+          { label: t('Tests', 'Pruebas'), to: '/blind-spot', perm: () => scope('patients_scope') !== 'none', icon: 'M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM9.2 12a2.8 2.8 0 1 0 5.6 0a2.8 2.8 0 1 0 -5.6 0z', keywords: t('Blind spot', 'Punto ciego') },
+          { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M8.2 8a3.8 3.8 0 1 0 7.6 0a3.8 3.8 0 1 0 -7.6 0zM4.5 20.5c.8-3.9 3.9-6 7.5-6s6.7 2.1 7.5 6' },
         ],
       },
     ]

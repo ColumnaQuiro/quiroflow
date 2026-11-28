@@ -14,6 +14,7 @@ const TONE: Record<string, 'success' | 'warning'> = { positive: 'success', negat
     <div
       v-for="kpi in kpis"
       :key="kpi.key"
+      :data-test="`kpi-${kpi.key}`"
       class="flex flex-col gap-[7px] rounded-card border border-line bg-surface p-[14px] shadow-card"
     >
       <span class="text-[11px] text-ink-muted">{{ kpi.label }}</span>

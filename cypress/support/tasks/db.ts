@@ -2818,6 +2818,8 @@ async function createLead(opts: {
   stageChangedAt?: string
   /** Backdates created_at, for the dashboard's stale-lead and cohort maths. */
   createdAt?: string
+  /** Backdates converted_at, for counting conversions by the month they happened. */
+  convertedAt?: string
   events?: { kind: string; title: string; detail?: string; body?: unknown; occurredAt?: string }[]
   attribution?: { campaign?: string; ad?: string; audience?: string; firstTouch?: string; lastTouch?: string; costCents?: number }
 }) {
@@ -2843,13 +2845,14 @@ async function createLead(opts: {
   // Set after insert rather than in it: the leads_touch_updated_at trigger
   // only fires on UPDATE, so an insert cannot be backdated through it, and a
   // backdated stage_changed_at is what makes "2 d in stage" testable.
-  if (opts.stageChangedAt || opts.createdAt) {
+  if (opts.stageChangedAt || opts.createdAt || opts.convertedAt) {
     assertOk(
       await admin
         .from('leads')
         .update({
           ...(opts.stageChangedAt ? { stage_changed_at: opts.stageChangedAt } : {}),
           ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
+          ...(opts.convertedAt ? { converted_at: opts.convertedAt } : {}),
         })
         .eq('id', lead.id),
     )

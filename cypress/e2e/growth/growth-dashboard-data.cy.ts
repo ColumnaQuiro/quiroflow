@@ -184,6 +184,54 @@ describe('Growth dashboard', () => {
     cy.contains('5.0×').should('be.visible')
   })
 
+  it('counts a conversion in the month it happened, not the month the lead arrived', () => {
+    // Conversion is usually a returning visit weeks after the enquiry. The
+    // dashboard used to count only leads that arrived AND converted this
+    // month, so it read 0 converted while people converted in it.
+    // 40 days back is always last month or earlier.
+    cy.task('db:createLead', {
+      accountId: account.accountId,
+      fullName: 'Enquired Last Month',
+      stage: 'converted',
+      source: 'Meta Ads · Sciatica',
+      estimatedValueCents: 100_000,
+      createdAt: daysFromNow(-40),
+    })
+    // Converted last month: last month's figure, not this one's.
+    cy.task('db:createLead', {
+      accountId: account.accountId,
+      fullName: 'Converted Last Month',
+      stage: 'converted',
+      source: 'Meta Ads · Sciatica',
+      estimatedValueCents: 100_000,
+      createdAt: daysFromNow(-70),
+      convertedAt: daysFromNow(-40),
+    })
+    cy.task('db:setChannelSpend', { accountId: account.accountId, channel: 'Meta Ads', amountCents: 50_000 })
+
+    cy.visit('/growth?growth=1')
+
+    cy.get('[data-test="kpi-cpnp"]').should('contain', '500 €').and('contain', '1 converted')
+    cy.get('[data-test="kpi-revenue"]').should('contain', '1000 €')
+    // The funnel is still this month's arrivals: neither lead arrived now.
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
+  })
+
+  it('dates a lead dragged to Converted by hand, so it is counted too', () => {
+    cy.task<{ id: string }>('db:createLead', {
+      accountId: account.accountId,
+      fullName: 'Dragged Later',
+      stage: 'showed',
+      source: 'Google Ads · Search',
+      estimatedValueCents: 50_000,
+      createdAt: daysFromNow(-40),
+    }).then(({ id }) => {
+      cy.request({ method: 'PATCH', url: `/api/growth/leads/${id}`, body: { stage: 'converted' } })
+      cy.visit('/growth?growth=1')
+      cy.get('[data-test="kpi-revenue"]').should('contain', '500 €')
+    })
+  })
+
   it('groups channels by their prefix, so campaign variants share a row', () => {
     cy.task('db:createLead', { accountId: account.accountId, fullName: 'Variant One', stage: 'booked', source: 'Meta Ads · Sciatica' })
     cy.task('db:createLead', { accountId: account.accountId, fullName: 'Variant Two', stage: 'new', source: 'Meta Ads · Back pain' })

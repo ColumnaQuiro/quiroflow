@@ -15,6 +15,32 @@ export const LEARN_TAGS: Record<string, string> = {
   general: 'General',
 }
 
+/**
+ * A tag as shown: a built-in one by its label, a clinic's own as it was
+ * written. Tags are free text in learn_articles.tags; a clinic adds its own
+ * ("Nutrición", "Órganos"...) beside the built-in keys above.
+ */
+export function learnTagLabel(tag: string): string {
+  return LEARN_TAGS[tag] ?? tag
+}
+
+/** A tag a clinic typed, tidied: trimmed, single-spaced, at most 40 characters. */
+export function cleanLearnTag(tag: string): string {
+  return tag.trim().replace(/\s+/g, ' ').slice(0, 40)
+}
+
+/**
+ * The tags to offer as filters or choices: the built-in ones in their own
+ * order (all of them, or only those in use), then the clinic's own that any
+ * article carries, alphabetically.
+ */
+export function learnTagsInUse(articles: { tags: string[] }[], opts: { allBuiltIn?: boolean } = {}): string[] {
+  const used = new Set(articles.flatMap((a) => a.tags))
+  const builtIn = Object.keys(LEARN_TAGS).filter((k) => opts.allBuiltIn || used.has(k))
+  const own = [...used].filter((k) => !(k in LEARN_TAGS)).sort((a, b) => a.localeCompare(b, 'es'))
+  return [...builtIn, ...own]
+}
+
 // Words in a patient's motivo de consulta or diagnosis that point at a tag.
 const TAG_WORDS: Record<string, string[]> = {
   lumbar: ['lumbar', 'lumbalgia', 'espalda baja', 'ciatic', 'ciátic', 'hernia', 'disco', 'sacro', 'cadera'],
